@@ -29,6 +29,7 @@ START_BALANCE = 1000      # balanta simulata (schimb-o ca sa testezi alte pragur
 LEVERAGE = 30             # 1:30 (entitate UE)
 EXPIRE_BARS = 4
 DEPTH_RANGE = None        # filtru adancime pullback (Fibonacci); None = dezactivat
+PULLBACK_WINDOW = 8       # max bare M15 intre swing si bara de confirmare (1 bara = 15 min)
 SKIP_MONDAY = True        # nu intra lunea (deschidere slaba dupa weekend)
 SKIP_HOURS = (15, 16)     # nu intra intre 15:00-16:49 RO (gol Londra->NY)
 ATR_MAX_PIPS = {"EURUSD": 7.5}   # nu intra pe EURUSD daca ATR > prag (volatilitate mare = haos)
@@ -204,7 +205,7 @@ def run_portfolio(cfg):
             if corr_dir == direction:
                 continue
 
-        found = detect_setup(df, jj, direction, depth_range=DEPTH_RANGE)
+        found = detect_setup(df, jj, direction, window=PULLBACK_WINDOW, depth_range=DEPTH_RANGE)
         if found is None:
             continue
         ext, _ = found
