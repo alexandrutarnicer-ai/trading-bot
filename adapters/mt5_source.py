@@ -90,6 +90,9 @@ class Mt5DataSource:
         if self._connected:
             mt5.shutdown()
             self._connected = False
+            # Reset offset: orice reconectare re-detecteaza fusul serverului.
+            # Asta acopera cazul (rar) in care botul ruleaza prin o schimbare DST.
+            self._server_offset_h = None
 
     def __enter__(self) -> "Mt5DataSource":
         self.connect()
@@ -118,22 +121,29 @@ class Mt5DataSource:
         """
         now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
 
+        # pos=1 = ultima bara INCHISA (nu bara in formare de la pos=0).
+        # O bara inchisa are open_time fix si deterministic: a fost deschisa
+        # cu exact 1–2 perioade in urma, ceea ce da un diff stabil fata de now_utc.
+        # Toleranta ±30 min este mai larga decat orice incertitudine reala:
+        #   - bara M15 inchisa: deschisa acum 15–30 min → diff = offset ± 30 min ✓
+        #   - bara M1 inchisa:  deschisa acum  1–2 min → diff = offset ±  2 min ✓
         for tf_candidate in (mt5.TIMEFRAME_M15, mt5.TIMEFRAME_M1):
-            rates = mt5.copy_rates_from_pos(symbol, tf_candidate, 0, 1)
+            rates = mt5.copy_rates_from_pos(symbol, tf_candidate, 1, 1)
             if rates is None or len(rates) == 0:
                 continue
 
             bar_naive = datetime.fromtimestamp(rates[0]["time"], tz=timezone.utc).replace(tzinfo=None)
             diff_s = (bar_naive - now_utc).total_seconds()
 
-            # Testam candidati in ordinea probabilitatii (3 si 2 sunt cei mai comuni
-            # pentru brokeri forex EU; 0 acopera cazul in care timestamps sunt UTC real)
+            # Candidati in ordinea probabilitatii pentru brokeri forex EU.
+            # 0 acopera cazul (rar) in care timestamps sunt UTC curat.
             for candidate in (3, 2, 1, 0):
-                if abs(diff_s - candidate * 3600) < 1800:  # ±30 min toleranta
+                if abs(diff_s - candidate * 3600) < 1800:  # ±30 min
                     return candidate
 
-        # Piata inchisa (bar veche > 30 min fata de orice offset rezonabil)
-        # sau offset neasteptat. Nu convertim — server time ≈ ora RO oricum.
+        # Bara prea veche (piata inchisa de mai mult de 3.5 ore: weekend sau
+        # sesiune nocturna extinsa). Nu convertim — server time ≈ ora RO oricum.
+        # Offsetul va fi re-detectat la urmatorul apel load_bars() din sesiune.
         return 0
 
     def server_offset_h(self, symbol: str = "EURUSD") -> int:
