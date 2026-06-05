@@ -1,7 +1,7 @@
 # Stare Proiect — Trading Bot Pullback-in-Trend
 
 **Ultima actualizare:** 2026-06-05  
-**Faza curentă:** Faza 0 completă ✓ — Faza 1 (live demo MT5) în așteptare
+**Faza curentă:** Faza 1, Pasul 1 complet ✓ — Mt5DataSource implementat + timezone confirmat
 
 ---
 
@@ -142,16 +142,39 @@ Adaptorul livrează **doar bare brute OHLC**. Toți indicatorii se calculează �
 
 ---
 
-## 7. Faza 1 — ce urmează (neîncepută)
+## 7. Faza 1 — implementare live MT5
 
-**Obiectiv:** Implementarea `Mt5DataSource` în `adapters/mt5_source.py` pentru execuție live pe demo MT5.
+### Pasul 1 — COMPLET ✓ (2026-06-05)
 
-**Pașii necesari:**
-1. Implementa `load_bars()` folosind `mt5.copy_rates_from_pos()` sau `copy_rates_range()`
-2. Mapa timeframe-urile ("M15", "M30") la constantele MT5 (`mt5.TIMEFRAME_M15` etc.)
-3. Normaliza coloanele returnate la același format ca CSV (`time`, `open`, `high`, `low`, `close`, `volume`)
-4. Scrie un script `live_runner.py` care folosește `Mt5DataSource` + `prepare_symbol` + motorul de semnale
-5. Testa pe demo MT5 că semnalele coincid cu backtestul pe date recente
+**Implementat:**
+- `adapters/mt5_source.py` — `Mt5DataSource` cu `load_bars()`, guard DEMO obligatoriu, context manager
+- `scripts/verifica_aliniere_mt5.py` — script de verificare OHLC + timezone
+
+**Concluzii verificare (rulat live pe ICMarkets EU Demo):**
+
+| Verificare | Rezultat |
+|---|---|
+| OHLC match EURUSD M15/M30 | ✓ perfect (1 bara diferita = bara in formare la download CSV — normal) |
+| OHLC match GBPUSD M15/M30 | ✓ idem |
+| OHLC match USDJPY M15/M30 | ✓ MATCH PERFECT pe toate barele |
+| Timezone timestamps MT5 | **UTC+3 (ICMarkets server time = ora României vara EEST)** |
+
+**Detaliu timezone — critic pentru filtre:**
+
+Timestamps din MT5 (via `copy_rates_from_pos`) sunt în **UTC+3** (ora serverului ICMarkets), nu UTC.
+ICMarkets menține UTC+3 tot anul. România vara este EEST = UTC+3, deci:
+
+- `t.hour in {15, 16}` → skip 15:00–16:00 **ora României vara** ✓ corect
+- `sh <= t.hour < eh` (10–18) → sesiunea 10:00–18:00 **ora României vara** ✓ corect
+- `t.weekday() == 0` → skip Luni in ora ICMarkets (= ora RO) ✓ corect
+
+Iarna (EET = UTC+2), ICMarkets rămâne pe UTC+3, deci filtrele funcționează identic tot anul — nu există deviere sezonieră.
+
+**Test definitiv:** ultima bara M15 (17:00 naive) − UTC curent (14:15) = +164 min ≈ UTC+3 (16 min diferenta = bara rulase 15 min din durata ei de 15 min la momentul testului).
+
+### Pasul 2 — urmează
+
+Scrie `live_runner.py`: `Mt5DataSource` + `prepare_symbol` + bucla de semnale fara executie (doar log setup-uri detectate).
 
 **Ce NU trebuie modificat:**
 - `strategy/` — zero modificări

@@ -109,13 +109,13 @@ def _analyze_timezone(mt5_raw_df: pd.DataFrame, symbol: str) -> None:
                 "    Ora 10:00 UTC = 13:00 Romania vara (EEST) / 12:00 iarna (EET).\n"
                 "    Filtrele NU sunt in ora Romaniei — sunt in UTC."
             )
-        elif 105 <= diff_min <= 135:
+        elif 100 <= diff_min <= 140:
             tz_label = "UTC+2 (EET — ora Romaniei iarna)"
             tz_note  = (
                 "Filtrele actioneaza pe ora Romaniei in sezon de iarna.\n"
                 "    Vara (EEST=UTC+3) exista o deviere de 1h fata de Romania."
             )
-        elif 165 <= diff_min <= 195:
+        elif 145 <= diff_min <= 200:
             tz_label = "UTC+3 (EEST / ICMarkets server time)"
             tz_note  = (
                 "Filtrele actioneaza pe ora Romaniei vara (EEST=UTC+3).\n"
