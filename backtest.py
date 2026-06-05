@@ -6,19 +6,8 @@ fiecare pereche, simuleaza strategia cu costuri si dimensionare de pozitie,
 si afiseaza statisticile: nr. tranzactii, rata de castig, expectancy (R),
 randament total si drawdown maxim.
 
-ATENTIE v1:
-  - Functioneaza pe perechi cotate in USD (EURUSD, GBPUSD). GBPJPY se adauga ulterior.
-  - Detectia de structura (HH/HL) e o interpretare; o calibram dupa ce comparam
-    setup-urile detectate cu un chart real.
-  - Costurile (spread) sunt MODELATE, nu din date - vezi SPREAD_PIPS mai jos.
-
 Cerinte:  pip install pandas numpy
-Rulare:   python backtest/backtest.py
-Structura asteptata:
-  trading-bot/
-    config/standard_profile.json
-    data/EURUSD_M15.csv, EURUSD_M30.csv, GBPUSD_M15.csv, GBPUSD_M30.csv
-    backtest/backtest.py   <- acest fisier
+Rulare:   python backtest.py
 """
 
 import os
@@ -26,10 +15,12 @@ import json
 import numpy as np
 import pandas as pd
 
+from strategy.indicators import ema, rsi, atr
+from strategy.structure import mark_swings, detect_setup
+from strategy.signals import pip_size, count_optional, reward_R
+
 # ---- cai (relative la radacina proiectului) -------------------------------
 _HERE = os.path.dirname(os.path.abspath(__file__))
-# radacina = folderul care contine 'config' (merge fie ca backtest.py e direct
-# in trading-bot/, fie intr-un subfolder trading-bot/backtest/)
 if os.path.isdir(os.path.join(_HERE, "config")):
     ROOT = _HERE
 elif os.path.isdir(os.path.join(os.path.dirname(_HERE), "config")):
@@ -43,44 +34,6 @@ DATA_DIR  = os.path.join(ROOT, "data")
 SPREAD_PIPS = {"EURUSD": 0.5, "GBPUSD": 0.8}   # conservator; raw e mai mic
 PIP_VALUE_PER_LOT_USD = 10.0                   # pt perechi cotate in USD, 1 lot
 SYMBOLS_V1 = ["EURUSD", "GBPUSD"]
-
-
-# ---- indicatori -----------------------------------------------------------
-def ema(s, period):
-    return s.ewm(span=period, adjust=False).mean()
-
-def rsi(s, period=14):
-    delta = s.diff()
-    up = delta.clip(lower=0).ewm(alpha=1/period, adjust=False).mean()
-    down = (-delta.clip(upper=0)).ewm(alpha=1/period, adjust=False).mean()
-    rs = up / down.replace(0, np.nan)
-    return 100 - (100 / (1 + rs))
-
-def atr(df, period=14):
-    """Average True Range pe `period` bare (in unitati de pret)."""
-    h, l, c = df["high"], df["low"], df["close"]
-    prev_c = c.shift(1)
-    tr = pd.concat([(h - l), (h - prev_c).abs(), (l - prev_c).abs()], axis=1).max(axis=1)
-    return tr.ewm(alpha=1/period, adjust=False).mean()
-
-
-# ---- swings (fractali simpli) ---------------------------------------------
-def mark_swings(df, N):
-    """Adauga coloane swing_high / swing_low (bool), confirmate dupa N bare."""
-    high, low = df["high"].values, df["low"].values
-    n = len(df)
-    sh = np.zeros(n, dtype=bool)
-    sl = np.zeros(n, dtype=bool)
-    for i in range(N, n - N):
-        window_h = high[i-N:i+N+1]
-        window_l = low[i-N:i+N+1]
-        if high[i] == window_h.max() and (window_h.argmax() == N):
-            sh[i] = True
-        if low[i] == window_l.min() and (window_l.argmin() == N):
-            sl[i] = True
-    df["swing_high"] = sh
-    df["swing_low"] = sl
-    return df
 
 
 # ---- incarcare + pregatire date -------------------------------------------
@@ -107,84 +60,6 @@ def load_symbol(symbol, cfg):
                         m30[["time", "trend"]].sort_values("time"),
                         on="time", direction="backward")
     return m15.reset_index(drop=True)   # index = pozitie (0..n-1)
-
-
-# ---- helperi ---------------------------------------------------------------
-def pip_size(symbol):
-    return 0.01 if "JPY" in symbol else 0.0001
-
-def count_optional(row, direction, cfg):
-    """Cate criterii optionale sunt indeplinite (RSI, aliniere EMA)."""
-    c = 0
-    o = cfg["optional_criteria"]
-    if o["rsi"]["enabled"]:
-        r = row["rsi"]
-        if direction == 1 and o["rsi"]["buy_min"] <= r <= o["rsi"]["buy_max"]:
-            c += 1
-        elif direction == -1 and o["rsi"]["sell_min"] <= r <= o["rsi"]["sell_max"]:
-            c += 1
-    if o["ema_alignment"]["enabled"]:
-        if direction == 1 and row["ema_fast"] > row["ema_mid"] > row["ema_slow"]:
-            c += 1
-        elif direction == -1 and row["ema_fast"] < row["ema_mid"] < row["ema_slow"]:
-            c += 1
-    return c
-
-def reward_R(n_optional, cfg):
-    rl = cfg["reward_ladder"]
-    if n_optional >= 2: return rl["rr_if_5_criteria"]
-    if n_optional == 1: return rl["rr_if_4_criteria"]
-    return rl["rr_if_3_criteria"]
-
-
-# ---- detectarea setup-ului la o bara de confirmare ------------------------
-def detect_setup(df, j, direction, window=8, depth_range=None):
-    """
-    Setup STRICT de pullback in trend, la bara de confirmare j.
-    Bullish: al 2-lea HH crescator -> pullback la un HL nou (ultima structura,
-    recenta) -> bara j este PRIMA care inchide peste maximul barei de pullback.
-    Bearish: oglinda. Conditii suplimentare fata de versiunea veche:
-      - pullback-ul trebuie sa fie ultima structura formata (dupa ultimul HH/LL)
-      - recent: la cel mult `window` bare in urma fata de j
-      - "prima inchidere" peste/sub nivel (nu re-declanseaza pe fiecare bara)
-    """
-    a = max(0, j - 150)
-    look = df.iloc[a:j]
-    sh = look.index[look["swing_high"]].tolist()   # pozitii swing high
-    sl = look.index[look["swing_low"]].tolist()     # pozitii swing low
-    if len(sh) < 2 or len(sl) < 2:
-        return None
-    hi = df["high"]; lo = df["low"]; cl = df["close"]
-
-    if direction == 1:
-        pl = sl[-1]                       # pullback low = ultimul swing low
-        if pl <= sh[-1]:                  # trebuie sa fie DUPA ultimul HH (structura proaspata)
-            return None
-        if j - pl > window:               # trebuie sa fie recent
-            return None
-        if not (hi.iloc[sh[-1]] > hi.iloc[sh[-2]]):   # al 2-lea HH crescator
-            return None
-        if not (lo.iloc[pl] > lo.iloc[sl[-2]]):       # HL: ramane peste low-ul anterior
-            return None
-        lvl = hi.iloc[pl]                 # maximul barei de pullback
-        if cl.iloc[j] > lvl and cl.iloc[j-1] <= lvl:  # PRIMA inchidere peste nivel
-            depth = hi.iloc[sh[-1]] - lo.iloc[pl]     # adancime pullback (HH - PL)
-            return (lo.iloc[pl], depth)   # extremul pullback (pentru SL) si adancimea
-    else:
-        ph = sh[-1]                       # pullback high = ultimul swing high
-        if ph <= sl[-1]:
-            return None
-        if j - ph > window:
-            return None
-        if not (lo.iloc[sl[-1]] < lo.iloc[sl[-2]]):   # al 2-lea LL descrescator
-            return None
-        if not (hi.iloc[ph] < hi.iloc[sh[-2]]):       # LH: ramane sub high-ul anterior
-            return None
-        lvl = lo.iloc[ph]
-        if cl.iloc[j] < lvl and cl.iloc[j-1] >= lvl:  # PRIMA inchidere sub nivel
-            depth = hi.iloc[ph] - lo.iloc[sl[-1]]     # adancime pullback (PH - LL)
-            return (hi.iloc[ph], depth)   # extremul pullback (pentru SL) si adancimea
-    return None
 
 
 # ---- backtest pentru o pereche --------------------------------------------
@@ -245,7 +120,6 @@ def backtest_symbol(symbol, cfg):
                 triggered = (d == 1 and row["high"] >= pending["entry"]) or \
                             (d == -1 and row["low"]  <= pending["entry"])
                 if triggered:
-                    # simulam rezultatul in barele urmatoare
                     res = simulate_trade(df, j, pending, spread, pip,
                                          PIP_VALUE_PER_LOT_USD, comm, symbol)
                     balance += res["pnl_usd"]
@@ -254,7 +128,7 @@ def backtest_symbol(symbol, cfg):
                     trades.append(res)
                     trades_today += 1
                     consec_losses = consec_losses + 1 if res["pnl_usd"] < 0 else 0
-                    busy_until = res["exit_j"]   # blocheaza intrari noi pana la inchidere
+                    busy_until = res["exit_j"]
                     pending = None
             continue
 
@@ -265,9 +139,10 @@ def backtest_symbol(symbol, cfg):
             continue
 
         direction = int(row["trend"])
-        ext = detect_setup(df, j, direction)
-        if ext is None:
+        found = detect_setup(df, j, direction)
+        if found is None:
             continue
+        ext, _ = found
         setups_detected += 1
 
         # construim ordinul stop
@@ -285,14 +160,13 @@ def backtest_symbol(symbol, cfg):
         R = reward_R(n_opt, cfg)
         tp = entry + direction * risk_dist * R
 
-        # dimensionare pozitie: 1.5% daca toate criteriile optionale sunt bifate, altfel 1%
         rp = risk_pct_all if n_opt >= 2 else risk_pct
         risk_usd = balance * rp
         sl_pips = risk_dist / pip
         lots = risk_usd / (sl_pips * PIP_VALUE_PER_LOT_USD)
         lots = np.floor(lots / 0.01) * 0.01     # pas de 0.01
         if lots < 0.01:
-            continue                             # capitalul nu permite -> skip
+            continue
 
         pending = {"dir": direction, "entry": entry, "sl": sl, "tp": tp,
                    "lots": lots, "R": R, "invalidate": ext, "armed_at": j,
@@ -343,7 +217,6 @@ def summarize(symbol, trades, equity, equity_timeline, setups):
     eq = np.array(equity)
     dd = ((eq - np.maximum.accumulate(eq)) / np.maximum.accumulate(eq)).min() * 100
 
-    # expectancy CORECT: R per tranzactie = pnl / riscul efectiv asumat la intrare
     df["R_realizat"] = df["pnl_usd"] / df["risk_usd"]
     expectancy = df["R_realizat"].mean()
     avg_win = df.loc[df["outcome"] == "win", "R_realizat"].mean()
@@ -373,15 +246,6 @@ def main():
     if not os.path.isfile(CONFIG):
         print("Nu gasesc fisierul de config.")
         print("  Astept :", CONFIG)
-        print("  ROOT   :", ROOT)
-        print("  In ROOT:", os.listdir(ROOT) if os.path.isdir(ROOT) else "(nu exista)")
-        cfgdir = os.path.join(ROOT, "config")
-        if os.path.isdir(cfgdir):
-            print("  In config/:", os.listdir(cfgdir))
-        else:
-            print("  Folderul config/ NU exista la radacina.")
-        print("\n  Solutie: creeaza folderul 'config' langa backtest.py si pune in el")
-        print("  fisierul cu numele exact 'standard_profile.json'.")
         return
     with open(CONFIG, encoding="utf-8") as f:
         cfg = json.load(f)

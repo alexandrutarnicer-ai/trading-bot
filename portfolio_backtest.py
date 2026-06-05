@@ -8,77 +8,31 @@ Ruleaza toate perechile pe UN SINGUR CONT comun, in ordine cronologica:
   - verificare de marja: daca nu sunt fonduri libere, tranzactia e ratata (ca in realitate)
   - valoarea pipului calculata corect per pereche (USDJPY/USDCAD au USD ca baza)
 
-Reutilizeaza logica din backtest.py (detectie, indicatori, simulare).
 Cerinte:  pip install pandas numpy
-Rulare:   python portfolio_backtest.py   (din folderul cu backtest.py)
+Rulare:   python portfolio_backtest.py
 """
 
+import os
+import json
 import numpy as np
 import pandas as pd
 
-from backtest import (load_symbol, detect_setup, count_optional, reward_R,
-                      pip_size, simulate_trade, CONFIG)
-import json
+from backtest import load_symbol, simulate_trade, CONFIG
+from strategy.structure import detect_setup
+from strategy.signals import pip_size, count_optional, reward_R
+from strategy.costs import swap_cost, pip_value_usd, notional_usd
 
 # ---- parametri portofoliu --------------------------------------------------
 SYMBOLS = ["EURUSD", "GBPUSD", "USDJPY"]
 SPREAD_PIPS = {"EURUSD": 0.5, "GBPUSD": 0.8, "USDJPY": 0.7}
 START_BALANCE = 1000      # balanta simulata (schimb-o ca sa testezi alte praguri)
 LEVERAGE = 30             # 1:30 (entitate UE)
-CONTRACT = 100000         # marime lot standard
 EXPIRE_BARS = 4
 DEPTH_RANGE = None        # filtru adancime pullback (Fibonacci); None = dezactivat
 SKIP_MONDAY = True        # nu intra lunea (deschidere slaba dupa weekend)
 SKIP_HOURS = (15, 16)     # nu intra intre 15:00-16:49 RO (gol Londra->NY)
 ATR_MAX_PIPS = {"EURUSD": 7.5}   # nu intra pe EURUSD daca ATR > prag (volatilitate mare = haos)
 MAX_DAY_CONSEC_LOSSES = 3       # circuit breaker: 3 pierderi consecutive pe cont => stop pe ziua aia
-
-
-BASE_USD_APROX = {"GBP": 1.27, "EUR": 1.10, "AUD": 0.66, "USD": 1.0}
-
-# swap (finantare overnight), ca si COST in USD per 1.0 lot per noapte (conservator)
-SWAP_PER_LOT_NIGHT = {"EURUSD": 7.0, "GBPUSD": 8.0, "USDJPY": 10.0, "GBPJPY": 12.0}
-
-
-def swap_cost(symbol, entry_time, exit_time, lots):
-    """Cost de swap: nr. de nopti tinute x rata x loti. Miercuri = tripla."""
-    e = pd.Timestamp(entry_time).normalize()
-    x = pd.Timestamp(exit_time).normalize()
-    nights = (x - e).days
-    if nights <= 0:
-        return 0.0
-    units = 0
-    d = e
-    for _ in range(nights):
-        d = d + pd.Timedelta(days=1)
-        units += 3 if d.weekday() == 2 else 1     # miercuri (weekday 2) = swap triplu
-    return units * SWAP_PER_LOT_NIGHT.get(symbol, 8.0) * lots
-
-
-def pip_value_usd(symbol, price, usdjpy_rate=None):
-    """Valoarea unui pip, pentru 1.0 lot, exprimata in USD."""
-    pip = pip_size(symbol)
-    val_in_quote = pip * CONTRACT          # valoare pip in moneda de cotatie
-    quote = symbol[3:]
-    if quote == "USD":                     # EURUSD, GBPUSD, AUDUSD
-        return val_in_quote
-    if symbol[:3] == "USD":                # USDJPY, USDCAD (USD ca baza)
-        return val_in_quote / price        # pretul = cotatie per USD
-    # cross fara USD (ex: GBPJPY) -> convertim cotatia in USD
-    if quote == "JPY" and usdjpy_rate:
-        return val_in_quote / usdjpy_rate  # JPY -> USD prin cursul USDJPY
-    return val_in_quote / price            # fallback aproximativ
-
-
-def notional_usd(symbol, price, lots):
-    """Expunerea (notional) in USD (aproximativ pt cross-uri, folosit doar la marja)."""
-    base = symbol[:3]
-    if base == "USD":                      # baza USD
-        return lots * CONTRACT
-    if symbol[3:] == "USD":                # baza straina, cotatie USD
-        return lots * CONTRACT * price     # pretul = USD per unitate baza
-    # cross: convertim baza in USD aproximativ
-    return lots * CONTRACT * BASE_USD_APROX.get(base, 1.0)
 
 
 def run_portfolio(cfg):
@@ -160,7 +114,7 @@ def run_portfolio(cfg):
                     balance += pnl
                     equity.append({"time": xt, "balance": round(balance, 2)})
                     consec[xs] = consec[xs] + 1 if pnl < 0 else 0
-                    gconsec = gconsec + 1 if pnl < 0 else 0       # streak la nivel de cont
+                    gconsec = gconsec + 1 if pnl < 0 else 0
                     if gconsec >= MAX_DAY_CONSEC_LOSSES and not ghalt:
                         ghalt = True; halted_days += 1
                     open_margin[xs] = 0.0
@@ -197,17 +151,15 @@ def run_portfolio(cfg):
                 trig = (d == 1 and row["high"] >= p["entry"]) or \
                        (d == -1 and row["low"] <= p["entry"])
                 if trig:
-                    # verificare de marja INAINTE de a deschide
                     margin = notional_usd(s, p["entry"], p["lots"]) / LEVERAGE
                     used = sum(open_margin.values())
                     if balance - used < margin:
-                        skipped_margin += 1          # fonduri insuficiente -> ratam
+                        skipped_margin += 1
                         pending[s] = None
                         continue
                     pv = p["pv"]
                     spr = SPREAD_PIPS.get(s, 1.0) * pip
                     res = simulate_trade(df, jj, p, spr, pip, pv, comm, s)
-                    # scade swap-ul (finantare overnight)
                     sc = swap_cost(s, res["time"], res["exit_time"], p["lots"])
                     res["swap"] = round(sc, 3)
                     res["pnl_usd"] = round(res["pnl_usd"] - sc, 2)
@@ -223,19 +175,19 @@ def run_portfolio(cfg):
             continue
 
         # 3) conditii pentru a arma ceva nou
-        if ghalt:                                   # circuit breaker activ azi
+        if ghalt:
             continue
         if not (sh <= t.hour < eh):
             continue
-        if SKIP_MONDAY and t.weekday() == 0:        # luni
+        if SKIP_MONDAY and t.weekday() == 0:
             continue
-        if t.hour in SKIP_HOURS:                    # 15:00-16:49 RO
+        if t.hour in SKIP_HOURS:
             continue
         if trades_today[s] >= max_trades or consec[s] >= max_losses:
             continue
         if row["trend"] == 0 or pd.isna(row["trend"]):
             continue
-        cap = ATR_MAX_PIPS.get(s)                    # filtru ATR (doar pe perechile listate)
+        cap = ATR_MAX_PIPS.get(s)
         if cap and row["atr"] / pip > cap:
             continue
 
@@ -243,7 +195,7 @@ def run_portfolio(cfg):
         found = detect_setup(df, jj, direction, depth_range=DEPTH_RANGE)
         if found is None:
             continue
-        ext, _depth = found
+        ext, _ = found
 
         buf = 2 * pip
         if direction == 1:
@@ -323,7 +275,6 @@ def summarize(trades, equity, balance, max_concurrent, skipped_margin, split_tim
         print(f"  {s}: {len(sub):4d} trades | win {w/len(sub)*100:.1f}% | "
               f"expectancy {sub['R_realizat'].mean():+.3f} R | pnl {sub['pnl_usd'].sum():+.1f} USD")
 
-    import os
     from backtest import DATA_DIR
     df.to_csv(os.path.join(DATA_DIR, "portfolio_trades.csv"), index=False)
     eqdf.to_csv(os.path.join(DATA_DIR, "portfolio_equity.csv"), index=False)
