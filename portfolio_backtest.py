@@ -33,6 +33,7 @@ SKIP_MONDAY = True        # nu intra lunea (deschidere slaba dupa weekend)
 SKIP_HOURS = (15, 16)     # nu intra intre 15:00-16:49 RO (gol Londra->NY)
 ATR_MAX_PIPS = {"EURUSD": 7.5}   # nu intra pe EURUSD daca ATR > prag (volatilitate mare = haos)
 MAX_DAY_CONSEC_LOSSES = 3       # circuit breaker: 3 pierderi consecutive pe cont => stop pe ziua aia
+CORR_PAIRS = {"EURUSD": "GBPUSD", "GBPUSD": "EURUSD"}  # nu intra pe amandoua in aceeasi directie
 
 
 def run_portfolio(cfg):
@@ -89,6 +90,7 @@ def run_portfolio(cfg):
     trades_today = {s: 0 for s in data}
     consec = {s: 0 for s in data}
     open_margin = {s: 0.0 for s in data}      # marja blocata de pozitia deschisa
+    active_dir = {s: None for s in data}     # directia pozitiei active (pentru filtrul de corelatie)
     open_trades = []                          # (exit_time, symbol, pnl)
 
     open_now = 0
@@ -118,6 +120,7 @@ def run_portfolio(cfg):
                     if gconsec >= MAX_DAY_CONSEC_LOSSES and not ghalt:
                         ghalt = True; halted_days += 1
                     open_margin[xs] = 0.0
+                    active_dir[xs] = None
                     open_now -= 1
                 else:
                     still.append((xt, xs, pnl))
@@ -166,6 +169,7 @@ def run_portfolio(cfg):
                     res["atr_pips"] = p["atr_pips"]
                     open_trades.append((pd.Timestamp(res["exit_time"]), s, res["pnl_usd"]))
                     open_margin[s] = margin
+                    active_dir[s] = d
                     busy_until[s] = res["exit_j"]
                     trades_today[s] += 1
                     trades.append(res)
@@ -192,6 +196,14 @@ def run_portfolio(cfg):
             continue
 
         direction = int(row["trend"])
+
+        # filtru corelatie: EURUSD si GBPUSD nu intra in aceeasi directie simultan
+        corr = CORR_PAIRS.get(s)
+        if corr and corr in data:
+            corr_dir = pending[corr]["dir"] if pending[corr] is not None else active_dir[corr]
+            if corr_dir == direction:
+                continue
+
         found = detect_setup(df, jj, direction, depth_range=DEPTH_RANGE)
         if found is None:
             continue
