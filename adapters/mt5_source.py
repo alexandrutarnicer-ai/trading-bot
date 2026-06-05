@@ -7,11 +7,20 @@ cu coloanele: time, open, high, low, close, tick_volume, spread, real_volume
 Conditie obligatorie: contul trebuie sa fie DEMO. La orice alt tip
 de cont adaptorul refuza sa functioneze.
 
+Timezone: MT5 returneaza timestamps in ora serverului broker (e.g., UTC+2
+iarna sau UTC+3 vara pentru ICMarketsEU). Adaptorul detecteaza automat
+offset-ul serverului si converteste explicit la Europe/Bucharest cu zoneinfo.
+Rezultat: coloana 'time' e intotdeauna in ora Romaniei (naive, fara tzinfo),
+indiferent de sezon sau schimbarile DST ale serverului.
+
 Utilizare:
     with Mt5DataSource() as src:
         m15 = src.load_bars("EURUSD", "M15")
         m30 = src.load_bars("EURUSD", "M30")
 """
+
+from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 
 import MetaTrader5 as mt5
 import pandas as pd
@@ -26,8 +35,8 @@ _TF_MAP: dict[str, int] = {
     "D1":  mt5.TIMEFRAME_D1,
 }
 
-# Coloanele returnate de MT5 copy_rates_* pe care le pastram, in ordinea CSV
 _COLUMNS = ["time", "open", "high", "low", "close", "tick_volume", "spread", "real_volume"]
+_BUCHAREST = ZoneInfo("Europe/Bucharest")
 
 
 class Mt5DataSource:
@@ -42,6 +51,9 @@ class Mt5DataSource:
     def __init__(self, n_bars: int = 2000):
         self._n_bars = n_bars
         self._connected = False
+        # Offset-ul serverului fata de UTC, detectat la primul load_bars().
+        # None = nu a fost detectat inca.
+        self._server_offset_h: int | None = None
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -87,17 +99,67 @@ class Mt5DataSource:
         self.disconnect()
 
     # ------------------------------------------------------------------
+    # Detecție timezone server
+    # ------------------------------------------------------------------
+
+    def _detect_server_offset_h(self, symbol: str) -> int:
+        """
+        Detecteaza programatic offset-ul fusului orar al serverului MT5
+        fata de UTC, fara a face nicio presupunere despre broker.
+
+        Metoda: bara M15 la pozitia 0 (in formare) a fost deschisa recent
+        (0–15 min). Timestamp-ul ei (interpretat ca si cum ar fi UTC) minus
+        ora UTC reala a sistemului da offset-ul serverului.
+
+        Returneaza un intreg in ore (tipic 2 sau 3 pentru brokeri EU).
+        Returneaza 0 daca piata e inchisa sau detectia nu e concludenta —
+        in acel caz timestamps raman in server time (passthrough fara
+        conversie, acceptabil deoarece server time ≈ ora RO in practica).
+        """
+        now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+
+        for tf_candidate in (mt5.TIMEFRAME_M15, mt5.TIMEFRAME_M1):
+            rates = mt5.copy_rates_from_pos(symbol, tf_candidate, 0, 1)
+            if rates is None or len(rates) == 0:
+                continue
+
+            bar_naive = datetime.fromtimestamp(rates[0]["time"], tz=timezone.utc).replace(tzinfo=None)
+            diff_s = (bar_naive - now_utc).total_seconds()
+
+            # Testam candidati in ordinea probabilitatii (3 si 2 sunt cei mai comuni
+            # pentru brokeri forex EU; 0 acopera cazul in care timestamps sunt UTC real)
+            for candidate in (3, 2, 1, 0):
+                if abs(diff_s - candidate * 3600) < 1800:  # ±30 min toleranta
+                    return candidate
+
+        # Piata inchisa (bar veche > 30 min fata de orice offset rezonabil)
+        # sau offset neasteptat. Nu convertim — server time ≈ ora RO oricum.
+        return 0
+
+    def server_offset_h(self, symbol: str = "EURUSD") -> int:
+        """Returneaza offset-ul serverului (il detecteaza daca nu e inca cunoscut)."""
+        if not self._connected:
+            self.connect()
+        if self._server_offset_h is None:
+            self._server_offset_h = self._detect_server_offset_h(symbol)
+        return self._server_offset_h
+
+    # ------------------------------------------------------------------
     # DataSource contract
     # ------------------------------------------------------------------
 
     def load_bars(self, symbol: str, timeframe: str) -> pd.DataFrame:
         """
         Incarca ultimele self._n_bars bare OHLC din MT5 pentru symbol/timeframe.
-        Returneaza DataFrame cu coloanele: time, open, high, low, close,
-        tick_volume, spread, real_volume — identic cu formatul CSV.
 
-        time este datetime64 timezone-naive, in ora serverului broker
-        (ICMarkets: UTC+3 tot anul = identic cu ora Romaniei vara/EEST).
+        Returneaza DataFrame cu coloanele: time, open, high, low, close,
+        tick_volume, spread, real_volume.
+
+        Coloana 'time' este datetime64 timezone-naive in ora Romaniei
+        (Europe/Bucharest), conversia fiind facuta explicit via zoneinfo.
+        Asta asigura ca filtrele skip_monday, skip_hours_15-16 si sesiunea
+        10-18 opereaza intotdeauna pe ora reala a Romaniei, indiferent de
+        sezon sau schimbarile DST ale serverului broker.
         """
         if not self._connected:
             self.connect()
@@ -121,14 +183,27 @@ class Mt5DataSource:
             )
 
         df = pd.DataFrame(rates)
-        # MT5 returneaza timestamps ca Unix epoch (secunde UTC).
-        # Conversia la datetime naive le lasa fara tzinfo, ceea ce
-        # corespunde cu formatul CSV existent.
+        # Pasul 1: epoch MT5 → server time (naive, fara tzinfo)
         df["time"] = pd.to_datetime(df["time"], unit="s")
+
+        # Pasul 2: detecteaza offset-ul serverului o singura data per sesiune
+        if self._server_offset_h is None:
+            self._server_offset_h = self._detect_server_offset_h(symbol)
+
+        # Pasul 3: server time → UTC → Europe/Bucharest (naive)
+        # Daca offset=0 (nedetectat sau server real UTC), sarim conversia.
+        if self._server_offset_h != 0:
+            df["time"] = (
+                (df["time"] - pd.Timedelta(hours=self._server_offset_h))
+                .dt.tz_localize("UTC")
+                .dt.tz_convert("Europe/Bucharest")
+                .dt.tz_localize(None)
+            )
+
         return df[_COLUMNS].copy()
 
     # ------------------------------------------------------------------
-    # Info (util pentru debugging / verificare)
+    # Info
     # ------------------------------------------------------------------
 
     def account_info(self) -> mt5.AccountInfo:

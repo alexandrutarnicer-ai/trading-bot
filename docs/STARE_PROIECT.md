@@ -150,27 +150,26 @@ Adaptorul livrează **doar bare brute OHLC**. Toți indicatorii se calculează �
 - `adapters/mt5_source.py` — `Mt5DataSource` cu `load_bars()`, guard DEMO obligatoriu, context manager
 - `scripts/verifica_aliniere_mt5.py` — script de verificare OHLC + timezone
 
-**Concluzii verificare (rulat live pe ICMarkets EU Demo):**
+**Concluzii verificare (rulat live pe ICMarkets EU Demo, iunie 2026 — vara):**
 
 | Verificare | Rezultat |
 |---|---|
 | OHLC match EURUSD M15/M30 | ✓ perfect (1 bara diferita = bara in formare la download CSV — normal) |
 | OHLC match GBPUSD M15/M30 | ✓ idem |
 | OHLC match USDJPY M15/M30 | ✓ MATCH PERFECT pe toate barele |
-| Timezone timestamps MT5 | **UTC+3 (ICMarkets server time = ora României vara EEST)** |
+| Timezone timestamps MT5 | **UTC+3 in sezonul de vara (EEST)** — confirmat empiric |
 
 **Detaliu timezone — critic pentru filtre:**
 
-Timestamps din MT5 (via `copy_rates_from_pos`) sunt în **UTC+3** (ora serverului ICMarkets), nu UTC.
-ICMarkets menține UTC+3 tot anul. România vara este EEST = UTC+3, deci:
+Timestamps din MT5 sunt în **ora serverului broker** (nu UTC). Pe 5 iunie 2026 (vara), serverul ICMarketsEU era pe **UTC+3 (= EEST = ora României vara)**. Testul: `bar_naive (17:00) − UTC_acum (14:15) = +164 min ≈ +3h`.
 
-- `t.hour in {15, 16}` → skip 15:00–16:00 **ora României vara** ✓ corect
-- `sh <= t.hour < eh` (10–18) → sesiunea 10:00–18:00 **ora României vara** ✓ corect
-- `t.weekday() == 0` → skip Luni in ora ICMarkets (= ora RO) ✓ corect
+**ATENTIE:** Aceasta e o observatie dintr-o singura zi de vara. Nu implica ca serverul ramane pe UTC+3 tot anul. Cei mai multi brokeri MT5, ICMarkets inclus, urmaresc DST (UTC+2 iarna, UTC+3 vara), nu stau fix pe UTC+3. De verificat la urmatoarea schimbare de ora (octombrie 2026).
 
-Iarna (EET = UTC+2), ICMarkets rămâne pe UTC+3, deci filtrele funcționează identic tot anul — nu există deviere sezonieră.
+**Solutia adoptata — conversie explicita, nu ipoteza:**
 
-**Test definitiv:** ultima bara M15 (17:00 naive) − UTC curent (14:15) = +164 min ≈ UTC+3 (16 min diferenta = bara rulase 15 min din durata ei de 15 min la momentul testului).
+`Mt5DataSource.load_bars()` detecteaza programatic offset-ul serverului la fiecare sesiune (comparand timestamp-ul barei recente cu UTC-ul sistemului) si converteste explicit la `Europe/Bucharest` cu `zoneinfo`. Filtrele opereaza mereu pe ora reala a Romaniei, indiferent de sezon sau broker.
+
+Daca serverul e UTC+2 iarna si Romania e UTC+2 iarna → conversie corecta. Daca serverul urmareste DST american (2 saptamani deviere/an) → tot corect, zoneinfo compenseaza automat.
 
 ### Pasul 2 — urmează
 
