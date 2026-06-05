@@ -224,6 +224,12 @@ def _print_cycle(cycle_utc: datetime, results: list[dict]) -> None:
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
+    # Forteaza UTF-8 pe stdout/stderr (necesar pe Windows cu terminal cp1252)
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
     with open(CONFIG_PATH, encoding="utf-8") as f:
         cfg = json.load(f)
 
@@ -238,7 +244,7 @@ def main():
     fh, writer, log_path = _open_log(start_dt)
 
     print("=" * 62)
-    print("  live_runner.py  —  mod OBSERVE (ZERO executie)")
+    print("  live_runner.py  --  mod OBSERVE (ZERO executie)")
     print(f"  Login:   {acc.login}  |  Server: {acc.server}  |  DEMO OK")
     print(f"  Balanta: {acc.balance} {acc.currency}")
     print(f"  Offset server: UTC+{src.server_offset_h()}")
@@ -252,7 +258,7 @@ def main():
         while True:
             wait_s = _seconds_to_next_m15() + CYCLE_BUFFER
             wake_utc = datetime.now(timezone.utc) + timedelta(seconds=wait_s)
-            print(f"\n  Dorm {wait_s:.0f}s → ciclu la {wake_utc.strftime('%H:%M:%S')} UTC ...",
+            print(f"\n  Dorm {wait_s:.0f}s -> ciclu la {wake_utc.strftime('%H:%M:%S')} UTC ...",
                   end="", flush=True)
             time.sleep(wait_s)
             print(" activ.")
@@ -269,7 +275,7 @@ def main():
                 try:
                     data[symbol] = prepare_symbol(src, symbol, cfg)
                 except Exception as e:
-                    print(f"  [!] {symbol}: prepare_symbol eroare — {e}")
+                    print(f"  [!] {symbol}: prepare_symbol eroare - {e}")
 
             # Cursul USDJPY pentru pip_value_usd pe cross-uri cu JPY
             uj = data.get("USDJPY")
