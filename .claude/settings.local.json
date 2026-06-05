@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python portfolio_backtest.py)",
+      "Bash(python backtest.py)"
+    ]
+  }
+}
