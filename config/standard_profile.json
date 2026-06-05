@@ -1,0 +1,32 @@
+{
+  "profile_name": "standard",
+  "symbols": ["EURUSD", "GBPUSD", "USDJPY"],
+  "account": {
+    "starting_balance": 200,
+    "risk_per_trade_pct": 1.0,
+    "risk_per_trade_pct_all_criteria": 1.2,
+    "min_lot": 0.01
+  },
+  "session": {
+    "timezone": "Europe/Bucharest",
+    "start_hour": 10,
+    "end_hour": 18,
+    "friday_force_close_hour": 20
+  },
+  "timeframes": { "trend": "M30", "entry": "M15" },
+  "trend_filter": { "ema_trend_period": 200 },
+  "structure": { "swing_lookback_N": 3, "confirm_after_second_swing": true },
+  "entry_confirmation": {
+    "type": "close_above_pullback_high",
+    "alternatives": ["close_above_ema8"]
+  },
+  "stop_loss": { "place_beyond_pullback_swing": true, "extra_buffer_points": 0 },
+  "reward_ladder": { "rr_if_3_criteria": 2.3, "rr_if_4_criteria": 3.3, "rr_if_5_criteria": 4.3 },
+  "optional_criteria": {
+    "rsi": { "enabled": true, "period": 14, "buy_min": 40, "buy_max": 65, "sell_min": 35, "sell_max": 50 },
+    "ema_alignment": { "enabled": true, "periods": [8, 20, 50] }
+  },
+  "risk_management": { "max_trades_per_day": 10, "max_consecutive_losses": 4 },
+  "news_filter": { "enabled": true, "pause_minutes_before": 30, "pause_minutes_after": 30 },
+  "costs": { "commission_per_lot_round_turn_usd": 7.0 }
+}
