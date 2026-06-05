@@ -21,7 +21,7 @@
     "alternatives": ["close_above_ema8"]
   },
   "stop_loss": { "place_beyond_pullback_swing": true, "extra_buffer_points": 0 },
-  "reward_ladder": { "rr_if_3_criteria": 2.3, "rr_if_4_criteria": 3.3, "rr_if_5_criteria": 4.3 },
+  "reward_ladder": { "rr_if_3_criteria": 2.5, "rr_if_4_criteria": 3.5, "rr_if_5_criteria": 4.5 },
   "optional_criteria": {
     "rsi": { "enabled": true, "period": 14, "buy_min": 40, "buy_max": 65, "sell_min": 35, "sell_max": 50 },
     "ema_alignment": { "enabled": true, "periods": [8, 20, 50] }
