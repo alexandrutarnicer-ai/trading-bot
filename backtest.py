@@ -1,8 +1,9 @@
 """
 Motor de backtest v1 - strategie pullback in trend (buy/sell stop)
 ==================================================================
-Entry-point pentru backtestul single-symbol. Incarca CSV-urile, ruleaza
-motorul din engine/single.py si afiseaza statisticile.
+Entry-point pentru backtestul single-symbol.
+Foloseste CsvDataSource + strategy.preparation pentru a pregati datele,
+apoi deleaga simularea la engine/single.py.
 
 Cerinte:  pip install pandas numpy
 Rulare:   python backtest.py
@@ -13,11 +14,11 @@ import json
 import numpy as np
 import pandas as pd
 
-from strategy.indicators import ema, rsi, atr
-from strategy.structure import mark_swings
+from adapters.csv_source import CsvDataSource
+from strategy.preparation import prepare_symbol
 from engine.single import run_symbol
 
-# ---- cai (relative la radacina proiectului) -------------------------------
+# ---- cai -------------------------------------------------------------------
 _HERE = os.path.dirname(os.path.abspath(__file__))
 if os.path.isdir(os.path.join(_HERE, "config")):
     ROOT = _HERE
@@ -28,45 +29,23 @@ else:
 CONFIG   = os.path.join(ROOT, "config", "standard_profile.json")
 DATA_DIR = os.path.join(ROOT, "data")
 
-# ---- parametri de cost ----------------------------------------------------
-SPREAD_PIPS = {"EURUSD": 0.5, "GBPUSD": 0.8}
-PIP_VALUE_PER_LOT_USD = 10.0                   # pt perechi cotate in USD, 1 lot
-SYMBOLS_V1 = ["EURUSD", "GBPUSD"]
+# ---- parametri de cost -----------------------------------------------------
+SPREAD_PIPS           = {"EURUSD": 0.5, "GBPUSD": 0.8}
+PIP_VALUE_PER_LOT_USD = 10.0
+SYMBOLS_V1            = ["EURUSD", "GBPUSD"]
 
 
-# ---- incarcare + pregatire date (va deveni CsvDataSource in Pas 3) --------
-def load_symbol(symbol, cfg):
-    m15 = pd.read_csv(os.path.join(DATA_DIR, f"{symbol}_M15.csv"), parse_dates=["time"])
-    m30 = pd.read_csv(os.path.join(DATA_DIR, f"{symbol}_M30.csv"), parse_dates=["time"])
-
-    m30["ema_trend"] = ema(m30["close"], cfg["trend_filter"]["ema_trend_period"])
-    m30["trend"] = np.where(m30["close"] > m30["ema_trend"], 1,
-                    np.where(m30["close"] < m30["ema_trend"], -1, 0))
-
-    per = cfg["optional_criteria"]["ema_alignment"]["periods"]
-    m15["ema_fast"] = ema(m15["close"], per[0])
-    m15["ema_mid"]  = ema(m15["close"], per[1])
-    m15["ema_slow"] = ema(m15["close"], per[2])
-    m15["rsi"]      = rsi(m15["close"], cfg["optional_criteria"]["rsi"]["period"])
-    m15["atr"]      = atr(m15, 14)
-    m15 = mark_swings(m15, cfg["structure"]["swing_lookback_N"])
-
-    m15 = pd.merge_asof(m15.sort_values("time"),
-                        m30[["time", "trend"]].sort_values("time"),
-                        on="time", direction="backward")
-    return m15.reset_index(drop=True)
-
-
-# ---- backtest single-symbol: incarca + ruleaza motor + afiseaza -----------
+# ---- backtest single-symbol ------------------------------------------------
 def backtest_symbol(symbol, cfg):
-    df = load_symbol(symbol, cfg)
+    source = CsvDataSource(DATA_DIR)
+    df = prepare_symbol(source, symbol, cfg)
     trades, equity_curve, equity_timeline, setups = run_symbol(
         df, symbol, cfg, SPREAD_PIPS, PIP_VALUE_PER_LOT_USD
     )
     summarize(symbol, trades, equity_curve, equity_timeline, setups)
 
 
-# ---- statistici + salvare CSV ---------------------------------------------
+# ---- statistici + salvare CSV ----------------------------------------------
 def summarize(symbol, trades, equity, equity_timeline, setups):
     if not trades:
         print(f"\n=== {symbol} ===")

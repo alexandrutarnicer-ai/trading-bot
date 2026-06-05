@@ -2,7 +2,8 @@
 Motor de backtest DE PORTOFOLIU
 ================================
 Entry-point pentru backtestul multi-symbol pe cont comun.
-Incarca datele, construieste params si deleaga simularea la engine/portfolio.py.
+Foloseste CsvDataSource + strategy.preparation pentru a pregati datele,
+apoi deleaga simularea la engine/portfolio.py.
 
 Cerinte:  pip install pandas numpy
 Rulare:   python portfolio_backtest.py
@@ -13,25 +14,27 @@ import json
 import numpy as np
 import pandas as pd
 
-from backtest import load_symbol, CONFIG, DATA_DIR
+from backtest import CONFIG, DATA_DIR
+from adapters.csv_source import CsvDataSource
+from strategy.preparation import prepare_symbol
 from engine.portfolio import run_portfolio
 
 # ---- parametri portofoliu --------------------------------------------------
-SYMBOLS    = ["EURUSD", "GBPUSD", "USDJPY"]
-SPREAD_PIPS = {"EURUSD": 0.5, "GBPUSD": 0.8, "USDJPY": 0.7}
-START_BALANCE = 1000
-LEVERAGE   = 30
-EXPIRE_BARS = 4
-DEPTH_RANGE  = None
-PULLBACK_WINDOW = 8
-SKIP_MONDAY  = True
-SKIP_HOURS   = (15, 16)
-ATR_MAX_PIPS = {"EURUSD": 7.5}
+SYMBOLS               = ["EURUSD", "GBPUSD", "USDJPY"]
+SPREAD_PIPS           = {"EURUSD": 0.5, "GBPUSD": 0.8, "USDJPY": 0.7}
+START_BALANCE         = 1000
+LEVERAGE              = 30
+EXPIRE_BARS           = 4
+DEPTH_RANGE           = None
+PULLBACK_WINDOW       = 8
+SKIP_MONDAY           = True
+SKIP_HOURS            = (15, 16)
+ATR_MAX_PIPS          = {"EURUSD": 7.5}
 MAX_DAY_CONSEC_LOSSES = 3
-CORR_PAIRS   = {"EURUSD": "GBPUSD", "GBPUSD": "EURUSD"}
+CORR_PAIRS            = {"EURUSD": "GBPUSD", "GBPUSD": "EURUSD"}
 
 
-# ---- statistici + salvare CSV ---------------------------------------------
+# ---- statistici + salvare CSV ----------------------------------------------
 def summarize(trades, equity, balance, max_concurrent, skipped_margin, split_time):
     if not trades:
         print("\nNicio tranzactie.")
@@ -85,10 +88,11 @@ def main():
         cfg = json.load(f)
     print(f"Backtest de portofoliu | balanta simulata {START_BALANCE} USD | levier 1:{LEVERAGE}")
 
+    source = CsvDataSource(DATA_DIR)
     data = {}
     for s in SYMBOLS:
         try:
-            data[s] = load_symbol(s, cfg)
+            data[s] = prepare_symbol(source, s, cfg)
             print(f"  {s}: {len(data[s])} bare M15")
         except FileNotFoundError:
             print(f"  {s}: LIPSESC datele (M15/M30) - sare peste")
