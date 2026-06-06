@@ -23,7 +23,7 @@ if not mt5.initialize():
 DATA_DIR = "data"
 os.makedirs(DATA_DIR, exist_ok=True)
 
-simboluri = ["EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD"]
+simboluri = ["EURUSD", "GBPUSD", "USDJPY", "AUDJPY", "CADJPY", "NZDJPY", "CHFJPY"]
 
 # (timeframe, cate bare). M15 are nevoie de multe bare pt cativa ani.
 timeframes = {
