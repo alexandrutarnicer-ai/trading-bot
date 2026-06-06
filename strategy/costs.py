@@ -34,6 +34,8 @@ def pip_value_usd(symbol, price, usdjpy_rate=None):
     # cross fara USD (ex: GBPJPY) -> convertim cotatia in USD
     if quote == "JPY" and usdjpy_rate:
         return val_in_quote / usdjpy_rate  # JPY -> USD prin cursul USDJPY
+    if quote in BASE_USD_APROX:
+        return val_in_quote * BASE_USD_APROX[quote]  # ex: EURGBP (GBP->USD)
     return val_in_quote / price            # fallback aproximativ
 
 
