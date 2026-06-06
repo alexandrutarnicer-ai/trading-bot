@@ -1,7 +1,7 @@
 # Stare Proiect — Trading Bot Pullback-in-Trend
 
 **Ultima actualizare:** 2026-06-05  
-**Faza curentă:** Faza 1, Pasul 1 complet ✓ — Mt5DataSource implementat + timezone confirmat
+**Faza curentă:** Faza 1, Pasul 2 complet ✓ — live_runner.py rulează în OBSERVE pe demo MT5
 
 ---
 
@@ -66,21 +66,22 @@ Bot de trading forex care rulează o strategie de tip **pullback-in-trend** pe u
 
 ---
 
-## 4. Arhitectura curentă (Faza 0 completă)
+## 4. Arhitectura curentă (Faza 1 Pasul 2 completă)
 
 ```
 trading-bot/
-├── backtest.py                  # entry-point single-symbol
-├── portfolio_backtest.py        # entry-point multi-symbol / cont comun
+├── backtest.py                  # entry-point single-symbol (backtest)
+├── portfolio_backtest.py        # entry-point multi-symbol / cont comun (backtest)
+├── live_runner.py               # entry-point live demo MT5 — mod OBSERVE ✓ (Faza 1)
 │
-├── strategy/                    # logica pura, fara I/O
+├── strategy/                    # logica pura, fara I/O — NESCHIMBATA
 │   ├── indicators.py            # ema(), rsi(), atr()
 │   ├── structure.py             # mark_swings(), detect_setup()
 │   ├── signals.py               # pip_size(), count_optional(), reward_R()
 │   ├── costs.py                 # swap_cost(), pip_value_usd(), notional_usd()
 │   └── preparation.py          # prepare_symbol() — indicatori calculati o singura data
 │
-├── engine/                      # simulare pura, fara I/O
+├── engine/                      # simulare pura, fara I/O — NESCHIMBATA
 │   ├── simulator.py             # simulate_trade() — walk-forward bar cu bar
 │   ├── single.py                # run_symbol() — loop single-symbol
 │   └── portfolio.py             # run_portfolio() — loop portofoliu, margin, corr, CB
@@ -90,16 +91,20 @@ trading-bot/
 │
 ├── adapters/
 │   ├── csv_source.py            # CsvDataSource — backtest din CSV
-│   └── mt5_source.py           # Mt5DataSource — stub pentru live (Faza 1)
+│   └── mt5_source.py           # Mt5DataSource — live MT5, DEMO guard, conv. Europe/Bucharest
 │
 ├── config/
 │   └── standard_profile.json   # profil validat (nu modifica fara test de regresie)
 │
-├── data/                        # CSV-uri OHLC + CSV-uri trades/equity output
+├── data/
+│   ├── EURUSD_M15.csv etc.      # CSV-uri OHLC (2024-01 pana 2026-06)
+│   ├── portfolio_trades.csv     # output backtest
+│   └── live_signals/            # log CSV ciclu cu ciclu din live_runner.py
 │
 └── scripts/
     ├── descarca_date_istorice.py
-    └── test_conexiune_mt5.py
+    ├── test_conexiune_mt5.py
+    └── verifica_aliniere_mt5.py  # verifica OHLC + timezone MT5 vs CSV
 ```
 
 ### Principiul arhitectural cheie
@@ -171,9 +176,35 @@ Timestamps din MT5 sunt în **ora serverului broker** (nu UTC). Pe 5 iunie 2026 
 
 Daca serverul e UTC+2 iarna si Romania e UTC+2 iarna → conversie corecta. Daca serverul urmareste DST american (2 saptamani deviere/an) → tot corect, zoneinfo compenseaza automat.
 
-### Pasul 2 — urmează
+### Pasul 2 — COMPLET ✓ (2026-06-05)
 
-Scrie `live_runner.py`: `Mt5DataSource` + `prepare_symbol` + bucla de semnale fara executie (doar log setup-uri detectate).
+**Implementat:** `live_runner.py` — bucla M15 live, mod OBSERVE, zero execuție.
+
+**Design:**
+- Se trezește la fiecare închidere M15 (`:00/:15/:30/:45`) + 5s buffer
+- Scanează `df.iloc[-2]` = ultima bară **închisă** (`pos=1` MT5), niciodată bara în formare
+- Refolosește exact `prepare_symbol → detect_setup → count_optional → reward_R` — zero logică copiată
+- Aritmetica `entry/sl/tp/lots` identică cu `engine/portfolio.py:178–198`
+- Filtre identice cu backtestul: `skip_monday`, `skip_hours(15,16)`, sesiune `10–18`, ATR cap, `pullback_window=8`
+- Corelație EURUSD/GBPUSD: notată în log ca `corr_note` (nu blochează în OBSERVE)
+- Log CSV structurat în `data/live_signals/` cu câmpurile: `cycle_time, bar_time, symbol, in_session, skip_reason, setup, direction, entry, sl, tp, lots, R, n_opt, atr_pips, corr_note`
+- Placeholder `# FAZA 2: aici se va apela broker API` marcat în cod
+- Zero ordine, zero persistență SQLite
+
+**Verificare live (ICMarkets EU Demo, 5 iunie 2026, 15:30 UTC):**
+```
+[2026-06-05 15:30:04 UTC] Ciclu M15:
+  EURUSD ---   bara=18:15  (out_of_session)
+  GBPUSD ---   bara=18:15  (out_of_session)
+  USDJPY ---   bara=18:15  (out_of_session)
+```
+- `bara=18:15` = ora României ✓ (conversia UTC+3 funcționează)
+- `out_of_session` corect — sesiunea se termină la 18:00 ora României ✓
+- Timing: ciclu la 15:30:04 UTC = +4s după marginea M15 ✓
+
+### Pasul 3 — urmează
+
+Script de comparație semnale live vs backtest pe bare comune (la nivel de detecție setup, nu tranzacții). Scopul: confirmare că `live_runner.py` detectează exact ce ar fi detectat backtestul pe aceleași bare.
 
 **Ce NU trebuie modificat:**
 - `strategy/` — zero modificări
@@ -190,9 +221,17 @@ python backtest.py
 
 # Backtest portofoliu (EURUSD + GBPUSD + USDJPY)
 python portfolio_backtest.py
+
+# Live demo MT5 — mod OBSERVE (MT5 desktop deschis si logat pe DEMO)
+python live_runner.py
+# Oprire: Ctrl+C
+# Log ciclu cu ciclu in: data/live_signals/signals_YYYYMMDD_HHMMSS.csv
+
+# Verificare aliniere MT5 vs CSV + detectie timezone
+python scripts/verifica_aliniere_mt5.py
 ```
 
-Output-ul se salvează în `data/`: `trades_EURUSD.csv`, `portfolio_trades.csv`, `portfolio_equity.csv` etc.
+Output backtest în `data/`: `trades_EURUSD.csv`, `portfolio_trades.csv`, `portfolio_equity.csv` etc.
 
 ---
 
