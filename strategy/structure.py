@@ -19,7 +19,7 @@ def mark_swings(df, N):
     return df
 
 
-def detect_setup(df, j, direction, window=8, depth_range=None):
+def detect_setup(df, j, direction, window=8, depth_range=None, swing_n=3):
     """
     Setup STRICT de pullback in trend, la bara de confirmare j.
     Bullish: al 2-lea HH crescator -> pullback la un HL nou (ultima structura,
@@ -29,10 +29,15 @@ def detect_setup(df, j, direction, window=8, depth_range=None):
       - recent: la cel mult `window` bare in urma fata de j
       - "prima inchidere" peste/sub nivel (nu re-declanseaza pe fiecare bara)
 
+    swing_n: marimea ferestrei din mark_swings (default 3, din config).
+    Un swing la pozitia k este utilizabil la bara j DOAR daca k + swing_n <= j
+    (fereastra lui de confirmare s-a incheiat la/inainte de j, fara lookahead).
+    Fereastra de cautare devine df.iloc[a : j - swing_n + 1].
+
     Returneaza (extremul_pullback, adancime) sau None.
     """
     a = max(0, j - 150)
-    look = df.iloc[a:j]
+    look = df.iloc[a : j - swing_n + 1]
     sh = look.index[look["swing_high"]].tolist()   # pozitii swing high
     sl = look.index[look["swing_low"]].tolist()     # pozitii swing low
     if len(sh) < 2 or len(sl) < 2:
