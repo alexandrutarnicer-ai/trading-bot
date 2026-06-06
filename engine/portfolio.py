@@ -25,6 +25,8 @@ def run_portfolio(data, cfg, params):
     atr_max_pips       = params["atr_max_pips"]
     max_day_consec_losses = params["max_day_consec_losses"]
     corr_pairs         = params["corr_pairs"]
+    max_pos_per_symbol      = params.get("max_pos_per_symbol", 1)
+    min_bars_between_symbol = params.get("min_bars_between_same_symbol", 0)
 
     rp_base = cfg["account"]["risk_per_trade_pct"] / 100.0
     rp_all  = cfg["account"].get("risk_per_trade_pct_all_criteria",
@@ -58,14 +60,18 @@ def run_portfolio(data, cfg, params):
     equity     = [{"time": events[0][0], "balance": balance}]
     trades     = []
 
-    pending     = {s: None  for s in data}
-    busy_until  = {s: -1    for s in data}
-    day_state   = {s: None  for s in data}
+    # pendings[s]: lista de ordine pending (pana la max_pos_per_symbol per simbol)
+    # active_count[s]: nr de pozitii active (triggerate, neincheiate) per simbol
+    # open_trades: (exit_time, symbol, pnl_usd, margin_reserved)
+    pendings         = {s: []   for s in data}
+    active_count     = {s: 0    for s in data}
+    last_trigger_j   = {s: -9999 for s in data}
+    day_state    = {s: None for s in data}
     trades_today = {s: 0    for s in data}
-    consec      = {s: 0     for s in data}
-    open_margin = {s: 0.0   for s in data}
-    active_dir  = {s: None  for s in data}
-    open_trades = []
+    consec       = {s: 0    for s in data}
+    open_margin  = {s: 0.0  for s in data}
+    active_dir   = {s: None for s in data}
+    open_trades  = []
 
     open_now       = 0
     max_concurrent = 0
@@ -81,9 +87,10 @@ def run_portfolio(data, cfg, params):
         if t.date() != gday:
             gday = t.date(); gconsec = 0; ghalt = False
 
+        # --- inchide tranzactii expirate ---
         if open_trades:
             still = []
-            for (xt, xs, pnl) in open_trades:
+            for (xt, xs, pnl, marg) in open_trades:
                 if xt <= t:
                     balance += pnl
                     equity.append({"time": xt, "balance": round(balance, 2)})
@@ -91,34 +98,35 @@ def run_portfolio(data, cfg, params):
                     gconsec     = gconsec + 1 if pnl < 0 else 0
                     if gconsec >= max_day_consec_losses and not ghalt:
                         ghalt = True; halted_days += 1
-                    open_margin[xs] = 0.0
-                    active_dir[xs]  = None
+                    active_count[xs] -= 1
+                    open_margin[xs]   = max(0.0, open_margin[xs] - marg)
+                    if active_count[xs] <= 0:
+                        active_count[xs] = 0
+                        active_dir[xs]   = None
                     open_now -= 1
                 else:
-                    still.append((xt, xs, pnl))
+                    still.append((xt, xs, pnl, marg))
             open_trades = still
 
         df  = data[s]
         row = df.iloc[jj]
-
-        if day_state[s] != t.date():
-            day_state[s]   = t.date()
-            trades_today[s] = 0
-            consec[s]      = 0
-            pending[s]     = None
-
-        if jj <= busy_until[s]:
-            continue
-
         pip = pip_size(s)
 
-        if pending[s] is not None:
-            p = pending[s]; d = p["dir"]
+        if day_state[s] != t.date():
+            day_state[s]    = t.date()
+            trades_today[s] = 0
+            consec[s]       = 0
+            pendings[s]     = []
+
+        # --- proceseaza toate ordinele pending pentru acest simbol ---
+        remaining = []
+        for p in pendings[s]:
+            d = p["dir"]
             if (d == 1 and row["low"] < p["invalidate"]) or \
                (d == -1 and row["high"] > p["invalidate"]):
-                pending[s] = None
+                pass  # invalidat, se elimina
             elif jj - p["armed_at"] > expire_bars:
-                pending[s] = None
+                pass  # expirat, se elimina
             else:
                 trig = (d == 1 and row["high"] >= p["entry"]) or \
                        (d == -1 and row["low"]  <= p["entry"])
@@ -127,25 +135,38 @@ def run_portfolio(data, cfg, params):
                     used   = sum(open_margin.values())
                     if balance - used < margin:
                         skipped_margin += 1
-                        pending[s] = None
-                        continue
-                    pv  = p["pv"]
-                    spr = spread_pips.get(s, 1.0) * pip
-                    res = simulate_trade(df, jj, p, spr, pip, pv, comm, s)
-                    sc  = swap_cost(s, res["time"], res["exit_time"], p["lots"])
-                    res["swap"]     = round(sc, 3)
-                    res["pnl_usd"]  = round(res["pnl_usd"] - sc, 2)
-                    res["atr_pips"] = p["atr_pips"]
-                    open_trades.append((pd.Timestamp(res["exit_time"]), s, res["pnl_usd"]))
-                    open_margin[s]  = margin
-                    active_dir[s]   = d
-                    busy_until[s]   = res["exit_j"]
-                    trades_today[s] += 1
-                    trades.append(res)
-                    open_now += 1
-                    max_concurrent = max(max_concurrent, open_now)
-                    pending[s] = None
+                        # fonduri insuficiente — ordinul se elimina
+                    else:
+                        pv  = p["pv"]
+                        spr = spread_pips.get(s, 1.0) * pip
+                        res = simulate_trade(df, jj, p, spr, pip, pv, comm, s)
+                        sc  = swap_cost(s, res["time"], res["exit_time"], p["lots"])
+                        res["swap"]     = round(sc, 3)
+                        res["pnl_usd"]  = round(res["pnl_usd"] - sc, 2)
+                        res["atr_pips"] = p["atr_pips"]
+                        open_trades.append((pd.Timestamp(res["exit_time"]), s,
+                                            res["pnl_usd"], margin))
+                        open_margin[s]    += margin
+                        active_dir[s]      = d
+                        active_count[s]   += 1
+                        last_trigger_j[s]  = jj
+                        trades_today[s]   += 1
+                        trades.append(res)
+                        open_now += 1
+                        max_concurrent = max(max_concurrent, open_now)
+                        # triggerat — nu se mai pune in remaining
+                else:
+                    remaining.append(p)
+        pendings[s] = remaining
+
+        # --- verifica capacitate: arm nou doar daca suntem sub limita ---
+        if active_count[s] + len(pendings[s]) >= max_pos_per_symbol:
             continue
+
+        # --- delay intre pozitii pe ACEEASI pereche ---
+        if active_count[s] > 0 and min_bars_between_symbol > 0:
+            if jj - last_trigger_j[s] < min_bars_between_symbol:
+                continue
 
         if ghalt:
             continue
@@ -164,10 +185,12 @@ def run_portfolio(data, cfg, params):
             continue
 
         direction = int(row["trend"])
+        if params.get("only_long") and direction == -1:
+            continue
 
         corr = corr_pairs.get(s)
         if corr and corr in data:
-            corr_dir = pending[corr]["dir"] if pending[corr] is not None else active_dir[corr]
+            corr_dir = pendings[corr][0]["dir"] if pendings[corr] else active_dir[corr]
             if corr_dir == direction:
                 continue
 
@@ -198,12 +221,12 @@ def run_portfolio(data, cfg, params):
         if lots < 0.01:
             continue
 
-        pending[s] = {"dir": direction, "entry": entry, "sl": sl, "tp": tp,
-                      "lots": lots, "R": R, "invalidate": ext, "armed_at": jj,
-                      "time": t, "risk_usd": risk_usd, "pv": pv,
-                      "atr_pips": round(row["atr"] / pip, 1)}
+        pendings[s].append({"dir": direction, "entry": entry, "sl": sl, "tp": tp,
+                             "lots": lots, "R": R, "invalidate": ext, "armed_at": jj,
+                             "time": t, "risk_usd": risk_usd, "pv": pv,
+                             "atr_pips": round(row["atr"] / pip, 1)})
 
-    for (xt, xs, pnl) in open_trades:
+    for (xt, xs, pnl, marg) in open_trades:
         balance += pnl
         equity.append({"time": xt, "balance": round(balance, 2)})
 
