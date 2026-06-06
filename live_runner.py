@@ -39,7 +39,9 @@ from strategy.costs import pip_value_usd
 
 # ── Parametri (identici cu portfolio_backtest.py) ────────────────────────────
 
-SYMBOLS         = ["EURUSD", "GBPUSD", "USDJPY"]
+SYMBOLS         = ["EURUSD", "GBPUSD", "EURJPY"]   # perechi tranzactionate + loggate
+SYMBOLS_RATE    = ["USDJPY"]                        # incarcate DOAR ca rata de conversie (nu se tranzactioneaza)
+ONLY_LONG       = True                              # doar directia 1 (BUY); SELL ignorat
 SKIP_MONDAY     = True
 SKIP_HOURS      = (15, 16)
 PULLBACK_WINDOW = 8
@@ -113,6 +115,9 @@ def _scan(df: pd.DataFrame, j: int, symbol: str, cfg: dict,
         return {**base, "skip_reason": "atr_cap", "atr_pips": atr_pips}
 
     direction = int(trend)
+    if ONLY_LONG and direction == -1:
+        return {**base, "skip_reason": "only_long"}
+
     found = detect_setup(df, j, direction, window=PULLBACK_WINDOW)
     if found is None:
         return {**base, "skip_reason": "no_setup", "atr_pips": atr_pips}
@@ -277,8 +282,17 @@ def main():
                 except Exception as e:
                     print(f"  [!] {symbol}: prepare_symbol eroare - {e}")
 
-            # Cursul USDJPY pentru pip_value_usd pe cross-uri cu JPY
-            uj = data.get("USDJPY")
+            # Incarca SYMBOLS_RATE (ex: USDJPY) DOAR pentru conversie pip value —
+            # nu se tranzactioneaza, nu se logeaza, nu apar in results.
+            rate_data: dict[str, pd.DataFrame] = {}
+            for symbol in SYMBOLS_RATE:
+                try:
+                    rate_data[symbol] = prepare_symbol(src, symbol, cfg)
+                except Exception as e:
+                    print(f"  [!] {symbol} (rate): prepare_symbol eroare - {e}")
+
+            # Cursul USDJPY pentru pip_value_usd pe cross-uri cu JPY (EURJPY etc.)
+            uj = rate_data.get("USDJPY")
             usdjpy_close = float(uj["close"].iloc[-2]) if uj is not None and len(uj) >= 2 else 150.0
 
             # ── Scaneaza ultima bara INCHISA pt fiecare simbol ────────
