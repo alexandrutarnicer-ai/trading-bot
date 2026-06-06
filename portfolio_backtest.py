@@ -20,8 +20,8 @@ from strategy.preparation import prepare_symbol
 from engine.portfolio import run_portfolio
 
 # ---- parametri portofoliu --------------------------------------------------
-SYMBOLS               = ["EURUSD", "GBPUSD", "USDJPY"]
-SPREAD_PIPS           = {"EURUSD": 0.5, "GBPUSD": 0.8, "USDJPY": 0.7}
+SYMBOLS               = ["EURUSD", "GBPUSD", "EURJPY"]
+SPREAD_PIPS           = {"EURUSD": 0.5, "GBPUSD": 0.8, "EURJPY": 1.5}
 START_BALANCE         = 1000
 LEVERAGE              = 30
 EXPIRE_BARS           = 4
@@ -32,6 +32,8 @@ SKIP_HOURS            = (15, 16)
 ATR_MAX_PIPS          = {"EURUSD": 7.5}
 MAX_DAY_CONSEC_LOSSES = 3
 CORR_PAIRS            = {"EURUSD": "GBPUSD", "GBPUSD": "EURUSD"}
+ONLY_LONG             = True   # True = tranzactioneaza doar long (direction==1)
+MAX_POS_PER_SYMBOL    = 1      # max pozitii simultane per pereche (1 = comportament clasic)
 
 
 # ---- statistici + salvare CSV ----------------------------------------------
@@ -112,6 +114,8 @@ def main():
         "atr_max_pips":          ATR_MAX_PIPS,
         "max_day_consec_losses": MAX_DAY_CONSEC_LOSSES,
         "corr_pairs":            CORR_PAIRS,
+        "only_long":             ONLY_LONG,
+        "max_pos_per_symbol":    MAX_POS_PER_SYMBOL,
     }
 
     trades, equity, balance, max_concurrent, skipped_margin, halted_days, split_time = \
