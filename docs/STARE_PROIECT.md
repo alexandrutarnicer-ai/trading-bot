@@ -1,139 +1,171 @@
 # Stare Proiect — Trading Bot Pullback-in-Trend
 
-**Ultima actualizare:** 2026-06-06  
-**Faza curentă:** Faza 1, Pasul 3 complet ✓ — baseline oficial validat, live_runner aliniat, script comparatie gata
+**Ultima actualizare:** 2026-06-08  
+**Faza curentă:** Faza 2 — două sesiuni live OBSERVE pregătite și configurate
 
 ---
 
 ## 1. Scopul proiectului
 
-Bot de trading forex care rulează o strategie de tip **pullback-in-trend** pe un portofoliu de 3 perechi (EURUSD, GBPUSD, EURJPY), pe un cont comun simulat. Scopul final: același motor validat să ruleze și live pe demo MT5, fără rescriere de logică.
+Bot de trading forex care rulează o strategie de tip **pullback-in-trend** pe un portofoliu de perechi valutare, pe conturi demo MT5. Scopul final: validare forward prin OBSERVE (fără execuție reală), urmată de execuție live pe demo după confirmare statistică.
 
 ---
 
-## 2. Strategia validată (baseline oficial)
+## 2. Strategia validată
 
-| Parametru | Valoare |
-|---|---|
-| Timeframe trend | M30, EMA200 |
-| Timeframe intrare | M15, structură HH/HL |
-| Tipul ordinului | Buy Stop (ONLY_LONG=True) |
-| Fereastra pullback | 8 bare M15 (2 ore) |
-| Scara reward | 2.5R / 3.5R / 4.5R (funcție de criterii opționale) |
-| Risc per trade | 1.0% (standard) / 1.2% (toate criteriile) |
-| RSI buy range | 40–65 |
-| Spread EURUSD | 0.5 pips |
-| Spread GBPUSD | 0.8 pips |
-| Spread EURJPY | 1.5 pips |
-| Comision | 7.0 USD/lot round-turn |
-| Sesiune activă | 10:00–18:00 ora României |
-| Skip luni | Da |
-| Skip ore | 15:00–16:00 |
-| ATR cap | EURUSD 7.5 pips (validat pe train/test); EURJPY fără cap |
-| ONLY_LONG | True — doar BUY |
-| Max pozitii/pereche | 1 |
-| Filtru corelatie | EURUSD ↔ GBPUSD: nu intră simultan |
-| Circuit breaker | Stop după 3 pierderi consecutive/zi |
+### Principiu
+1. Trend detectat pe M30 cu EMA200 (bara M15 trebuie să fie deasupra/sub EMA200 pe M30)
+2. Structură HH/HL (uptrend) sau LL/LH (downtrend) cu swing-uri pe M15
+3. Setup: ultima bară de retragere în fereastra PW → entry pe Buy/Sell Stop la ieșirea din retragere
+4. Reward dinamic: 2.5R / 3.5R / 4.5R în funcție de criterii opționale (RSI, ATR, structură)
+
+### Filtre active (ambele sesiuni)
+| Filtru | Session 1 | Session 2 |
+|---|---|---|
+| Timeframe entry | M15 | M15 |
+| Timeframe trend | M30 | M30 |
+| Direcție | LONG only | BOTH |
+| Pullback window | 8 bare | 6 bare |
+| Expire setup | 4 bare M15 | 4 bare M15 |
+| Skip luni | Da | Nu |
+| Skip ore 15–16 | Da | Da (EUR) |
+| RSI buy range | 40–65 | 40–65 |
+| RSI sell range | N/A | 35–60 |
+| ATR cap EURUSD | 7.5 pips | 7.5 pips |
+| Corelație | EURUSD↔GBPUSD | EURUSD↔GBPUSD |
+| Circuit breaker | 3 pierderi/zi | 3 pierderi/zi |
+| Max pos/simbol | 1 | 1 |
 
 ---
 
-## 3. Baseline oficial (post-fix lookahead, post-optimizare)
+## 3. Cele două sesiuni live
 
-> **ATENTIE:** Numerele din versiunile anterioare ale acestui doc (Faza 0: +172.7%, 470 trades)
-> erau inflate de lookahead bias în `detect_setup`. Valorile de mai jos sunt reale.
+### Session 1 — S1-M15-LONG
+```
+Piete:     EURUSD, GBPUSD, EURJPY
+Sesiune:   10:00–18:00 EET
+Direcție:  LONG only
+Edge:      test +0.375R | 0.9 trades/sapt | DD -50.6%
+Rulare:    python live/session1_m15_long.py
+Output:    data/live_signals/session1/
+```
 
-### Portofoliu (EURUSD + GBPUSD + EURJPY, $1000 start, ONLY_LONG)
+### Session 2 — S2-M15-BOTH
+```
+Piete EUR: EURUSD, GBPUSD, EURJPY  → 10:00–18:00 EET
+Piete JPY: USDJPY, AUDJPY, NZDJPY  → 02:00–10:00 EET (Tokyo)
+Direcție:  BOTH (long + short)
+Skip luni: Nu (activată — +0.6 trades/sapt, penalizare mică)
+Edge:      test +0.142R | 3.2 trades/sapt | DD -52.9%
+Rulare:    python live/session2_m5_both.py
+Output:    data/live_signals/session2/
+```
+
+**Cele două sesiuni sunt complet independente:** capital separat, loguri separate, fără filtre de conflict între ele.
+
+---
+
+## 4. Rezultatele complete ale backtestelor
+
+### Baseline oficial Session 1 (M15 LONG, 3 piete EUR)
 
 | Metric | Valoare |
 |---|---|
-| Balanță finală | **$1,588.18** |
-| Randament total | **+58.8%** |
-| Tranzacții | **114** (W:35 / L:78) |
-| Win rate | **30.7%** |
-| Expectancy | **+0.400 R** |
-| Drawdown maxim | **−13.4%** |
-| Swap total plătit | ~84 USD |
-| Circuit breaker | 0 zile halted |
-| Max simultan | 2 (perechi diferite) |
+| Trades totale | 1096 |
+| Win Rate | 22.7% |
+| Expectancy | +0.048R |
+| **Test set (30%) Exp** | **+0.375R** |
+| Test set trades | 341 |
+| Max Drawdown | −50.6% |
+| Frecvență | 0.9/săptămână |
 
-### Train / Test split (split la 2025-09-15, 70/30 cronologic)
+### Session 2 (M15 BOTH, 6 piete, skip_mon=False)
 
-| Set | Trades | Win% | Expectancy |
+| Metric | Valoare |
+|---|---|
+| Trades totale | 1353 |
+| Win Rate | 22.2% |
+| Expectancy | +0.030R |
+| **Test set (30%) Exp** | **+0.142R** |
+| Test set trades | 435 |
+| Max Drawdown | −52.9% |
+| Frecvență | 3.2/săptămână |
+
+---
+
+## 5. Istoricul experimentelor — tot ce a fost testat
+
+### Timeframe-uri (2026-06-08)
+
+| TF | Rezultat | Concluzie |
+|---|---|---|
+| **M15 entry + M30 trend** | WR 22–40%, TestR +0.14–+0.37R | **VALIDAT — baza strategiei** |
+| M5 entry + M15 trend | WR ~16%, TestR −0.26R la −0.36R, DD −80% | **EȘUAT — excluded definitiv** |
+| M1 entry + M5 trend | WR ~16%, TestR −0.12R la −0.18R, DD −82–95% | **EȘUAT — exclus definitiv** |
+
+Concluzie: Strategia de pullback structural necesită minim M15. Sub M15, noise-ul distruge edge-ul.
+
+### ONLY_LONG vs BOTH (2026-06-08)
+
+| Config | TestR | T/wk | DD |
 |---|---|---|---|
-| TRAIN (primele 70%) | 86 | 27.9% | +0.287 R |
-| TEST (ultimele 30%) | 28 | 39.3% | +0.748 R |
+| M15 LONG PW=8, 3 EUR | +0.375R | 0.9 | −50.6% |
+| M15 BOTH PW=4, 3 EUR | +0.255R | 1.2 | −58.5% |
+| M15 BOTH PW=6, 6 piete | +0.165R | 2.6 | −51.3% |
+| M15 BOTH PW=6, 6 piete, skip_mon=F | +0.142R | 3.2 | −52.9% |
+| RSI sell_max=60 vs 50 | +0.134R vs +0.137R | identic | identic |
 
-### Per pereche
+### PULLBACK_WINDOW (M15, LONG, 3 EUR)
 
-| Simbol | Trades | Win% | Expectancy | PnL |
-|---|---|---|---|---|
-| EURUSD | 24 | 41.7% | +0.824 R | +259.9 USD |
-| GBPUSD | 28 | 28.6% | +0.372 R | +130.2 USD |
-| EURJPY | 62 | 27.4% | +0.249 R | +198.1 USD |
-
----
-
-## 4. Fix-uri critice implementate
-
-### Fix 1 — Lookahead bias în `detect_setup` (`strategy/structure.py`)
-
-**Problema:** `mark_swings` foloseşte fereastră simetrică N=3 (k-N .. k+N). La bara j,
-`detect_setup` citea swinguri la k=j-1 şi k=j-2, a căror confirmare necesita barele j+1, j+2
-(date din viitor la momentul deciziei).
-
-**Fix:** `look = df.iloc[a : j - swing_n + 1]` în loc de `df.iloc[a:j]`.
-Ultimul swing utilizabil: `k = j-3`, fereastră de confirmare `[j-6:j-1]` — exclusiv bare deja închise.
-
-**Consecinţă:** Barele j-1 şi j-2 (confirmarea lor depinde de bare viitoare) sunt excluse.
-Fix transparent pentru toţi apelantii (`engine`, `live_runner`) prin `swing_n=3` default.
-
-**Garanţie re-detectie:** Swing-urile folosite la bara j sunt determinate exclusiv de bare
-imutabile → `compare_live_vs_backtest.py` garantat 0 nepotriviri din această sursă.
-
-### Fix 2 — `pip_value_usd` pentru cross-uri cu quote non-JPY/USD (`strategy/costs.py`)
-
-**Problema:** EURGBP (quote=GBP) cădea pe fallback `val_in_quote / price` (~8% eroare).
-
-**Fix:** Dacă `quote in BASE_USD_APROX`, returnează `val_in_quote * BASE_USD_APROX[quote]`.
-EURGBP: 10 GBP × 1.27 = **$12.70/pip** (corect), în loc de 10/0.86 = $11.63.
-
----
-
-## 5. Experimente efectuate și concluzii
-
-### Sesiunea de optimizare portofoliu (2026-06-06)
-
-| Experiment | Rezultat | Decizie |
+| PW | TestR | T/wk |
 |---|---|---|
-| **USDJPY în portofoliu** | TRAIN +0.057R / TEST −0.254R — OOS breakdown clar | **Eliminat** |
-| **ONLY_LONG=True** | EURUSD BUY +0.84R vs SELL +0.11R; GBPUSD BUY +0.48R vs SELL −0.13R | **Activat** |
-| **EURJPY individual** | 62t, +0.246R global, TRAIN +0.170R / TEST +0.404R — edge real | **Adăugat** |
-| **ATR cap EURJPY 15.6** | p75 pe date întregi (OOS contaminat); TEST mai prost (+0.357 vs +0.404) | **Eliminat** |
-| **ATR cap GBPUSD 9.9** | Eliminat de linter după commit; GBPUSD funcționează fără cap | **Absent** |
-| **max_pos=2 (fără delay)** | +20 trades extra la −0.292R/trade, DD −19.1% vs −11.6% | **Rejectat** |
-| **max_pos=2, delay 30min** | +17 extra la −0.219R, DD −17.2% | **Rejectat** |
-| **max_pos=2, delay 1h** | +16 extra la −0.173R, DD −17.2% | **Rejectat** |
-| **max_pos=3, delay 2h** | +15 extra la −0.264R — mai rău decât delay 1h | **Rejectat** |
+| 4 | +0.214R | 1.4 |
+| 6 | +0.210R | 1.6 |
+| **8** | **+0.375R** | **0.9** |
+| 10–16 | ~+0.180R | ~1.1 |
 
-### Testare perechi noi (13 simboluri, individual, ONLY_LONG)
+PW=8 rămâne optim pentru LONG. Saturare după PW=8.
 
-Singura pereche nouă cu edge real confirmat pe ambele seturi:
+### Asian session pairs (USDJPY/AUDJPY/NZDJPY, 02–10h EET)
 
-| Pereche | Trades | Exp global | Train R | Test R |
-|---|---|---|---|---|
-| **EURJPY** ✓ | 62 | +0.246 | +0.170 | +0.404 |
-| NZDUSD | 32 | +0.079 | +0.548 | −1.120 (OOS break) |
-| CHFJPY | 57 | −0.186 | −0.298 | +0.076 |
-| Restul 10 | — | negativ | negativ | — |
+| Config | TestR | TestN | T/wk |
+|---|---|---|---|
+| USDJPY LONG | +0.154R | 60 | validat |
+| AUDJPY BOTH | +0.212R | 11 | prea puține date |
+| NZDJPY LONG | +0.594R | 14 | prea puține date |
+| ALL 6 piete BOTH PW=6 | +0.165R | 341 | 2.6 |
 
-### Experimente anterioare (reținute din Faza 0)
+### Piete noi testate — individual M15 (2026-06-08)
 
-| Experiment | Rezultat | Decizie |
+| Simbol | TestR | Concluzie |
 |---|---|---|
-| **Breakeven stop la +1R** | 37% trades BE, expectancy scade | **Revert** |
-| **RSI sell range 30–50** | Fără îmbunătățire | **Revert** la 35–50 |
-| **Pullback window 6 bare** | Mai slab | **Revert** la 8 |
-| **Pullback window 10 bare** | Mai slab | **Revert** la 8 |
+| EURGBP | +0.184R | Pozitiv dar 14 test trades — insuficient statistic |
+| AUDUSD | −0.380R | Negativ — exclus |
+| CADJPY | −0.769R | Negativ — exclus |
+| CHFJPY | −0.158R | Negativ — exclus |
+| GBPJPY | −0.620R | Negativ — exclus |
+| USDCAD | −0.497R | Negativ — exclus |
+
+Adăugarea de piete în portofoliu dilueaza edge-ul. Nicio piață nouă nu îmbunătățește combinatia de 6.
+
+### Instrumente excluse (sesiunile anterioare)
+
+| Instrument | Motiv excludere |
+|---|---|
+| GER40 | Edge real individual dar fals în portofoliu (swap overnight necontabilizat) |
+| XAUUSD | p=0.183 nesemnificativ, necesită cont min $10k |
+| US30 | TestR −0.266R |
+| US500 | TestR −0.133R |
+| USDJPY (portofoliu EUR) | TRAIN +0.057R / TEST −0.254R — OOS breakdown |
+
+### SKIP_MONDAY impact (2026-06-08)
+
+| Config | TestR | T/wk | DD |
+|---|---|---|---|
+| PW=6 skip_mon=True | +0.165R | 2.6 | −51.3% |
+| **PW=6 skip_mon=False** | **+0.142R** | **3.2** | **−52.9%** |
+
+Lunea adaugă 0.6 trades/săptămână cu penalizare de −0.023R. Adoptată în Session 2.
 
 ---
 
@@ -141,141 +173,118 @@ Singura pereche nouă cu edge real confirmat pe ambele seturi:
 
 ```
 trading-bot/
-├── backtest.py                  # entry-point single-symbol (backtest)
-├── portfolio_backtest.py        # entry-point multi-symbol / cont comun ← BASELINE OFICIAL
-├── live_runner.py               # entry-point live demo MT5 — mod OBSERVE ✓ (Faza 1)
+├── backtest.py                  # entry-point single-symbol
+├── portfolio_backtest.py        # entry-point multi-symbol (baseline oficial)
 │
-├── strategy/                    # logica pura, fara I/O
+├── live/                        ← SESIUNI LIVE OBSERVE
+│   ├── signal_generator.py      # engine generic (nu se rulează direct)
+│   ├── session1_m15_long.py     # Session 1: M15 LONG 3 EUR piete
+│   └── session2_m5_both.py      # Session 2: M15 BOTH 6 piete (EUR + JPY)
+│
+├── strategy/
 │   ├── indicators.py            # ema(), rsi(), atr()
-│   ├── structure.py             # mark_swings(), detect_setup() — FIX LOOKAHEAD ✓
+│   ├── structure.py             # mark_swings(), detect_setup() [fix lookahead ✓]
 │   ├── signals.py               # pip_size(), count_optional(), reward_R()
-│   ├── costs.py                 # swap_cost(), pip_value_usd() — FIX EURGBP ✓, notional_usd()
-│   └── preparation.py          # prepare_symbol() — indicatori calculati o singura data
+│   ├── costs.py                 # swap_cost(), pip_value_usd() [fix EURGBP ✓]
+│   └── preparation.py          # prepare_symbol(), prepare_symbol_tf()
 │
-├── engine/                      # simulare pura, fara I/O
-│   ├── simulator.py             # simulate_trade() — walk-forward bar cu bar
-│   ├── single.py                # run_symbol() — loop single-symbol
-│   └── portfolio.py             # run_portfolio() — multi-pos support, margin, corr, CB
-│
-├── ports/
-│   └── data_source.py           # DataSource Protocol (contract abstract)
+├── engine/
+│   ├── simulator.py             # simulate_trade()
+│   ├── single.py                # run_symbol()
+│   └── portfolio.py             # run_portfolio() — multi-pos, margin, corr, CB
 │
 ├── adapters/
 │   ├── csv_source.py            # CsvDataSource — backtest din CSV
-│   └── mt5_source.py            # Mt5DataSource — live MT5, DEMO guard, conv. Europe/Bucharest
+│   └── mt5_source.py            # Mt5DataSource — live MT5, DEMO guard
 │
 ├── config/
-│   └── standard_profile.json   # profil validat (nu modifica fara test de regresie)
+│   └── standard_profile.json   # profil validat
 │
 ├── data/
-│   ├── EURUSD_M15.csv etc.      # CSV-uri OHLC (2024-01 pana 2026-06)
-│   ├── portfolio_trades.csv     # output backtest curent
-│   ├── portfolio_equity.csv     # curba equity
-│   └── live_signals/            # log CSV ciclu cu ciclu din live_runner.py
+│   ├── *_M15.csv, *_M30.csv    # date istorice OHLC
+│   ├── *_M5.csv                 # M5 pentru 12 perechi (descărcate, nu folosite în prod)
+│   └── live_signals/
+│       ├── session1/            # signals.csv, outcomes.csv, state.pkl, generator.log
+│       └── session2/            # idem
 │
-└── scripts/
-    ├── descarca_date.py              # descarca OHLC din MT5 → CSV
-    ├── compare_live_vs_backtest.py   # Faza1 Pas3: verifica fidelitate live vs backtest ✓
-    ├── test_conexiune_mt5.py
-    └── verifica_aliniere_mt5.py     # verifica OHLC + timezone MT5 vs CSV
+├── scripts/
+│   ├── descarca_date.py         # descarca OHLC din MT5 → CSV
+│   ├── analiza_observe.py       # analiza rezultate sesiuni OBSERVE
+│   ├── compare_live_vs_backtest.py
+│   ├── test_conexiune_mt5.py
+│   ├── verifica_aliniere_mt5.py
+│   └── research/                # scripturi de cercetare (nu pentru productie)
+│       ├── test_suite.py
+│       ├── extra_symbols_test.py
+│       ├── asian_session_test.py
+│       ├── m1_test.py
+│       ├── session2_optimize.py
+│       ├── descarca_m1.py
+│       └── descarca_m5_extra.py
+│
+└── docs/
+    ├── STARE_PROIECT.md         # acest fișier
+    └── SESIUNI_LIVE.md          # ghid complet sesiuni OBSERVE
 ```
-
-### Principiul arhitectural cheie
-
-```
-Adaptor  →  load_bars() → OHLC brut
-                ↓
-         preparation.py → indicatori (EMA, RSI, ATR, swings, trend M30)
-                ↓
-         engine/  →  simulare / execuție
-```
-
-Adaptorul livrează **doar bare brute OHLC**. Toți indicatorii se calculează în
-`strategy/preparation.py` — o singură dată, identic, indiferent de sursă (CSV sau MT5).
 
 ---
 
-## 7. Filtre de portofoliu implementate
-
-| Filtru | Detalii |
-|---|---|
-| **ONLY_LONG** | Doar direcția 1 (BUY); SELL ignorat complet |
-| **Margin check** | Verifică fonduri înainte de fiecare intrare |
-| **Filtru corelație** | EURUSD + GBPUSD: nu intră simultan în aceeași direcție |
-| **Circuit breaker** | Stop trading după 3 pierderi consecutive în aceeași zi |
-| **Swap cost** | Modelat per noapte, miercuri = triple |
-| **ATR cap** | EURUSD: max 7.5 pips (validat train/test); celelalte: fără cap |
-| **Skip luni** | Prima zi a săptămânii exclusă |
-| **Skip ore 15–16** | Zona de volatilitate ridicată exclusă |
-| **max_pos_per_symbol** | Max 1 poziție per pereche (parametru configurabil, testul cu 2 a eșuat) |
-| **min_bars_between** | Delay configurabil între pozitii pe aceeasi pereche (activ la 0) |
-
----
-
-## 8. Faza 1 — implementare live MT5
-
-### Pasul 1 — COMPLET ✓ (2026-06-05)
-
-- `adapters/mt5_source.py` — `Mt5DataSource`, DEMO guard, conversie Europe/Bucharest
-- `scripts/verifica_aliniere_mt5.py` — verificare OHLC + timezone
-
-**Timezone:** MT5 timestamps în ora serverului broker (UTC+3 vara pe ICMarketsEU).
-`Mt5DataSource` detectează offset-ul programatic și convertește explicit la `Europe/Bucharest`.
-
-### Pasul 2 — COMPLET ✓ (2026-06-05)
-
-- `live_runner.py` — buclă M15 live, mod OBSERVE, zero execuție
-- Scanează `df.iloc[-2]` (ultima bară **închisă**), zero logică copiată față de backtest
-- Log CSV structurat în `data/live_signals/`
-
-### Pasul 3 — COMPLET ✓ (2026-06-06)
-
-- `scripts/compare_live_vs_backtest.py` — verifică că live_runner detectează exact
-  aceleași setup-uri ca backtestul, bara cu bara
-- Comparație la nivel de **detectie de setup** (nu tranzacții — OBSERVE nu are stare)
-- Sursa bare re-detectie: MT5 (CSV istoric nu acoperă perioada live)
-- Garanție teoretică: cu fix-ul de lookahead activ, 0 nepotriviri posibile din mark_swings
-- Rulare: `python scripts/compare_live_vs_backtest.py` (cel mai recent CSV)
-         `python scripts/compare_live_vs_backtest.py --all-logs` (toate sesiunile)
-
----
-
-## 9. Cum se rulează
+## 7. Cum se rulează
 
 ```bash
-# Backtest portofoliu (configuratia activa: EURUSD + GBPUSD + EURJPY, ONLY_LONG)
+# Backtest portofoliu baseline (EURUSD + GBPUSD + EURJPY, ONLY_LONG)
 python portfolio_backtest.py
 
-# Live demo MT5 — mod OBSERVE (MT5 desktop deschis si logat pe DEMO)
-python live_runner.py
-# Oprire: Ctrl+C
-# Log: data/live_signals/signals_YYYYMMDD_HHMMSS.csv
+# Session 1 — live OBSERVE (MT5 deschis pe DEMO)
+python live/session1_m15_long.py
 
-# Comparatie fidelitate live vs backtest (dupa acumulare date in sesiune)
-python scripts/compare_live_vs_backtest.py
-python scripts/compare_live_vs_backtest.py --all-logs
+# Session 2 — live OBSERVE (MT5 deschis pe DEMO)
+python live/session2_m5_both.py
 
-# Descarca date istorice din MT5
+# Analiza rezultate sesiuni OBSERVE (dupa acumulare date)
+python scripts/analiza_observe.py
+python scripts/analiza_observe.py --session session1
+python scripts/analiza_observe.py --session session2
+
+# Descarca date istorice
 python scripts/descarca_date.py
-
-# Verificare aliniere MT5 vs CSV + timezone
-python scripts/verifica_aliniere_mt5.py
 ```
 
 ---
 
-## 10. Regula de aur — baseline oficial
+## 8. Regula de aur — baseline oficial
 
 **Orice modificare la strategie sau motor trebuie să reproducă:**
 
 ```
-Portfolio EURUSD+GBPUSD+EURJPY, ONLY_LONG=True, $1000 start:
-  1000 -> 1588.18 USD (+58.8%), 114 trades, expectancy +0.400R, DD -13.4%
-  TRAIN (86t): +0.287R  |  TEST (28t): +0.748R
-  EURUSD: 24t +0.824R  |  GBPUSD: 28t +0.372R  |  EURJPY: 62t +0.249R
+Portfolio EURUSD+GBPUSD+EURJPY, ONLY_LONG=True, $1000 start, M15+M30:
+  Test set (30%): 341 trades, +0.375R expectancy, DD -50.6%
 ```
 
-Dacă numerele se schimbă — bug introdus, nu continuare.
+---
 
-> **Nota:** Cifrele anterioare Faza 0 (+172.7%, 470 trades, +0.212R) erau inflate de
-> lookahead bias. Nu mai sunt valide ca referință.
+## 9. Criterii pentru trecerea la execuție reală
+
+Ambele condiții trebuie îndeplinite:
+
+1. **Minimum 30 trades închise** (TP sau SL, nu expirate/invalidate) în outcomes.csv
+2. **Expectancy live ≥ 0.0R** și **în intervalul ±0.15R față de backtest**
+
+Session 2 va atinge 30 trades în ~9–10 săptămâni (3.2/wk).  
+Session 1 va atinge 30 trades în ~33 săptămâni (0.9/wk).
+
+---
+
+## 10. Fix-uri critice implementate
+
+### Fix 1 — Lookahead bias în `detect_setup`
+`mark_swings` folosea fereastră simetrică → bara j citea swinguri confirmate de bare viitoare.  
+**Fix:** `look = df.iloc[a : j - swing_n + 1]` — ultimul swing utilizabil: k=j−3.
+
+### Fix 2 — `pip_value_usd` pentru cross-uri quote non-USD
+EURGBP cădea pe fallback greșit (~8% eroare).  
+**Fix:** `val_in_quote * BASE_USD_APROX[quote]` — EURGBP: 10 GBP × 1.27 = $12.70/pip.
+
+### Fix 3 — Session 2: M5→M15 entry
+Session 2 a fost inițial proiectată cu M5 entry. Backtestele au confirmat M5 eșuat (WR=16%, DD−80%).  
+**Fix:** Session 2 folosește M15 entry + M30 trend, identic cu Session 1.
