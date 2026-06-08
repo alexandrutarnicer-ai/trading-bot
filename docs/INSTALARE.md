@@ -176,6 +176,22 @@ pentru a compara performanta live cu backtestul.
 
 ---
 
+## Pornire rapida (dupa instalare)
+
+Deschide **doua terminale** si ruleaza simultan:
+
+```bash
+# Terminal 1
+python live/session1_m15_long.py
+
+# Terminal 2
+python live/session2_m5_both.py
+```
+
+Ambele trebuie sa ruleze in paralel pentru a acumula date din ambele sesiuni.
+
+---
+
 ## Troubleshooting frecvent
 
 | Problema | Solutie |
