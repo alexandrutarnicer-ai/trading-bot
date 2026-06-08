@@ -22,7 +22,7 @@ from engine.portfolio import run_portfolio
 # ---- parametri portofoliu --------------------------------------------------
 SYMBOLS               = ["EURUSD", "GBPUSD", "EURJPY"]
 SPREAD_PIPS           = {"EURUSD": 0.5, "GBPUSD": 0.8, "EURJPY": 1.5}
-START_BALANCE         = 1000
+START_BALANCE         = 300
 LEVERAGE              = 30
 EXPIRE_BARS           = 4
 DEPTH_RANGE           = None

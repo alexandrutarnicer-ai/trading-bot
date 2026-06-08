@@ -26,7 +26,7 @@ SPREAD_PIPS  = {
     "EURUSD": 0.5, "GBPUSD": 0.8, "EURJPY": 1.5,
     "USDJPY": 0.5, "AUDJPY": 1.5, "NZDJPY": 1.5,
 }
-START_BALANCE         = 1000
+START_BALANCE         = 300
 LEVERAGE              = 30
 EXPIRE_BARS           = 4
 PULLBACK_WINDOW       = 6
