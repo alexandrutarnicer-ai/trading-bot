@@ -109,8 +109,9 @@ def _check_signals(df: pd.DataFrame, symbol: str, cfg: dict,
     sym_sessions = session_cfg.get("symbol_sessions", {})
     s_start, s_end = sym_sessions.get(symbol,
                      (session_cfg["session_start"], session_cfg["session_end"]))
-    skip_hours = session_cfg.get("skip_hours", ())
-    skip_monday = session_cfg.get("skip_monday", True)
+    skip_hours    = session_cfg.get("skip_hours", ())
+    skip_monday   = session_cfg.get("skip_monday", True)
+    skip_weekdays = set(session_cfg.get("skip_weekdays", []))
 
     n = len(df)
     for offset in range(3, 0, -1):
@@ -124,6 +125,8 @@ def _check_signals(df: pd.DataFrame, symbol: str, cfg: dict,
         if not (s_start <= t.hour < s_end):
             continue
         if skip_monday and t.weekday() == 0:
+            continue
+        if skip_weekdays and t.weekday() in skip_weekdays:
             continue
         if t.hour in skip_hours:
             continue
