@@ -1,4 +1,14 @@
+_INDEX_PIP = {
+    "US500": 1.0, "US100": 1.0, "US30": 1.0, "US2000": 1.0,
+    "GER40": 1.0, "UK100": 1.0, "JPN225": 1.0,
+    "FRA40": 1.0, "AUS200": 1.0,
+    "XAUUSD": 1.0,   # 1 punct = $1 price move, pip_val=$100/lot
+}
+
+
 def pip_size(symbol):
+    if symbol in _INDEX_PIP:
+        return _INDEX_PIP[symbol]
     return 0.01 if "JPY" in symbol else 0.0001
 
 

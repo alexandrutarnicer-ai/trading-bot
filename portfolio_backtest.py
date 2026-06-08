@@ -32,8 +32,10 @@ SKIP_HOURS            = (15, 16)
 ATR_MAX_PIPS          = {"EURUSD": 7.5}
 MAX_DAY_CONSEC_LOSSES = 3
 CORR_PAIRS            = {"EURUSD": "GBPUSD", "GBPUSD": "EURUSD"}
-ONLY_LONG             = True   # True = tranzactioneaza doar long (direction==1)
-MAX_POS_PER_SYMBOL    = 1      # max pozitii simultane per pereche (1 = comportament clasic)
+ONLY_LONG             = True
+MAX_POS_PER_SYMBOL    = 1
+SYMBOL_SESSIONS       = {}
+SYMBOL_SKIP_HOURS     = {}
 
 
 # ---- statistici + salvare CSV ----------------------------------------------
@@ -116,6 +118,8 @@ def main():
         "corr_pairs":            CORR_PAIRS,
         "only_long":             ONLY_LONG,
         "max_pos_per_symbol":    MAX_POS_PER_SYMBOL,
+        "symbol_sessions":       SYMBOL_SESSIONS,
+        "symbol_skip_hours":     SYMBOL_SKIP_HOURS,
     }
 
     trades, equity, balance, max_concurrent, skipped_margin, halted_days, split_time = \

@@ -27,6 +27,8 @@ def run_portfolio(data, cfg, params):
     corr_pairs         = params["corr_pairs"]
     max_pos_per_symbol      = params.get("max_pos_per_symbol", 1)
     min_bars_between_symbol = params.get("min_bars_between_same_symbol", 0)
+    symbol_sessions         = params.get("symbol_sessions", {})    # {symbol: (sh, eh)}
+    symbol_skip_hours       = params.get("symbol_skip_hours", {})  # {symbol: tuple}
 
     rp_base = cfg["account"]["risk_per_trade_pct"] / 100.0
     rp_all  = cfg["account"].get("risk_per_trade_pct_all_criteria",
@@ -170,11 +172,13 @@ def run_portfolio(data, cfg, params):
 
         if ghalt:
             continue
-        if not (sh <= t.hour < eh):
+        sym_sh, sym_eh = symbol_sessions.get(s, (sh, eh))
+        if not (sym_sh <= t.hour < sym_eh):
             continue
         if skip_monday and t.weekday() == 0:
             continue
-        if t.hour in skip_hours:
+        eff_skip_hours = symbol_skip_hours.get(s, skip_hours)
+        if t.hour in eff_skip_hours:
             continue
         if trades_today[s] >= max_trades or consec[s] >= max_losses:
             continue
@@ -186,6 +190,12 @@ def run_portfolio(data, cfg, params):
 
         direction = int(row["trend"])
         if params.get("only_long") and direction == -1:
+            continue
+        # Filtru de regim: coloana specificata trebuie sa fie 1 pentru a permite intrarea.
+        # daily_regime_filter (legacy) = echivalent cu regime_filter_col="daily_trend"
+        _rcol = params.get("regime_filter_col") or (
+            "daily_trend" if params.get("daily_regime_filter") else None)
+        if _rcol and int(row.get(_rcol, 0) or 0) != 1:
             continue
 
         corr = corr_pairs.get(s)

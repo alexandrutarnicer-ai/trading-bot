@@ -6,7 +6,7 @@ from strategy.signals import pip_size, count_optional, reward_R
 from strategy.structure import detect_setup
 
 
-def run_symbol(df, symbol, cfg, spread_pips, pip_val_per_lot):
+def run_symbol(df, symbol, cfg, spread_pips, pip_val_per_lot, only_long=False):
     """
     Bucla de backtest pentru o singura pereche pe un DataFrame pre-incarcat.
     Returneaza (trades, equity_curve, equity_timeline, setups_detected).
@@ -80,6 +80,8 @@ def run_symbol(df, symbol, cfg, spread_pips, pip_val_per_lot):
             continue
 
         direction = int(row["trend"])
+        if only_long and direction == -1:
+            continue
         found = detect_setup(df, j, direction)
         if found is None:
             continue

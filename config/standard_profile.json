@@ -2,7 +2,7 @@
   "profile_name": "standard",
   "symbols": ["EURUSD", "GBPUSD", "USDJPY"],
   "account": {
-    "starting_balance": 200,
+    "starting_balance": 300,
     "risk_per_trade_pct": 1.0,
     "risk_per_trade_pct_all_criteria": 1.2,
     "min_lot": 0.01
