@@ -45,7 +45,7 @@ Bot de trading forex care rulează o strategie de tip **pullback-in-trend** pe u
 Piete:     EURUSD, GBPUSD, EURJPY
 Sesiune:   10:00–18:00 EET
 Direcție:  LONG only
-Edge:      test +0.375R | 0.9 trades/sapt | DD -50.6%
+Edge:      test +0.344R | ~0.7 trades/sapt | DD -40.5%
 Rulare:    python live/session1_m15_long.py
 Output:    data/live_signals/session1/
 ```
@@ -56,7 +56,7 @@ Piete EUR: EURUSD, GBPUSD, EURJPY  → 10:00–18:00 EET
 Piete JPY: USDJPY, AUDJPY, NZDJPY  → 02:00–10:00 EET (Tokyo)
 Direcție:  BOTH (long + short)
 Skip luni: Nu (activată — +0.6 trades/sapt, penalizare mică)
-Edge:      test +0.142R | 3.2 trades/sapt | DD -52.9%
+Edge:      test +0.127R | ~2.4 trades/sapt | DD -51.1%
 Rulare:    python live/session2_m5_both.py
 Output:    data/live_signals/session2/
 ```
@@ -81,17 +81,18 @@ Output:    data/live_signals/session2/
 | Perioadă | 2018-05-22 → 2026-06-05 (8 ani) |
 | Split train/test | 2024-01-09 |
 
-### Session 2 (M15 BOTH, 6 piete, skip_mon=False)
+### Baseline oficial Session 2 (M15 BOTH, 6 piete, $300, 8 ani)
 
 | Metric | Valoare |
 |---|---|
-| Trades totale | 1353 |
-| Win Rate | 22.2% |
-| Expectancy | +0.030R |
-| **Test set (30%) Exp** | **+0.142R** |
-| Test set trades | 435 |
-| Max Drawdown | −52.9% |
-| Frecvență | 3.2/săptămână |
+| Trades totale | 1022 |
+| Win Rate | 22.9% |
+| Expectancy | +0.029R |
+| **Test set (30%) Exp** | **+0.127R** |
+| Test set trades | 384 |
+| Max Drawdown | −51.1% |
+| Frecvență | ~2.4/săptămână |
+| Split train/test | 2024-07-22 |
 
 ---
 
@@ -111,7 +112,7 @@ Concluzie: Strategia de pullback structural necesită minim M15. Sub M15, noise-
 
 | Config | TestR | T/wk | DD |
 |---|---|---|---|
-| M15 LONG PW=8, 3 EUR | +0.375R | 0.9 | −50.6% |
+| M15 LONG PW=8, 3 EUR | +0.344R | 0.7 | −40.5% |
 | M15 BOTH PW=4, 3 EUR | +0.255R | 1.2 | −58.5% |
 | M15 BOTH PW=6, 6 piete | +0.165R | 2.6 | −51.3% |
 | M15 BOTH PW=6, 6 piete, skip_mon=F | +0.142R | 3.2 | −52.9% |
@@ -123,7 +124,7 @@ Concluzie: Strategia de pullback structural necesită minim M15. Sub M15, noise-
 |---|---|---|
 | 4 | +0.214R | 1.4 |
 | 6 | +0.210R | 1.6 |
-| **8** | **+0.375R** | **0.9** |
+| **8** | **+0.344R** | **0.7** |
 | 10–16 | ~+0.180R | ~1.1 |
 
 PW=8 rămâne optim pentru LONG. Saturare după PW=8.
@@ -259,11 +260,15 @@ python scripts/descarca_date.py
 **Orice modificare la strategie sau motor trebuie să reproducă:**
 
 ```
-python portfolio_backtest.py
-→ EURUSD+GBPUSD+EURJPY, ONLY_LONG=True, $300 start, M15+M30, 8 ani:
+python portfolio_backtest.py   (Session 1)
+→ EURUSD+GBPUSD+EURJPY, ONLY_LONG, $300, M15+M30, 8 ani:
   284 trades, Exp +0.025R, DD -40.5%
-  TRAIN (181t): -0.156R  |  TEST (103t): +0.344R
-  Split: 2024-01-09
+  TRAIN (181t): -0.156R  |  TEST (103t): +0.344R  |  Split: 2024-01-09
+
+python session2_backtest.py    (Session 2)
+→ 6 piete EUR+JPY, BOTH, $300, M15+M30, skip_mon=False:
+  1022 trades, Exp +0.029R, DD -51.1%
+  TRAIN (638t): -0.030R  |  TEST (384t): +0.127R  |  Split: 2024-07-22
 ```
 
 Dacă numerele se schimbă semnificativ — bug introdus, nu continuare.
@@ -277,8 +282,8 @@ Ambele condiții trebuie îndeplinite:
 1. **Minimum 30 trades închise** (TP sau SL, nu expirate/invalidate) în outcomes.csv
 2. **Expectancy live ≥ 0.0R** și **în intervalul ±0.15R față de backtest**
 
-Session 2 va atinge 30 trades în ~9–10 săptămâni (3.2/wk).  
-Session 1 va atinge 30 trades în ~33 săptămâni (0.9/wk).
+Session 2 va atinge 30 trades în ~13 săptămâni (~3 luni, la 2.4/wk).  
+Session 1 va atinge 30 trades în ~43 săptămâni (~10 luni, la 0.7/wk).
 
 ---
 

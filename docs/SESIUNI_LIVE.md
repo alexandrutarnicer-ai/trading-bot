@@ -19,9 +19,9 @@ Botul rulează două sesiuni independente, fără niciun filtru comun și fără
 | **PW** | 8 | 6 |
 | **Skip luni** | Da | Nu |
 | **Sesiune** | 10–18h EET (toate) | EUR: 10–18h / JPY: 02–10h |
-| **Frecvență așteptată** | ~0.9/săptămână | ~3.2/săptămână |
-| **Expectancy test** | +0.375R | +0.142R |
-| **Max DD backtest** | −50.6% | −52.9% |
+| **Frecvență așteptată** | ~0.7/săptămână | ~2.4/săptămână |
+| **Expectancy test** | +0.344R | +0.127R |
+| **Max DD backtest** | −40.5% | −51.1% |
 | **Output** | `data/live_signals/session1/` | `data/live_signals/session2/` |
 
 ---
@@ -162,8 +162,8 @@ python live/session2_m5_both.py
 
 | Sesiune | Frecvență | Timp estimat pentru 30 trades |
 |---|---|---|
-| Session 1 | 0.9/săpt | ~33 săptămâni (~8 luni) |
-| Session 2 | 3.2/săpt | ~9–10 săptămâni (~2.5 luni) |
+| Session 1 | ~0.7/săpt | ~43 săptămâni (~10 luni) |
+| Session 2 | ~2.4/săpt | ~13 săptămâni (~3 luni) |
 
 **Notă:** Un "trade închis" = un semnal care a atins TP sau SL (nu expirat/invalidat).  
 Semnalele expirate și invalidate NU contează în comparația cu backtestul (backtestul nu le include).
@@ -197,17 +197,17 @@ Output exemplu:
   ====================================================================
   SEMNALE GENERATE: 42
   Perioada:  2026-06-10 — 2026-09-15  (97 zile / 13.9 sapt)
-  Frecventa: 3.0 semnale/sapt  [backtest: 0.9/wk]
+  Frecventa: 0.7 semnale/sapt  [backtest: 0.7/wk]
 
   PERFORMANTA (pe 31 trades inchise):
-    Win Rate:    38.7%      [backtest: 40.0%]
-    Expectancy:  +0.312R    [backtest: +0.375R]
-    Drawdown:    -22.1%     [backtest: -50.6%]
-    W:12  L:19
+    Win Rate:    30.2%      [backtest: 32.0%]
+    Expectancy:  +0.298R    [backtest: +0.344R]
+    Drawdown:    -18.4%     [backtest: -40.5%]
+    W:10  L:21
 
   COMPARATIE CU BACKTESTUL:
-    Expectancy: live=+0.312R vs backtest=+0.375R  (diff=-0.063R)  → IN LINIE
-    Win Rate:   live=38.7% vs backtest=40.0%  (diff=-1.3pp)
+    Expectancy: live=+0.298R vs backtest=+0.344R  (diff=-0.046R)  → IN LINIE
+    Win Rate:   live=30.2% vs backtest=32.0%  (diff=-1.8pp)
 ```
 
 ---
@@ -233,16 +233,20 @@ Config: EURUSD + GBPUSD + EURJPY, M15 entry, M30 trend, LONG, PW=8, $300
 Perioada: 2018-05-22 → 2026-06-05 (8 ani), split la 2024-01-09
 Backtest complet: 284 trades, WR=23.2%, Exp=+0.025R, DD=-40.5%
 TRAIN (primele 70%, 181t): Exp=-0.156R
-TEST  (ultimele 30%, 103t): Exp=+0.344R
+TEST  (ultimele 30%, 103t): WR=32.0%, Exp=+0.344R
 Frecventa: ~0.7 trades/saptamana
+Script:    python portfolio_backtest.py
 ```
 
 ### Session 2 — S2-M15-BOTH (validat 2026-06-08)
 ```
-Config: 6 piete (EUR+JPY), M15 entry, M30 trend, BOTH, PW=6, skip_mon=False
-Backtest complet: 1353 trades, WR=22.2%, Exp=+0.030R
-TEST set (30%):   435 trades, WR=?, Exp=+0.142R, DD=-52.9%
-Frecventa:        3.2 trades/saptamana
+Config: 6 piete (EUR+JPY), M15 entry, M30 trend, BOTH, PW=6, skip_mon=False, $300
+Perioada: split la 2024-07-22 (AUDJPY/NZDJPY au mai putina istorie)
+Backtest complet: 1022 trades, WR=22.9%, Exp=+0.029R, DD=-51.1%
+TRAIN (primele 70%, 638t): Exp=-0.030R
+TEST  (ultimele 30%, 384t): WR=25.8%, Exp=+0.127R
+Frecventa: ~2.4 trades/saptamana
+Script:    python session2_backtest.py
 ```
 
 **Note importante:**

@@ -25,10 +25,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from backtest import DATA_DIR
 
 BACKTEST_REF = {
-    "S1-M15-LONG": {"label": "Session 1",  "test_exp": 0.375, "wr": 40.0,
-                    "trades_wk": 0.9,  "dd": -50.6},
-    "S2-M15-BOTH": {"label": "Session 2",  "test_exp": 0.142, "wr": 22.0,
-                    "trades_wk": 3.2,  "dd": -52.9},
+    "S1-M15-LONG": {"label": "Session 1",  "test_exp": 0.344, "wr": 32.0,
+                    "trades_wk": 0.7,  "dd": -40.5},
+    "S2-M15-BOTH": {"label": "Session 2",  "test_exp": 0.127, "wr": 25.8,
+                    "trades_wk": 2.4,  "dd": -51.1},
 }
 
 MIN_TRADES_PENTRU_COMPARATIE = 30
