@@ -229,10 +229,12 @@ Output exemplu:
 
 ### Session 1 — S1-M15-LONG (validat 2026-06-08)
 ```
-Config: EURUSD + GBPUSD + EURJPY, M15 entry, M30 trend, LONG, PW=8
-Backtest complet: 1096 trades, WR=22.7%, Exp=+0.048R
-TEST set (30%):   341 trades, WR=?, Exp=+0.375R, DD=-50.6%
-Frecventa:        0.9 trades/saptamana
+Config: EURUSD + GBPUSD + EURJPY, M15 entry, M30 trend, LONG, PW=8, $300
+Perioada: 2018-05-22 → 2026-06-05 (8 ani), split la 2024-01-09
+Backtest complet: 284 trades, WR=23.2%, Exp=+0.025R, DD=-40.5%
+TRAIN (primele 70%, 181t): Exp=-0.156R
+TEST  (ultimele 30%, 103t): Exp=+0.344R
+Frecventa: ~0.7 trades/saptamana
 ```
 
 ### Session 2 — S2-M15-BOTH (validat 2026-06-08)

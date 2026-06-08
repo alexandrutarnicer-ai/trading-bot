@@ -67,17 +67,19 @@ Output:    data/live_signals/session2/
 
 ## 4. Rezultatele complete ale backtestelor
 
-### Baseline oficial Session 1 (M15 LONG, 3 piete EUR)
+### Baseline oficial Session 1 (M15 LONG, 3 piete EUR, $300, 8 ani)
 
 | Metric | Valoare |
 |---|---|
-| Trades totale | 1096 |
-| Win Rate | 22.7% |
-| Expectancy | +0.048R |
-| **Test set (30%) Exp** | **+0.375R** |
-| Test set trades | 341 |
-| Max Drawdown | −50.6% |
-| Frecvență | 0.9/săptămână |
+| Trades totale | 284 |
+| Win Rate | 23.2% |
+| Expectancy | +0.025R |
+| **Test set (30%) Exp** | **+0.344R** |
+| Test set trades | 103 |
+| Max Drawdown | −40.5% |
+| Frecvență | ~0.7/săptămână |
+| Perioadă | 2018-05-22 → 2026-06-05 (8 ani) |
+| Split train/test | 2024-01-09 |
 
 ### Session 2 (M15 BOTH, 6 piete, skip_mon=False)
 
@@ -257,9 +259,14 @@ python scripts/descarca_date.py
 **Orice modificare la strategie sau motor trebuie să reproducă:**
 
 ```
-Portfolio EURUSD+GBPUSD+EURJPY, ONLY_LONG=True, $1000 start, M15+M30:
-  Test set (30%): 341 trades, +0.375R expectancy, DD -50.6%
+python portfolio_backtest.py
+→ EURUSD+GBPUSD+EURJPY, ONLY_LONG=True, $300 start, M15+M30, 8 ani:
+  284 trades, Exp +0.025R, DD -40.5%
+  TRAIN (181t): -0.156R  |  TEST (103t): +0.344R
+  Split: 2024-01-09
 ```
+
+Dacă numerele se schimbă semnificativ — bug introdus, nu continuare.
 
 ---
 
