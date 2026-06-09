@@ -1,6 +1,6 @@
 # Sesiuni Live — Trading Bot
 
-Trei sesiuni independente. Capital separat, loguri separate. Pot rula simultan fara conflict.
+Patru sesiuni independente. Capital separat, loguri separate. Pot rula simultan fara conflict.
 
 ---
 
@@ -75,52 +75,87 @@ Asia + pre-EU (00-09h) si EU/early-US (15-18h) au miscare mai curata pe swing-ur
 
 ---
 
+## Sesiune 4 — GER40 + US30, LONG only, OBSERVARE DEMO
+
+> **ATENTIE:** Aceasta sesiune este in mod de observare. Nu executa ordine reale.
+> Statistica insuficienta — re-evaluare planificata Dec 2026.
+
+| Parametru | GER40 | US30 |
+|-----------|-------|------|
+| Script | `python live/session4_obs.py` | (acelasi script) |
+| Directie | LONG only | LONG only |
+| Timeframe | M15 (trend M30) | M15 (trend M30) |
+| Pullback window | 6 | 6 |
+| Sesiune activa | 09-14h UTC | 14-21h UTC |
+| EET vara | 12:00-17:00 | 17:00-00:00 |
+| EET iarna | 11:00-16:00 | 16:00-23:00 |
+| Skip zile | Luni | Luni |
+| Frecventa | ~0.35/saptamana | ~0.45/saptamana |
+| Exp test | +0.480R p=0.045 | +0.224R p=0.165 |
+| DD max | -31.8% | -15.3% |
+| Capital | $400 (observare) | $400 (observare) |
+| Output | `data/live_signals/session4/` | (acelasi director) |
+
+**Frecventa totala S4: ~0.8 semnale/saptamana** (GER40 + US30 combinate).
+In medie: 1 semnal la 8-10 zile lucratoare. Saptamani fara semnal sunt normale.
+
+**De ce nu executa ordine:**
+- GER40: p=0.045 pre-Bonferroni, dar train (2017-2023) = -0.257R (regime-dependent)
+- US30: train pozitiv (+0.074R) dar p=0.165 — prea putine date (74 teste in 2.5 ani)
+- Dupa 50 semnale live per simbol, re-testam statistica
+
+---
+
 ## Program complet — cand sa rulezi ce
 
-> Toate orele in **UTC**. EET vara (GMT+3) = UTC+3.
+> Toate orele in **UTC**. EET vara (EEST, GMT+3) = UTC+3. Iarna (EET, GMT+2) = UTC+2.
 
 ```
-UTC     EET(vara)   S1 (EUR Long)   S2 EUR    S2 JPY    S3 (BTC)
-00-02   03-05       -               -         -         ACTIV
-02-09   05-12       -               -         ACTIV     ACTIV  ← S2+S3 simultan
-09-10   12-13       -               -         ACTIV     pauza
-10-15   13-18       ACTIV           ACTIV     -         pauza  ← S1+S2 simultan
-15-16   18-19       ACTIV*          ACTIV*    -         ACTIV  ← toate 3 (skip 15-16)
-16-18   19-21       ACTIV           ACTIV     -         ACTIV  ← S1+S2+S3 simultan
-18-19   21-22       -               -         -         pauza
-19-23   22-02       -               -         -         pauza
-23-00   02-03       -               -         -         pauza
+UTC     EET(vara)   S1 (EUR)   S2 EUR   S2 JPY   S3 BTC    S4 GER40   S4 US30
+00-02   03-05       -          -        -        ACTIV      -          -
+02-09   05-12       -          -        ACTIV    ACTIV      -          -        ← S2+S3
+09-10   12-13       -          -        ACTIV    pauza      ACTIV      -
+10-14   13-17       ACTIV      ACTIV    -        pauza      ACTIV      -        ← S1+S2+S4 GER40
+14-15   17-18       ACTIV      ACTIV    -        pauza      -          ACTIV    ← S1+S2+S4 US30
+15-16   18-19       ACTIV*     ACTIV*   -        ACTIV      -          ACTIV    ← S1+S2+S3+S4
+16-18   19-21       ACTIV      ACTIV    -        ACTIV      -          ACTIV    ← S1+S2+S3+S4
+18-21   21-00       -          -        -        pauza      -          ACTIV    ← S4 US30 singur
+21-23   00-02       -          -        -        pauza      -          -
 ```
 *Ora 15-16 UTC: S1 si S2 au `skip_hours=(15,16)` — filtrare interna automata.
 
 ### Recomandare practica
 
-**Porneste toate 3 sesiunile simultan** — fiecare filtreaza intern:
+**Porneste toate 4 sesiunile simultan** cu un singur comandă:
 
 ```bash
-# Terminal 1
-python live/session1_m15_long.py
+python live/run_all.py
+```
 
-# Terminal 2
-python live/session2_m5_both.py
+Status automat la fiecare 5 minute (semnale azi + total + PID per sesiune). Ctrl+C opreste tot.
 
-# Terminal 3
-python live/session3_btc_both.py
+Sau manual, in terminale separate:
+
+```bash
+python live/session1_m15_long.py   # Terminal 1
+python live/session2_m5_both.py    # Terminal 2
+python live/session3_btc_both.py   # Terminal 3
+python live/session4_obs.py        # Terminal 4  [OBSERVARE]
 ```
 
 - S1 si S2 se activeaza cand piata europeana/asiatica se deschide
 - S3 BTC este activa noaptea (03-12h EET) si seara (18-21h EET)
-- **Suprapunere maxima cu celelalte doua: 18-21h EET** (17-18h UTC = S3+S2+S1)
-- **S3 unica: 03-12h EET** (00-09h UTC) — BTC activ singur (Asia + pre-EU)
+- **S4 GER40 unica: 12-17h EET** (vara) — paralel cu S1+S2, inainte de deschiderea NYSE
+- **S4 US30 unica: 21-00h EET** (vara) — singura sesiune activa seara tarziu
 
 ### Zile saptamana
 
-| Zi | S1 | S2 EUR | S2 JPY | S3 BTC |
-|----|----|--------|--------|--------|
-| Luni | skip | activ | activ | activ |
-| Marti-Vineri | activ | activ | activ | activ |
-| Sambata | activ | activ | activ | **SKIP** |
-| Duminica | activ | activ | activ | activ |
+| Zi | S1 | S2 EUR | S2 JPY | S3 BTC | S4 GER40 | S4 US30 |
+|----|----|--------|--------|--------|----------|---------|
+| Luni | skip | activ | activ | activ | **SKIP** | **SKIP** |
+| Marti-Vineri | activ | activ | activ | activ | activ | activ |
+| Sambata | activ | activ | activ | **SKIP** | activ | activ |
+| Duminica | activ | activ | activ | activ | activ | activ |
 
 ---
 
@@ -128,11 +163,12 @@ python live/session3_btc_both.py
 
 Sesiunile sunt independente — capitalul NU se imparte:
 
-| Sesiune | Capital recomandat | Risc/trade |
-|---------|--------------------|------------|
-| S1 | $1000+ | 1% per trade |
-| S2 | $1000+ | 1% per trade |
-| S3 BTC | $500 min | 1% per trade (~$5 risc la $500) |
+| Sesiune | Capital recomandat | Risc/trade | Status |
+|---------|--------------------|------------|--------|
+| S1 | $1000+ | 1% per trade | validat |
+| S2 | $1000+ | 1% per trade | validat |
+| S3 BTC | $500 min | 1% per trade (~$5 risc la $500) | validat p=0.0075 |
+| S4 OBS | $400 | — nu executa | OBSERVARE DEMO |
 
 ---
 
@@ -151,11 +187,16 @@ Dupa 30-50 trades per sesiune, compara `result_r` mediu din `outcomes.csv` cu ex
 
 ## Rezultate backtest sumar
 
-| Sesiune | N test | Exp test | p-val | DD | Capital |
-|---------|--------|----------|-------|----|---------|
-| S1 M15 Long | - | +0.375R | - | -50.6% | $1000+ |
-| S2 M15 Both | - | +0.142R | - | -45.4% | $1000+ |
-| S3 BTC Both | 224 | +0.336R | 0.0075*** | -22.5% | $500 |
+| Sesiune | N test | Exp test | p-val | DD | Capital | Status |
+|---------|--------|----------|-------|----|---------|--------|
+| S1 M15 Long | - | +0.375R | - | -50.6% | $1000+ | validat |
+| S2 M15 Both | - | +0.142R | - | -45.4% | $1000+ | validat |
+| S3 BTC Both | 224 | +0.336R | 0.0075*** | -22.5% | $500 | validat |
+| S4 GER40 | 61 | +0.480R | 0.045** | -31.8% | $400 | OBS — train negativ, post-Bonferroni p=2.2 |
+| S4 US30 | 74 | +0.224R | 0.165 | -15.3% | $400 | OBS — train pozitiv, insuficient statistic |
 
 S3 are cea mai puternica validare statistica (p=0.0075 one-sided t-test).
 Bonferroni (11 configuratii testate): p_corr = 0.0825 — edge sustinut si de rationale economic.
+
+S4 este in **observare**: 48 configuratii testate → Bonferroni factor 48 → p_corr GER40=2.2, US30=7.9.
+Re-evaluare planificata: Dec 2026 (dupa ~6 luni date live + 25-30 semnale/simbol).
