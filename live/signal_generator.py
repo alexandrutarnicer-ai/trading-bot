@@ -14,6 +14,7 @@ import json
 import time
 import pickle
 import logging
+import subprocess
 from datetime import datetime, timedelta
 
 import pandas as pd
@@ -26,6 +27,52 @@ from adapters.mt5_source import Mt5DataSource
 from strategy.preparation import _enrich
 from strategy.structure import detect_setup
 from strategy.signals import pip_size, count_optional, reward_R
+
+
+# ---------------------------------------------------------------------------
+# Notificari Windows
+# ---------------------------------------------------------------------------
+
+def _notify_signal(sig: dict, session_id: str) -> None:
+    """
+    Notificare Windows Toast + terminal bell la detectarea unui semnal nou.
+    Non-blocking (Popen). Esecul notificarii nu opreste sesiunea.
+    """
+    # Bell in terminal — face tab-ul/taskbar-ul VSCode sa clipeasca
+    sys.stdout.write("\a")
+    sys.stdout.flush()
+
+    try:
+        sym   = sig["symbol"]
+        # Format pret: BTC/ETH cu 2 zecimale, FX cu 5
+        fmt   = ".2f" if sig["entry"] > 100 else ".5f"
+        entry = format(sig["entry"], fmt)
+        tp    = format(sig["tp"],    fmt)
+        sl    = format(sig["sl"],    fmt)
+
+        title = f"Signal {sig['dir_str']} {sym}"
+        body  = f"{session_id} | entry {entry}  SL {sl}  TP {tp}  ({sig['r_ratio']:.1f}R)"
+
+        # Escape single quotes din valori (evita injectie in PS string)
+        title = title.replace("'", "`'")
+        body  = body.replace("'",  "`'")
+
+        ps = (
+            "[Windows.UI.Notifications.ToastNotificationManager,"
+            "Windows,ContentType=WindowsRuntime]|Out-Null;"
+            "$xml=[Windows.UI.Notifications.ToastNotificationManager]::"
+            "GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02);"
+            f"$xml.GetElementsByTagName('text')[0].AppendChild($xml.CreateTextNode('{title}'))|Out-Null;"
+            f"$xml.GetElementsByTagName('text')[1].AppendChild($xml.CreateTextNode('{body}'))|Out-Null;"
+            "$toast=[Windows.UI.Notifications.ToastNotification]::new($xml);"
+            "[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('TradingBot').Show($toast)"
+        )
+        subprocess.Popen(
+            ["powershell", "-WindowStyle", "Hidden", "-NonInteractive", "-Command", ps],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+    except Exception:
+        pass  # notificarea nu trebuie sa opreasca vreodata sesiunea
 
 
 # ---------------------------------------------------------------------------
@@ -391,6 +438,7 @@ def run_generator(session_cfg: dict):
                         f"entry={sig['entry']:.5f} sl={sig['sl']:.5f} tp={sig['tp']:.5f} "
                         f"({sig['r_ratio']:.1f}R) RSI={sig['rsi']:.0f}"
                     )
+                    _notify_signal(sig, session_cfg["session_id"])
                     new_sigs += 1
 
                 if len(df) > 2:
