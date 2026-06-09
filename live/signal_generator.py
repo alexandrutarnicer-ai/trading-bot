@@ -235,6 +235,13 @@ def _check_signals(df: pd.DataFrame, symbol: str, cfg: dict,
 # Update outcome-uri
 # ---------------------------------------------------------------------------
 
+_OUTCOMES_COLS = [
+    "signal_id", "time_check", "symbol", "direction", "status",
+    "entry", "sl", "tp", "r_ratio", "triggered_at",
+    "exit_price", "exit_time", "result_r",
+]
+
+
 def _update_outcomes(df: pd.DataFrame, symbol: str,
                      state: dict, outcomes_file: str, log,
                      expire_bars: int = 4, bar_minutes: int = 15):
@@ -259,6 +266,7 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                 armed = pd.Timestamp(p["armed_at"])
                 if current_bar_t - armed > expire_delta:
                     outcome_rows.append({**p, "signal_id": sig_id,
+                                         "symbol": symbol,
                                          "status": "expirat", "result_r": 0.0,
                                          "exit_time": current_bar_t,
                                          "time_check": datetime.now()})
@@ -273,6 +281,7 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                        (d == -1 and bar["low"]  <= p["entry"])
                 if inv:
                     outcome_rows.append({**p, "signal_id": sig_id,
+                                         "symbol": symbol,
                                          "status": "invalidat", "result_r": 0.0,
                                          "time_check": datetime.now()})
                     rows_to_remove.append(sig_id)
@@ -292,7 +301,8 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                 tp_hit = (d == 1 and bar["high"] >= p["tp"]) or \
                          (d == -1 and bar["low"]  <= p["tp"])
                 if sl_hit:
-                    outcome_rows.append({**p, "signal_id": sig_id, "status": "SL",
+                    outcome_rows.append({**p, "signal_id": sig_id,
+                                         "symbol": symbol, "status": "SL",
                                          "result_r": -1.0, "exit_price": p["sl"],
                                          "exit_time": bar["time"],
                                          "time_check": datetime.now()})
@@ -300,7 +310,8 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                     log.info(f"  PIERDERE: {sig_id} SL -1.0R")
                     break
                 if tp_hit:
-                    outcome_rows.append({**p, "signal_id": sig_id, "status": "TP",
+                    outcome_rows.append({**p, "signal_id": sig_id,
+                                         "symbol": symbol, "status": "TP",
                                          "result_r": p["r_ratio"], "exit_price": p["tp"],
                                          "exit_time": bar["time"],
                                          "time_check": datetime.now()})
@@ -309,7 +320,8 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                     break
 
     if outcome_rows:
-        pd.DataFrame(outcome_rows).to_csv(outcomes_file, mode="a", header=False, index=False)
+        pd.DataFrame(outcome_rows).reindex(columns=_OUTCOMES_COLS).to_csv(
+            outcomes_file, mode="a", header=False, index=False)
 
     for sig_id in rows_to_remove:
         state["pending"][symbol].pop(sig_id, None)
