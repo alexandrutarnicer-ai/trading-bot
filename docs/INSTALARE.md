@@ -230,35 +230,53 @@ Unregister-ScheduledTask -TaskName "TradingBot-RunAll" -Confirm:$false
 
 ---
 
-## Notificari pe telefon (Phone Link)
+## Notificari pe telefon (Telegram)
 
-Botul trimite notificari Windows Toast la fiecare semnal detectat.
-Prin **Phone Link** (Microsoft) aceste notificari pot fi redirectate pe telefonul Android.
+Botul trimite notificari Telegram la fiecare semnal detectat — functioneaza de oriunde,
+nu depinde de Bluetooth sau retea locala.
 
-### Setup Phone Link
+### Setup Telegram Bot (o singura data)
 
-**Pe PC (Windows 11 — pre-instalat):**
-1. Start → cauta `Phone Link` → deschide
-2. Selecteaza `Android` → conecteaza-te cu contul Microsoft
-3. Urmeaza instructiunile QR code
+**Pas 1 — Creaza bot-ul (din aplicatia Telegram pe telefon):**
+1. Cauta `@BotFather` → Start
+2. Trimite `/newbot` → alege un nume + username (ex: `tradingalext_bot`)
+3. Copiaza **token-ul** primit (format: `1234567890:ABCdef...`)
 
-**Pe telefon (Android):**
-1. Instaleaza **"Link to Windows"** din Play Store
-2. Conecteaza-te cu acelasi cont Microsoft
-3. Scaneaza QR code-ul de pe PC
+**Pas 2 — Obtine chat_id:**
+1. Cauta bot-ul tau in Telegram → Start → trimite orice mesaj
+2. Deschide in browser: `https://api.telegram.org/bot<TOKEN>/getUpdates`
+3. Copiaza valoarea `"id"` din `"chat"` (numar intreg)
 
-**Activare notificari in Phone Link:**
-1. In app Phone Link pe PC: `Settings` → `Features` → `Notifications` → ON
-2. Prima data cand botul detecteaza un semnal, apare `TradingBot` in lista de aplicatii
-3. Asigura-te ca `TradingBot` este activat:
-   - Windows Settings → System → Notifications → scroll jos → `TradingBot` → ON
-   - In Phone Link Settings → Notifications → `TradingBot` → ON (sau "Sync all")
+**Pas 3 — Seteaza variabilele de mediu in Windows (PowerShell normal):**
+```powershell
+[Environment]::SetEnvironmentVariable("TELEGRAM_TOKEN", "<token-ul-tau>", "User")
+[Environment]::SetEnvironmentVariable("TELEGRAM_CHAT_ID", "<chat-id-ul-tau>", "User")
+```
 
-**Rezultat:** cand botul detecteaza un semnal, primesti notificare pe telefon cu:
-- Simbolul si directia (ex: `Signal SHORT NZDJPY`)
-- Entry / SL / TP si R ratio
+Reporneste terminalul dupa aceasta comanda (variabilele sunt active la sesiunea noua).
 
-> Phone Link necesita ambele dispozitive conectate la internet si Bluetooth activ pe telefon.
+**Verificare:**
+```python
+python -c "
+import os
+from live.signal_generator import _send_telegram
+_send_telegram('Test — botul functioneaza')
+print('Trimis')
+"
+```
+
+> Token-ul si chat_id-ul NU sunt stocate in cod — doar in variabile de mediu Windows.
+> Nu le posta public (git, chat, etc).
+
+**Format notificare primita pe telefon:**
+```
+Signal LONG EURUSD
+Entry: 1.08450
+SL:    1.08200
+TP:    1.09000
+R/R:   2.5R
+S1-M15-LONG
+```
 
 ---
 

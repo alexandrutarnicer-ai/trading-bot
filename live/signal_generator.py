@@ -15,6 +15,7 @@ import time
 import pickle
 import logging
 import subprocess
+import urllib.request
 from datetime import datetime, timedelta
 
 import pandas as pd
@@ -37,6 +38,32 @@ try:
     import MetaTrader5 as _mt5_exec
 except ImportError:
     _mt5_exec = None
+
+# ---------------------------------------------------------------------------
+# Telegram — citit din variabile de mediu (setate o singura data in Windows)
+# ---------------------------------------------------------------------------
+_TG_TOKEN   = os.environ.get("TELEGRAM_TOKEN", "")
+_TG_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
+
+
+def _send_telegram(text: str) -> None:
+    """Trimite mesaj Telegram. Non-blocking, esecul e ignorat silentios."""
+    if not _TG_TOKEN or not _TG_CHAT_ID:
+        return
+    try:
+        payload = json.dumps({
+            "chat_id":    _TG_CHAT_ID,
+            "text":       text,
+            "parse_mode": "HTML",
+        }).encode()
+        req = urllib.request.Request(
+            f"https://api.telegram.org/bot{_TG_TOKEN}/sendMessage",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+        )
+        urllib.request.urlopen(req, timeout=5)
+    except Exception:
+        pass
 
 
 def _calc_lots(symbol: str, entry: float, sl: float,
@@ -128,35 +155,43 @@ def _place_order(sig: dict, lots: float, expire_bars: int,
 
 def _notify_signal(sig: dict, session_id: str) -> None:
     """
-    Notificare Windows Toast + terminal bell la detectarea unui semnal nou.
-    Non-blocking (Popen). Esecul notificarii nu opreste sesiunea.
+    Notificare Windows Toast + Telegram + terminal bell la detectarea unui semnal nou.
+    Non-blocking. Esecul notificarii nu opreste sesiunea.
     """
-    # Bell in terminal — face tab-ul/taskbar-ul VSCode sa clipeasca
+    # Bell in terminal
     sys.stdout.write("\a")
     sys.stdout.flush()
 
+    sym = sig["symbol"]
+    fmt = ".2f" if sig["entry"] > 100 else ".5f"
+    entry = format(sig["entry"], fmt)
+    tp    = format(sig["tp"],    fmt)
+    sl    = format(sig["sl"],    fmt)
+
+    title = f"Signal {sig['dir_str']} {sym}"
+    body  = f"{session_id} | entry {entry}  SL {sl}  TP {tp}  ({sig['r_ratio']:.1f}R)"
+
+    # Telegram
+    _send_telegram(
+        f"<b>{title}</b>\n"
+        f"Entry: <code>{entry}</code>\n"
+        f"SL:    <code>{sl}</code>\n"
+        f"TP:    <code>{tp}</code>\n"
+        f"R/R:   {sig['r_ratio']:.1f}R\n"
+        f"<i>{session_id}</i>"
+    )
+
+    # Windows Toast
     try:
-        sym   = sig["symbol"]
-        # Format pret: BTC/ETH cu 2 zecimale, FX cu 5
-        fmt   = ".2f" if sig["entry"] > 100 else ".5f"
-        entry = format(sig["entry"], fmt)
-        tp    = format(sig["tp"],    fmt)
-        sl    = format(sig["sl"],    fmt)
-
-        title = f"Signal {sig['dir_str']} {sym}"
-        body  = f"{session_id} | entry {entry}  SL {sl}  TP {tp}  ({sig['r_ratio']:.1f}R)"
-
-        # Escape single quotes din valori (evita injectie in PS string)
-        title = title.replace("'", "`'")
-        body  = body.replace("'",  "`'")
-
+        t = title.replace("'", "`'")
+        b = body.replace("'",  "`'")
         ps = (
             "[Windows.UI.Notifications.ToastNotificationManager,"
             "Windows,ContentType=WindowsRuntime]|Out-Null;"
             "$xml=[Windows.UI.Notifications.ToastNotificationManager]::"
             "GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02);"
-            f"$xml.GetElementsByTagName('text')[0].AppendChild($xml.CreateTextNode('{title}'))|Out-Null;"
-            f"$xml.GetElementsByTagName('text')[1].AppendChild($xml.CreateTextNode('{body}'))|Out-Null;"
+            f"$xml.GetElementsByTagName('text')[0].AppendChild($xml.CreateTextNode('{t}'))|Out-Null;"
+            f"$xml.GetElementsByTagName('text')[1].AppendChild($xml.CreateTextNode('{b}'))|Out-Null;"
             "$toast=[Windows.UI.Notifications.ToastNotification]::new($xml);"
             "[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('TradingBot').Show($toast)"
         )
@@ -165,7 +200,7 @@ def _notify_signal(sig: dict, session_id: str) -> None:
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         )
     except Exception:
-        pass  # notificarea nu trebuie sa opreasca vreodata sesiunea
+        pass
 
 
 # ---------------------------------------------------------------------------
