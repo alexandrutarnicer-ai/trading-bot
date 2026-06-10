@@ -104,30 +104,122 @@ Daca apar erori, scriptul indica exact ce lipseste si cum se rezolva.
 
 > **MT5 trebuie sa fie deschis si logat pe DEMO.**
 
-Deschide **doua ferestre de terminal** si ruleaza:
-
 ```bash
-# Terminal 1 — Session 1 (EUR pairs, Marti-Vineri 10:00-18:00)
-python live/session1_m15_long.py
-
-# Terminal 2 — Session 2 (EUR + JPY pairs, Luni-Vineri 02:00-18:00)
-python live/session2_m5_both.py
+python live/run_all.py
 ```
 
-Oprire: `Ctrl+C` in fiecare terminal.
+Porneste toate 4 sesiunile simultan si afiseaza status la fiecare 5 minute.
+Oprire: `Ctrl+C` in terminal.
 
 ---
 
 ## Orarul botului
 
-| Sesiune | Zile | Ore (Romania EET) |
-|---|---|---|
-| **Session 1** | Marti – Vineri | 10:00 – 18:00 |
-| **Session 2 (EUR)** | Luni – Vineri | 10:00 – 18:00 |
-| **Session 2 (JPY)** | Luni – Vineri | 02:00 – 10:00 |
+| Sesiune | Zile | Ore (Romania vara, EEST) | Note |
+|---|---|---|---|
+| **S1** FX Long | Marti – Vineri | 13:00 – 21:00 | EUR/GBP/JPY LONG |
+| **S2** FX Both | Luni – Vineri | 05:00 – 21:00 | EUR + JPY, BOTH |
+| **S3** BTC Both | Luni – Vineri + Dum | 03:00 – 12:00 + 18:00 – 21:00 | crypto, skip Sambata |
+| **S4** GER40+US30 | Marti – Duminica | 12:00 – 00:00 | LONG only, OBSERVARE |
 
-Recomandat: lasa ambele sesiuni pornite **non-stop Luni–Vineri**.  
-Engine-ul doarme intre bare (~15 min), consum de resurse foarte mic.
+Recomandat: lasa `run_all.py` pornit **non-stop**. Engine-ul doarme intre bare (~15 min), consum de resurse foarte mic.
+Detalii complete: `SESIUNI.md` din radacina proiectului.
+
+---
+
+---
+
+## Pornire automata la restart PC
+
+Daca PC-ul reporneste (ex. Windows Update), botul si MT5 se pot relansa automat.
+Necesita **doua configurari**: auto-login (fara PIN) + Task Scheduler.
+
+### Pas A — Auto-login (fara PIN la pornire)
+
+> Recomandat doar pentru PC/laptop de acasa. Nu faci asta pe un PC de birou.
+
+**Metoda 1 — netplwiz** (Windows 10 / unele versiuni Windows 11):
+1. `Win + R` → tasteaza `netplwiz` → Enter
+2. Selecteaza contul tau de utilizator
+3. Debifeza **"Users must enter a user name and password"**
+4. Aplica → introdu parola de cont de doua ori → OK
+5. Reporneste si verifica ca porneste fara PIN
+
+**Metoda 2 — Registry** (Windows 11 22H2+ daca netplwiz nu arata optiunea):
+1. `Win + R` → `regedit` → Enter
+2. Naviga la: `HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon`
+3. Seteaza / creeaza urmatoarele valori `String`:
+   - `AutoAdminLogon` = `1`
+   - `DefaultUserName` = `<numele_tau_de_utilizator>`
+   - `DefaultPassword` = `<parola_ta>`
+4. Reporneste si verifica
+
+> Parola este stocata in plain text in registry — acceptabil pe un PC personal de acasa,
+> nu pe un PC partajat.
+
+---
+
+### Pas B — Task Scheduler (MT5 + bot la login)
+
+Ruleaza scriptul de setup (o singura data, dupa care task-urile persista):
+
+```
+click dreapta pe: scripts\setup_autostart.ps1
+→ "Run with PowerShell"  (sau "Run as Administrator" daca cere)
+```
+
+Scriptul face automat:
+1. Gaseste MT5 si creeaza task `TradingBot-MT5` — porneste la login
+2. Creeaza `live\start_bot.bat` si task `TradingBot-RunAll` — porneste la 45s dupa login
+
+**La urmatoarea pornire Windows:**
+- MT5 porneste automat si se conecteaza la broker (memoreaza credentialele)
+- Dupa 45 secunde: o fereastra CMD se deschide cu `run_all.py` activ
+- Botul ruleaza non-stop fara nicio interventie
+
+**Verificare task-uri:**
+```
+Start menu → cauta "Task Scheduler" → Task Scheduler Library
+Trebuie sa apara: TradingBot-MT5  si  TradingBot-RunAll
+```
+
+**Stergere task-uri (daca vrei sa dezactivezi):**
+```powershell
+Unregister-ScheduledTask -TaskName "TradingBot-MT5" -Confirm:$false
+Unregister-ScheduledTask -TaskName "TradingBot-RunAll" -Confirm:$false
+```
+
+---
+
+## Notificari pe telefon (Phone Link)
+
+Botul trimite notificari Windows Toast la fiecare semnal detectat.
+Prin **Phone Link** (Microsoft) aceste notificari pot fi redirectate pe telefonul Android.
+
+### Setup Phone Link
+
+**Pe PC (Windows 11 — pre-instalat):**
+1. Start → cauta `Phone Link` → deschide
+2. Selecteaza `Android` → conecteaza-te cu contul Microsoft
+3. Urmeaza instructiunile QR code
+
+**Pe telefon (Android):**
+1. Instaleaza **"Link to Windows"** din Play Store
+2. Conecteaza-te cu acelasi cont Microsoft
+3. Scaneaza QR code-ul de pe PC
+
+**Activare notificari in Phone Link:**
+1. In app Phone Link pe PC: `Settings` → `Features` → `Notifications` → ON
+2. Prima data cand botul detecteaza un semnal, apare `TradingBot` in lista de aplicatii
+3. Asigura-te ca `TradingBot` este activat:
+   - Windows Settings → System → Notifications → scroll jos → `TradingBot` → ON
+   - In Phone Link Settings → Notifications → `TradingBot` → ON (sau "Sync all")
+
+**Rezultat:** cand botul detecteaza un semnal, primesti notificare pe telefon cu:
+- Simbolul si directia (ex: `Signal SHORT NZDJPY`)
+- Entry / SL / TP si R ratio
+
+> Phone Link necesita ambele dispozitive conectate la internet si Bluetooth activ pe telefon.
 
 ---
 
@@ -178,17 +270,13 @@ pentru a compara performanta live cu backtestul.
 
 ## Pornire rapida (dupa instalare)
 
-Deschide **doua terminale** si ruleaza simultan:
-
 ```bash
-# Terminal 1
-python live/session1_m15_long.py
-
-# Terminal 2
-python live/session2_m5_both.py
+python live/run_all.py
 ```
 
-Ambele trebuie sa ruleze in paralel pentru a acumula date din ambele sesiuni.
+Porneste toate 4 sesiunile simultan. Status la fiecare 5 min. Ctrl+C opreste tot.
+
+Sau cu autostart configurat (dupa `setup_autostart.ps1`): reporneste PC-ul — totul porneste singur.
 
 ---
 
@@ -201,3 +289,6 @@ Ambele trebuie sa ruleze in paralel pentru a acumula date din ambele sesiuni.
 | `ModuleNotFoundError: MetaTrader5` | Ruleaza `pip install MetaTrader5` |
 | `Python not found` | Reinstaleaza Python cu "Add to PATH" bifat |
 | Sesiunea nu genereaza semnale | Normal — citeste `docs/SESIUNI_LIVE.md` sectiunea 6 |
+| PC restartat noaptea | Windows Update — configureaza auto-login + setup_autostart.ps1 |
+| Notificarile nu apar pe telefon | Verifica Phone Link conectat + TradingBot activat in Settings → Notifications |
+| MT5 nu porneste la startup | Verifica task 'TradingBot-MT5' in Task Scheduler — Run as Administrator |
