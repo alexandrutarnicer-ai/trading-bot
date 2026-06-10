@@ -71,6 +71,11 @@ SESSION_CONFIG = {
     "n_bars_entry": 2000,
     "n_bars_trend": 1000,
 
+    # Executie demo/live
+    "execute_trades":  True,    # plaseaza ordine pending in MT5
+    "session_capital": 500,     # capital virtual per sesiune (USD)
+    "risk_pct":        0.01,    # risc per trade = 1% din session_capital = $5
+
     # Output
     "output_dir": os.path.join(DATA_DIR, "live_signals", "session3"),
 }

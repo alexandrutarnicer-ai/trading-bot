@@ -33,6 +33,99 @@ from strategy.signals import pip_size, count_optional, reward_R
 # Notificari Windows
 # ---------------------------------------------------------------------------
 
+try:
+    import MetaTrader5 as _mt5_exec
+except ImportError:
+    _mt5_exec = None
+
+
+def _calc_lots(symbol: str, entry: float, sl: float,
+               capital: float, risk_pct: float) -> float:
+    """Calculeaza lotajul bazat pe capitalul virtual si riscul per trade."""
+    if _mt5_exec is None:
+        return 0.01
+    info = _mt5_exec.symbol_info(symbol)
+    if info is None:
+        return 0.01
+    pip     = pip_size(symbol)
+    sl_pips = abs(entry - sl) / pip
+    if sl_pips <= 0 or info.trade_tick_size <= 0:
+        return info.volume_min
+    pip_val = info.trade_tick_value / info.trade_tick_size * pip
+    if pip_val <= 0:
+        return info.volume_min
+    raw  = (capital * risk_pct) / (sl_pips * pip_val)
+    step = info.volume_step if info.volume_step > 0 else 0.01
+    lot  = max(info.volume_min, (raw // step) * step)
+    return round(lot, 2)
+
+
+def _place_order(sig: dict, lots: float, expire_bars: int,
+                 bar_minutes: int, log) -> int | None:
+    """
+    Plaseaza ordin pending BUY_STOP/SELL_STOP in MT5.
+    Returneaza ticket-ul MT5 sau None la esec/respingere.
+    """
+    if _mt5_exec is None:
+        log.warning("  [EXEC] MetaTrader5 indisponibil.")
+        return None
+
+    symbol    = sig["symbol"]
+    direction = sig["direction"]
+
+    # Verifica ca pretul nu a fost deja depasit (BUY_STOP must be > Ask)
+    tick = _mt5_exec.symbol_info_tick(symbol)
+    if tick is not None:
+        if direction == 1 and tick.ask >= sig["entry"]:
+            log.warning(f"  [EXEC] {sig['signal_id']}: BUY_STOP ignorat "
+                        f"(Ask {tick.ask:.5f} >= entry {sig['entry']:.5f})")
+            return None
+        if direction == -1 and tick.bid <= sig["entry"]:
+            log.warning(f"  [EXEC] {sig['signal_id']}: SELL_STOP ignorat "
+                        f"(Bid {tick.bid:.5f} <= entry {sig['entry']:.5f})")
+            return None
+
+    order_type = (_mt5_exec.ORDER_TYPE_BUY_STOP
+                  if direction == 1 else _mt5_exec.ORDER_TYPE_SELL_STOP)
+    exp_time   = datetime.now() + timedelta(minutes=expire_bars * bar_minutes)
+
+    request = {
+        "action":    _mt5_exec.TRADE_ACTION_PENDING,
+        "symbol":    symbol,
+        "volume":    lots,
+        "type":      order_type,
+        "price":     sig["entry"],
+        "sl":        sig["sl"],
+        "tp":        sig["tp"],
+        "expiration": exp_time,
+        "type_time":  _mt5_exec.ORDER_TIME_SPECIFIED,
+        "comment":    sig["signal_id"][:31],
+    }
+
+    # Incearca moduri de umplere in ordine (difera per broker)
+    for filling in [_mt5_exec.ORDER_FILLING_RETURN,
+                    _mt5_exec.ORDER_FILLING_IOC,
+                    _mt5_exec.ORDER_FILLING_FOK]:
+        request["type_filling"] = filling
+        result = _mt5_exec.order_send(request)
+        if result is None:
+            continue
+        if result.retcode == _mt5_exec.TRADE_RETCODE_DONE:
+            dir_str = "LONG" if direction == 1 else "SHORT"
+            log.info(f"  [EXEC] *** ORDIN: {sig['signal_id']} {symbol} {dir_str} "
+                     f"{lots}lot @ {sig['entry']:.5f}  "
+                     f"SL={sig['sl']:.5f}  TP={sig['tp']:.5f}  "
+                     f"ticket=#{result.order}")
+            return result.order
+        if result.retcode != 10030:   # 10030 = INVALID_FILL — incearca urmatorul
+            log.warning(f"  [EXEC] {sig['signal_id']}: RESPINS "
+                        f"retcode={result.retcode} ({result.comment})")
+            return None
+
+    log.warning(f"  [EXEC] {sig['signal_id']}: niciun mod de umplere acceptat.")
+    return None
+
+
 def _notify_signal(sig: dict, session_id: str) -> None:
     """
     Notificare Windows Toast + terminal bell la detectarea unui semnal nou.
@@ -373,6 +466,7 @@ def run_generator(session_cfg: dict):
     state = (pickle.load(open(state_file, "rb"))
              if os.path.exists(state_file)
              else {"pending": {}, "signal_counter": 0, "last_checked": {}})
+    state.setdefault("mt5_tickets", {})   # ticket MT5 per signal_id
 
     with open(CONFIG, encoding="utf-8") as f:
         cfg = json.load(f)
@@ -451,6 +545,19 @@ def run_generator(session_cfg: dict):
                         f"({sig['r_ratio']:.1f}R) RSI={sig['rsi']:.0f}"
                     )
                     _notify_signal(sig, session_cfg["session_id"])
+
+                    # Executie demo/live
+                    if session_cfg.get("execute_trades", False):
+                        capital  = session_cfg.get("session_capital", 1000)
+                        risk_pct = session_cfg.get("risk_pct", 0.01)
+                        lots   = _calc_lots(sig["symbol"], sig["entry"], sig["sl"],
+                                            capital, risk_pct)
+                        ticket = _place_order(sig, lots,
+                                              session_cfg.get("expire_bars", 4),
+                                              session_cfg["bar_minutes"], log)
+                        if ticket:
+                            state["mt5_tickets"][sig["signal_id"]] = ticket
+
                     new_sigs += 1
 
                 if len(df) > 2:
