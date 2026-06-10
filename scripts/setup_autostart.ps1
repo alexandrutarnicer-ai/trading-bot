@@ -4,7 +4,12 @@
     Creeaza doua task-uri in Task Scheduler: MT5 si run_all.py (cu 45s delay).
 
 .NOTES
-    Rulare: click dreapta pe fisier → "Run with PowerShell" (ca Administrator)
+    IMPORTANT: Trebuie rulat ca Administrator.
+    Mod recomandat de rulare:
+      Win → cauta "PowerShell" → click dreapta → "Run as administrator"
+      Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+      & "c:\trading-bot\scripts\setup_autostart.ps1"
+
     Nu trebuie rulat din nou dupa reinstalare Windows — task-urile persista.
     Pentru stergere task-uri: Unregister-ScheduledTask -TaskName "TradingBot-*" -Confirm:$false
 #>
@@ -29,9 +34,11 @@ Write-Host "  Python  : $PythonExe" -ForegroundColor Green
 
 # Gaseste MT5
 $mt5Candidates = @(
-    "$env:LOCALAPPDATA\Programs\MetaTrader 5\terminal64.exe",
+    "$env:PROGRAMFILES\MetaTrader 5 IC Markets EU\terminal64.exe",
+    "$env:PROGRAMFILES\MetaTrader 5 IC Markets\terminal64.exe",
     "$env:PROGRAMFILES\MetaTrader 5\terminal64.exe",
     "${env:PROGRAMFILES(X86)}\MetaTrader 5\terminal64.exe",
+    "$env:LOCALAPPDATA\Programs\MetaTrader 5\terminal64.exe",
     "$env:LOCALAPPDATA\Programs\ICMarkets MetaTrader5\terminal64.exe",
     "$env:LOCALAPPDATA\Programs\IC Markets MetaTrader 5\terminal64.exe",
     "$env:LOCALAPPDATA\Programs\ICMarketsEU MetaTrader5\terminal64.exe"

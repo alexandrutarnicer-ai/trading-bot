@@ -138,50 +138,89 @@ Necesita **doua configurari**: auto-login (fara PIN) + Task Scheduler.
 
 > Recomandat doar pentru PC/laptop de acasa. Nu faci asta pe un PC de birou.
 
-**Metoda 1 — netplwiz** (Windows 10 / unele versiuni Windows 11):
+> **Important:** Daca ai **cont Microsoft** (nu cont local), foloseste Metoda 2 — registry.
+> Metoda netplwiz nu functioneaza pe Windows 11 cu cont Microsoft online.
+
+**Metoda 1 — netplwiz** (conturi locale / Windows 10):
 1. `Win + R` → tasteaza `netplwiz` → Enter
 2. Selecteaza contul tau de utilizator
 3. Debifeza **"Users must enter a user name and password"**
 4. Aplica → introdu parola de cont de doua ori → OK
 5. Reporneste si verifica ca porneste fara PIN
 
-**Metoda 2 — Registry** (Windows 11 22H2+ daca netplwiz nu arata optiunea):
+**Metoda 2 — Registry** (Windows 11 cu cont Microsoft — metoda confirmata):
 1. `Win + R` → `regedit` → Enter
 2. Naviga la: `HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon`
-3. Seteaza / creeaza urmatoarele valori `String`:
+3. Verifica / seteaza valorile `String` (click dreapta → New → String Value daca nu exista):
    - `AutoAdminLogon` = `1`
-   - `DefaultUserName` = `<numele_tau_de_utilizator>`
-   - `DefaultPassword` = `<parola_ta>`
+   - `DefaultUserName` = `<numele_tau_de_utilizator>` (ex: `alext`)
+   - `DefaultPassword` = `<parola_ta_Microsoft>` ← **trebuie creata manual daca lipseste**
 4. Reporneste si verifica
 
 > Parola este stocata in plain text in registry — acceptabil pe un PC personal de acasa,
 > nu pe un PC partajat.
 
+> **Nota:** Daca nu stii parola contului Microsoft, reseteaz-o la `account.live.com/password/reset`
+> de pe telefon, apoi seteaz-o in registry.
+
 ---
 
 ### Pas B — Task Scheduler (MT5 + bot la login)
 
-Ruleaza scriptul de setup (o singura data, dupa care task-urile persista):
+Task Scheduler necesita **PowerShell ca Administrator**. Doua optiuni:
 
+**Optiunea 1 — Script automat** (recomandat la reinstalare):
 ```
-click dreapta pe: scripts\setup_autostart.ps1
-→ "Run with PowerShell"  (sau "Run as Administrator" daca cere)
+Win → cauta "PowerShell" → click dreapta → "Run as administrator"
+```
+Apoi in fereastra Administrator:
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+& "c:\trading-bot\scripts\setup_autostart.ps1"
 ```
 
-Scriptul face automat:
-1. Gaseste MT5 si creeaza task `TradingBot-MT5` — porneste la login
-2. Creeaza `live\start_bot.bat` si task `TradingBot-RunAll` — porneste la 45s dupa login
+**Optiunea 2 — Comenzi manuale** (daca scriptul nu merge):
+
+Deschide PowerShell ca Administrator (`Win` → `powershell` → click dreapta → Run as administrator), apoi:
+
+```powershell
+# 1. Creeaza start_bot.bat
+$py = (Get-Command python).Source
+@"
+@echo off
+title Trading Bot -- Sesiuni Live
+timeout /t 45 /nobreak
+cd /d "c:\trading-bot"
+"$py" live\run_all.py
+pause
+"@ | Set-Content "c:\trading-bot\live\start_bot.bat" -Encoding UTF8
+
+# 2. Task pentru run_all.py (obligatoriu)
+$bat = "c:\trading-bot\live\start_bot.bat"
+$a = New-ScheduledTaskAction -Execute "cmd.exe" -Argument "/c `"$bat`""
+$t = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+$s = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Days 2)
+Register-ScheduledTask -TaskName "TradingBot-RunAll" -Action $a -Trigger $t -Settings $s -RunLevel Highest -Force
+
+# 3. Task pentru MT5 — ajusteaza calea daca e diferita
+$mt5 = "C:\Program Files\MetaTrader 5 IC Markets EU\terminal64.exe"
+$a2 = New-ScheduledTaskAction -Execute $mt5
+$t2 = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+$s2 = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
+Register-ScheduledTask -TaskName "TradingBot-MT5" -Action $a2 -Trigger $t2 -Settings $s2 -RunLevel Highest -Force
+```
 
 **La urmatoarea pornire Windows:**
+- Windows se logheaza automat (fara PIN)
 - MT5 porneste automat si se conecteaza la broker (memoreaza credentialele)
 - Dupa 45 secunde: o fereastra CMD se deschide cu `run_all.py` activ
 - Botul ruleaza non-stop fara nicio interventie
 
-**Verificare task-uri:**
+**Verificare task-uri (PowerShell normal):**
+```powershell
+Get-ScheduledTask -TaskName "TradingBot-*" | Select-Object TaskName, State
 ```
-Start menu → cauta "Task Scheduler" → Task Scheduler Library
-Trebuie sa apara: TradingBot-MT5  si  TradingBot-RunAll
-```
+Trebuie sa apara: `TradingBot-MT5` si `TradingBot-RunAll` cu State = `Ready`.
 
 **Stergere task-uri (daca vrei sa dezactivezi):**
 ```powershell
@@ -289,6 +328,8 @@ Sau cu autostart configurat (dupa `setup_autostart.ps1`): reporneste PC-ul — t
 | `ModuleNotFoundError: MetaTrader5` | Ruleaza `pip install MetaTrader5` |
 | `Python not found` | Reinstaleaza Python cu "Add to PATH" bifat |
 | Sesiunea nu genereaza semnale | Normal — citeste `docs/SESIUNI_LIVE.md` sectiunea 6 |
-| PC restartat noaptea | Windows Update — configureaza auto-login + setup_autostart.ps1 |
+| PC restartat noaptea | Windows Update — configureaza auto-login (Pas A) + task-uri (Pas B) |
+| Auto-login nu functioneaza | Cont Microsoft: verifica `DefaultPassword` in regedit (Winlogon) — trebuie creat manual |
 | Notificarile nu apar pe telefon | Verifica Phone Link conectat + TradingBot activat in Settings → Notifications |
-| MT5 nu porneste la startup | Verifica task 'TradingBot-MT5' in Task Scheduler — Run as Administrator |
+| MT5 nu porneste la startup | Verifica task 'TradingBot-MT5' in Task Scheduler — a fost creat cu Run as Administrator? |
+| `Register-ScheduledTask: Access denied` | PowerShell nu e deschis ca Administrator — Win → powershell → click dreapta → Run as administrator |
