@@ -120,7 +120,7 @@ Oprire: `Ctrl+C` in terminal.
 | **S1** FX Long | Marti – Vineri | 13:00 – 21:00 | EUR/GBP/JPY LONG |
 | **S2** FX Both | Luni – Vineri | 05:00 – 21:00 | EUR + JPY, BOTH |
 | **S3** BTC Both | Luni – Vineri + Dum | 03:00 – 12:00 + 18:00 – 21:00 | crypto, skip Sambata |
-| **S4** GER40+US30 | Marti – Duminica | 12:00 – 00:00 | LONG only, OBSERVARE |
+| **S4** GER40+US30 | Marti – Duminica | 12:00 – 00:00 | LONG only, demo execution |
 
 Recomandat: lasa `run_all.py` pornit **non-stop**. Engine-ul doarme intre bare (~15 min), consum de resurse foarte mic.
 Detalii complete: `SESIUNI.md` din radacina proiectului.

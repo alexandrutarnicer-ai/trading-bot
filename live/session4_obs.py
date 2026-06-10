@@ -1,13 +1,12 @@
 """
-SESSION 4 — GER40 + US30, LONG only, OBSERVARE DEMO
+SESSION 4 — GER40 + US30, LONG only, DEMO EXECUTION
 =====================================================
-ATENTIE: Aceasta sesiune este in modul de OBSERVARE (demo).
-Nu s-a atins semnificatie statistica suficienta pentru trading real.
-Scopul: acumulare date live ~6 luni, re-evaluare Dec 2026.
+ATENTIE: Sesiune in validare statistica — nu are semnificatie suficienta pentru real.
+Scopul: acumulare date live ~6 luni, re-evaluare Dec 2026. Demo OK.
 
   GER40 Matinal  09-14h UTC  PW=6  LONG  exp_test=+0.480R p=0.045 (pre-Bonferroni)
   US30  skipMon  14-21h UTC  PW=6  LONG  exp_test=+0.224R p=0.165
-  Capital recomandat: $400 (indici, lot size mic)
+  Capital: $175 (parte din $700 total demo — 4 sesiuni)
   Frecventa asteptata: ~0.8 semnale/sapt (0.35 GER40 + 0.45 US30)
 
 Orar rulare (ora locala Romania):
@@ -19,7 +18,7 @@ Output:  data/live_signals/session4/
 
 NOTE: skip_monday=True se aplica ambelor simboluri.
       GER40 pip=$1.15/lot, US30 pip=$1.00/lot (lot minim 0.01).
-      Nu executa ordine automat — doar detecteaza si logheaza semnale.
+      Executa ordine pending in MT5 (demo) SI logheaza in CSV (paralel).
 """
 
 import os, sys
@@ -29,9 +28,9 @@ from live.signal_generator import run_generator
 from backtest import DATA_DIR
 
 SESSION_CONFIG = {
-    "session_id":   "S4-OBS",
+    "session_id":   "S4-DEMO",
     "description":  (
-        "GER40 09-14h + US30 14-21h | LONG only | OBSERVARE DEMO | "
+        "GER40 09-14h + US30 14-21h | LONG only | DEMO | "
         "GER40 p=0.045 pre-Bonferroni | US30 p=0.165 | re-test Dec 2026"
     ),
 
@@ -74,6 +73,11 @@ SESSION_CONFIG = {
     # Date — 2000 bare M15 (~21 zile), suficient pentru warm-up indici
     "n_bars_entry": 2000,
     "n_bars_trend": 1000,
+
+    # Executie demo — ordine pending in MT5 + CSV logging in paralel
+    "execute_trades":  True,    # plaseaza ordine pending in MT5 (demo)
+    "session_capital": 175,     # capital virtual — $700 total / 4
+    "risk_pct":        0.01,    # risc per trade = 1% = $1.75/trade
 
     # Output separat de sesiunile validate
     "output_dir": os.path.join(DATA_DIR, "live_signals", "session4"),

@@ -75,10 +75,10 @@ Asia + pre-EU (00-09h) si EU/early-US (15-18h) au miscare mai curata pe swing-ur
 
 ---
 
-## Sesiune 4 — GER40 + US30, LONG only, OBSERVARE DEMO
+## Sesiune 4 — GER40 + US30, LONG only, DEMO EXECUTION
 
-> **ATENTIE:** Aceasta sesiune este in mod de observare. Nu executa ordine reale.
-> Statistica insuficienta — re-evaluare planificata Dec 2026.
+> **ATENTIE:** Aceasta sesiune este in validare statistica. Executa ordine pe **demo** (nu real).
+> Statistica insuficienta pentru real — re-evaluare planificata Dec 2026.
 
 | Parametru | GER40 | US30 |
 |-----------|-------|------|
@@ -93,16 +93,16 @@ Asia + pre-EU (00-09h) si EU/early-US (15-18h) au miscare mai curata pe swing-ur
 | Frecventa | ~0.35/saptamana | ~0.45/saptamana |
 | Exp test | +0.480R p=0.045 | +0.224R p=0.165 |
 | DD max | -31.8% | -15.3% |
-| Capital | $400 (observare) | $400 (observare) |
+| Capital | $175 (demo) | $175 (demo) |
 | Output | `data/live_signals/session4/` | (acelasi director) |
 
 **Frecventa totala S4: ~0.8 semnale/saptamana** (GER40 + US30 combinate).
 In medie: 1 semnal la 8-10 zile lucratoare. Saptamani fara semnal sunt normale.
 
-**De ce nu executa ordine:**
+**De ce nu executam pe real (doar demo):**
 - GER40: p=0.045 pre-Bonferroni, dar train (2017-2023) = -0.257R (regime-dependent)
 - US30: train pozitiv (+0.074R) dar p=0.165 — prea putine date (74 teste in 2.5 ani)
-- Dupa 50 semnale live per simbol, re-testam statistica
+- Dupa 50 semnale live per simbol, re-testam statistica (Dec 2026)
 
 ---
 
@@ -140,7 +140,7 @@ Sau manual, in terminale separate:
 python live/session1_m15_long.py   # Terminal 1
 python live/session2_m5_both.py    # Terminal 2
 python live/session3_btc_both.py   # Terminal 3
-python live/session4_obs.py        # Terminal 4  [OBSERVARE]
+python live/session4_obs.py        # Terminal 4  [DEMO]
 ```
 
 - S1 si S2 se activeaza cand piata europeana/asiatica se deschide
@@ -161,20 +161,21 @@ python live/session4_obs.py        # Terminal 4  [OBSERVARE]
 
 ## Capital si risc
 
-Sesiunile sunt independente — capitalul NU se imparte:
+Sesiunile sunt independente. Capital alocat din $700 total demo (egal per sesiune):
 
-| Sesiune | Capital recomandat | Risc/trade | Status |
-|---------|--------------------|------------|--------|
-| S1 | $1000+ | 1% per trade | validat |
-| S2 | $1000+ | 1% per trade | validat |
-| S3 BTC | $500 min | 1% per trade (~$5 risc la $500) | validat p=0.0075 |
-| S4 OBS | $400 | — nu executa | OBSERVARE DEMO |
+| Sesiune | Capital demo | Risc/trade | Lot tipic | Status |
+|---------|-------------|------------|-----------|--------|
+| S1 FX Long | $175 | 1% = $1.75 | 0.01 EURUSD | validat |
+| S2 FX Both | $175 | 1% = $1.75 | 0.01-0.02 FX | validat |
+| S3 BTC | $175 | 1% = $1.75 (~0.01 BTC) | 0.01 BTCUSD | validat p=0.0075 |
+| S4 GER40+US30 | $175 | 1% = $1.75 | 0.01-0.03 indici | DEMO — re-test Dec 2026 |
+| **TOTAL** | **$700** | | | |
 
 ---
 
-## Observare live vs executie
+## Observare live + executie demo (paralel)
 
-Toate sesiunile ruleaza in **mod observare** — genereaza semnale, NU executa ordine in MT5.
+Toate sesiunile ruleaza **in paralel** — executa ordine pending in MT5 (demo) SI logeaza in CSV:
 
 Fisiere generate per sesiune:
 - `signals.csv` — toate semnalele detectate (entry/sl/tp/R)
@@ -189,11 +190,11 @@ Dupa 30-50 trades per sesiune, compara `result_r` mediu din `outcomes.csv` cu ex
 
 | Sesiune | N test | Exp test | p-val | DD | Capital | Status |
 |---------|--------|----------|-------|----|---------|--------|
-| S1 M15 Long | - | +0.375R | - | -50.6% | $1000+ | validat |
-| S2 M15 Both | - | +0.142R | - | -45.4% | $1000+ | validat |
-| S3 BTC Both | 224 | +0.336R | 0.0075*** | -22.5% | $500 | validat |
-| S4 GER40 | 61 | +0.480R | 0.045** | -31.8% | $400 | OBS — train negativ, post-Bonferroni p=2.2 |
-| S4 US30 | 74 | +0.224R | 0.165 | -15.3% | $400 | OBS — train pozitiv, insuficient statistic |
+| S1 M15 Long | - | +0.375R | - | -50.6% | $175 demo | validat |
+| S2 M15 Both | - | +0.142R | - | -45.4% | $175 demo | validat |
+| S3 BTC Both | 224 | +0.336R | 0.0075*** | -22.5% | $175 demo | validat |
+| S4 GER40 | 61 | +0.480R | 0.045** | -31.8% | $175 demo | DEMO — train negativ, post-Bonferroni p=2.2 |
+| S4 US30 | 74 | +0.224R | 0.165 | -15.3% | $175 demo | DEMO — train pozitiv, insuficient statistic |
 
 S3 are cea mai puternica validare statistica (p=0.0075 one-sided t-test).
 Bonferroni (11 configuratii testate): p_corr = 0.0825 — edge sustinut si de rationale economic.
