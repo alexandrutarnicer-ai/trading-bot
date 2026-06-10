@@ -253,20 +253,36 @@ nu depinde de Bluetooth sau retea locala.
 [Environment]::SetEnvironmentVariable("TELEGRAM_CHAT_ID", "<chat-id-ul-tau>", "User")
 ```
 
-Reporneste terminalul dupa aceasta comanda (variabilele sunt active la sesiunea noua).
+> `"User"` = salvat permanent pentru contul tau Windows, persista la restart.
+> Nu folosi `"Machine"` (necesita Administrator si se aplica tuturor utilizatorilor).
 
-**Verificare:**
-```python
-python -c "
-import os
-from live.signal_generator import _send_telegram
-_send_telegram('Test — botul functioneaza')
-print('Trimis')
-"
+**Pas 4 — Verifica ca sunt setate corect:**
+```powershell
+[Environment]::GetEnvironmentVariable("TELEGRAM_TOKEN", "User")
+[Environment]::GetEnvironmentVariable("TELEGRAM_CHAT_ID", "User")
+```
+Trebuie sa apara token-ul si chat_id-ul — nu mesaj gol.
+
+**Pas 5 — Testeaza (deschide un terminal NOU dupa Pas 3):**
+```powershell
+python -c "from live.signal_generator import _send_telegram; _send_telegram('Test bot trading'); print('Trimis')"
+```
+Verifica telefonul — trebuie sa primesti mesajul in ~2 secunde.
+
+**Actualizare token (daca il regenerezi din BotFather):**
+```powershell
+[Environment]::SetEnvironmentVariable("TELEGRAM_TOKEN", "<token-nou>", "User")
+```
+Reporneste botul (`run_all.py`) dupa actualizare — procesele existente au token-ul vechi in memorie.
+
+**Stergere (daca vrei sa dezactivezi notificarile):**
+```powershell
+[Environment]::SetEnvironmentVariable("TELEGRAM_TOKEN", $null, "User")
+[Environment]::SetEnvironmentVariable("TELEGRAM_CHAT_ID", $null, "User")
 ```
 
 > Token-ul si chat_id-ul NU sunt stocate in cod — doar in variabile de mediu Windows.
-> Nu le posta public (git, chat, etc).
+> Nu le posta public (git, chat, etc). Daca le-ai expus, regenereaza cu `/revoke` la `@BotFather`.
 
 **Format notificare primita pe telefon:**
 ```
