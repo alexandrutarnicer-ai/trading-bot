@@ -372,7 +372,8 @@ _OUTCOMES_COLS = [
 
 def _update_outcomes(df: pd.DataFrame, symbol: str,
                      state: dict, outcomes_file: str, log,
-                     expire_bars: int = 4, bar_minutes: int = 15):
+                     expire_bars: int = 4, bar_minutes: int = 15,
+                     session_id: str = ""):
     if symbol not in state["pending"]:
         return
 
@@ -400,6 +401,11 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                                          "time_check": datetime.now()})
                     rows_to_remove.append(sig_id)
                     log.info(f"  EXPIRAT: {sig_id} {symbol} (>{expire_bars} bare fara trigger)")
+                    _send_telegram(
+                        f"<b>EXPIRAT: {symbol}</b>\n"
+                        f"Ordinul nu a fost triggerat (>{expire_bars} bare)\n"
+                        f"<i>{session_id} | {sig_id}</i>"
+                    )
                     continue
 
             for _, bar in df_post.iterrows():
@@ -436,6 +442,12 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                                          "time_check": datetime.now()})
                     rows_to_remove.append(sig_id)
                     log.info(f"  PIERDERE: {sig_id} SL -1.0R")
+                    fmt = ".2f" if p["entry"] > 100 else ".5f"
+                    _send_telegram(
+                        f"<b>PIERDERE -1R: {'LONG' if p['direction']==1 else 'SHORT'} {symbol}</b>\n"
+                        f"Entry {format(p['entry'], fmt)} → SL {format(p['sl'], fmt)}\n"
+                        f"<i>{session_id} | {sig_id}</i>"
+                    )
                     break
                 if tp_hit:
                     outcome_rows.append({**p, "signal_id": sig_id,
@@ -445,6 +457,12 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                                          "time_check": datetime.now()})
                     rows_to_remove.append(sig_id)
                     log.info(f"  PROFIT: {sig_id} TP +{p['r_ratio']:.1f}R")
+                    fmt = ".2f" if p["entry"] > 100 else ".5f"
+                    _send_telegram(
+                        f"<b>PROFIT +{p['r_ratio']:.1f}R: {'LONG' if p['direction']==1 else 'SHORT'} {symbol}</b>\n"
+                        f"Entry {format(p['entry'], fmt)} → TP {format(p['tp'], fmt)}\n"
+                        f"<i>{session_id} | {sig_id}</i>"
+                    )
                     break
 
     if outcome_rows:
@@ -559,7 +577,8 @@ def run_generator(session_cfg: dict):
 
                 _update_outcomes(df, symbol, state, outcomes_file, log,
                                 expire_bars=session_cfg.get("expire_bars", 4),
-                                bar_minutes=session_cfg["bar_minutes"])
+                                bar_minutes=session_cfg["bar_minutes"],
+                                session_id=session_cfg.get("session_id", ""))
 
                 sigs = _check_signals(df, symbol, cfg, state, session_cfg)
                 for sig in sigs:
@@ -603,6 +622,15 @@ def run_generator(session_cfg: dict):
                                               session_cfg["bar_minutes"], log)
                         if ticket:
                             state["mt5_tickets"][sig["signal_id"]] = ticket
+                            fmt = ".2f" if sig["entry"] > 100 else ".5f"
+                            _send_telegram(
+                                f"<b>Ordin plasat: {sig['dir_str']} {sig['symbol']}</b>\n"
+                                f"Entry: <code>{format(sig['entry'], fmt)}</code>  "
+                                f"SL: <code>{format(sig['sl'], fmt)}</code>  "
+                                f"TP: <code>{format(sig['tp'], fmt)}</code>\n"
+                                f"Lot: {lots}  Ticket: #{ticket}\n"
+                                f"<i>{session_cfg['session_id']}</i>"
+                            )
 
                     new_sigs += 1
 
