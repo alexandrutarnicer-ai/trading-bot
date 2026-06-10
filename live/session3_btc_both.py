@@ -72,9 +72,10 @@ SESSION_CONFIG = {
     "n_bars_trend": 1000,
 
     # Executie demo/live
-    "execute_trades":  True,    # plaseaza ordine pending in MT5
-    "session_capital": 175,     # capital virtual per sesiune (USD) — $700 total / 4
-    "risk_pct":        0.01,    # risc per trade = 1% = $1.75/trade
+    "execute_trades":   True,    # plaseaza ordine pending in MT5
+    "session_capital":  500,    # capital fallback daca MT5 nu e disponibil
+    "account_fraction": 0.625,  # 62.5% din equity real MT5 ($500 din $800 start)
+    "risk_pct":         0.01,   # risc per trade = 1% din capital efectiv
 
     # Output
     "output_dir": os.path.join(DATA_DIR, "live_signals", "session3"),

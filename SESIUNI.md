@@ -161,15 +161,20 @@ python live/session4_obs.py        # Terminal 4  [DEMO]
 
 ## Capital si risc
 
-Sesiunile sunt independente. Capital alocat din $700 total demo (egal per sesiune):
+Sesiunile sunt independente. **Sizing dinamic** — botul citeste equity-ul real din MT5 si
+aplica o fractie per sesiune la fiecare trade. Pe masura ce contul creste sau scade,
+lot size-ul se ajusteaza automat (compound growth / drawdown protection).
 
-| Sesiune | Capital demo | Risc/trade | Lot tipic | Status |
-|---------|-------------|------------|-----------|--------|
-| S1 FX Long | $175 | 1% = $1.75 | 0.01 EURUSD | validat |
-| S2 FX Both | $175 | 1% = $1.75 | 0.01-0.02 FX | validat |
-| S3 BTC | $175 | 1% = $1.75 (~0.01 BTC) | 0.01 BTCUSD | validat p=0.0075 |
-| S4 GER40+US30 | $175 | 1% = $1.75 | 0.01-0.03 indici | DEMO — re-test Dec 2026 |
-| **TOTAL** | **$700** | | | |
+| Sesiune | Fractie din equity | Start ($800) | Risc/trade | Status |
+|---------|-------------------|-------------|------------|--------|
+| S1 FX Long | 12.5% | $100 | 1% = $1.00 | validat |
+| S2 FX Both | 12.5% | $100 | 1% = $1.00 | validat |
+| S3 BTC | 62.5% | $500 | 1% = $5.00 | validat p=0.0075 |
+| S4 GER40+US30 | 12.5% | $100 | 1% = $1.00 | DEMO — re-test Dec 2026 |
+| **TOTAL** | **100%** | **$800** | | |
+
+Exemplu la crestere: daca equity ajunge la $1000, S3 risca $6.25/trade (62.5% × 1%).
+Fallback: daca MT5 nu returneaza equity, foloseste `session_capital` fix din config.
 
 ---
 
@@ -190,11 +195,11 @@ Dupa 30-50 trades per sesiune, compara `result_r` mediu din `outcomes.csv` cu ex
 
 | Sesiune | N test | Exp test | p-val | DD | Capital | Status |
 |---------|--------|----------|-------|----|---------|--------|
-| S1 M15 Long | - | +0.375R | - | -50.6% | $175 demo | validat |
-| S2 M15 Both | - | +0.142R | - | -45.4% | $175 demo | validat |
-| S3 BTC Both | 224 | +0.336R | 0.0075*** | -22.5% | $175 demo | validat |
-| S4 GER40 | 61 | +0.480R | 0.045** | -31.8% | $175 demo | DEMO — train negativ, post-Bonferroni p=2.2 |
-| S4 US30 | 74 | +0.224R | 0.165 | -15.3% | $175 demo | DEMO — train pozitiv, insuficient statistic |
+| S1 M15 Long | - | +0.375R | - | -50.6% | 12.5% equity | validat |
+| S2 M15 Both | - | +0.142R | - | -45.4% | 12.5% equity | validat |
+| S3 BTC Both | 224 | +0.336R | 0.0075*** | -22.5% | 62.5% equity | validat |
+| S4 GER40 | 61 | +0.480R | 0.045** | -31.8% | 12.5% equity | DEMO — train negativ, post-Bonferroni p=2.2 |
+| S4 US30 | 74 | +0.224R | 0.165 | -15.3% | 12.5% equity | DEMO — train pozitiv, insuficient statistic |
 
 S3 are cea mai puternica validare statistica (p=0.0075 one-sided t-test).
 Bonferroni (11 configuratii testate): p_corr = 0.0825 — edge sustinut si de rationale economic.

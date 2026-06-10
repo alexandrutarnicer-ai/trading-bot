@@ -75,9 +75,10 @@ SESSION_CONFIG = {
     "n_bars_trend": 1000,
 
     # Executie demo — ordine pending in MT5 + CSV logging in paralel
-    "execute_trades":  True,    # plaseaza ordine pending in MT5 (demo)
-    "session_capital": 175,     # capital virtual — $700 total / 4
-    "risk_pct":        0.01,    # risc per trade = 1% = $1.75/trade
+    "execute_trades":   True,    # plaseaza ordine pending in MT5 (demo)
+    "session_capital":  100,    # capital fallback daca MT5 nu e disponibil
+    "account_fraction": 0.125,  # 12.5% din equity real MT5 ($100 din $800 start)
+    "risk_pct":         0.01,   # risc per trade = 1% din capital efectiv
 
     # Output separat de sesiunile validate
     "output_dir": os.path.join(DATA_DIR, "live_signals", "session4"),

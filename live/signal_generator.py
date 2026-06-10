@@ -548,7 +548,18 @@ def run_generator(session_cfg: dict):
 
                     # Executie demo/live
                     if session_cfg.get("execute_trades", False):
-                        capital  = session_cfg.get("session_capital", 1000)
+                        # Sizing dinamic: daca e setat account_fraction, foloseste
+                        # equity-ul real din MT5 × fractie, altfel session_capital fix.
+                        frac = session_cfg.get("account_fraction")
+                        if frac and _mt5_exec is not None:
+                            _ai = _mt5_exec.account_info()
+                            capital = (_ai.equity * frac) if _ai else session_cfg.get("session_capital", 1000)
+                            log.debug(
+                                "sizing dinamic: equity=%.2f frac=%.3f capital=%.2f",
+                                _ai.equity if _ai else 0, frac, capital,
+                            )
+                        else:
+                            capital = session_cfg.get("session_capital", 1000)
                         risk_pct = session_cfg.get("risk_pct", 0.01)
                         lots   = _calc_lots(sig["symbol"], sig["entry"], sig["sl"],
                                             capital, risk_pct)
