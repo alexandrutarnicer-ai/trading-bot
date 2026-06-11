@@ -529,10 +529,13 @@ def run_generator(session_cfg: dict):
             "exit_price", "exit_time", "result_r",
         ]).to_csv(outcomes_file, index=False)
 
-    # Incarca stare
-    state = (pickle.load(open(state_file, "rb"))
-             if os.path.exists(state_file)
-             else {"pending": {}, "signal_counter": 0, "last_checked": {}})
+    # Incarca stare (cu fallback la coruptie — ex: reboot in mijlocul scrierii)
+    _empty_state = {"pending": {}, "signal_counter": 0, "last_checked": {}}
+    try:
+        state = pickle.load(open(state_file, "rb")) if os.path.exists(state_file) else _empty_state
+    except Exception as _e:
+        log.warning(f"state.pkl corupt ({_e}) — resetat la stare goala.")
+        state = _empty_state
     state.setdefault("mt5_tickets", {})   # ticket MT5 per signal_id
 
     with open(CONFIG, encoding="utf-8") as f:
