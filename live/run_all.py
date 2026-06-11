@@ -54,10 +54,18 @@ SESSIONS = [
     ),
     dict(
         id="S4",
-        label="S4  GER40+US30  [OBS]",
+        label="S4  GER40+US30",
         script=os.path.join(ROOT, "live", "session4_obs.py"),
         sig_dir=os.path.join(DATA_DIR, "live_signals", "session4"),
         hours="09-21h UTC",
+        validated=True,
+    ),
+    dict(
+        id="S5",
+        label="S5  GER40+USDCHF H1  [OBS]",
+        script=os.path.join(ROOT, "live", "session5_ger40_h1.py"),
+        sig_dir=os.path.join(DATA_DIR, "live_signals", "session5"),
+        hours="07-16h UTC",
         validated=False,
     ),
 ]
