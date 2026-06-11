@@ -3,3 +3,4 @@ __pycache__/
 *.csv
 config/secrets*
 .venv/session2_optimize_output.txt
+.env

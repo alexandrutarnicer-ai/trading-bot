@@ -34,7 +34,7 @@ SESSIONS = [
         "label":       "Session 1 — M15 LONG, 3 piete EUR",
         "symbols":     ["EURUSD", "GBPUSD", "EURJPY"],
         "spread_pips": {"EURUSD": 0.5, "GBPUSD": 0.8, "EURJPY": 1.5},
-        "start_balance":         1000,
+        "start_balance":         300,
         "leverage":              30,
         "expire_bars":           4,
         "pullback_window":       8,

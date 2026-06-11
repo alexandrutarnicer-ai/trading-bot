@@ -12,9 +12,11 @@ Loguri:  data/live_signals/sessionX/generator.log
 import os
 import sys
 import csv
+import json
 import time
 import signal
 import subprocess
+import urllib.request
 from datetime import datetime, date
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -61,6 +63,45 @@ SESSIONS = [
 ]
 
 STATUS_INTERVAL = 300   # afiseaza status la fiecare 5 minute
+
+
+def _load_dotenv() -> None:
+    """Incarca .env din radacina proiectului fara a suprascrie variabile deja setate."""
+    env_path = os.path.join(ROOT, ".env")
+    if not os.path.exists(env_path):
+        return
+    with open(env_path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, val = line.split("=", 1)
+            os.environ.setdefault(key.strip(), val.strip())
+
+
+_load_dotenv()
+
+_TG_TOKEN   = os.environ.get("TELEGRAM_TOKEN", "")
+_TG_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
+
+
+def _send_telegram(text: str) -> None:
+    if not _TG_TOKEN or not _TG_CHAT_ID:
+        return
+    try:
+        payload = json.dumps({
+            "chat_id": _TG_CHAT_ID,
+            "text": text,
+            "parse_mode": "HTML",
+        }).encode()
+        req = urllib.request.Request(
+            f"https://api.telegram.org/bot{_TG_TOKEN}/sendMessage",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+        )
+        urllib.request.urlopen(req, timeout=5)
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -154,6 +195,16 @@ def main():
     n = len(sp_list)
     print(f"\n  {n} sesiune{'a' if n==1 else 'i'} pornite. "
           f"Status la fiecare {STATUS_INTERVAL // 60} min. Ctrl+C pentru oprire.\n")
+
+    lines = "\n".join(
+        f"  • {s['label']}  ({s['hours']})"
+        + ("  [obs]" if not s["validated"] else "")
+        for s, _ in sp_list
+    )
+    _send_telegram(
+        f"<b>Trading Bot pornit</b>  {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
+        f"{n} sesiuni active:\n{lines}"
+    )
 
     # Handler Ctrl+C — opreste toate procesele copil
     def _stop_all(sig=None, frame=None):
