@@ -106,27 +106,67 @@ In medie: 1 semnal la 8-10 zile lucratoare. Saptamani fara semnal sunt normale.
 
 ---
 
+## Sesiune 5 — GER40 + USDCHF, H1+D1, OBSERVARE
+
+> **ATENTIE:** Sesiune in observare statistica. `execute_trades=False` — nu executa ordine, logheaza + Telegram.
+> Activare dupa 20-30 semnale live per simbol cu p < 0.05.
+
+| Parametru | GER40 | USDCHF |
+|-----------|-------|--------|
+| Script | `python live/session5_ger40_h1.py` | (acelasi script) |
+| Directie | BOTH | BOTH |
+| Timeframe | H1 entry + D1 trend | H1 entry + D1 trend |
+| Pullback window | 8 (optim 6) | 8 |
+| Sesiune activa | 07-16h UTC | 07-17h UTC |
+| EET vara | 10:00-19:00 | 10:00-20:00 |
+| EET iarna | 09:00-18:00 | 09:00-19:00 |
+| Skip zile | niciunul | niciunul |
+| Frecventa | ~0.3/saptamana | ~0.3/saptamana |
+| Exp test | +0.6505R p=0.103 (borderline) | +0.5269R p=0.0896* (VIABLE) |
+| DD max | -21.9% | -13.7% |
+| Capital | $175 (observare) | $175 (observare) |
+| Output | `data/live_signals/session5/` | (acelasi director) |
+
+**Validare USDCHF (2026-06-11, tf_scan_targeted.py):**
+- N=105 total, split Jan 2024 (~8 ani date 2018-2026)
+- TRAIN: pozitiv
+- TEST: +0.5269R, p=0.0896*, DD=-13.7%, Sp/SL=5.2%
+- Spread 1.2 pip — adecvat (5.2% din SL median)
+
+**GER40 H1+D1 — date insuficiente pentru concluzie:**
+- N test ~22 trades — borderline statistic
+- Paralel cu S4 (GER40 M15): ordine independente in MT5, niciun conflict
+
+**Cand activam execute_trades=True:**
+- USDCHF: acumuleaza 20-30 semnale live, re-evalueaza p pe date noi
+- GER40: asteapta mai multa data — borderline (p=0.103) necesita confirmare
+
+---
+
 ## Program complet — cand sa rulezi ce
 
 > Toate orele in **UTC**. EET vara (EEST, GMT+3) = UTC+3. Iarna (EET, GMT+2) = UTC+2.
 
 ```
-UTC     EET(vara)   S1 (EUR)   S2 EUR   S2 JPY   S3 BTC    S4 GER40   S4 US30
-00-02   03-05       -          -        -        ACTIV      -          -
-02-09   05-12       -          -        ACTIV    ACTIV      -          -        ← S2+S3
-09-10   12-13       -          -        ACTIV    pauza      ACTIV      -
-10-14   13-17       ACTIV      ACTIV    -        pauza      ACTIV      -        ← S1+S2+S4 GER40
-14-15   17-18       ACTIV      ACTIV    -        pauza      -          ACTIV    ← S1+S2+S4 US30
-15-16   18-19       ACTIV*     ACTIV*   -        ACTIV      -          ACTIV    ← S1+S2+S3+S4
-16-18   19-21       ACTIV      ACTIV    -        ACTIV      -          ACTIV    ← S1+S2+S3+S4
-18-21   21-00       -          -        -        pauza      -          ACTIV    ← S4 US30 singur
-21-23   00-02       -          -        -        pauza      -          -
+UTC     EET(vara)   S1 (EUR)   S2 EUR   S2 JPY   S3 BTC    S4 GER40   S4 US30   S5 GER40H1  S5 USDCHF
+00-02   03-05       -          -        -        ACTIV      -          -         -           -
+02-09   05-12       -          -        ACTIV    ACTIV      -          -         -           -          ← S2+S3
+07-09   10-12       -          -        ACTIV    ACTIV      -          -         obs         obs        ← +S5
+09-10   12-13       -          -        ACTIV    pauza      ACTIV      -         obs         obs
+10-14   13-17       ACTIV      ACTIV    -        pauza      ACTIV      -         obs         obs        ← S1+S2+S4+S5
+14-15   17-18       ACTIV      ACTIV    -        pauza      -          ACTIV     -           obs        ← +S4 US30
+15-16   18-19       ACTIV*     ACTIV*   -        ACTIV      -          ACTIV     -           obs        ← S1+S2+S3+S4+S5
+16-17   19-20       ACTIV      ACTIV    -        ACTIV      -          ACTIV     -           obs        ← S5 USDCHF pana 17h
+17-18   20-21       ACTIV      ACTIV    -        ACTIV      -          ACTIV     -           -
+18-21   21-00       -          -        -        pauza      -          ACTIV     -           -          ← S4 US30 singur
+21-23   00-02       -          -        -        pauza      -          -         -           -
 ```
+*S5 este in OBSERVARE (execute_trades=False) — logheaza semnale dar nu executa ordine.
 *Ora 15-16 UTC: S1 si S2 au `skip_hours=(15,16)` — filtrare interna automata.
 
 ### Recomandare practica
 
-**Porneste toate 4 sesiunile simultan** cu un singur comandă:
+**Porneste toate 5 sesiunile simultan** cu un singur comandă:
 
 ```bash
 python live/run_all.py
@@ -141,6 +181,7 @@ python live/session1_m15_long.py   # Terminal 1
 python live/session2_m5_both.py    # Terminal 2
 python live/session3_btc_both.py   # Terminal 3
 python live/session4_obs.py        # Terminal 4  [DEMO]
+python live/session5_ger40_h1.py   # Terminal 5  [OBS — fara executie]
 ```
 
 - S1 si S2 se activeaza cand piata europeana/asiatica se deschide
@@ -167,12 +208,14 @@ lot size-ul se ajusteaza automat (compound growth / drawdown protection).
 
 | Sesiune | Fractie din equity | Start ($800) | Risc/trade | Status |
 |---------|-------------------|-------------|------------|--------|
-| S1 FX Long | 12.5% | $100 | 1% = $1.00 | validat |
-| S2 FX Both | 12.5% | $100 | 1% = $1.00 | validat |
-| S3 BTC | 62.5% | $500 | 1% = $5.00 | validat p=0.0075 |
-| S4 GER40+US30 | 12.5% | $100 | 1% = $1.00 | DEMO — re-test Dec 2026 |
-| **TOTAL** | **100%** | **$800** | | |
+| S1 FX Long | 12.5% | $100 | 1% = $1.00 | validat, activ |
+| S2 FX Both | 12.5% | $100 | 1% = $1.00 | validat, activ |
+| S3 BTC | 62.5% | $500 | 1% = $5.00 | validat p=0.0075, activ |
+| S4 GER40+US30 | 12.5% | $100 | 1% = $1.00 | DEMO activ — re-test Dec 2026 |
+| S5 GER40+USDCHF H1 | — | $175 fix | 1% din $175 | OBSERVARE — execute_trades=False |
+| **TOTAL activ** | **100%** | **$800** | | |
 
+S5 nu participa la sizing dinamic din equity — foloseste `session_capital=175` fix pana la activare.
 Exemplu la crestere: daca equity ajunge la $1000, S3 risca $6.25/trade (62.5% × 1%).
 Fallback: daca MT5 nu returneaza equity, foloseste `session_capital` fix din config.
 
@@ -198,11 +241,16 @@ Dupa 30-50 trades per sesiune, compara `result_r` mediu din `outcomes.csv` cu ex
 | S1 M15 Long | - | +0.375R | - | -50.6% | 12.5% equity | validat |
 | S2 M15 Both | - | +0.142R | - | -45.4% | 12.5% equity | validat |
 | S3 BTC Both | 224 | +0.336R | 0.0075*** | -22.5% | 62.5% equity | validat |
-| S4 GER40 | 61 | +0.480R | 0.045** | -31.8% | 12.5% equity | DEMO — train negativ, post-Bonferroni p=2.2 |
-| S4 US30 | 74 | +0.224R | 0.165 | -15.3% | 12.5% equity | DEMO — train pozitiv, insuficient statistic |
+| S4 GER40 | 61 | +0.480R | 0.045 | -31.8% | 12.5% equity | DEMO activ — train negativ, Bonferroni p=2.2 |
+| S4 US30 | 74 | +0.224R | 0.165 | -15.3% | 12.5% equity | DEMO activ — train pozitiv, statistic insuficient |
+| S5 GER40 H1 | ~22 | +0.6505R | 0.103 | -21.9% | 12.5% rezervat | OBSERVARE — borderline, N insuficient |
+| S5 USDCHF H1 | ~31 | +0.5269R | 0.0896* | -13.7% | 12.5% rezervat | OBSERVARE — VIABLE, acumuleaza live |
 
 S3 are cea mai puternica validare statistica (p=0.0075 one-sided t-test).
 Bonferroni (11 configuratii testate): p_corr = 0.0825 — edge sustinut si de rationale economic.
 
-S4 este in **observare**: 48 configuratii testate → Bonferroni factor 48 → p_corr GER40=2.2, US30=7.9.
+S4 este in **executie demo**: 48 configuratii testate → Bonferroni factor 48 → p_corr GER40=2.2, US30=7.9.
 Re-evaluare planificata: Dec 2026 (dupa ~6 luni date live + 25-30 semnale/simbol).
+
+S5 este in **observare pura** (execute_trades=False): USDCHF validat pe 8 ani, p=0.0896*; activare cand p < 0.05 pe date live.
+Date: tf_scan_targeted.py rulat 2026-06-11 dupa descarca_h1_extra.py (8 ani USDCHF, 1.4 ani USDCAD/AUDJPY/CADJPY).
