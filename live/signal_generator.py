@@ -116,6 +116,21 @@ def _place_order(sig: dict, lots: float, expire_bars: int,
                   if direction == 1 else _mt5_exec.ORDER_TYPE_SELL_STOP)
     exp_time   = datetime.now() + timedelta(minutes=expire_bars * bar_minutes)
 
+    # Determina fill modes suportate de broker pentru acest simbol.
+    # filling_mode bitmask: bit0=FOK(1), bit1=IOC(2); 0 = doar RETURN.
+    sym_info  = _mt5_exec.symbol_info(symbol)
+    fm        = sym_info.filling_mode if sym_info else 0
+    fill_modes: list
+    if fm == 0:
+        fill_modes = [_mt5_exec.ORDER_FILLING_RETURN]
+    else:
+        fill_modes = []
+        if fm & 1:
+            fill_modes.append(_mt5_exec.ORDER_FILLING_FOK)
+        if fm & 2:
+            fill_modes.append(_mt5_exec.ORDER_FILLING_IOC)
+        fill_modes.append(_mt5_exec.ORDER_FILLING_RETURN)
+
     request = {
         "action":    _mt5_exec.TRADE_ACTION_PENDING,
         "symbol":    symbol,
@@ -129,10 +144,7 @@ def _place_order(sig: dict, lots: float, expire_bars: int,
         "comment":    sig["signal_id"][:31],
     }
 
-    # Incearca moduri de umplere in ordine (difera per broker)
-    for filling in [_mt5_exec.ORDER_FILLING_RETURN,
-                    _mt5_exec.ORDER_FILLING_IOC,
-                    _mt5_exec.ORDER_FILLING_FOK]:
+    for filling in fill_modes:
         request["type_filling"] = filling
         result = _mt5_exec.order_send(request)
         if result is None:
@@ -144,12 +156,14 @@ def _place_order(sig: dict, lots: float, expire_bars: int,
                      f"SL={sig['sl']:.5f}  TP={sig['tp']:.5f}  "
                      f"ticket=#{result.order}")
             return result.order
-        if result.retcode != 10030:   # 10030 = INVALID_FILL — incearca urmatorul
+        if result.retcode != 10030:   # alta eroare (pret, volum, etc) — nu are sens sa incercam alt fill
             log.warning(f"  [EXEC] {sig['signal_id']}: RESPINS "
                         f"retcode={result.retcode} ({result.comment})")
             return None
+        log.debug(f"  [EXEC] {sig['signal_id']}: filling={filling} → 10030, incerc urmatorul")
 
-    log.warning(f"  [EXEC] {sig['signal_id']}: niciun mod de umplere acceptat.")
+    log.warning(f"  [EXEC] {sig['signal_id']}: niciun mod de umplere acceptat "
+                f"(filling_mode={fm}, incercate={fill_modes}).")
     return None
 
 
