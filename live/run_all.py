@@ -214,8 +214,13 @@ def main():
         f"{n} sesiuni active:\n{lines}"
     )
 
-    # Handler Ctrl+C — opreste toate procesele copil
+    # Handler Ctrl+C / SIGTERM / restart Windows — opreste toate procesele copil
     def _stop_all(sig=None, frame=None):
+        motiv = "Oprire manuala (Ctrl+C)" if sig == signal.SIGINT else "SIGTERM / restart sistem"
+        _send_telegram(
+            f"⚠️ <b>Trading Bot oprit</b>  {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
+            f"{motiv}"
+        )
         print("\n\n  Oprire sesiuni...")
         for _, proc in sp_list:
             if proc.poll() is None:
@@ -230,6 +235,10 @@ def main():
 
     signal.signal(signal.SIGINT,  _stop_all)
     signal.signal(signal.SIGTERM, _stop_all)
+    try:
+        signal.signal(signal.SIGBREAK, _stop_all)   # Ctrl+Break / restart Windows
+    except (OSError, AttributeError):
+        pass
 
     # Status initial + loop
     _print_status(sp_list)

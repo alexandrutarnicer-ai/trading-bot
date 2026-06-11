@@ -174,6 +174,15 @@ python live/run_all.py
 
 Status automat la fiecare 5 minute (semnale azi + total + PID per sesiune). Ctrl+C opreste tot.
 
+**Notificari Telegram automate:**
+- La pornire: lista sesiunilor active
+- La oprire (Ctrl+C / restart Windows / SIGTERM): mesaj cu motivul opririi
+- La semnal nou: entry / SL / TP / R
+- La inchidere trade: TP +R / SL -1R / expirat
+
+> **Important:** Nu porni sesiuni individual (fara `run_all.py`) cat timp `run_all.py` ruleaza deja.
+> Doua instante pe acelasi simbol scriu in acelasi `state.pkl` si pot produce duplicate in `outcomes.csv`.
+
 Sau manual, in terminale separate:
 
 ```bash

@@ -480,8 +480,17 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                     break
 
     if outcome_rows:
-        pd.DataFrame(outcome_rows).reindex(columns=_OUTCOMES_COLS).to_csv(
-            outcomes_file, mode="a", header=False, index=False)
+        # Evita duplicate daca doua instante ruleaza simultan pe acelasi fisier
+        existing_ids: set = set()
+        if os.path.exists(outcomes_file):
+            try:
+                existing_ids = set(pd.read_csv(outcomes_file, usecols=["signal_id"])["signal_id"].dropna())
+            except Exception:
+                pass
+        new_rows = [r for r in outcome_rows if r.get("signal_id") not in existing_ids]
+        if new_rows:
+            pd.DataFrame(new_rows).reindex(columns=_OUTCOMES_COLS).to_csv(
+                outcomes_file, mode="a", header=False, index=False)
 
     for sig_id in rows_to_remove:
         state["pending"][symbol].pop(sig_id, None)
@@ -576,7 +585,30 @@ def run_generator(session_cfg: dict):
     bar_min = session_cfg["bar_minutes"]
     iteration = 0
 
-    while True:
+    # Notificare la orice oprire (manuala, crash, SIGTERM/kill Windows)
+    import signal as _signal
+    _stop_reason = ["necunoscut"]
+
+    def _handle_sigterm(signum, frame):
+        _stop_reason[0] = "SIGTERM (kill / restart Windows)"
+        raise SystemExit(0)
+
+    try:
+        _signal.signal(_signal.SIGTERM, _handle_sigterm)
+        _signal.signal(_signal.SIGBREAK, _handle_sigterm)   # Ctrl+Break Windows
+    except (OSError, AttributeError):
+        pass
+
+    def _send_stop_notification(reason: str) -> None:
+        icon = "🛑" if reason == "manual" else "⚠️"
+        _send_telegram(
+            f"{icon} <b>Bot oprit: {session_cfg['session_id']}</b>\n"
+            f"Motiv: {reason}\n"
+            f"<i>{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</i>"
+        )
+
+    try:
+      while True:
         try:
             iteration += 1
             log.info(f"--- {session_cfg['session_id']} iter {iteration} "
@@ -648,6 +680,11 @@ def run_generator(session_cfg: dict):
                                 f"Lot: {lots}  Ticket: #{ticket}\n"
                                 f"<i>{session_cfg['session_id']}</i>"
                             )
+                        else:
+                            # Ordinul nu a putut fi plasat — scoate din pending
+                            # ca outcomes.csv sa nu urmareasca un trade inexistent
+                            state["pending"][symbol].pop(sig["signal_id"], None)
+                            log.info(f"  {sig['signal_id']}: scos din pending (ordin neexecutat)")
 
                     new_sigs += 1
 
@@ -664,6 +701,7 @@ def run_generator(session_cfg: dict):
             _sleep_to_next_bar(bar_min, log)
 
         except KeyboardInterrupt:
+            _stop_reason[0] = "manual"
             log.info("\nOprire manuala.")
             with open(state_file, "wb") as f:
                 pickle.dump(state, f)
@@ -690,3 +728,5 @@ def run_generator(session_cfg: dict):
             log.error(f"Eroare: {e}\n{traceback.format_exc()}")
             log.info("Reincerc in 60s...")
             time.sleep(60)
+    finally:
+        _send_stop_notification(_stop_reason[0])

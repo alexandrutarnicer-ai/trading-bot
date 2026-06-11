@@ -1,6 +1,6 @@
 # Stare Proiect — Trading Bot Pullback-in-Trend
 
-**Ultima actualizare:** 2026-06-08  
+**Ultima actualizare:** 2026-06-11  
 **Faza curentă:** Faza 2 — două sesiuni live OBSERVE pregătite și configurate
 
 ---
@@ -300,3 +300,16 @@ EURGBP cădea pe fallback greșit (~8% eroare).
 ### Fix 3 — Session 2: M5→M15 entry
 Session 2 a fost inițial proiectată cu M5 entry. Backtestele au confirmat M5 eșuat (WR=16%, DD−80%).  
 **Fix:** Session 2 folosește M15 entry + M30 trend, identic cu Session 1.
+
+### Fix 4 — Notificări Telegram la oprirea botului (2026-06-11)
+Bot-ul nu trimitea nicio notificare când se oprea (crash, restart Windows, kill proces).  
+**Fix `run_all.py`:** `_stop_all()` trimite Telegram înainte să omoare procesele copil; înregistrat pe SIGINT + SIGTERM + SIGBREAK (restart Windows).  
+**Fix `signal_generator.py`:** `try/finally` + handler SIGTERM/SIGBREAK → notificare pentru sesiuni rulate individual (fără `run_all.py`).
+
+### Fix 5 — outcomes.csv nu urmărește trade-uri neexecutate (2026-06-11)
+Când `execute_trades=True` și `_place_order()` eșua (preț depășit, filling mode respins), semnalul rămânea în `state["pending"]` → outcomes.csv înregistra SL/TP pentru ordine care nu existau în MT5.  
+**Fix:** Dacă `_place_order()` returnează `None`, semnalul este eliminat imediat din pending. outcomes.csv reflectă doar ordine plasate efectiv.
+
+### Fix 6 — Protecție anti-duplicate în outcomes.csv (2026-06-11)
+Dacă două instanțe ale aceleiași sesiuni rulau simultan (după restart manual fără a opri instanța veche), ambele scriau același outcome în outcomes.csv.  
+**Fix:** `_update_outcomes` citește signal_id-urile existente înainte de append și sare peste cele deja prezente.

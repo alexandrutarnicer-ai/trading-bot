@@ -1,6 +1,6 @@
 # Sesiuni Live OBSERVE — Ghid Complet
 
-**Ultima actualizare:** 2026-06-08  
+**Ultima actualizare:** 2026-06-11  
 **Stare:** Pregătite pentru rulare OBSERVE (forward test fără execuție reală)
 
 ---
@@ -102,6 +102,10 @@ data/live_signals/
 | `exit_price` | Prețul de ieșire (la TP/SL) |
 | `exit_time` | Timestamp ieșire |
 | `triggered_at` | Când a intrat ordinul stop (buy/sell stop activat) |
+
+> **Notă:** Când `execute_trades=True`, outcomes.csv conține **doar ordine plasate efectiv în MT5**.
+> Dacă un ordin este respins (preț deja depășit, filling mode neacceptat etc.), semnalul nu apare în outcomes.
+> Poți verifica MT5 History → orice rând din outcomes ar trebui să aibă un corespondent acolo.
 
 ---
 
