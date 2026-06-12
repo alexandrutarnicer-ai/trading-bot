@@ -1,11 +1,13 @@
 """
-SESSION 2 — M15, BOTH, PW=6, 6 piete cu sesiuni separate
-==========================================================
-Frecventa maxima cu edge pozitiv: +0.142R test, ~3.2 trades/sapt.
-EUR pairs: sesiune europeana 10-18h EET
-JPY pairs: sesiune asiatica 02-10h EET  (USDJPY validat +0.154R test)
+SESSION 2 — M15, BOTH, PW=6, 3 perechi JPY (sesiune asiatica)
+==============================================================
+Sesiune asiatica: USDJPY, AUDJPY, NZDJPY  02-10h UTC
 
-Piete: EURUSD, GBPUSD, EURJPY + USDJPY, AUDJPY, NZDJPY
+EURUSD, GBPUSD, EURJPY au fost scoase din S2 (2026-06-12) pentru a elimina
+overlap-ul cu S1 (aceleasi 3 perechi, aceeasi fereastra 10-18h, risk duplicate ordine).
+S1 acopera EUR pairs LONG only; S2 se concentreaza exclusiv pe sesiunea asiatica JPY.
+
+Validare USDJPY: +0.154R test  (sesiune asiatica 02-10h)
 Rulare:  python live/session2_m5_both.py
 Output:  data/live_signals/session2/
 
@@ -22,10 +24,10 @@ from backtest import DATA_DIR
 
 SESSION_CONFIG = {
     "session_id":   "S2-M15-BOTH",
-    "description":  "M15 BOTH PW=6 | 6 piete | +0.142R test | ~3.2/sapt",
+    "description":  "M15 BOTH PW=6 | JPY 02-10h UTC | USDJPY/AUDJPY/NZDJPY | EUR pairs -> S1",
 
-    # Piete
-    "markets": ["EURUSD", "GBPUSD", "EURJPY", "USDJPY", "AUDJPY", "NZDJPY"],
+    # Piete — doar JPY pairs sesiune asiatica (EUR pairs mutate in S1 pentru a evita overlap)
+    "markets": ["USDJPY", "AUDJPY", "NZDJPY"],
     "symbol_fallbacks": {},
 
     # Timeframe — M15 entry (M5 confirmat negativ, DD -80%)
@@ -44,11 +46,8 @@ SESSION_CONFIG = {
     "skip_monday":   False,     # luni inclusa: +0.6/sapt, penalizare mica (-0.023R)
     "expire_bars":   4,         # expira setup dupa 4 bare M15 (1 ora) fara trigger
 
-    # Sesiuni per simbol — sesiunile nu se suprapun, zero conflict intre EUR si JPY
+    # Sesiuni per simbol — exclusiv sesiunea asiatica (fara overlap cu S1 10-18h)
     "symbol_sessions": {
-        "EURUSD": (10, 18),   # sesiune europeana
-        "GBPUSD": (10, 18),
-        "EURJPY": (10, 18),
         "USDJPY": (2, 10),    # sesiune Tokyo (validat +0.154R test)
         "AUDJPY": (2, 10),
         "NZDJPY": (2, 10),

@@ -7,7 +7,7 @@ Ctrl+C opreste toate sesiunile simultan.
 
 Sesiuni active:
   S1  FX Long  EURUSD/GBPUSD/EURJPY  M15  10-18h  validated
-  S2  FX Both  6 perechi             M15  02-20h  validated
+  S2  JPY Both  USDJPY/AUDJPY/NZDJPY  M15  02-10h  validated  (EUR pairs -> S1)
   S3  BTC Both                       M15  00-09h+15-18h  validated
   S4  GER40    LONG                  M15  09-14h  demo
   S5  GER40+USDCHF  LONG             H1   07-17h  demo
@@ -46,7 +46,7 @@ SESSIONS = [
     ),
     dict(
         id="S2",
-        label="S2  FX Both  (6 perechi)",
+        label="S2  JPY Both  (3 perechi)",
         script=os.path.join(ROOT, "live", "session2_m5_both.py"),
         sig_dir=os.path.join(DATA_DIR, "live_signals", "session2"),
         hours="02-18h UTC",
