@@ -91,25 +91,32 @@ def _place_order(sig: dict, lots: float, expire_bars: int,
                  bar_minutes: int, log) -> int | None:
     """
     Plaseaza ordin pending BUY_STOP/SELL_STOP in MT5.
-    Returneaza ticket-ul MT5 sau None la esec/respingere.
+
+    Return:
+      int  (ticket) — ordin plasat cu succes
+      None           — pret deja depasit la aceasta bara; semnal PASTRAT in pending,
+                       incearca bara urmatoare (pretul poate reveni la entry)
+      False          — eroare MT5 reala; semnal SCOS din pending
     """
     if _mt5_exec is None:
         log.warning("  [EXEC] MetaTrader5 indisponibil.")
-        return None
+        return False
 
     symbol    = sig["symbol"]
     direction = sig["direction"]
 
-    # Verifica ca pretul nu a fost deja depasit (BUY_STOP must be > Ask)
+    # Daca pretul a depasit deja entry, nu plasam BUY_STOP/SELL_STOP acum.
+    # Returnam None (nu False) — semnalul ramane in pending si va fi incercat
+    # la bara urmatoare sau va expira normal dupa expire_bars.
     tick = _mt5_exec.symbol_info_tick(symbol)
     if tick is not None:
         if direction == 1 and tick.ask >= sig["entry"]:
-            log.warning(f"  [EXEC] {sig['signal_id']}: BUY_STOP ignorat "
-                        f"(Ask {tick.ask:.5f} >= entry {sig['entry']:.5f})")
+            log.info(f"  [EXEC] {sig['signal_id']}: BUY_STOP amanat "
+                     f"(Ask {tick.ask:.5f} >= entry {sig['entry']:.5f}) — retry bara urm.")
             return None
         if direction == -1 and tick.bid <= sig["entry"]:
-            log.warning(f"  [EXEC] {sig['signal_id']}: SELL_STOP ignorat "
-                        f"(Bid {tick.bid:.5f} <= entry {sig['entry']:.5f})")
+            log.info(f"  [EXEC] {sig['signal_id']}: SELL_STOP amanat "
+                     f"(Bid {tick.bid:.5f} <= entry {sig['entry']:.5f}) — retry bara urm.")
             return None
 
     order_type = (_mt5_exec.ORDER_TYPE_BUY_STOP
@@ -155,7 +162,7 @@ def _place_order(sig: dict, lots: float, expire_bars: int,
         log.warning(f"  [EXEC] {sig['signal_id']}: filling={filling} → "
                     f"retcode={result.retcode} ({result.comment})")
         if result.retcode != 10030:   # alta eroare (pret, volum, etc) — nu are sens sa incercam alt fill
-            return None
+            return False
 
     # Ultima sansa: fara type_filling (lasa MT5 sa aleaga implicit)
     request.pop("type_filling", None)
@@ -171,7 +178,7 @@ def _place_order(sig: dict, lots: float, expire_bars: int,
 
     log.warning(f"  [EXEC] {sig['signal_id']}: niciun mod de umplere acceptat "
                 f"(filling_mode={fm}, incercate={fill_modes} + fara filling).")
-    return None
+    return False
 
 
 def _notify_signal(sig: dict, session_id: str) -> None:
@@ -729,6 +736,7 @@ def run_generator(session_cfg: dict):
                                               session_cfg.get("expire_bars", 4),
                                               session_cfg["bar_minutes"], log)
                         if ticket:
+                            # Ordin plasat cu succes
                             state["mt5_tickets"][sig["signal_id"]] = ticket
                             fmt = ".2f" if sig["entry"] > 100 else ".5f"
                             _send_telegram(
@@ -739,11 +747,14 @@ def run_generator(session_cfg: dict):
                                 f"Lot: {lots}  Ticket: #{ticket}\n"
                                 f"<i>{session_cfg['session_id']}</i>"
                             )
+                        elif ticket is None:
+                            # Pret depasit la aceasta bara — semnal pastrat in pending,
+                            # va fi incercat la urmatoarea bara M15 sau va expira normal.
+                            log.info(f"  {sig['signal_id']}: pret depasit acum — retry bara urm.")
                         else:
-                            # Ordinul nu a putut fi plasat — scoate din pending
-                            # ca outcomes.csv sa nu urmareasca un trade inexistent
+                            # ticket is False — eroare MT5 reala, scoate din pending
                             state["pending"][symbol].pop(sig["signal_id"], None)
-                            log.info(f"  {sig['signal_id']}: scos din pending (ordin neexecutat)")
+                            log.info(f"  {sig['signal_id']}: scos din pending (eroare MT5)")
                             fmt = ".2f" if sig["entry"] > 100 else ".5f"
                             _send_telegram(
                                 f"⚠️ <b>Ordin NEEXECUTAT: {sig['dir_str']} {sig['symbol']}</b>\n"
