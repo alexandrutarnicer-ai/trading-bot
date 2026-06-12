@@ -28,6 +28,10 @@ def prepare_symbol(source, symbol: str, cfg: dict) -> pd.DataFrame:
 
 
 def _enrich(m15: pd.DataFrame, m30: pd.DataFrame, cfg: dict) -> pd.DataFrame:
+    # Normalizeaza precizia timestamp-urilor (MT5 poate returna <M8[s] sau <M8[us])
+    m15["time"] = pd.to_datetime(m15["time"]).astype("datetime64[s]")
+    m30["time"] = pd.to_datetime(m30["time"]).astype("datetime64[s]")
+
     # trend pe M30: EMA200, directie 1/-1/0
     m30["ema_trend"] = ema(m30["close"], cfg["trend_filter"]["ema_trend_period"])
     m30["trend"] = np.where(m30["close"] > m30["ema_trend"], 1,

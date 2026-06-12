@@ -510,8 +510,35 @@ def run_generator(session_cfg: dict):
     outcomes_file = os.path.join(out_dir, "outcomes.csv")
     state_file   = os.path.join(out_dir, "state.pkl")
     log_file     = os.path.join(out_dir, "generator.log")
+    lock_file    = os.path.join(out_dir, "session.lock")
 
     os.makedirs(out_dir, exist_ok=True)
+
+    # Previne doua instante ale aceleiasi sesiuni sa ruleze simultan
+    def _pid_alive(pid: int) -> bool:
+        try:
+            import ctypes
+            PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+            h = ctypes.windll.kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+            if h:
+                ctypes.windll.kernel32.CloseHandle(h)
+                return True
+        except Exception:
+            pass
+        return False
+
+    if os.path.exists(lock_file):
+        try:
+            existing_pid = int(open(lock_file).read().strip())
+            if _pid_alive(existing_pid):
+                print(f"[{session_cfg['session_id']}] EROARE: deja rulaza (PID {existing_pid}). "
+                      f"Opreste instanta existenta inainte de a relansa. Iesire.")
+                sys.exit(1)
+        except (ValueError, OSError):
+            pass  # lock corupt sau PID mort — suprascriem
+
+    with open(lock_file, "w") as f:
+        f.write(str(os.getpid()))
 
     # Logger per sesiune
     log = logging.getLogger(session_cfg["session_id"])
@@ -730,3 +757,8 @@ def run_generator(session_cfg: dict):
             time.sleep(60)
     finally:
         _send_stop_notification(_stop_reason[0])
+        try:
+            if os.path.exists(lock_file):
+                os.remove(lock_file)
+        except OSError:
+            pass
