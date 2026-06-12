@@ -1,6 +1,6 @@
 """
-SESSION 5 — GER40 + USDCHF, H1+D1, BOTH, OBSERVARE
-=====================================================
+SESSION 5 — GER40 + USDCHF, H1+D1, BOTH
+=========================================
 H1 entry + D1 trend. Doua instrumente cu aceeasi combinatie TF.
 
 Rezultate tf_scan_targeted (2026-06-11):
@@ -69,10 +69,10 @@ SESSION_CONFIG = {
     "n_bars_entry": 2000,
     "n_bars_trend": 600,
 
-    # OBSERVARE — nu executa ordine, doar logheaza + Telegram
-    "execute_trades":   False,
+    # Executa ordine pe Demo — USDCHF validat (p=0.0896*), GER40 borderline in acumulare
+    "execute_trades":   True,
     "session_capital":  175,    # capital vizat (12.5% din $1400 target total)
-    "account_fraction": 0.125,  # de activat cand p_test trece sub 0.05
+    "account_fraction": 0.125,  # 12.5% din equity real MT5
     "risk_pct":         0.01,   # 1% din session_capital per trade
 
     "output_dir": os.path.join(DATA_DIR, "live_signals", "session5"),

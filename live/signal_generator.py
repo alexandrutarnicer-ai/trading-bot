@@ -719,6 +719,15 @@ def run_generator(session_cfg: dict):
                             # ca outcomes.csv sa nu urmareasca un trade inexistent
                             state["pending"][symbol].pop(sig["signal_id"], None)
                             log.info(f"  {sig['signal_id']}: scos din pending (ordin neexecutat)")
+                            fmt = ".2f" if sig["entry"] > 100 else ".5f"
+                            _send_telegram(
+                                f"⚠️ <b>Ordin NEEXECUTAT: {sig['dir_str']} {sig['symbol']}</b>\n"
+                                f"Entry: <code>{format(sig['entry'], fmt)}</code>  "
+                                f"SL: <code>{format(sig['sl'], fmt)}</code>  "
+                                f"TP: <code>{format(sig['tp'], fmt)}</code>\n"
+                                f"Eroare plasare — verificati log pentru retcode\n"
+                                f"<i>{session_cfg['session_id']} | {sig['signal_id']}</i>"
+                            )
 
                     new_sigs += 1
 
