@@ -29,7 +29,7 @@ from backtest import DATA_DIR
 SESSION_CONFIG = {
     "session_id":   "S5-H1D1",
     "description":  (
-        "GER40+USDCHF H1+D1 | BOTH | OBSERVARE | "
+        "GER40+USDCHF H1+D1 | BOTH | DEMO | "
         "USDCHF p=0.0896* VIABLE | GER40 p=0.103 borderline"
     ),
 

@@ -74,7 +74,7 @@ SESSIONS = [
         script=os.path.join(ROOT, "live", "session5_ger40_h1.py"),
         sig_dir=os.path.join(DATA_DIR, "live_signals", "session5"),
         hours="07-17h UTC",
-        validated=False,
+        validated=True,
     ),
     dict(
         id="S6",
@@ -82,7 +82,7 @@ SESSIONS = [
         script=os.path.join(ROOT, "live", "session6_us30_m15.py"),
         sig_dir=os.path.join(DATA_DIR, "live_signals", "session6"),
         hours="13-21h UTC",
-        validated=False,
+        validated=True,
     ),
 ]
 
