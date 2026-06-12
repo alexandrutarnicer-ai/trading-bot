@@ -581,6 +581,23 @@ def run_generator(session_cfg: dict):
         state = _empty_state
     state.setdefault("mt5_tickets", {})   # ticket MT5 per signal_id
 
+    # Sincronizeaza signal_counter cu ce e deja in signals.csv
+    # (previne reutilizarea ID-urilor dupa restart cu state.pkl fresh)
+    if os.path.exists(signals_file):
+        try:
+            import re as _re
+            _existing = pd.read_csv(signals_file, usecols=["signal_id"])["signal_id"].dropna()
+            _max_n = max(
+                (int(m.group(1)) for sid in _existing
+                 if (m := _re.search(r"SIG(\d+)$", str(sid)))),
+                default=0,
+            )
+            if _max_n > state["signal_counter"]:
+                state["signal_counter"] = _max_n
+                log.info(f"  signal_counter sincronizat la {_max_n} din signals.csv")
+        except Exception:
+            pass
+
     with open(CONFIG, encoding="utf-8") as f:
         cfg = json.load(f)
     cfg["optional_criteria"]["rsi"]["sell_max"] = 60  # RSI simetric pentru SELL
@@ -665,8 +682,16 @@ def run_generator(session_cfg: dict):
 
                 sigs = _check_signals(df, symbol, cfg, state, session_cfg)
                 for sig in sigs:
-                    pd.DataFrame([sig]).to_csv(signals_file, mode="a",
-                                               header=False, index=False)
+                    # Evita duplicate in signals.csv (doua instante simultane)
+                    _sig_exists = False
+                    try:
+                        _ex = pd.read_csv(signals_file, usecols=["signal_id"])["signal_id"].dropna()
+                        _sig_exists = sig["signal_id"] in _ex.values
+                    except Exception:
+                        pass
+                    if not _sig_exists:
+                        pd.DataFrame([sig]).to_csv(signals_file, mode="a",
+                                                   header=False, index=False)
                     state["pending"].setdefault(symbol, {})[sig["signal_id"]] = {
                         "direction": sig["direction"],
                         "entry":     sig["entry"],
