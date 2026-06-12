@@ -116,20 +116,15 @@ def _place_order(sig: dict, lots: float, expire_bars: int,
                   if direction == 1 else _mt5_exec.ORDER_TYPE_SELL_STOP)
     exp_time   = datetime.now() + timedelta(minutes=expire_bars * bar_minutes)
 
-    # Determina fill modes suportate de broker pentru acest simbol.
-    # filling_mode bitmask: bit0=FOK(1), bit1=IOC(2); 0 = doar RETURN.
-    sym_info  = _mt5_exec.symbol_info(symbol)
-    fm        = sym_info.filling_mode if sym_info else 0
-    fill_modes: list
-    if fm == 0:
-        fill_modes = [_mt5_exec.ORDER_FILLING_RETURN]
-    else:
-        fill_modes = []
-        if fm & 1:
-            fill_modes.append(_mt5_exec.ORDER_FILLING_FOK)
-        if fm & 2:
-            fill_modes.append(_mt5_exec.ORDER_FILLING_IOC)
-        fill_modes.append(_mt5_exec.ORDER_FILLING_RETURN)
+    # Incearca toate modurile de umplere in ordine (bitmask-ul brokerului poate fi incorect).
+    # RETURN primul — cel mai permisiv pentru ordine pending.
+    sym_info = _mt5_exec.symbol_info(symbol)
+    fm       = sym_info.filling_mode if sym_info else 0
+    fill_modes = [
+        _mt5_exec.ORDER_FILLING_RETURN,   # 2 — partial fill ok
+        _mt5_exec.ORDER_FILLING_FOK,      # 0 — fill or kill
+        _mt5_exec.ORDER_FILLING_IOC,      # 1 — immediate or cancel
+    ]
 
     request = {
         "action":    _mt5_exec.TRADE_ACTION_PENDING,
@@ -148,6 +143,7 @@ def _place_order(sig: dict, lots: float, expire_bars: int,
         request["type_filling"] = filling
         result = _mt5_exec.order_send(request)
         if result is None:
+            log.warning(f"  [EXEC] {sig['signal_id']}: filling={filling} → result None")
             continue
         if result.retcode == _mt5_exec.TRADE_RETCODE_DONE:
             dir_str = "LONG" if direction == 1 else "SHORT"
@@ -156,14 +152,25 @@ def _place_order(sig: dict, lots: float, expire_bars: int,
                      f"SL={sig['sl']:.5f}  TP={sig['tp']:.5f}  "
                      f"ticket=#{result.order}")
             return result.order
+        log.warning(f"  [EXEC] {sig['signal_id']}: filling={filling} → "
+                    f"retcode={result.retcode} ({result.comment})")
         if result.retcode != 10030:   # alta eroare (pret, volum, etc) — nu are sens sa incercam alt fill
-            log.warning(f"  [EXEC] {sig['signal_id']}: RESPINS "
-                        f"retcode={result.retcode} ({result.comment})")
             return None
-        log.debug(f"  [EXEC] {sig['signal_id']}: filling={filling} → 10030, incerc urmatorul")
+
+    # Ultima sansa: fara type_filling (lasa MT5 sa aleaga implicit)
+    request.pop("type_filling", None)
+    result = _mt5_exec.order_send(request)
+    if result is not None:
+        log.warning(f"  [EXEC] {sig['signal_id']}: fara filling → "
+                    f"retcode={result.retcode} ({result.comment})")
+        if result.retcode == _mt5_exec.TRADE_RETCODE_DONE:
+            dir_str = "LONG" if direction == 1 else "SHORT"
+            log.info(f"  [EXEC] *** ORDIN (no-fill): {sig['signal_id']} {symbol} {dir_str} "
+                     f"{lots}lot @ {sig['entry']:.5f}  ticket=#{result.order}")
+            return result.order
 
     log.warning(f"  [EXEC] {sig['signal_id']}: niciun mod de umplere acceptat "
-                f"(filling_mode={fm}, incercate={fill_modes}).")
+                f"(filling_mode={fm}, incercate={fill_modes} + fara filling).")
     return None
 
 
