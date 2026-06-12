@@ -1,9 +1,17 @@
 """
 run_all.py — Lansator + monitor toate sesiunile
 ================================================
-Porneste S1+S2+S3+S4 simultan si afiseaza status la fiecare 5 minute.
+Porneste S1–S6 simultan si afiseaza status la fiecare 5 minute.
 Fiecare sesiune ruleaza independent si scrie in propriul log.
 Ctrl+C opreste toate sesiunile simultan.
+
+Sesiuni active:
+  S1  FX Long  EURUSD/GBPUSD/EURJPY  M15  10-18h  validated
+  S2  FX Both  6 perechi             M15  02-20h  validated
+  S3  BTC Both                       M15  00-09h+15-18h  validated
+  S4  GER40    LONG                  M15  09-14h  demo
+  S5  GER40+USDCHF  LONG             H1   07-17h  demo
+  S6  US30     LONG                  M15  13-21h  demo
 
 Rulare:  python live/run_all.py
 Loguri:  data/live_signals/sessionX/generator.log
@@ -54,18 +62,26 @@ SESSIONS = [
     ),
     dict(
         id="S4",
-        label="S4  GER40+US30",
+        label="S4  GER40",
         script=os.path.join(ROOT, "live", "session4_obs.py"),
         sig_dir=os.path.join(DATA_DIR, "live_signals", "session4"),
-        hours="09-21h UTC",
+        hours="09-14h UTC",
         validated=True,
     ),
     dict(
         id="S5",
-        label="S5  GER40+USDCHF H1  [OBS]",
+        label="S5  GER40+USDCHF H1",
         script=os.path.join(ROOT, "live", "session5_ger40_h1.py"),
         sig_dir=os.path.join(DATA_DIR, "live_signals", "session5"),
-        hours="07-16h UTC",
+        hours="07-17h UTC",
+        validated=False,
+    ),
+    dict(
+        id="S6",
+        label="S6  US30 M15 Long",
+        script=os.path.join(ROOT, "live", "session6_us30_m15.py"),
+        sig_dir=os.path.join(DATA_DIR, "live_signals", "session6"),
+        hours="13-21h UTC",
         validated=False,
     ),
 ]

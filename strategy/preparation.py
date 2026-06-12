@@ -67,7 +67,7 @@ def _enrich(m15: pd.DataFrame, m30: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     d1["adx_d1"]      = adx(d1, 14)
     d1["f2_adx"]      = np.where(d1["adx_d1"] > 25, 1, 0)               # ADX standard 25
     d1_sig = d1.copy()
-    d1_sig["time"] = d1_sig["time"] + pd.Timedelta(days=1)
+    d1_sig["time"] = (d1_sig["time"] + pd.Timedelta(days=1)).astype("datetime64[s]")
     m15 = pd.merge_asof(m15.sort_values("time"),
                         d1_sig[["time", "daily_trend", "f2_adx", "f3_slope"]].sort_values("time"),
                         on="time", direction="backward")
@@ -81,7 +81,7 @@ def _enrich(m15: pd.DataFrame, m30: pd.DataFrame, cfg: dict) -> pd.DataFrame:
              .rename(columns={"close": "w1_close"}))
     w1["ema50_w1"]  = ema(w1["w1_close"], 50)
     w1["f1_weekly"] = np.where(w1["w1_close"] > w1["ema50_w1"], 1, 0)   # EMA50 saptamanal
-    w1["time"]      = w1["time"] + pd.Timedelta(weeks=1)
+    w1["time"]      = (w1["time"] + pd.Timedelta(weeks=1)).astype("datetime64[s]")
     m15 = pd.merge_asof(m15.sort_values("time"),
                         w1[["time", "f1_weekly"]].sort_values("time"),
                         on="time", direction="backward")
