@@ -121,7 +121,9 @@ def _place_order(sig: dict, lots: float, expire_bars: int,
 
     order_type = (_mt5_exec.ORDER_TYPE_BUY_STOP
                   if direction == 1 else _mt5_exec.ORDER_TYPE_SELL_STOP)
-    exp_time   = datetime.now() + timedelta(minutes=expire_bars * bar_minutes)
+    # Expirare: int Unix timestamp necesar pentru Python 3.12+ (PyDateTime_Check incompatibil
+    # cu _core.pyd compilat pt Python 3.11 → returna None cu last_error=-2)
+    exp_time   = int((datetime.now() + timedelta(minutes=expire_bars * bar_minutes)).timestamp())
 
     # Incearca toate modurile de umplere in ordine (bitmask-ul brokerului poate fi incorect).
     # RETURN primul — cel mai permisiv pentru ordine pending.
@@ -146,12 +148,16 @@ def _place_order(sig: dict, lots: float, expire_bars: int,
         "comment":    sig["signal_id"][:31],
     }
 
+    all_none = True  # True daca niciun order_send nu a returnat macar un retcode
     for filling in fill_modes:
         request["type_filling"] = filling
         result = _mt5_exec.order_send(request)
         if result is None:
-            log.warning(f"  [EXEC] {sig['signal_id']}: filling={filling} → result None")
+            err = _mt5_exec.last_error()
+            log.warning(f"  [EXEC] {sig['signal_id']}: filling={filling} → result None "
+                        f"(last_error={err})")
             continue
+        all_none = False
         if result.retcode == _mt5_exec.TRADE_RETCODE_DONE:
             dir_str = "LONG" if direction == 1 else "SHORT"
             log.info(f"  [EXEC] *** ORDIN: {sig['signal_id']} {symbol} {dir_str} "
@@ -161,6 +167,10 @@ def _place_order(sig: dict, lots: float, expire_bars: int,
             return result.order
         log.warning(f"  [EXEC] {sig['signal_id']}: filling={filling} → "
                     f"retcode={result.retcode} ({result.comment})")
+        if result.retcode in (10026, 10027):
+            # AutoTrading dezactivat (server sau client) — setare temporara, retry bara urm.
+            log.warning(f"  [EXEC] {sig['signal_id']}: AutoTrading dezactivat — retry bara urm.")
+            return None
         if result.retcode != 10030:   # alta eroare (pret, volum, etc) — nu are sens sa incercam alt fill
             return False
 
@@ -168,6 +178,7 @@ def _place_order(sig: dict, lots: float, expire_bars: int,
     request.pop("type_filling", None)
     result = _mt5_exec.order_send(request)
     if result is not None:
+        all_none = False
         log.warning(f"  [EXEC] {sig['signal_id']}: fara filling → "
                     f"retcode={result.retcode} ({result.comment})")
         if result.retcode == _mt5_exec.TRADE_RETCODE_DONE:
@@ -175,6 +186,17 @@ def _place_order(sig: dict, lots: float, expire_bars: int,
             log.info(f"  [EXEC] *** ORDIN (no-fill): {sig['signal_id']} {symbol} {dir_str} "
                      f"{lots}lot @ {sig['entry']:.5f}  ticket=#{result.order}")
             return result.order
+    else:
+        err = _mt5_exec.last_error()
+        log.warning(f"  [EXEC] {sig['signal_id']}: fara filling → result None "
+                    f"(last_error={err})")
+
+    if all_none:
+        # Toate order_send au returnat None — probabil eroare tranzitorie de conexiune MT5.
+        # Pastram semnalul in pending si reincercam la bara urmatoare.
+        log.warning(f"  [EXEC] {sig['signal_id']}: toate order_send → None "
+                    f"(conexiune MT5?) — retry bara urm.")
+        return None
 
     log.warning(f"  [EXEC] {sig['signal_id']}: niciun mod de umplere acceptat "
                 f"(filling_mode={fm}, incercate={fill_modes} + fara filling).")
@@ -766,6 +788,52 @@ def run_generator(session_cfg: dict):
                             )
 
                     new_sigs += 1
+
+                # Retry plasare pentru semnale pending fara ticket MT5 inca
+                # (order_send a returnat None la bara precedenta — eroare tranzitorie)
+                if session_cfg.get("execute_trades", False):
+                    frac    = session_cfg.get("account_fraction")
+                    capital = session_cfg.get("session_capital", 1000)
+                    if frac and _mt5_exec is not None:
+                        _ai = _mt5_exec.account_info()
+                        if _ai:
+                            capital = _ai.equity * frac
+                    risk_pct = session_cfg.get("risk_pct", 0.01)
+
+                    for _sid, _p in list(state["pending"].get(symbol, {}).items()):
+                        if _sid in state.get("mt5_tickets", {}):
+                            continue  # ordin deja plasat in MT5
+                        if _p.get("triggered"):
+                            continue  # deja triggerat
+                        # Reconstituie sig dict minimal pentru _place_order
+                        _sig_retry = {
+                            "symbol":    symbol,
+                            "signal_id": _sid,
+                            "direction": _p["direction"],
+                            "entry":     _p["entry"],
+                            "sl":        _p["sl"],
+                            "tp":        _p["tp"],
+                        }
+                        _lots = _calc_lots(symbol, _p["entry"], _p["sl"], capital, risk_pct)
+                        log.info(f"  [RETRY] {_sid}: incerc plasare ordin (bara precedenta → None)")
+                        _ticket = _place_order(_sig_retry, _lots,
+                                               session_cfg.get("expire_bars", 4),
+                                               session_cfg["bar_minutes"], log)
+                        if _ticket:
+                            state["mt5_tickets"][_sid] = _ticket
+                            dir_str = "LONG" if _p["direction"] == 1 else "SHORT"
+                            fmt = ".2f" if _p["entry"] > 100 else ".5f"
+                            _send_telegram(
+                                f"<b>Ordin plasat (retry): {dir_str} {symbol}</b>\n"
+                                f"Entry: <code>{format(_p['entry'], fmt)}</code>  "
+                                f"SL: <code>{format(_p['sl'], fmt)}</code>  "
+                                f"TP: <code>{format(_p['tp'], fmt)}</code>\n"
+                                f"Lot: {_lots}  Ticket: #{_ticket}\n"
+                                f"<i>{session_cfg['session_id']}</i>"
+                            )
+                        elif _ticket is False:
+                            state["pending"][symbol].pop(_sid, None)
+                            log.info(f"  {_sid}: scos din pending la retry (eroare MT5 reala)")
 
                 if len(df) > 2:
                     state["last_checked"][symbol] = pd.Timestamp(df.iloc[-2]["time"])
