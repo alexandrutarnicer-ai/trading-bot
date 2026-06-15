@@ -446,6 +446,18 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                                          "exit_time": current_bar_t,
                                          "time_check": datetime.now()})
                     rows_to_remove.append(sig_id)
+                    _ticket = state.get("mt5_tickets", {}).get(sig_id)
+                    if _ticket and _mt5_exec is not None:
+                        _r = _mt5_exec.order_send({
+                            "action": _mt5_exec.TRADE_ACTION_REMOVE,
+                            "order":  _ticket,
+                        })
+                        if _r and _r.retcode == _mt5_exec.TRADE_RETCODE_DONE:
+                            log.info(f"  [EXEC] {sig_id}: ordin MT5 #{_ticket} anulat (expirat)")
+                        else:
+                            log.warning(f"  [EXEC] {sig_id}: anulare MT5 #{_ticket} esuata "
+                                        f"({_mt5_exec.last_error()}) — poate deja inchis/triggerat")
+                        state["mt5_tickets"].pop(sig_id, None)
                     log.info(f"  EXPIRAT: {sig_id} {symbol} (>{expire_bars} bare fara trigger)")
                     _send_telegram(
                         f"<b>EXPIRAT: {symbol}</b>\n"
@@ -465,6 +477,18 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                                          "status": "invalidat", "result_r": 0.0,
                                          "time_check": datetime.now()})
                     rows_to_remove.append(sig_id)
+                    _ticket = state.get("mt5_tickets", {}).get(sig_id)
+                    if _ticket and _mt5_exec is not None:
+                        _r = _mt5_exec.order_send({
+                            "action": _mt5_exec.TRADE_ACTION_REMOVE,
+                            "order":  _ticket,
+                        })
+                        if _r and _r.retcode == _mt5_exec.TRADE_RETCODE_DONE:
+                            log.info(f"  [EXEC] {sig_id}: ordin MT5 #{_ticket} anulat (invalidat)")
+                        else:
+                            log.warning(f"  [EXEC] {sig_id}: anulare MT5 #{_ticket} esuata "
+                                        f"({_mt5_exec.last_error()}) — poate deja inchis/triggerat")
+                        state["mt5_tickets"].pop(sig_id, None)
                     break
                 if trig:
                     p["triggered"]    = True
@@ -487,6 +511,7 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                                          "exit_time": bar["time"],
                                          "time_check": datetime.now()})
                     rows_to_remove.append(sig_id)
+                    state.get("mt5_tickets", {}).pop(sig_id, None)
                     log.info(f"  PIERDERE: {sig_id} SL -1.0R")
                     fmt = ".2f" if p["entry"] > 100 else ".5f"
                     _send_telegram(
@@ -502,6 +527,7 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                                          "exit_time": bar["time"],
                                          "time_check": datetime.now()})
                     rows_to_remove.append(sig_id)
+                    state.get("mt5_tickets", {}).pop(sig_id, None)
                     log.info(f"  PROFIT: {sig_id} TP +{p['r_ratio']:.1f}R")
                     fmt = ".2f" if p["entry"] > 100 else ".5f"
                     _send_telegram(
