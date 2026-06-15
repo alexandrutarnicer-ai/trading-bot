@@ -121,9 +121,6 @@ def _place_order(sig: dict, lots: float, expire_bars: int,
 
     order_type = (_mt5_exec.ORDER_TYPE_BUY_STOP
                   if direction == 1 else _mt5_exec.ORDER_TYPE_SELL_STOP)
-    # Expirare: int Unix timestamp necesar pentru Python 3.12+ (PyDateTime_Check incompatibil
-    # cu _core.pyd compilat pt Python 3.11 → returna None cu last_error=-2)
-    exp_time   = int((datetime.now() + timedelta(minutes=expire_bars * bar_minutes)).timestamp())
 
     # Incearca toate modurile de umplere in ordine (bitmask-ul brokerului poate fi incorect).
     # RETURN primul — cel mai permisiv pentru ordine pending.
@@ -143,9 +140,8 @@ def _place_order(sig: dict, lots: float, expire_bars: int,
         "price":     sig["entry"],
         "sl":        sig["sl"],
         "tp":        sig["tp"],
-        "expiration": exp_time,
-        "type_time":  _mt5_exec.ORDER_TIME_SPECIFIED,
-        "comment":    sig["signal_id"][:31],
+        "type_time": _mt5_exec.ORDER_TIME_GTC,
+        "comment":   sig["signal_id"][:31],
     }
 
     all_none = True  # True daca niciun order_send nu a returnat macar un retcode
