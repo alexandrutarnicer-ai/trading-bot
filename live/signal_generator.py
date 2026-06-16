@@ -419,7 +419,7 @@ _OUTCOMES_COLS = [
 def _update_outcomes(df: pd.DataFrame, symbol: str,
                      state: dict, outcomes_file: str, log,
                      expire_bars: int = 4, bar_minutes: int = 15,
-                     session_id: str = ""):
+                     session_id: str = "", execute_trades: bool = False):
     if symbol not in state["pending"]:
         return
 
@@ -491,6 +491,12 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                         state["mt5_tickets"].pop(sig_id, None)
                     break
                 if trig:
+                    if execute_trades and sig_id not in state.get("mt5_tickets", {}):
+                        # Pretul a trecut de entry, dar nu exista (inca) un ordin MT5
+                        # real pentru acest semnal — plasarea a fost amanata/in retry.
+                        # Nu marcam triggered sintetic (ar decupla tracking-ul de MT5);
+                        # asteptam fie un ticket real, fie expirarea naturala.
+                        continue
                     p["triggered"]    = True
                     p["triggered_at"] = bar["time"]
                     log.info(f"  TRIGGERAT: {sig_id} {symbol} "
@@ -729,7 +735,8 @@ def run_generator(session_cfg: dict):
                 _update_outcomes(df, symbol, state, outcomes_file, log,
                                 expire_bars=session_cfg.get("expire_bars", 4),
                                 bar_minutes=session_cfg["bar_minutes"],
-                                session_id=session_cfg.get("session_id", ""))
+                                session_id=session_cfg.get("session_id", ""),
+                                execute_trades=session_cfg.get("execute_trades", False))
 
                 sigs = _check_signals(df, symbol, cfg, state, session_cfg)
                 for sig in sigs:
