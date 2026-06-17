@@ -57,3 +57,72 @@ export interface EquityCurvePoint {
   cumulative_r: number;
   session_id: string;
 }
+
+export interface ProfileSession {
+  id: string;
+  session_key: string;
+  label: string;
+  enabled: boolean;
+  markets: string[];
+  entry_tf: string;
+  trend_tf: string;
+  direction: string;
+  pullback_window: number;
+  session_start: number;
+  session_end: number;
+  skip_hours: number[];
+  skip_weekdays: number[];
+  expire_bars: number;
+  account_fraction: number;
+  risk_pct: number;
+  execute_trades: boolean;
+  rsi_enabled: boolean;
+  rsi_buy_min: number;
+  rsi_buy_max: number;
+  rsi_sell_min: number;
+  rsi_sell_max: number;
+  ema_alignment_enabled: boolean;
+  atr_max_pips: Record<string, number>;
+  circuit_breaker: number;
+  r_base: number;
+  r_mid: number;
+  r_top: number;
+  backtest_results: BacktestResult | null;
+}
+
+export interface Profile {
+  id: string;
+  name: string;
+  description: string;
+  updated_at: string | null;
+  sessions: ProfileSession[];
+}
+
+export interface ProfileSummary {
+  id: string;
+  name: string;
+  description: string;
+  updated_at: string | null;
+  sessions: number;
+}
+
+export interface BacktestResult {
+  total_trades: number;
+  win_rate: number;
+  expectancy: number;
+  max_dd: number;
+  split_date: string;
+  train: { trades: number; expectancy: number };
+  test: { trades: number; expectancy: number };
+  per_symbol: Record<string, { trades: number; win_rate: number; expectancy: number }>;
+  markets: string[];
+  session_id: string;
+}
+
+export interface Meta {
+  available_markets: string[];
+  timeframes: string[];
+  trend_timeframes: string[];
+  directions: string[];
+  weekday_names: Record<string, string>;
+}

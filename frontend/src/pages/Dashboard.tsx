@@ -19,13 +19,10 @@ export function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-surface p-4 md:p-6 space-y-6">
+    <div className="p-4 md:p-6 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-white">Trading Bot</h1>
-          <p className="text-xs text-slate-500 mt-0.5">Standard Profile · Demo</p>
-        </div>
+        <p className="text-xs text-slate-500">Standard Profile · Demo</p>
         <div className="flex items-center gap-3">
           <BotStatusBar />
           <button
