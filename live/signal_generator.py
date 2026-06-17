@@ -431,6 +431,17 @@ def _check_mt5_position_closed(ticket: int, p: dict, log) -> dict | None:
     # Nu e nici pending nici deschisa — cautam in history deals
     deals = _mt5_exec.history_deals_get(position=ticket)
     if not deals:
+        # Verifica daca ordinul a fost anulat/respins in MT5 fara sa se execute
+        hist_orders = _mt5_exec.history_orders_get(ticket=ticket)
+        if hist_orders:
+            order = hist_orders[0]
+            # ORDER_STATE: CANCELED=2, REJECTED=4, EXPIRED=6
+            if order.state in (2, 4, 6):
+                log.warning(
+                    f"  [MT5] Ordin #{ticket} anulat/respins in MT5 "
+                    f"(state={order.state}) — scos din tracking fara outcome"
+                )
+                return {"__no_outcome__": True}
         return None
 
     close_deal = next(
@@ -581,10 +592,14 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                 # Tracking bazat pe MT5 real — exit price = pretul efectiv al brokerului
                 mt5_res = _check_mt5_position_closed(_ticket, p, log)
                 if mt5_res is not None:
-                    outcome_rows.append({**p, "signal_id": sig_id, "symbol": symbol,
-                                         **mt5_res, "time_check": datetime.now()})
                     rows_to_remove.append(sig_id)
                     state.get("mt5_tickets", {}).pop(sig_id, None)
+                    if mt5_res.get("__no_outcome__"):
+                        # Ordin anulat/respins in MT5 fara executie — nu scriem in outcomes
+                        log.info(f"  [MT5] {sig_id} scos din tracking (anulat/respins fara executie)")
+                        continue
+                    outcome_rows.append({**p, "signal_id": sig_id, "symbol": symbol,
+                                         **mt5_res, "time_check": datetime.now()})
                     if mt5_res["status"] == "TP":
                         log.info(f"  PROFIT (MT5): {sig_id} TP +{mt5_res['result_r']:.3f}R")
                         _send_telegram(
@@ -655,6 +670,57 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
 
     for sig_id in rows_to_remove:
         state["pending"][symbol].pop(sig_id, None)
+
+
+# ---------------------------------------------------------------------------
+# Reconciliere tickets MT5 la pornire
+# ---------------------------------------------------------------------------
+
+def _reconcile_mt5_tickets(state: dict, log) -> None:
+    """
+    Verifica toate ticket-urile din state["mt5_tickets"] la pornire.
+    Sterge orfanele (anulate, respinse sau inexistente in MT5).
+    Semnalele corespunzatoare raman in pending — vor expira natural.
+    Nu scrie nimic in outcomes.csv (ordinele nu s-au executat niciodata).
+    """
+    if _mt5_exec is None or not state.get("mt5_tickets"):
+        return
+
+    to_remove = []
+    for sig_id, ticket in list(state["mt5_tickets"].items()):
+        # Inca pending (netriggerat) → ok
+        if _mt5_exec.orders_get(ticket=ticket):
+            continue
+        # Pozitie deschisa (triggerat, in curs) → ok
+        if _mt5_exec.positions_get(ticket=ticket):
+            continue
+        # Pozitie inchisa cu deals → va fi procesata normal la urmatoarea bara
+        deals = _mt5_exec.history_deals_get(position=ticket)
+        if deals:
+            continue
+        # Ordin anulat/respins in MT5 (ORDER_STATE: CANCELED=2, REJECTED=4, EXPIRED=6)
+        hist_orders = _mt5_exec.history_orders_get(ticket=ticket)
+        if hist_orders:
+            order = hist_orders[0]
+            if order.state in (2, 4, 6):
+                log.warning(
+                    f"  [RECONCIL] {sig_id} ticket #{ticket} anulat/respins "
+                    f"(state={order.state}) — scos din tracking"
+                )
+                to_remove.append(sig_id)
+                continue
+        # Nu gasit nicaieri — ticket orfan (plasare esuata sau state corupt)
+        log.warning(
+            f"  [RECONCIL] {sig_id} ticket #{ticket} negasit in MT5 (orfan) — scos din tracking"
+        )
+        to_remove.append(sig_id)
+
+    for sig_id in to_remove:
+        state["mt5_tickets"].pop(sig_id, None)
+
+    if to_remove:
+        log.info(f"  [RECONCIL] Curatate {len(to_remove)} ticket(e) orfane; "
+                 f"semnalele raman in pending si vor expira natural.")
 
 
 # ---------------------------------------------------------------------------
@@ -773,6 +839,9 @@ def run_generator(session_cfg: dict):
     except Exception as e:
         log.error(f"MT5 nu e disponibil: {e}")
         return
+
+    # Reconciliere tickets la pornire — curata orfanele din state
+    _reconcile_mt5_tickets(state, log)
 
     # Rezolva simbolurile
     fallbacks = session_cfg.get("symbol_fallbacks", {})
