@@ -46,18 +46,35 @@ _TG_TOKEN   = os.environ.get("TELEGRAM_TOKEN", "")
 _TG_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 
+def _get_tg_creds() -> tuple[str, str]:
+    """Env vars > data/telegram_config.json (configurat din UI)."""
+    token, chat_id = _TG_TOKEN, _TG_CHAT_ID
+    if not token or not chat_id:
+        cfg_path = os.path.join(DATA_DIR, "telegram_config.json")
+        if os.path.exists(cfg_path):
+            try:
+                with open(cfg_path, encoding="utf-8") as _f:
+                    _cfg = json.load(_f)
+                token   = token   or _cfg.get("token", "")
+                chat_id = chat_id or _cfg.get("chat_id", "")
+            except Exception:
+                pass
+    return token, chat_id
+
+
 def _send_telegram(text: str) -> None:
     """Trimite mesaj Telegram. Non-blocking, esecul e ignorat silentios."""
-    if not _TG_TOKEN or not _TG_CHAT_ID:
+    token, chat_id = _get_tg_creds()
+    if not token or not chat_id:
         return
     try:
         payload = json.dumps({
-            "chat_id":    _TG_CHAT_ID,
+            "chat_id":    chat_id,
             "text":       text,
             "parse_mode": "HTML",
         }).encode()
         req = urllib.request.Request(
-            f"https://api.telegram.org/bot{_TG_TOKEN}/sendMessage",
+            f"https://api.telegram.org/bot{token}/sendMessage",
             data=payload,
             headers={"Content-Type": "application/json"},
         )

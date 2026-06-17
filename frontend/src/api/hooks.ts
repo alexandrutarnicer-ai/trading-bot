@@ -3,7 +3,7 @@ import { apiFetch } from "./client";
 import type {
   BotStatus, SessionStatus, Signal, Outcome, EquityCurvePoint,
   Profile, ProfileSummary, Meta,
-  DataCheckResult, DownloadJob,
+  DataCheckResult, DownloadJob, TelegramConfig,
 } from "./types";
 
 const POLL = 30_000; // refresh la 30s
@@ -141,3 +141,46 @@ export const useDownloadJob = (jobId: string | null) =>
         ? 2000
         : false,
   });
+
+// ── Bot start/stop ──────────────────────────────────────────────────────────
+
+export const useStartBot = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiFetch("/bot/start", { method: "POST" }),
+    onSuccess: () => { setTimeout(() => qc.invalidateQueries({ queryKey: ["bot-status"] }), 1500); },
+  });
+};
+
+export const useStopBot = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiFetch("/bot/stop", { method: "POST" }),
+    onSuccess: () => { setTimeout(() => qc.invalidateQueries({ queryKey: ["bot-status"] }), 1500); },
+  });
+};
+
+// ── Telegram settings ───────────────────────────────────────────────────────
+
+export const useTelegramConfig = () =>
+  useQuery<TelegramConfig>({
+    queryKey: ["telegram-config"],
+    queryFn:  () => apiFetch("/settings/telegram"),
+  });
+
+export const useSaveTelegram = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { token: string; chat_id: string }) =>
+      apiFetch("/settings/telegram", { method: "PUT", body }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["telegram-config"] }),
+  });
+};
+
+export const useClearTelegram = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiFetch("/settings/telegram", { method: "DELETE" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["telegram-config"] }),
+  });
+};

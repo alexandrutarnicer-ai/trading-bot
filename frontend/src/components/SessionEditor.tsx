@@ -237,26 +237,35 @@ export function SessionEditor({ session, meta, onChange, onRemove }: Props) {
               </span>
             </div>
 
-            {/* Scală R */}
+            {/* Scală R/R + Risk */}
             <div className="grid grid-cols-3 gap-2 mb-3">
               {([
-                { n: 0, label: "0 criterii", field: "r_base" as const },
-                { n: 1, label: "1 criteriu",  field: "r_mid"  as const },
-                { n: 2, label: "2 criterii",  field: "r_top"  as const },
-              ] as const).map(({ n, label, field }) => (
-                <div key={n} className={`rounded-lg p-2 text-center border transition-colors ${
+                { n: 0, label: "0 criterii", rField: "r_base" as const, riskField: "risk_base" as const },
+                { n: 1, label: "1 criteriu",  rField: "r_mid"  as const, riskField: "risk_mid"  as const },
+                { n: 2, label: "2 criterii",  rField: "r_top"  as const, riskField: "risk_top"  as const },
+              ] as const).map(({ n, label, rField, riskField }) => (
+                <div key={n} className={`rounded-lg p-2 border transition-colors ${
                   activeCriteria === n
                     ? "border-blue-500 bg-blue-500/10"
                     : "border-surface-border bg-surface-border/20"
                 }`}>
-                  <div className="text-xs text-slate-500">{label}</div>
-                  <input
-                    type="number" step={0.5} min={1}
-                    value={session[field]}
-                    onChange={(e) => upd({ [field]: Number(e.target.value) })}
-                    className="w-full bg-transparent text-center text-sm font-bold text-white focus:outline-none mt-0.5"
-                  />
-                  <div className="text-[10px] text-slate-600">R/R</div>
+                  <div className="text-xs text-slate-500 text-center mb-1">{label}</div>
+                  <div className="space-y-1">
+                    <div>
+                      <div className="text-[10px] text-slate-600 text-center">Reward R</div>
+                      <input type="number" step={0.5} min={1}
+                        value={session[rField]}
+                        onChange={(e) => upd({ [rField]: Number(e.target.value) })}
+                        className="w-full bg-transparent text-center text-sm font-bold text-white focus:outline-none" />
+                    </div>
+                    <div className="border-t border-surface-border/50 pt-1">
+                      <div className="text-[10px] text-slate-600 text-center">Risk %</div>
+                      <input type="number" step={0.1} min={0.1} max={10}
+                        value={+((session[riskField] ?? session.risk_pct) * 100).toFixed(2)}
+                        onChange={(e) => upd({ [riskField]: Number(e.target.value) / 100 })}
+                        className="w-full bg-transparent text-center text-xs font-semibold text-slate-300 focus:outline-none" />
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>

@@ -75,6 +75,9 @@ export interface ProfileSession {
   expire_bars: number;
   account_fraction: number;
   risk_pct: number;
+  risk_base: number;
+  risk_mid: number;
+  risk_top: number;
   execute_trades: boolean;
   rsi_enabled: boolean;
   rsi_buy_min: number;
@@ -88,6 +91,12 @@ export interface ProfileSession {
   r_mid: number;
   r_top: number;
   backtest_results: BacktestResult | null;
+}
+
+export interface TelegramConfig {
+  token_masked: string;
+  chat_id: string;
+  configured: boolean;
 }
 
 export interface Profile {

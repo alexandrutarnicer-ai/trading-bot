@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routers import bot, sessions, profiles, backtest, markets, data_download
+from api.routers import bot, sessions, profiles, backtest, markets, data_download, settings
 
 app = FastAPI(title="Trading Bot API", version="1.0.0")
 
@@ -35,6 +35,7 @@ app.include_router(profiles.router,      prefix="/api")
 app.include_router(backtest.router,      prefix="/api")
 app.include_router(markets.router,       prefix="/api")
 app.include_router(data_download.router, prefix="/api")
+app.include_router(settings.router,      prefix="/api")
 
 
 @app.get("/api/health")

@@ -316,29 +316,38 @@ export function BacktestPanel({ session }: Props) {
       {phase === "done" && btResults && (
         <>
           <div className="grid grid-cols-4 gap-3">
-            <Stat label="Trades" value={String(btResults.total_trades)} />
-            <Stat label="Win Rate" value={`${btResults.win_rate}%`} />
+            <Stat label="Trades" value={String(btResults.total_trades)}
+              tip="Numărul total de tranzacții simulate în intervalul selectat. Minim recomandat ≥ 30 pentru relevanță statistică." />
+            <Stat label="Win Rate" value={`${btResults.win_rate}%`}
+              tip="Procentul tranzacțiilor care au atins TP. Strategia rămâne profitabilă chiar la WR 40–45% datorită R/R asimetric (câștig 2.5–4.5R vs pierdere 1R)." />
             <Stat label="Expectancy"
               value={`${btResults.expectancy >= 0 ? "+" : ""}${btResults.expectancy}R`}
-              color={btResults.expectancy >= 0 ? "text-profit" : "text-loss"} />
-            <Stat label="Max DD" value={`${btResults.max_dd}%`} color="text-warn" />
+              color={btResults.expectancy >= 0 ? "text-profit" : "text-loss"}
+              tip="Câștigul mediu per tranzacție în unități R. Formula: (WR × R_mediu_win) − ((1−WR) × 1R). Peste 0 = edge pozitiv. Valoarea din TEST este cea relevantă." />
+            <Stat label="Max DD" value={`${btResults.max_dd}%`} color="text-warn"
+              tip="Scăderea maximă procentuală față de vârful de equity anterior. −20% înseamnă că la un moment dat soldul a coborât cu 20% sub maximul anterior. DD > 40% → reconsideră sizing-ul." />
           </div>
           <div className="flex gap-6 text-xs text-slate-400 border-t border-surface-border pt-2">
-            <span>
-              <span className="text-slate-500">Train </span>
+            <span className="flex items-center gap-1">
+              <span className="text-slate-500">Train</span>
               {btResults.train.trades} trades
               <span className={`ml-1 font-medium ${btResults.train.expectancy >= 0 ? "text-profit" : "text-loss"}`}>
                 ({btResults.train.expectancy >= 0 ? "+" : ""}{btResults.train.expectancy}R)
               </span>
+              <InfoTooltip text="Primele 70% din tranzacții (cronologic). Folosite implicit la antrenament — pot fi ușor overfitted. Nu este rezultatul relevant." />
             </span>
-            <span>
-              <span className="text-slate-500">Test </span>
+            <span className="flex items-center gap-1">
+              <span className="text-slate-500">Test</span>
               {btResults.test.trades} trades
               <span className={`ml-1 font-medium ${btResults.test.expectancy >= 0 ? "text-profit" : "text-loss"}`}>
                 ({btResults.test.expectancy >= 0 ? "+" : ""}{btResults.test.expectancy}R)
               </span>
+              <InfoTooltip text="Ultimele 30% din tranzacții — DATE NEVĂZUTE în antrenament. Acesta este rezultatul care contează: arată comportamentul real pe date noi." />
             </span>
-            <span className="text-slate-500">Split: {btResults.split_date}</span>
+            <span className="flex items-center gap-1 text-slate-500">
+              Split: {btResults.split_date}
+              <InfoTooltip text="Data de separare train/test. Split-ul se face pe 70% din numărul de tranzacții (nu din timp) — asigură că ambele seturi au suficiente trade-uri." />
+            </span>
           </div>
           {Object.keys(btResults.per_symbol).length > 0 && (
             <div className="grid grid-cols-3 gap-1.5">
@@ -376,11 +385,15 @@ function StatusRow({
   );
 }
 
-function Stat({ label, value, color }: { label: string; value: string; color?: string }) {
+function Stat({ label, value, color, tip }: {
+  label: string; value: string; color?: string; tip?: string;
+}) {
   return (
     <div className="bg-surface-border/40 rounded-lg p-2 text-center">
       <div className={`text-sm font-bold ${color ?? "text-white"}`}>{value}</div>
-      <div className="text-xs text-slate-500 mt-0.5">{label}</div>
+      <div className="flex items-center justify-center gap-0.5 text-xs text-slate-500 mt-0.5">
+        {label}{tip && <InfoTooltip text={tip} />}
+      </div>
     </div>
   );
 }

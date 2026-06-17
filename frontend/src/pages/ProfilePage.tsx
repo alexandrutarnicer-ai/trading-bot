@@ -4,6 +4,8 @@ import {
 } from "../api/hooks";
 import { SessionEditor } from "../components/SessionEditor";
 import { InfoTooltip } from "../components/InfoTooltip";
+import { BotControl } from "../components/BotControl";
+import { TelegramSettings } from "../components/TelegramSettings";
 import type { Profile, ProfileSession } from "../api/types";
 
 const DEFAULT_SESSION = (id: string): ProfileSession => ({
@@ -23,6 +25,9 @@ const DEFAULT_SESSION = (id: string): ProfileSession => ({
   expire_bars:   4,
   account_fraction: 0.125,
   risk_pct:      0.01,
+  risk_base:     0.01,
+  risk_mid:      0.01,
+  risk_top:      0.01,
   execute_trades: false,
   rsi_enabled:   true,
   rsi_buy_min:   40,
@@ -143,6 +148,10 @@ export function ProfilePage() {
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-6 space-y-5">
+      {/* Bot control + Telegram */}
+      <BotControl />
+      <TelegramSettings />
+
       {/* Profile selector */}
       <div className="flex items-center gap-3 flex-wrap">
         <div className="flex items-center gap-2">

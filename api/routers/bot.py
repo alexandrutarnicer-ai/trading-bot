@@ -1,7 +1,9 @@
 import os
+import sys
 import ctypes
-from fastapi import APIRouter
-from api.config import PID_FILE, SESSIONS
+import subprocess
+from fastapi import APIRouter, HTTPException
+from api.config import ROOT, PID_FILE, SESSIONS
 from api.models import BotStatus
 
 router = APIRouter(prefix="/bot", tags=["bot"])
@@ -44,3 +46,38 @@ def bot_status():
                     active += 1
 
     return BotStatus(running=running, pid=pid if running else None, sessions_active=active)
+
+
+@router.post("/start")
+def start_bot():
+    pid = _read_pid(PID_FILE) if os.path.exists(PID_FILE) else None
+    if pid and _pid_alive(pid):
+        raise HTTPException(409, f"Bot-ul ruleaza deja (PID={pid})")
+
+    script = os.path.join(ROOT, "live", "run_all.py")
+    if not os.path.exists(script):
+        raise HTTPException(404, "live/run_all.py nu a fost gasit")
+
+    proc = subprocess.Popen(
+        [sys.executable, script],
+        cwd=ROOT,
+        # Detasat complet: supravietuieste daca API-ul se opreste
+        creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        close_fds=True,
+    )
+    return {"started": True, "pid": proc.pid}
+
+
+@router.post("/stop")
+def stop_bot():
+    pid = _read_pid(PID_FILE) if os.path.exists(PID_FILE) else None
+    if not pid or not _pid_alive(pid):
+        raise HTTPException(409, "Bot-ul nu ruleaza")
+
+    result = subprocess.run(
+        ["taskkill", "/F", "/T", "/PID", str(pid)],
+        capture_output=True, text=True,
+    )
+    return {"stopped": result.returncode == 0, "pid": pid}
