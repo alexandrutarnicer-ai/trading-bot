@@ -406,6 +406,65 @@ def _check_signals(df: pd.DataFrame, symbol: str, cfg: dict,
 
 
 # ---------------------------------------------------------------------------
+# MT5 position reconciliation
+# ---------------------------------------------------------------------------
+
+def _check_mt5_position_closed(ticket: int, p: dict, log) -> dict | None:
+    """
+    Verifica daca pozitia MT5 cu ticket-ul dat a fost inchisa.
+
+    Returns:
+      dict cu status/result_r/exit_price/exit_time  — pozitia e inchisa
+      None                                           — inca deschisa / pending / neconcludent
+    """
+    if _mt5_exec is None:
+        return None
+
+    # Ordin inca pending (netriggerat)
+    if _mt5_exec.orders_get(ticket=ticket):
+        return None
+
+    # Pozitie deschisa (triggerat, in curs)
+    if _mt5_exec.positions_get(ticket=ticket):
+        return None
+
+    # Nu e nici pending nici deschisa — cautam in history deals
+    deals = _mt5_exec.history_deals_get(position=ticket)
+    if not deals:
+        return None
+
+    close_deal = next(
+        (deal for deal in deals if deal.entry == _mt5_exec.DEAL_ENTRY_OUT),
+        None,
+    )
+    if close_deal is None:
+        return None
+
+    exit_price = close_deal.price
+    exit_time  = datetime.fromtimestamp(close_deal.time)
+    d          = p["direction"]
+    risk_dist  = abs(p["entry"] - p["sl"])
+
+    if risk_dist <= 0:
+        result_r, status = 0.0, "SL"
+    else:
+        result_r = round((exit_price - p["entry"]) * d / risk_dist, 3)
+        status   = "TP" if result_r > 0 else "SL"
+
+    log.info(
+        f"  [MT5] Pozitie #{ticket} inchisa: "
+        f"exit={exit_price}  result={result_r:+.3f}R  [{status}]"
+    )
+    return {
+        "status":       status,
+        "result_r":     result_r,
+        "exit_price":   exit_price,
+        "exit_time":    exit_time,
+        "triggered_at": p.get("triggered_at", exit_time),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Update outcome-uri
 # ---------------------------------------------------------------------------
 
@@ -440,11 +499,6 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
             if current_bar_t is not None:
                 armed = pd.Timestamp(p["armed_at"])
                 if current_bar_t - armed > expire_delta:
-                    outcome_rows.append({**p, "signal_id": sig_id,
-                                         "symbol": symbol,
-                                         "status": "expirat", "result_r": 0.0,
-                                         "exit_time": current_bar_t,
-                                         "time_check": datetime.now()})
                     rows_to_remove.append(sig_id)
                     _ticket = state.get("mt5_tickets", {}).get(sig_id)
                     if _ticket and _mt5_exec is not None:
@@ -458,12 +512,22 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                             log.warning(f"  [EXEC] {sig_id}: anulare MT5 #{_ticket} esuata "
                                         f"({_mt5_exec.last_error()}) — poate deja inchis/triggerat")
                         state["mt5_tickets"].pop(sig_id, None)
+                        # Ordin plasat in MT5 si expirat -> scriem in outcomes
+                        outcome_rows.append({**p, "signal_id": sig_id,
+                                             "symbol": symbol,
+                                             "status": "expirat", "result_r": 0.0,
+                                             "exit_time": current_bar_t,
+                                             "time_check": datetime.now()})
+                        _send_telegram(
+                            f"<b>EXPIRAT: {symbol}</b>\n"
+                            f"Ordinul nu a fost triggerat (>{expire_bars} bare)\n"
+                            f"<i>{session_id} | {sig_id}</i>"
+                        )
+                    else:
+                        # Fara ordin MT5 — pastram doar in signals.csv, nu in outcomes
+                        log.info(f"  EXPIRAT (fara ordin MT5): {sig_id} {symbol} "
+                                 f"— pastrat ca semnal, nu in outcomes")
                     log.info(f"  EXPIRAT: {sig_id} {symbol} (>{expire_bars} bare fara trigger)")
-                    _send_telegram(
-                        f"<b>EXPIRAT: {symbol}</b>\n"
-                        f"Ordinul nu a fost triggerat (>{expire_bars} bare)\n"
-                        f"<i>{session_id} | {sig_id}</i>"
-                    )
                     continue
 
             for _, bar in df_post.iterrows():
@@ -472,10 +536,6 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                 trig = (d == 1 and bar["high"] >= p["entry"]) or \
                        (d == -1 and bar["low"]  <= p["entry"])
                 if inv:
-                    outcome_rows.append({**p, "signal_id": sig_id,
-                                         "symbol": symbol,
-                                         "status": "invalidat", "result_r": 0.0,
-                                         "time_check": datetime.now()})
                     rows_to_remove.append(sig_id)
                     _ticket = state.get("mt5_tickets", {}).get(sig_id)
                     if _ticket and _mt5_exec is not None:
@@ -489,6 +549,15 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                             log.warning(f"  [EXEC] {sig_id}: anulare MT5 #{_ticket} esuata "
                                         f"({_mt5_exec.last_error()}) — poate deja inchis/triggerat")
                         state["mt5_tickets"].pop(sig_id, None)
+                        # Ordin plasat in MT5 si invalidat -> scriem in outcomes
+                        outcome_rows.append({**p, "signal_id": sig_id,
+                                             "symbol": symbol,
+                                             "status": "invalidat", "result_r": 0.0,
+                                             "time_check": datetime.now()})
+                    else:
+                        # Fara ordin MT5 — pastram doar in signals.csv, nu in outcomes
+                        log.info(f"  INVALIDAT (fara ordin MT5): {sig_id} {symbol} "
+                                 f"— pastrat ca semnal, nu in outcomes")
                     break
                 if trig:
                     if execute_trades and sig_id not in state.get("mt5_tickets", {}):
@@ -504,6 +573,38 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                     break
 
         if p.get("triggered") and sig_id not in rows_to_remove:
+            _ticket  = state.get("mt5_tickets", {}).get(sig_id)
+            fmt      = ".2f" if p["entry"] > 100 else ".5f"
+            dir_str  = "LONG" if d == 1 else "SHORT"
+
+            if _ticket and _mt5_exec is not None and execute_trades:
+                # Tracking bazat pe MT5 real — exit price = pretul efectiv al brokerului
+                mt5_res = _check_mt5_position_closed(_ticket, p, log)
+                if mt5_res is not None:
+                    outcome_rows.append({**p, "signal_id": sig_id, "symbol": symbol,
+                                         **mt5_res, "time_check": datetime.now()})
+                    rows_to_remove.append(sig_id)
+                    state.get("mt5_tickets", {}).pop(sig_id, None)
+                    if mt5_res["status"] == "TP":
+                        log.info(f"  PROFIT (MT5): {sig_id} TP +{mt5_res['result_r']:.3f}R")
+                        _send_telegram(
+                            f"<b>PROFIT +{mt5_res['result_r']:.2f}R: {dir_str} {symbol}</b>\n"
+                            f"Entry {format(p['entry'], fmt)} → "
+                            f"{format(mt5_res['exit_price'], fmt)} (exit real MT5)\n"
+                            f"<i>{session_id} | {sig_id}</i>"
+                        )
+                    else:
+                        log.info(f"  PIERDERE (MT5): {sig_id} SL {mt5_res['result_r']:.3f}R")
+                        _send_telegram(
+                            f"<b>PIERDERE {mt5_res['result_r']:.2f}R: {dir_str} {symbol}</b>\n"
+                            f"Entry {format(p['entry'], fmt)} → "
+                            f"{format(mt5_res['exit_price'], fmt)} (exit real MT5)\n"
+                            f"<i>{session_id} | {sig_id}</i>"
+                        )
+                # else: pozitia inca deschisa sau pending — verificam la urmatoarea bara
+                continue  # nu facem bar-based tracking cand avem ticket MT5
+
+            # Bar-based tracking pentru sesiuni fara executie (execute_trades=False / OBS)
             df_aft = df[df["time"] > p["triggered_at"]]
             for _, bar in df_aft.iterrows():
                 sl_hit = (d == 1 and bar["low"]  <= p["sl"]) or \
@@ -517,11 +618,9 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                                          "exit_time": bar["time"],
                                          "time_check": datetime.now()})
                     rows_to_remove.append(sig_id)
-                    state.get("mt5_tickets", {}).pop(sig_id, None)
                     log.info(f"  PIERDERE: {sig_id} SL -1.0R")
-                    fmt = ".2f" if p["entry"] > 100 else ".5f"
                     _send_telegram(
-                        f"<b>PIERDERE -1R: {'LONG' if p['direction']==1 else 'SHORT'} {symbol}</b>\n"
+                        f"<b>PIERDERE -1R: {dir_str} {symbol}</b>\n"
                         f"Entry {format(p['entry'], fmt)} → SL {format(p['sl'], fmt)}\n"
                         f"<i>{session_id} | {sig_id}</i>"
                     )
@@ -533,11 +632,9 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                                          "exit_time": bar["time"],
                                          "time_check": datetime.now()})
                     rows_to_remove.append(sig_id)
-                    state.get("mt5_tickets", {}).pop(sig_id, None)
                     log.info(f"  PROFIT: {sig_id} TP +{p['r_ratio']:.1f}R")
-                    fmt = ".2f" if p["entry"] > 100 else ".5f"
                     _send_telegram(
-                        f"<b>PROFIT +{p['r_ratio']:.1f}R: {'LONG' if p['direction']==1 else 'SHORT'} {symbol}</b>\n"
+                        f"<b>PROFIT +{p['r_ratio']:.1f}R: {dir_str} {symbol}</b>\n"
                         f"Entry {format(p['entry'], fmt)} → TP {format(p['tp'], fmt)}\n"
                         f"<i>{session_id} | {sig_id}</i>"
                     )
