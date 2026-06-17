@@ -7,13 +7,14 @@ import type {
   BacktestHistoryEntry,
 } from "./types";
 
-const POLL = 30_000; // refresh la 30s
+const POLL = 15_000; // refresh la 15s
 
 export const useBotStatus = () =>
   useQuery<BotStatus>({
     queryKey: ["bot-status"],
     queryFn:  () => apiFetch("/bot/status"),
     refetchInterval: POLL,
+    refetchIntervalInBackground: true,
   });
 
 export const useSessions = () =>
@@ -21,6 +22,7 @@ export const useSessions = () =>
     queryKey: ["sessions"],
     queryFn:  () => apiFetch("/sessions"),
     refetchInterval: POLL,
+    refetchIntervalInBackground: true,
   });
 
 export const useSignals = (sessionId: string) =>
@@ -28,6 +30,7 @@ export const useSignals = (sessionId: string) =>
     queryKey: ["signals", sessionId],
     queryFn:  () => apiFetch(`/sessions/${sessionId}/signals?limit=30`),
     refetchInterval: POLL,
+    refetchIntervalInBackground: true,
   });
 
 export const useOutcomes = (sessionId: string) =>
@@ -159,6 +162,7 @@ export const useMt5Status = () =>
     queryKey: ["mt5-status"],
     queryFn:  () => apiFetch("/mt5/status"),
     refetchInterval: POLL,
+    refetchIntervalInBackground: true,
     retry: false,
   });
 

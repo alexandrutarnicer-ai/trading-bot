@@ -6,7 +6,13 @@ import { ProfilePage } from "./pages/ProfilePage";
 import { HistoryPage } from "./pages/HistoryPage";
 
 const qc = new QueryClient({
-  defaultOptions: { queries: { retry: 1, staleTime: 20_000 } },
+  defaultOptions: {
+    queries: {
+      retry: 1,
+      staleTime: 0,
+      refetchOnWindowFocus: true,
+    },
+  },
 });
 
 type Tab = "dashboard" | "profile" | "history";
