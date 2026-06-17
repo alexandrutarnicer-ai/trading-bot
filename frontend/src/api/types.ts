@@ -151,6 +151,22 @@ export interface BacktestResult {
   session_id: string;
 }
 
+export interface BacktestHistoryEntry {
+  id: string;
+  timestamp: string;
+  session_id: string;
+  session_label: string;
+  markets: string[];
+  entry_tf: string;
+  trend_tf: string;
+  direction: string;
+  start_balance: number;
+  date_from: string | null;
+  date_to: string | null;
+  results: BacktestResult;
+  session_snapshot: Record<string, unknown> | null;
+}
+
 export interface Meta {
   available_markets: string[];
   timeframes: string[];

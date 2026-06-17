@@ -4,6 +4,7 @@ import type {
   BotStatus, SessionStatus, Signal, Outcome, EquityCurvePoint,
   Profile, ProfileSummary, Meta,
   DataCheckResult, DownloadJob, TelegramConfig, Mt5Status,
+  BacktestHistoryEntry,
 } from "./types";
 
 const POLL = 30_000; // refresh la 30s
@@ -191,5 +192,32 @@ export const useClearTelegram = () => {
   return useMutation({
     mutationFn: () => apiFetch("/settings/telegram", { method: "DELETE" }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["telegram-config"] }),
+  });
+};
+
+// ── Backtest history ────────────────────────────────────────────────────────
+
+export const useBacktestHistory = (sessionId?: string) =>
+  useQuery<BacktestHistoryEntry[]>({
+    queryKey: ["backtest-history", sessionId ?? "all"],
+    queryFn:  () => apiFetch(`/backtest/history${sessionId ? `?session_id=${sessionId}` : ""}`),
+    staleTime: 10_000,
+  });
+
+export const useSaveBacktestHistory = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: object) =>
+      apiFetch("/backtest/history", { method: "POST", body }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["backtest-history"] }),
+  });
+};
+
+export const useDeleteBacktestHistory = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiFetch(`/backtest/history/${id}`, { method: "DELETE" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["backtest-history"] }),
   });
 };
