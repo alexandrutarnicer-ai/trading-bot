@@ -174,6 +174,31 @@ export const useResumeSession = () => {
   });
 };
 
+// ── Autostart Windows ────────────────────────────────────────────────────────
+
+export const useAutostartStatus = () =>
+  useQuery<{ enabled: boolean }>({
+    queryKey: ["autostart-status"],
+    queryFn:  () => apiFetch("/bot/autostart/status"),
+    refetchInterval: 30_000,
+  });
+
+export const useAutostartEnable = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiFetch("/bot/autostart/enable", { method: "POST" }),
+    onSuccess: () => { setTimeout(() => qc.invalidateQueries({ queryKey: ["autostart-status"] }), 4000); },
+  });
+};
+
+export const useAutostartDisable = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiFetch("/bot/autostart/disable", { method: "POST" }),
+    onSuccess: () => { setTimeout(() => qc.invalidateQueries({ queryKey: ["autostart-status"] }), 4000); },
+  });
+};
+
 // ── Bot start/stop ──────────────────────────────────────────────────────────
 
 export const useStartBot = () => {

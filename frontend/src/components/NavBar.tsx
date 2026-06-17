@@ -1,4 +1,5 @@
 import { useBacktestJobs } from "../api/hooks";
+import { AutostartToggle } from "./AutostartToggle";
 
 type Tab = "dashboard" | "profile" | "audit";
 
@@ -52,6 +53,9 @@ export function NavBar({ active, onChange }: Props) {
           )}
         </button>
       ))}
+      <div className="ml-auto">
+        <AutostartToggle />
+      </div>
     </header>
   );
 }

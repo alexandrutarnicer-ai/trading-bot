@@ -212,3 +212,43 @@ def stop_bot():
         threading.Thread(target=_notify, daemon=True).start()
 
     return {"stopped": stopped_ok, "pid": pid}
+
+
+# ─── Autostart Windows ────────────────────────────────────────────────────────
+
+@router.get("/autostart/status")
+def autostart_status():
+    try:
+        r = subprocess.run(
+            ["powershell", "-Command",
+             "if (Get-ScheduledTask -TaskName 'TradingBot-RunAll' -ErrorAction SilentlyContinue) { 'true' } else { 'false' }"],
+            capture_output=True, text=True, timeout=10
+        )
+        enabled = r.stdout.strip().lower() == "true"
+    except Exception:
+        enabled = False
+    return {"enabled": enabled}
+
+
+@router.post("/autostart/enable")
+def autostart_enable():
+    script = os.path.join(ROOT, "scripts", "setup_autostart.ps1")
+    if not os.path.exists(script):
+        raise HTTPException(404, "scripts/setup_autostart.ps1 nu a fost gasit")
+    subprocess.Popen([
+        "powershell", "-Command",
+        f'Start-Process powershell -Verb RunAs -ArgumentList \'-ExecutionPolicy Bypass -File "{script}"\''
+    ])
+    return {"started": True}
+
+
+@router.post("/autostart/disable")
+def autostart_disable():
+    script = os.path.join(ROOT, "scripts", "remove_autostart.ps1")
+    if not os.path.exists(script):
+        raise HTTPException(404, "scripts/remove_autostart.ps1 nu a fost gasit")
+    subprocess.Popen([
+        "powershell", "-Command",
+        f'Start-Process powershell -Verb RunAs -ArgumentList \'-ExecutionPolicy Bypass -File "{script}"\''
+    ])
+    return {"started": True}
