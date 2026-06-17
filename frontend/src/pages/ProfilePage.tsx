@@ -85,6 +85,7 @@ export function ProfilePage() {
   const [showNew, setShowNew] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [profileDropOpen, setProfileDropOpen] = useState(false);
 
   const handleSessionChange = (idx: number, updated: ProfileSession) => {
     if (!draft) return;
@@ -168,33 +169,57 @@ export function ProfilePage() {
       {/* Profile selector */}
       <div className="flex items-center gap-3 flex-wrap">
         <div className="flex items-center gap-2">
-          <div className="relative">
-            <select
-              value={activeId}
-              onChange={(e) => setActiveId(e.target.value)}
-              className="bg-surface-card border border-surface-border text-white text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:border-blue-500"
+          {/* Custom dropdown cu indicator ON */}
+          <div
+            className="relative"
+            tabIndex={0}
+            onBlur={() => setTimeout(() => setProfileDropOpen(false), 150)}
+          >
+            <button
+              onClick={() => setProfileDropOpen((v) => !v)}
+              className={`flex items-center gap-2 bg-surface-card border text-white text-sm rounded-lg px-3 py-1.5 focus:outline-none hover:border-slate-400 transition-colors ${
+                runningProfileId && activeId === runningProfileId
+                  ? "border-profit/60"
+                  : "border-surface-border"
+              }`}
             >
-              {profiles?.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.id === runningProfileId ? `▶ ${p.name}` : p.name}
-                </option>
-              ))}
-            </select>
+              {runningProfileId && activeId === runningProfileId && (
+                <span className="w-2 h-2 rounded-full bg-profit animate-pulse flex-shrink-0" />
+              )}
+              <span>{profiles?.find((p) => p.id === activeId)?.name ?? activeId}</span>
+              {runningProfileId && activeId === runningProfileId && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-profit/20 text-profit font-bold ml-1">ON</span>
+              )}
+              <span className="text-slate-500 text-xs ml-1">{profileDropOpen ? "▲" : "▼"}</span>
+            </button>
+
+            {profileDropOpen && (
+              <div className="absolute top-full left-0 mt-1 bg-surface-card border border-surface-border rounded-xl shadow-xl z-20 min-w-[200px] py-1 overflow-hidden">
+                {profiles?.map((p) => {
+                  const isRunning  = p.id === runningProfileId;
+                  const isSelected = p.id === activeId;
+                  return (
+                    <button
+                      key={p.id}
+                      onClick={() => { setActiveId(p.id); setProfileDropOpen(false); }}
+                      className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left transition-colors hover:bg-surface-border/40 ${
+                        isSelected ? "text-white bg-surface-border/20" : "text-slate-300"
+                      }`}
+                    >
+                      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                        isRunning ? "bg-profit animate-pulse" : "bg-transparent"
+                      }`} />
+                      <span className="flex-1">{p.name}</span>
+                      {isRunning && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-profit/20 text-profit font-bold">ON</span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
           <InfoTooltip text={PROFILE_TIP} />
-          {/* Badge "ACTIV" cand vizualizezi profilul care ruleaza */}
-          {runningProfileId && activeId === runningProfileId && (
-            <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-profit/20 text-profit font-medium">
-              <span className="w-1.5 h-1.5 rounded-full bg-profit animate-pulse inline-block" />
-              ACTIV
-            </span>
-          )}
-          {/* Badge "alt profil ruleaza" cand esti pe alt profil */}
-          {runningProfileId && activeId !== runningProfileId && (
-            <span className="text-xs text-warn">
-              ▶ rulează: {botStatus?.active_profile_name ?? runningProfileId}
-            </span>
-          )}
         </div>
 
         <button
@@ -291,32 +316,6 @@ export function ProfilePage() {
         </div>
       )}
 
-      {/* Capital backtest */}
-      {draft && (
-        <div className="flex items-center gap-3 bg-surface-card border border-surface-border rounded-xl px-4 py-3">
-          <div className="flex-1">
-            <div className="text-xs font-semibold text-white mb-0.5">Capital simulat backtest</div>
-            <div className="text-[10px] text-slate-500">
-              Suma de pornire folosită în simulare. Nu afectează trading-ul live — acolo se citește equity-ul real din MT5.
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <input
-              type="number"
-              min={100}
-              step={100}
-              value={draft.start_balance ?? 1000}
-              onChange={(e) => {
-                const val = parseFloat(e.target.value) || 1000;
-                setDraft({ ...draft, start_balance: val });
-                setDirty(true);
-              }}
-              className="w-28 bg-surface border border-surface-border rounded px-2 py-1.5 text-sm text-white text-right font-mono focus:outline-none focus:border-blue-500"
-            />
-            <span className="text-xs text-slate-500">USD</span>
-          </div>
-        </div>
-      )}
 
       {/* Sessions */}
       {loadingProfile ? (
@@ -339,7 +338,6 @@ export function ProfilePage() {
               meta={meta}
               onChange={(updated) => handleSessionChange(idx, updated)}
               onRemove={() => handleSessionRemove(idx)}
-              startBalance={draft.start_balance ?? 1000}
             />
           ))}
           <button

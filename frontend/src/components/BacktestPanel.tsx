@@ -8,7 +8,6 @@ import type { BacktestResult, DataCheckResult, ProfileSession } from "../api/typ
 
 interface Props {
   session: ProfileSession;
-  startBalance?: number;
 }
 
 type Range = "1y" | "3y" | "all" | "custom";
@@ -34,9 +33,10 @@ type Phase =
   | "done"
   | "error";
 
-export function BacktestPanel({ session, startBalance = 1000 }: Props) {
+export function BacktestPanel({ session }: Props) {
   const [phase, setPhase]       = useState<Phase>("idle");
   const [range, setRange]       = useState<Range>("all");
+  const [startBalance, setStartBalance] = useState(1000);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo]     = useState("");
   const [checkResult, setCheckResult] = useState<DataCheckResult | null>(null);
@@ -137,8 +137,50 @@ export function BacktestPanel({ session, startBalance = 1000 }: Props) {
 
   const btResults = btJob?.results as BacktestResult | null;
 
+  // Split capital per piata
+  const fraction   = session.account_fraction ?? 0.125;
+  const perMarket  = startBalance * fraction;
+  const totalRisk  = session.markets.length * perMarket * (session.risk_pct ?? 0.01);
+
   return (
     <div className="space-y-3">
+      {/* Capital + split per piata */}
+      <div className="bg-surface-border/20 rounded-lg p-3 space-y-2">
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-slate-400 flex-1">Capital simulat</span>
+          <div className="flex items-center gap-1.5">
+            <input
+              type="number" min={100} step={100}
+              value={startBalance}
+              onChange={(e) => setStartBalance(parseFloat(e.target.value) || 1000)}
+              className="w-24 bg-surface border border-surface-border rounded px-2 py-1 text-xs text-white text-right font-mono focus:outline-none focus:border-blue-500"
+            />
+            <span className="text-xs text-slate-500">USD</span>
+          </div>
+        </div>
+        {session.markets.length > 0 && (
+          <div className="border-t border-surface-border/40 pt-2 space-y-1">
+            <div className="text-[10px] text-slate-600 uppercase tracking-wider mb-1">
+              Alocare per piată ({(fraction * 100).toFixed(1)}% equity × {session.markets.length} piețe)
+            </div>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
+              {session.markets.map((m) => (
+                <div key={m} className="flex items-center justify-between text-xs">
+                  <span className="text-slate-400">{m}</span>
+                  <span className="text-slate-300 font-mono">
+                    {perMarket.toLocaleString("ro-RO", { maximumFractionDigits: 0 })} USD
+                  </span>
+                </div>
+              ))}
+            </div>
+            <div className="border-t border-surface-border/40 pt-1 flex justify-between text-[10px] text-slate-600">
+              <span>Risc maxim simultan (toate piețele)</span>
+              <span className="font-mono">{totalRisk.toFixed(2)} USD</span>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Range selector — mereu vizibil */}
       <div className="flex items-center gap-2 flex-wrap">
         <span className="text-xs text-slate-500">Interval:</span>
