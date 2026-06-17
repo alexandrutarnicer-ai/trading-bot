@@ -126,3 +126,33 @@ export interface Meta {
   directions: string[];
   weekday_names: Record<string, string>;
 }
+
+export interface DataFileInfo {
+  symbol: string;
+  tf: string;
+  exists: boolean;
+  bars: number;
+  last_date: string | null;
+}
+
+export interface DataCheckResult {
+  results: DataFileInfo[];
+  all_available: boolean;
+  missing: DataFileInfo[];
+}
+
+export interface DownloadFileResult {
+  symbol: string;
+  tf: string;
+  success: boolean;
+  bars: number;
+  needs_scroll: boolean;
+  error: string | null;
+}
+
+export interface DownloadJob {
+  status: "pending" | "running" | "done" | "error";
+  results: DownloadFileResult[];
+  any_needs_scroll: boolean;
+  error: string | null;
+}

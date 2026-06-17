@@ -3,6 +3,7 @@ import { apiFetch } from "./client";
 import type {
   BotStatus, SessionStatus, Signal, Outcome, EquityCurvePoint,
   Profile, ProfileSummary, Meta,
+  DataCheckResult, DownloadJob,
 } from "./types";
 
 const POLL = 30_000; // refresh la 30s
@@ -104,6 +105,39 @@ export const useBacktestJob = (jobId: string | null) =>
     enabled:  !!jobId,
     refetchInterval: (query) =>
       query.state.data?.status === "running" || query.state.data?.status === "pending"
+        ? 2000
+        : false,
+  });
+
+export const useMt5Markets = () =>
+  useQuery<{ symbols: string[]; error: string | null }>({
+    queryKey: ["mt5-markets"],
+    queryFn:  () => apiFetch("/markets/mt5"),
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  });
+
+export const useCheckData = () =>
+  useMutation({
+    mutationFn: (params: { markets: string; entry_tf: string; trend_tf: string }) =>
+      apiFetch<DataCheckResult>(
+        `/data/check?markets=${params.markets}&entry_tf=${params.entry_tf}&trend_tf=${params.trend_tf}`
+      ),
+  });
+
+export const useStartDownload = () =>
+  useMutation({
+    mutationFn: (body: { markets: string[]; timeframes: string[] }) =>
+      apiFetch<{ job_id: string }>("/data/download", { method: "POST", body }),
+  });
+
+export const useDownloadJob = (jobId: string | null) =>
+  useQuery<DownloadJob>({
+    queryKey: ["download-job", jobId],
+    queryFn:  () => apiFetch(`/data/download/${jobId}`),
+    enabled:  !!jobId,
+    refetchInterval: (query) =>
+      query.state.data?.status === "pending" || query.state.data?.status === "running"
         ? 2000
         : false,
   });
