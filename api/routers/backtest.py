@@ -88,11 +88,6 @@ def _run_backtest_job(job_id: str, session_cfg: dict,
             _jobs[job_id].update({"status": "error", "error": "Nicio piata disponibila in date CSV"})
             return
 
-        # Retine intervalul real al datelor inainte de filtrare date
-        all_times_raw = pd.concat([df["time"] for df in data.values()])
-        data_from_actual = str(all_times_raw.min().date())
-        data_to_actual   = str(all_times_raw.max().date())
-
         # Filtreaza intervalul de date daca e specificat
         if date_from or date_to:
             filtered = {}
@@ -109,6 +104,11 @@ def _run_backtest_job(job_id: str, session_cfg: dict,
                 _jobs[job_id].update({"status": "error",
                                       "error": "Nicio piata cu date in intervalul selectat"})
                 return
+
+        # Intervalul real dupa filtrare (reflecta ce s-a testat efectiv)
+        all_times_raw = pd.concat([df["time"] for df in data.values()])
+        data_from_actual = str(all_times_raw.min().date())
+        data_to_actual   = str(all_times_raw.max().date())
 
         skip_hours = tuple(session_cfg.get("skip_hours", []))
         skip_wd    = set(session_cfg.get("skip_weekdays", []))

@@ -31,10 +31,9 @@ export function SessionCard({ session: s, onClick, selected }: Props) {
           <span className="font-semibold text-sm text-white leading-tight">{s.label}</span>
         </div>
         <div className="flex gap-1 flex-shrink-0">
-          {!s.validated && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-warn/20 text-warn font-medium">DEMO</span>
-          )}
-          {!s.execute && (
+          {s.execute ? (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-profit/20 text-profit font-medium">LIVE</span>
+          ) : (
             <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-border text-slate-400 font-medium">OBS</span>
           )}
         </div>

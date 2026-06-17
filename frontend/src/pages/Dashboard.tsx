@@ -1,16 +1,29 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { RefreshCw } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useSessions } from "../api/hooks";
+import { useSessions, useBotStatus } from "../api/hooks";
 import { BotStatusBar } from "../components/BotStatusBar";
 import { SessionCard } from "../components/SessionCard";
 import { SignalFeed } from "../components/SignalFeed";
 import { EquityChart } from "../components/EquityChart";
 
 export function Dashboard() {
-  const { data: sessions, isLoading } = useSessions();
+  const { data: sessions, isLoading, dataUpdatedAt } = useSessions();
+  const { data: botStatus } = useBotStatus();
   const [selectedSession, setSelectedSession] = useState<string>("session3");
+  const [now, setNow] = useState(Date.now());
   const qc = useQueryClient();
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 5_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const secsAgo = dataUpdatedAt ? Math.floor((now - dataUpdatedAt) / 1000) : null;
+  const updateLabel = secsAgo === null ? null
+    : secsAgo < 5  ? "acum"
+    : secsAgo < 60 ? `${secsAgo}s`
+    : `${Math.floor(secsAgo / 60)}m`;
 
   const selected = sessions?.find(s => s.id === selectedSession);
 
@@ -22,12 +35,20 @@ export function Dashboard() {
     <div className="p-4 md:p-6 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <p className="text-xs text-slate-500">Standard Profile · Demo</p>
+        <p className="text-xs text-slate-500">
+          {botStatus?.active_profile_name ?? "Standard"} Profile
+        </p>
         <div className="flex items-center gap-3">
           <BotStatusBar />
+          {updateLabel && (
+            <span className="text-[10px] text-slate-600 tabular-nums">
+              actualizat {updateLabel}
+            </span>
+          )}
           <button
             onClick={refresh}
             className="p-2 rounded-lg bg-surface-card border border-surface-border text-slate-400 hover:text-white transition-colors"
+            title="Reîncarcă datele"
           >
             <RefreshCw size={14} />
           </button>

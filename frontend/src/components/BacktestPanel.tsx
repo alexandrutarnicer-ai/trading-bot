@@ -20,7 +20,10 @@ const RANGE_LABELS: Record<Range, string> = {
 const BACKTEST_INFO =
   "Backtest rulează pe date CSV istorice (offline, nu live). " +
   "Split train/test la 70%/30% din tranzacții — nu din timp — " +
-  "pentru a evita bias-ul pe perioade scurte. " +
+  "pentru a evita bias-ul pe perioade scurte.\n\n" +
+  "Expectancy: câștigul mediu per tranzacție în unități R (risc per trade). " +
+  "Ex: +0.025R = câștig mediu de 2.5% din riscul per trade. " +
+  "-0.332R = pierdere medie de 33.2% din risc per trade.\n\n" +
   "Interpretează expectancy pozitiv pe TEST ca semnal real. " +
   "Necesită fișiere CSV în data/ — folosește butonul de descărcare dacă lipsesc.";
 
@@ -478,7 +481,7 @@ export function BacktestPanel({ session }: Props) {
             <Stat label="Expectancy"
               value={`${btResults.expectancy >= 0 ? "+" : ""}${btResults.expectancy}R`}
               color={btResults.expectancy >= 0 ? "text-profit" : "text-loss"}
-              tip="Câștigul mediu per tranzacție în unități R. Peste 0 = edge pozitiv. Valoarea din TEST este cea relevantă." />
+              tip={`Câștigul mediu per tranzacție exprimat în R (= risc per trade). Ex: +0.025R = câștig mediu de 2.5% din riscul asumat. -0.332R = pierdere medie de 33.2% din risc. Peste 0 = edge pozitiv. Valoarea din TEST este cea relevantă.`} />
             <Stat label="Max DD" value={`${btResults.max_dd}%`} color="text-warn"
               tip="Scăderea maximă procentuală față de vârful de equity anterior. DD > 40% → reconsideră sizing-ul." />
           </div>
