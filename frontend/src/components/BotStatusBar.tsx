@@ -9,27 +9,56 @@ export function BotStatusBar() {
   const running = data?.running ?? false;
 
   return (
-    <div className={`flex items-center gap-3 px-4 py-2 rounded-lg text-sm font-medium ${
+    <div className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium ${
       running
         ? "bg-profit/10 border border-profit/30 text-profit"
-        : "bg-loss/10 border border-loss/30 text-loss"
+        : "bg-surface-card border border-surface-border text-slate-500"
     }`}>
       {running ? (
         <>
-          <span className="relative flex h-2 w-2">
+          <span className="relative flex h-2 w-2 flex-shrink-0">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-profit opacity-75" />
             <span className="relative inline-flex rounded-full h-2 w-2 bg-profit" />
           </span>
-          <Activity size={14} />
-          <span>Bot activ — {data?.sessions_active} sesiuni</span>
-          {data?.pid && <span className="opacity-50 font-normal">PID {data.pid}</span>}
+          <Activity size={13} className="flex-shrink-0" />
+          <span>Bot activ</span>
+          {data?.active_profile_name && (
+            <>
+              <span className="opacity-30">·</span>
+              <span className="text-profit/80 font-semibold text-xs">
+                {data.active_profile_name}
+              </span>
+            </>
+          )}
+          <span className="opacity-40 font-normal text-xs">
+            — {data?.sessions_active} sesiuni
+          </span>
+          {data?.pid && (
+            <span className="opacity-30 font-normal text-xs">PID {data.pid}</span>
+          )}
         </>
       ) : (
         <>
-          <AlertCircle size={14} />
+          <AlertCircle size={13} className="flex-shrink-0" />
           <span>Bot oprit</span>
+          {data?.last_stopped_at && (
+            <span className="text-xs text-slate-600 font-normal ml-1">
+              · {formatRelative(data.last_stopped_at)}
+            </span>
+          )}
         </>
       )}
     </div>
   );
+}
+
+function formatRelative(iso: string): string {
+  const d    = new Date(iso);
+  const now  = new Date();
+  const diff = Math.floor((now.getTime() - d.getTime()) / 60_000);
+  if (diff < 1)  return "acum";
+  if (diff < 60) return `acum ${diff}m`;
+  const h = Math.floor(diff / 60);
+  if (h < 24) return `azi ${d.toLocaleTimeString("ro-RO", { hour: "2-digit", minute: "2-digit" })}`;
+  return `ieri ${d.toLocaleTimeString("ro-RO", { hour: "2-digit", minute: "2-digit" })}`;
 }

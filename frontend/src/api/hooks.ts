@@ -166,7 +166,7 @@ export const useStopBot = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => apiFetch("/bot/stop", { method: "POST" }),
-    onSuccess: () => { setTimeout(() => qc.invalidateQueries({ queryKey: ["bot-status"] }), 1500); },
+    onSuccess: () => { setTimeout(() => qc.invalidateQueries({ queryKey: ["bot-status"] }), 400); },
   });
 };
 

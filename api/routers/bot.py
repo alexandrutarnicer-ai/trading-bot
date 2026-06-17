@@ -18,10 +18,13 @@ RUN_LOG_FILE        = os.path.join(DATA_DIR, "bot_run_log.json")
 def _pid_alive(pid: int) -> bool:
     try:
         PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        STILL_ACTIVE = 259  # GetExitCodeProcess returneaza asta cat timp procesul ruleaza
         h = ctypes.windll.kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
         if h:
+            exit_code = ctypes.c_ulong()
+            ctypes.windll.kernel32.GetExitCodeProcess(h, ctypes.byref(exit_code))
             ctypes.windll.kernel32.CloseHandle(h)
-            return True
+            return exit_code.value == STILL_ACTIVE
     except Exception:
         pass
     return False
@@ -143,5 +146,11 @@ def stop_bot():
         ["taskkill", "/F", "/T", "/PID", str(pid)],
         capture_output=True, text=True,
     )
+    # Sterge PID file imediat — run_all.py nu apuca cleanup la taskkill /F
+    try:
+        if os.path.exists(PID_FILE):
+            os.remove(PID_FILE)
+    except Exception:
+        pass
     _clear_active_profile()
     return {"stopped": result.returncode == 0, "pid": pid}
