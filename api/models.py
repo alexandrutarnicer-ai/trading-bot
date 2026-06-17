@@ -56,6 +56,8 @@ class BotStatus(BaseModel):
     sessions_active: int
     active_profile_id: Optional[str] = None
     active_profile_name: Optional[str] = None
+    last_started_at: Optional[str] = None
+    last_stopped_at: Optional[str] = None
 
 
 class EquityCurvePoint(BaseModel):

@@ -25,6 +25,12 @@ python live/session4_obs.py
 python live/session5_ger40_h1.py
 python live/session6_us30_m15.py
 
+# API backend (dashboard web)
+python api/main.py   # sau: uvicorn api.main:app --reload --port 8000
+
+# Frontend dev server
+cd frontend && npm run dev
+
 # Descarca date istorice din MT5
 python scripts/descarca_date.py
 python scripts/descarca_date_istorice.py
@@ -40,15 +46,23 @@ Nu există test suite sau linter configurat. Validarea corectitudinii se face pr
 
 ## Arhitectura
 
-Proiectul are doua moduri distincte: **backtest** (date CSV) si **live** (date MT5 real-time).
+Proiectul are trei componente distincte: **backtest** (date CSV), **live** (date MT5 real-time), **API+frontend** (dashboard web).
 
 ```
 adapters/          — surse de date (CsvDataSource / Mt5DataSource)
 strategy/          — indicatori, structura swing, semnale, costuri
 engine/            — simulare backtest (single.py = un simbol, portfolio.py = multi-simbol)
 live/              — generatoare de semnale live + executor ordine MT5
+api/               — FastAPI backend pentru dashboard web
+  routers/         — bot, sessions, profiles, backtest, backtest_history, markets,
+                     data_download, settings, mt5status
+  models.py        — Pydantic models (BotStatus, SessionStatus, etc.)
+frontend/          — React + Vite + TypeScript + Tailwind CSS (dark theme)
+  src/api/         — types.ts, hooks.ts, client.ts
+  src/components/  — BotControl, SessionEditor, BacktestPanel, Mt5Status, etc.
+  src/pages/       — ProfilePage, DashboardPage, etc.
 config/            — standard_profile.json (profil validat)
-data/              — CSV-uri OHLC + output sesiuni live
+data/              — CSV-uri OHLC + output sesiuni live + profiles/ + backtest_history.json
 scripts/           — descarca date, analiza, research (nu pentru productie)
 ```
 
@@ -59,6 +73,9 @@ scripts/           — descarca date, analiza, research (nu pentru productie)
 
 **Live:**
 `Mt5DataSource.load_bars()` → `strategy.preparation._enrich()` → `signal_generator._check_signals()` → `signal_generator._place_order()` (MT5 pending order)
+
+**API:**
+FastAPI servit pe port 8000. Frontend-ul React pe port 5173 face requests la `/api/*`. Backtestul rulează asincron — `POST /backtest/run` returnează `job_id`, clientul polleaza `GET /backtest/{job_id}` la 2s interval.
 
 ### `strategy/preparation._enrich()`
 
@@ -73,7 +90,29 @@ Detecteaza setup pullback-in-trend la bara `j`. Conditii stricte:
 
 ### `strategy/signals.reward_R()`
 
-R/R dinamic pe scara: 0 criterii optionale → 2.5R; 1 criteriu → 3.5R; 2 criterii → 4.5R. Criteriile optionale: RSI in range + aliniere EMA8>EMA20>EMA50.
+R/R dinamic pe scara cu praguri configurabile. Numara criterii optionale satisfacute (`n_optional`), returneaza R-ul corespunzator din `reward_ladder`:
+
+```python
+def reward_R(n_optional, cfg):
+    rl = cfg["reward_ladder"]
+    t_mid = rl.get("threshold_mid", 1)   # default: 1 criteriu → mid R
+    t_top = rl.get("threshold_top", 2)   # default: 2 criterii → top R
+    t_max = rl.get("threshold_max", 3)   # default: 3 criterii → max R
+    if "rr_if_6_criteria" in rl and n_optional >= t_max:
+        return rl["rr_if_6_criteria"]    # max (ex: 5.5R)
+    if n_optional >= t_top:
+        return rl["rr_if_5_criteria"]    # top (ex: 4.5R)
+    if n_optional >= t_mid:
+        return rl["rr_if_4_criteria"]    # mid (ex: 3.5R)
+    return rl["rr_if_3_criteria"]        # base (ex: 2.5R)
+```
+
+**Criterii optionale (3 total):**
+1. `rsi` — RSI in range definit (ex: 40-65 pentru LONG)
+2. `ema_alignment` — EMA8 > EMA20 > EMA50 (LONG) sau invers (SHORT)
+3. `body_strength` — corp lumânare > `min_atr_ratio × ATR` — **dezactivat by default** (nu afecteaza baselines)
+
+Pragurile sunt configurabile per sesiune via UI. Valorile default produc același comportament ca sistemul vechi cu 2 criterii și praguri fixe 1 și 2.
 
 ### `engine/portfolio.run_portfolio()`
 
@@ -95,6 +134,54 @@ Starea persistenta per sesiune: `state.pkl` (pending dict + counter + tickets MT
 Porneste S1–S6 ca subprocese independente. La repornire: citeste `data/run_all.pid`, ucide instanta anterioara + toate sesiunile copil via `taskkill /F /T /PID <old>`, asteapta 3s, porneste sesiunile noi. La oprire (Ctrl+C / SIGTERM / SIGBREAK): trimite Telegram, termina toate procesele copil, sterge PID file.
 
 Fiecare sesiune are si propriul `session.lock` (PID file per sesiune) care previne doua instante ale aceleiasi sesiuni.
+
+### `api/` — Dashboard web backend
+
+**Routere:**
+- `bot` — `GET /bot/status` (running, pid, sessions_active, active_profile, last_started_at, last_stopped_at), `POST /bot/start`, `POST /bot/stop`
+- `sessions` — status sesiuni live, semnale, outcomes, equity curve
+- `profiles` — CRUD profile JSON din `data/profiles/`. `standard` este protejat (403 la stergere)
+- `backtest` — `POST /backtest/run` (async job), `GET /backtest/{job_id}` (poll)
+- `backtest_history` — `GET/POST/DELETE /backtest/history` — stocheaza rezultate in `data/backtest_history.json`
+- `mt5status` — `GET /mt5/status` — conectare directa la MT5, returneaza cont/balance/equity
+- `data_download` — descarca CSV-uri din MT5 via `Mt5DataSource`
+- `markets` — lista simboluri disponibile in MT5
+- `settings` — configurare Telegram (token/chat_id criptate in `data/telegram_config.json`)
+
+**Date persistente create de API:**
+- `data/profiles/*.json` — profile utilizator
+- `data/active_profile.json` — profilul activ curent (cu `started_at`), sters la stop
+- `data/bot_run_log.json` — `{last_started_at, last_stopped_at}` — persistent
+- `data/backtest_history.json` — toate rezultatele backtest (max 200 intrari)
+
+### Structura unui profil JSON
+
+```json
+{
+  "id": "standard",
+  "name": "Standard",
+  "sessions": [{
+    "id": "S1",
+    "markets": ["EURUSD", "GBPUSD"],
+    "entry_tf": "M15", "trend_tf": "M30",
+    "direction": "LONG",
+    "pullback_window": 8,
+    "account_fraction": 0.125,
+    "risk_base": 0.01,   "risk_mid": 0.01,
+    "risk_top": 0.012,   "risk_max": 0.015,
+    "r_base": 2.5,  "r_mid": 3.5,  "r_top": 4.5,  "r_max": 5.5,
+    "r_mid_threshold": 1, "r_top_threshold": 2, "r_max_threshold": 3,
+    "rsi_enabled": true, "rsi_buy_min": 40, "rsi_buy_max": 65,
+    "ema_alignment_enabled": true,
+    "body_strength_enabled": false, "body_strength_min_atr_ratio": 0.15,
+    "reward_ladder": {
+      "rr_if_3_criteria": 2.5, "rr_if_4_criteria": 3.5,
+      "rr_if_5_criteria": 4.5, "rr_if_6_criteria": 5.5,
+      "threshold_mid": 1, "threshold_top": 2, "threshold_max": 3
+    }
+  }]
+}
+```
 
 ---
 
@@ -123,14 +210,16 @@ Orice schimbare la `strategy/` sau `engine/` trebuie sa reproduca exact:
 python portfolio_backtest.py  →  S1: 284 trades, Exp +0.025R, DD -40.5%
                                   TRAIN 181t: -0.156R | TEST 103t: +0.344R | split 2024-01-09
 
-python session2_backtest.py   →  S2: 1022 trades, Exp +0.029R, DD -51.1%
-                                  TRAIN 638t: -0.030R | TEST 384t: +0.127R | split 2024-07-22
+python session2_backtest.py   →  S2: 1326 trades (879 train + 447 test), Exp +0.024R
+                                  TRAIN 879t: -0.014R | TEST 447t: +0.099R | split 2024-03-21
 
 python session3_backtest.py   →  S3: +0.211R train (p=0.0075***) | +0.336R test
                                   toate 7 ani pozitive (2020-2026 inclusiv bear 2022)
 ```
 
 Daca numerele se schimba semnificativ → bug introdus, nu progres.
+
+**Nota S2:** Numerele S2 au crescut fata de versiunile anterioare (era 1022 trades, split 2024-07-22) dupa adaugarea suportului multi-pozitie per simbol (`engine/portfolio.py`). Baselines curente reflecta comportamentul post-multi-position.
 
 ---
 
@@ -148,6 +237,8 @@ Daca numerele se schimba semnificativ → bug introdus, nu progres.
 
 **AutoTrading dezactivat (retcode 10026/10027):** returneaza `None` (retry bara urm.), nu `False`.
 
+**`body_strength` criteriu optional:** dezactivat by default (`enabled: false`) pentru a nu schimba baselines. Verifica intotdeauna ca `body_strength_enabled: false` in profilul standard inainte de a rula backtests de validare.
+
 ---
 
 ## Configurare autostart Windows
@@ -159,4 +250,4 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 & "c:\trading-bot\scripts\setup_autostart.ps1"
 ```
 
-Variabilele Telegram (`TELEGRAM_TOKEN`, `TELEGRAM_CHAT_ID`) se seteaza in User Environment Variables Windows (nu in .env) — sunt citite de `start_bot.bat` din registry.
+Variabilele Telegram (`TELEGRAM_TOKEN`, `TELEGRAM_CHAT_ID`) se seteaza in User Environment Variables Windows (nu in .env) — sunt citite de `start_bot.bat` din registry. In UI, configurarea se face din sectiunea Telegram Settings (accordion in ProfilePage).

@@ -3,6 +3,7 @@ import sys
 import json
 import ctypes
 import subprocess
+from datetime import datetime
 from fastapi import APIRouter, HTTPException, Body
 from typing import Optional
 from api.config import ROOT, DATA_DIR, PID_FILE, SESSIONS
@@ -11,6 +12,7 @@ from api.models import BotStatus
 router = APIRouter(prefix="/bot", tags=["bot"])
 
 ACTIVE_PROFILE_FILE = os.path.join(DATA_DIR, "active_profile.json")
+RUN_LOG_FILE        = os.path.join(DATA_DIR, "bot_run_log.json")
 
 
 def _pid_alive(pid: int) -> bool:
@@ -42,8 +44,10 @@ def _read_active_profile() -> dict:
 
 def _save_active_profile(profile_id: str, profile_name: str) -> None:
     os.makedirs(DATA_DIR, exist_ok=True)
+    now = datetime.now().isoformat()
     with open(ACTIVE_PROFILE_FILE, "w", encoding="utf-8") as f:
-        json.dump({"id": profile_id, "name": profile_name}, f)
+        json.dump({"id": profile_id, "name": profile_name, "started_at": now}, f)
+    _update_run_log(last_started_at=now)
 
 
 def _clear_active_profile() -> None:
@@ -52,6 +56,23 @@ def _clear_active_profile() -> None:
             os.remove(ACTIVE_PROFILE_FILE)
     except Exception:
         pass
+    _update_run_log(last_stopped_at=datetime.now().isoformat())
+
+
+def _read_run_log() -> dict:
+    try:
+        with open(RUN_LOG_FILE, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {"last_started_at": None, "last_stopped_at": None}
+
+
+def _update_run_log(**kwargs) -> None:
+    log = _read_run_log()
+    log.update(kwargs)
+    os.makedirs(DATA_DIR, exist_ok=True)
+    with open(RUN_LOG_FILE, "w", encoding="utf-8") as f:
+        json.dump(log, f)
 
 
 @router.get("/status", response_model=BotStatus)
@@ -71,7 +92,8 @@ def bot_status():
                 if spid and _pid_alive(spid):
                     active += 1
 
-    ap = _read_active_profile() if running else {"id": None, "name": None}
+    ap      = _read_active_profile() if running else {"id": None, "name": None}
+    run_log = _read_run_log()
 
     return BotStatus(
         running=running,
@@ -79,6 +101,8 @@ def bot_status():
         sessions_active=active,
         active_profile_id=ap.get("id"),
         active_profile_name=ap.get("name"),
+        last_started_at=run_log.get("last_started_at"),
+        last_stopped_at=run_log.get("last_stopped_at"),
     )
 
 

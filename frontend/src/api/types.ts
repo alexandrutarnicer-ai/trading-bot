@@ -4,6 +4,8 @@ export interface BotStatus {
   sessions_active: number;
   active_profile_id: string | null;
   active_profile_name: string | null;
+  last_started_at: string | null;
+  last_stopped_at: string | null;
 }
 
 export interface Mt5Status {

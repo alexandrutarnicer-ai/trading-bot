@@ -2,6 +2,23 @@ import { useState } from "react";
 import { useBotStatus, useStartBot, useStopBot } from "../api/hooks";
 import { InfoTooltip } from "./InfoTooltip";
 
+function fmtTimestamp(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const now = new Date();
+  const diffMs = now.getTime() - d.getTime();
+  const diffMin = Math.floor(diffMs / 60_000);
+  const diffH   = Math.floor(diffMin / 60);
+  const diffD   = Math.floor(diffH / 24);
+  const hhmm    = d.toLocaleTimeString("ro-RO", { hour: "2-digit", minute: "2-digit" });
+  const ddmm    = d.toLocaleDateString("ro-RO", { day: "2-digit", month: "2-digit" });
+  if (diffMin < 1)  return "acum";
+  if (diffMin < 60) return `acum ${diffMin}m`;
+  if (diffH   < 24) return `azi ${hhmm}`;
+  if (diffD   < 2)  return `ieri ${hhmm}`;
+  return `${ddmm} ${hhmm}`;
+}
+
 const MT5_TIP =
   "Înainte de a porni bot-ul:\n" +
   "1. Deschide MetaTrader 5\n" +
@@ -79,6 +96,19 @@ export function BotControl({ profileId, profileName }: Props) {
               <div className="text-[10px] text-slate-500">
                 {status.sessions_active} sesiune{status.sessions_active !== 1 ? "i" : ""} active
                 {status.pid ? ` · PID ${status.pid}` : ""}
+                {status.last_started_at && ` · pornit ${fmtTimestamp(status.last_started_at)}`}
+              </div>
+            )}
+            {!running && (status?.last_started_at || status?.last_stopped_at) && (
+              <div className="text-[10px] text-slate-600">
+                {status.last_stopped_at
+                  ? `Oprit ${fmtTimestamp(status.last_stopped_at)}`
+                  : `Ultima pornire: ${fmtTimestamp(status.last_started_at)}`}
+                {status.last_started_at && status.last_stopped_at && (
+                  <span className="ml-1 text-slate-700">
+                    · pornit {fmtTimestamp(status.last_started_at)}
+                  </span>
+                )}
               </div>
             )}
           </div>
