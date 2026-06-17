@@ -43,6 +43,8 @@
       "r_mid_threshold": 1,
       "r_top_threshold": 2,
       "r_max_threshold": 3,
+      "friday_close_enabled": true,
+      "friday_close_hour": 20,
       "backtest_results": null
     },
     {
@@ -84,6 +86,8 @@
       "r_mid_threshold": 1,
       "r_top_threshold": 2,
       "r_max_threshold": 3,
+      "friday_close_enabled": true,
+      "friday_close_hour": 20,
       "backtest_results": null
     },
     {
@@ -125,6 +129,8 @@
       "r_mid_threshold": 1,
       "r_top_threshold": 2,
       "r_max_threshold": 3,
+      "friday_close_enabled": false,
+      "friday_close_hour": 20,
       "backtest_results": null
     },
     {
@@ -166,6 +172,8 @@
       "r_mid_threshold": 1,
       "r_top_threshold": 2,
       "r_max_threshold": 3,
+      "friday_close_enabled": true,
+      "friday_close_hour": 20,
       "backtest_results": null
     },
     {
@@ -207,6 +215,8 @@
       "r_mid_threshold": 1,
       "r_top_threshold": 2,
       "r_max_threshold": 3,
+      "friday_close_enabled": true,
+      "friday_close_hour": 20,
       "backtest_results": null
     },
     {
@@ -248,6 +258,8 @@
       "r_mid_threshold": 1,
       "r_top_threshold": 2,
       "r_max_threshold": 3,
+      "friday_close_enabled": true,
+      "friday_close_hour": 20,
       "backtest_results": null
     }
   ],

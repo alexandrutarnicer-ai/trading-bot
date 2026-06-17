@@ -741,6 +741,135 @@ def _reconcile_mt5_tickets(state: dict, log) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Vineri close — inchide pozitii triggerate la ora configurata
+# ---------------------------------------------------------------------------
+
+def _friday_close_check(
+    state: dict,
+    outcomes_file: str,
+    log,
+    session_id: str = "",
+    execute_trades: bool = False,
+    friday_close_enabled: bool = True,
+    friday_close_hour: int = 20,
+) -> None:
+    """
+    Vineri la ora configurata, inchide toate pozitiile triggerate deschise.
+    Executa o singura data per saptamana (evita re-rulari la fiecare bara).
+    """
+    if not friday_close_enabled:
+        return
+
+    now = datetime.now()
+    if now.weekday() != 4:   # 4 = Friday
+        return
+    if now.hour < friday_close_hour:
+        return
+
+    today_str = now.strftime("%Y-%m-%d")
+    if state.get("friday_close_date") == today_str:
+        return   # deja executat in aceasta zi
+
+    state["friday_close_date"] = today_str
+    log.info(f"  [VINERI] Ora {now.strftime('%H:%M')} >= {friday_close_hour}:00 — inchid pozitii deschise.")
+
+    outcome_rows   = []
+    sigs_to_remove = []   # list of (symbol, sig_id)
+
+    for symbol, pending in list(state["pending"].items()):
+        for sig_id, p in list(pending.items()):
+            if not p.get("triggered"):
+                continue
+
+            d       = p["direction"]
+            fmt     = ".2f" if p["entry"] > 100 else ".5f"
+            dir_str = "LONG" if d == 1 else "SHORT"
+
+            ticket = state.get("mt5_tickets", {}).get(sig_id)
+
+            if ticket and _mt5_exec is not None and execute_trades:
+                positions = _mt5_exec.positions_get(ticket=ticket)
+                if not positions:
+                    continue   # deja inchisa altundeva
+
+                pos  = positions[0]
+                tick = _mt5_exec.symbol_info_tick(symbol)
+                if tick is None:
+                    log.warning(f"  [VINERI] {sig_id}: nu pot obtine tick pentru {symbol}")
+                    continue
+
+                close_price = tick.bid if d == 1 else tick.ask
+                close_type  = (_mt5_exec.ORDER_TYPE_SELL
+                               if d == 1 else _mt5_exec.ORDER_TYPE_BUY)
+
+                close_req = {
+                    "action":       _mt5_exec.TRADE_ACTION_DEAL,
+                    "symbol":       symbol,
+                    "volume":       pos.volume,
+                    "type":         close_type,
+                    "position":     ticket,
+                    "price":        close_price,
+                    "comment":      "vineri_close",
+                    "type_time":    _mt5_exec.ORDER_TIME_GTC,
+                    "type_filling": _mt5_exec.ORDER_FILLING_IOC,
+                }
+                result = _mt5_exec.order_send(close_req)
+                if result and result.retcode == _mt5_exec.TRADE_RETCODE_DONE:
+                    exit_price = result.price
+                    risk_dist  = abs(p["entry"] - p["sl"])
+                    result_r   = (round((exit_price - p["entry"]) * d / risk_dist, 3)
+                                  if risk_dist > 0 else 0.0)
+                    outcome_rows.append({
+                        **p,
+                        "signal_id":    sig_id,
+                        "symbol":       symbol,
+                        "status":       "vineri_close",
+                        "result_r":     result_r,
+                        "exit_price":   exit_price,
+                        "exit_time":    now,
+                        "triggered_at": p.get("triggered_at", now),
+                        "time_check":   now,
+                    })
+                    state.get("mt5_tickets", {}).pop(sig_id, None)
+                    sigs_to_remove.append((symbol, sig_id))
+                    log.info(
+                        f"  [VINERI] {sig_id} {symbol} {dir_str} inchis: "
+                        f"exit={exit_price:{fmt[1:]}}  result={result_r:+.3f}R"
+                    )
+                    _send_telegram(
+                        f"<b>Vineri close: {dir_str} {symbol}</b>\n"
+                        f"Entry {format(p['entry'], fmt)} → {format(exit_price, fmt)}\n"
+                        f"Result: {result_r:+.2f}R\n"
+                        f"<i>{session_id}</i>"
+                    )
+                else:
+                    retcode = result.retcode if result else "None"
+                    log.warning(f"  [VINERI] {sig_id}: inchidere esuata retcode={retcode}")
+
+            elif not execute_trades:
+                # OBS mode — scoatem din pending fara outcome real
+                sigs_to_remove.append((symbol, sig_id))
+                log.info(f"  [VINERI] {sig_id} {symbol} scos din pending (OBS, vineri_close)")
+
+    if outcome_rows:
+        existing_ids: set = set()
+        if os.path.exists(outcomes_file):
+            try:
+                existing_ids = set(
+                    pd.read_csv(outcomes_file, usecols=["signal_id"])["signal_id"].dropna()
+                )
+            except Exception:
+                pass
+        new_rows = [r for r in outcome_rows if r.get("signal_id") not in existing_ids]
+        if new_rows:
+            pd.DataFrame(new_rows).reindex(columns=_OUTCOMES_COLS).to_csv(
+                outcomes_file, mode="a", header=False, index=False)
+
+    for symbol, sig_id in sigs_to_remove:
+        state["pending"].get(symbol, {}).pop(sig_id, None)
+
+
+# ---------------------------------------------------------------------------
 # Aplicare parametri profil activ
 # ---------------------------------------------------------------------------
 
@@ -785,6 +914,11 @@ def _apply_profile_overrides(session_cfg: dict, cfg: dict, log) -> None:
 
     if "direction" in ps:
         session_cfg["only_long"] = ps["direction"] == "LONG"
+
+    if "friday_close_enabled" in ps:
+        session_cfg["friday_close_enabled"] = ps["friday_close_enabled"]
+    if "friday_close_hour" in ps:
+        session_cfg["friday_close_hour"] = ps["friday_close_hour"]
 
     # --- parametri strategie (cfg) ---
     if ps.get("rsi_enabled") is not None:
@@ -1128,6 +1262,17 @@ def run_generator(session_cfg: dict):
 
                 if len(df) > 2:
                     state["last_checked"][symbol] = pd.Timestamp(df.iloc[-2]["time"])
+
+            # Vineri close — inchide pozitii triggerate la ora configurata
+            _friday_close_check(
+                state=state,
+                outcomes_file=outcomes_file,
+                log=log,
+                session_id=session_cfg.get("session_id", ""),
+                execute_trades=session_cfg.get("execute_trades", False),
+                friday_close_enabled=session_cfg.get("friday_close_enabled", True),
+                friday_close_hour=session_cfg.get("friday_close_hour", 20),
+            )
 
             pending_n = sum(len(v) for v in state["pending"].values())
             if new_sigs == 0:

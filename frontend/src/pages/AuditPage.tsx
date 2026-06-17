@@ -175,6 +175,39 @@ function StatusBadge({ status }: { status: BacktestJob["status"] }) {
 
 // ── Results grid ──────────────────────────────────────────────────────────────
 
+const RESULT_TIPS: Record<string, string> = {
+  "Trades":    "Numărul total de tranzacții simulate în intervalul ales. Minim ~30 pentru relevanță statistică.",
+  "Win Rate":  "Procentul tranzacțiilor care au atins TP. O strategie asimetrică (R/R mare) poate fi profitabilă chiar cu WR 35-45%.",
+  "Expectancy":"Câștigul mediu per tranzacție în unități R. +0.025R = câștig mediu de 2.5% din riscul asumat per trade. Valoarea relevantă este cea din TEST.",
+  "Max DD":    "Scăderea maximă procentuală față de vârful de equity anterior. DD > 40% → reconsideră sizing-ul sau parametrii.",
+  "Train t":   "Numărul de tranzacții din perioada de antrenament (primele 70% din tranzacții cronologic). Poate fi ușor overfitted — nu este rezultatul relevant.",
+  "Train exp": "Expectancy pe perioada de antrenament. Atenție: parametrii au fost aleși parțial pe baza acestor date — poate fi supraevaluat.",
+  "Test t":    "Numărul de tranzacții din perioada de test (ultimele 30% din tranzacții — date nevăzute). Acesta este eșantionul care contează pentru validare.",
+  "Test exp":  "Expectancy pe date nevăzute (test). Acesta este indicatorul cheie: dacă e pozitiv pe TEST, strategia are probabil edge real.",
+};
+
+function ResultCell({ label, value, color }: { label: string; value: string; color?: string }) {
+  const tip = RESULT_TIPS[label];
+  return (
+    <div className="bg-surface rounded-lg border border-surface-border p-2 text-center group relative">
+      <div className={`text-sm font-mono font-semibold ${color ?? "text-white"}`}>{value}</div>
+      <div className="flex items-center justify-center gap-1 mt-0.5">
+        <span className="text-[10px] text-slate-500">{label}</span>
+        {tip && (
+          <span className="relative inline-flex">
+            <span className="text-[9px] text-slate-600 hover:text-slate-400 cursor-help leading-none">ⓘ</span>
+            <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover:block z-20
+              bg-slate-800 border border-slate-600 text-slate-200 text-[10px] rounded-lg px-3 py-2
+              w-56 text-left shadow-xl leading-relaxed pointer-events-none">
+              {tip}
+            </span>
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ResultsGrid({ r }: { r: BacktestResult }) {
   const cells = [
     { label: "Trades",      value: String(r.total_trades) },
@@ -190,10 +223,7 @@ function ResultsGrid({ r }: { r: BacktestResult }) {
   return (
     <div className="grid grid-cols-4 gap-2">
       {cells.map(c => (
-        <div key={c.label} className="bg-surface rounded-lg border border-surface-border p-2 text-center">
-          <div className={`text-sm font-mono font-semibold ${c.color ?? "text-white"}`}>{c.value}</div>
-          <div className="text-[10px] text-slate-500 mt-0.5">{c.label}</div>
-        </div>
+        <ResultCell key={c.label} label={c.label} value={c.value} color={c.color} />
       ))}
     </div>
   );
@@ -310,27 +340,100 @@ function JobRow({
         <div className="border-t border-surface-border bg-surface/50 p-4 space-y-4">
           {/* Snapshot */}
           {Object.keys(snap).length > 0 && (
-            <div>
-              <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-2">Parametri</div>
-              <div className="flex flex-wrap gap-2">
-                {snap.pullback_window != null && (
-                  <SnapBadge label="PW" value={String(snap.pullback_window)} />
-                )}
-                {snap.r_base != null && snap.r_max != null && (
-                  <SnapBadge label="R-ladder" value={`${snap.r_base}R → ${snap.r_max}R`} />
-                )}
-                {snap.rsi_enabled != null && (
-                  <SnapBadge label="RSI" value={snap.rsi_enabled ? "ON" : "OFF"} />
-                )}
-                {snap.ema_alignment_enabled != null && (
+            <div className="space-y-3">
+              <div className="text-[10px] text-slate-500 uppercase tracking-wider">Configurare sesiune</div>
+
+              {/* Rând 1: Strategie */}
+              <div>
+                <div className="text-[9px] text-slate-600 uppercase tracking-wider mb-1.5">Strategie</div>
+                <div className="flex flex-wrap gap-2">
+                  <SnapBadge label="TF" value={`${job.entry_tf}+${job.trend_tf}`} />
+                  <SnapBadge label="Direcție" value={job.direction} />
+                  {snap.pullback_window != null && <SnapBadge label="Pullback win." value={String(snap.pullback_window)} />}
+                  {snap.expire_bars != null && <SnapBadge label="Expire bare" value={String(snap.expire_bars)} />}
+                  {snap.circuit_breaker != null && <SnapBadge label="Circuit break." value={String(snap.circuit_breaker)} />}
+                </div>
+              </div>
+
+              {/* Rând 2: Ore sesiune */}
+              {(snap.session_start != null || (snap.skip_hours as number[] | undefined)?.length) && (
+                <div>
+                  <div className="text-[9px] text-slate-600 uppercase tracking-wider mb-1.5">Ore sesiune</div>
+                  <div className="flex flex-wrap gap-2">
+                    {snap.session_start != null && snap.session_end != null && (
+                      <SnapBadge
+                        label="Interval"
+                        value={
+                          snap.session_start === 0 && snap.session_end === 24
+                            ? "Non-stop"
+                            : `${snap.session_start}:00 – ${snap.session_end}:00`
+                        }
+                      />
+                    )}
+                    {(snap.skip_hours as number[] | undefined)?.length ? (
+                      <SnapBadge label="Skip ore" value={(snap.skip_hours as number[]).join(", ")} />
+                    ) : null}
+                    {(snap.skip_weekdays as number[] | undefined)?.length ? (
+                      <SnapBadge
+                        label="Skip zile"
+                        value={(snap.skip_weekdays as number[])
+                          .map(d => ["Lu","Ma","Mi","Jo","Vi","Sb","Du"][d] ?? d)
+                          .join(", ")}
+                      />
+                    ) : null}
+                  </div>
+                </div>
+              )}
+
+              {/* Rând 3: R-ladder */}
+              <div>
+                <div className="text-[9px] text-slate-600 uppercase tracking-wider mb-1.5">R-Ladder</div>
+                <div className="flex flex-wrap gap-2">
+                  {(["base","mid","top","max"] as const).map(tier => {
+                    const r    = snap[`r_${tier}`] as number | undefined;
+                    const risk = snap[`risk_${tier}`] as number | undefined;
+                    const thr  = tier !== "base" ? snap[`r_${tier}_threshold`] as number | undefined : null;
+                    if (r == null) return null;
+                    return (
+                      <div key={tier} className="flex flex-col items-center bg-surface rounded-lg border border-surface-border px-3 py-1.5 min-w-[64px]">
+                        <span className="text-[9px] text-slate-500 uppercase tracking-wider">{tier}</span>
+                        <span className="text-xs font-mono font-semibold text-white">{r}R</span>
+                        {risk != null && (
+                          <span className="text-[9px] text-slate-600">{(risk * 100).toFixed(1)}% risk</span>
+                        )}
+                        {thr != null && (
+                          <span className="text-[9px] text-slate-600">≥{thr} crit.</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Rând 4: Criterii opționale */}
+              <div>
+                <div className="text-[9px] text-slate-600 uppercase tracking-wider mb-1.5">Criterii opționale</div>
+                <div className="flex flex-wrap gap-2">
+                  <SnapBadge
+                    label="RSI"
+                    value={snap.rsi_enabled
+                      ? `ON  ${snap.rsi_buy_min}–${snap.rsi_buy_max} / ${snap.rsi_sell_min}–${snap.rsi_sell_max}`
+                      : "OFF"}
+                  />
                   <SnapBadge label="EMA align" value={snap.ema_alignment_enabled ? "ON" : "OFF"} />
-                )}
-                {snap.body_strength_enabled != null && (
                   <SnapBadge label="Body str." value={snap.body_strength_enabled ? "ON" : "OFF"} />
-                )}
-                <SnapBadge label="TF" value={`${job.entry_tf}+${job.trend_tf}`} />
-                <SnapBadge label="Dir" value={job.direction} />
-                <SnapBadge label="Capital" value={`${job.start_balance.toLocaleString()} USD`} />
+                </div>
+              </div>
+
+              {/* Rând 5: Capital */}
+              <div>
+                <div className="text-[9px] text-slate-600 uppercase tracking-wider mb-1.5">Capital simulat</div>
+                <div className="flex flex-wrap gap-2">
+                  <SnapBadge label="Total" value={`${(snap.start_balance as number ?? job.start_balance).toLocaleString()} USD`} />
+                  {snap.market_allocations != null && Object.entries(snap.market_allocations as Record<string, number>).map(([m, v]) => (
+                    <SnapBadge key={m} label={m} value={`${Math.round(v).toLocaleString()} USD`} />
+                  ))}
+                </div>
               </div>
             </div>
           )}
@@ -364,9 +467,27 @@ function JobRow({
                         <td className={`text-right font-mono ${expColor(v.expectancy)}`}>{fmtR(v.expectancy)}</td>
                       </tr>
                     ))}
+                    {/* Piete fara date CSV */}
+                    {r.skipped_markets?.map(sym => (
+                      <tr key={sym} className="border-b border-surface-border/20">
+                        <td className="py-1.5 font-mono text-slate-500 flex items-center gap-1.5">
+                          {sym}
+                          <span className="text-[9px] text-loss bg-loss/10 px-1.5 py-0.5 rounded">lipsă CSV</span>
+                        </td>
+                        <td className="text-right text-slate-600">—</td>
+                        <td className="text-right text-slate-600">—</td>
+                        <td className="text-right text-slate-600">—</td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
+              {r.skipped_markets && r.skipped_markets.length > 0 && (
+                <p className="text-[10px] text-slate-500 mt-1.5">
+                  ⚠ {r.skipped_markets.join(", ")} — date CSV lipsă sau insuficiente (&lt;100 bare).
+                  Descarcă datele din Profile → sesiune → Rulează Backtest → Descarcă date din MT5.
+                </p>
+              )}
             </div>
           )}
 

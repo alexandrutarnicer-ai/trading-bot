@@ -131,18 +131,40 @@ export function BacktestPanel({ session, onJobStarted }: Props) {
         ...getDateRange(),
         start_balance: startBalance,
         session_snapshot: {
-          pullback_window:       session.pullback_window,
-          risk_base:             session.risk_base,
-          risk_mid:              session.risk_mid,
-          risk_top:              session.risk_top,
-          risk_max:              session.risk_max,
-          r_base:                session.r_base,
-          r_mid:                 session.r_mid,
-          r_top:                 session.r_top,
-          r_max:                 session.r_max,
-          rsi_enabled:           session.rsi_enabled,
-          ema_alignment_enabled: session.ema_alignment_enabled,
-          body_strength_enabled: session.body_strength_enabled,
+          // Strategie
+          pullback_window:            session.pullback_window,
+          expire_bars:                session.expire_bars,
+          circuit_breaker:            session.circuit_breaker,
+          // Ore sesiune
+          session_start:              session.session_start,
+          session_end:                session.session_end,
+          skip_hours:                 session.skip_hours,
+          skip_weekdays:              session.skip_weekdays,
+          // R-ladder
+          r_base:                     session.r_base,
+          r_mid:                      session.r_mid,
+          r_top:                      session.r_top,
+          r_max:                      session.r_max,
+          r_mid_threshold:            session.r_mid_threshold,
+          r_top_threshold:            session.r_top_threshold,
+          r_max_threshold:            session.r_max_threshold,
+          // Risk
+          risk_base:                  session.risk_base,
+          risk_mid:                   session.risk_mid,
+          risk_top:                   session.risk_top,
+          risk_max:                   session.risk_max,
+          // Criterii
+          rsi_enabled:                session.rsi_enabled,
+          rsi_buy_min:                session.rsi_buy_min,
+          rsi_buy_max:                session.rsi_buy_max,
+          rsi_sell_min:               session.rsi_sell_min,
+          rsi_sell_max:               session.rsi_sell_max,
+          ema_alignment_enabled:      session.ema_alignment_enabled,
+          body_strength_enabled:      session.body_strength_enabled,
+          body_strength_min_atr_ratio: session.body_strength_min_atr_ratio,
+          // Capital per piata
+          market_allocations:         marketAllocations,
+          start_balance:              startBalance,
         },
       }) as { job_id: string };
       setBtJobId(res.job_id);

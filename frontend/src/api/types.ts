@@ -112,6 +112,8 @@ export interface ProfileSession {
   r_top_threshold: number;
   r_max_threshold: number;
   backtest_results: BacktestResult | null;
+  friday_close_enabled?: boolean;
+  friday_close_hour?: number;
 }
 
 export interface TelegramConfig {
@@ -150,6 +152,7 @@ export interface BacktestResult {
   test: { trades: number; expectancy: number };
   per_symbol: Record<string, { trades: number; win_rate: number; expectancy: number }>;
   markets: string[];
+  skipped_markets?: string[];
   session_id: string;
 }
 

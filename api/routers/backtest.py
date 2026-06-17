@@ -144,11 +144,14 @@ def _run_backtest_job(
             except Exception:
                 pass
 
+        skipped_markets = [s for s in session_cfg["markets"] if s not in data]
+
         if not data:
             _update_job(
                 job_id,
                 status="error",
-                error="Nicio piata disponibila in date CSV",
+                error="Nicio piata disponibila in date CSV. Piete lipsa: " +
+                      ", ".join(skipped_markets),
                 completed_at=datetime.now().isoformat(timespec="seconds"),
             )
             return
@@ -255,9 +258,10 @@ def _run_backtest_job(
                     "trades":     len(test),
                     "expectancy": round(float(test["R"].mean()), 3) if len(test) else 0,
                 },
-                "per_symbol": per_symbol,
-                "markets":    session_cfg["markets"],
-                "session_id": session_cfg.get("id", ""),
+                "per_symbol":      per_symbol,
+                "markets":         session_cfg["markets"],
+                "skipped_markets": skipped_markets,
+                "session_id":      session_cfg.get("id", ""),
             },
         )
 

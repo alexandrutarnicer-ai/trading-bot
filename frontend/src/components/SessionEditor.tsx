@@ -35,8 +35,10 @@ const TIPS = {
     "",
     "Contul (Demo/Live) este cel în care ești logat în MT5 desktop — bot-ul se conectează automat la orice cont este activ. Equity-ul și capitalul se citesc live din MT5.",
   ].join("\n"),
+  session_hours: "Intervalul orar (server MT5) în care sunt acceptate intrări noi. Non-stop ignoră complet restricțiile de ore — util pentru sesiuni crypto 24/7 care rulează continuu.",
   skip_hours:    "Ore server MT5 în care nu se plasează ordine noi. Util pentru evitarea știrilor (ex: 15:30 NFP).",
   skip_weekdays: "Zile ale săptămânii în care sesiunea nu tranzacționează.",
+  friday_close:  "Vineri la ora configurată, toate pozițiile deschise (triggerate) sunt închise automat printr-un ordin la piață. Dezactivează pentru sesiunile crypto — BTC tranzacționează și în weekend.",
 };
 
 export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted }: Props) {
@@ -225,12 +227,27 @@ export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted 
             </Section>
           </div>
 
-          {/* Parametri sesiune */}
-          <div className="grid grid-cols-4 gap-4">
-            <NumField label="Start oră" value={session.session_start} min={0} max={23}
-              onChange={(v) => upd({ session_start: v })} />
-            <NumField label="End oră" value={session.session_end} min={1} max={24}
-              onChange={(v) => upd({ session_end: v })} />
+          {/* Ore sesiune */}
+          <Section label="Ore Sesiune" tip={TIPS.session_hours}>
+            <div className="space-y-2">
+              <Toggle
+                label="Non-stop (fără restricție de ore)"
+                value={session.session_start === 0 && session.session_end === 24}
+                onChange={(v) => upd({ session_start: v ? 0 : 10, session_end: v ? 24 : 18 })}
+              />
+              {!(session.session_start === 0 && session.session_end === 24) && (
+                <div className="grid grid-cols-2 gap-3">
+                  <NumField label="Start oră" value={session.session_start} min={0} max={23}
+                    onChange={(v) => upd({ session_start: v })} />
+                  <NumField label="End oră" value={session.session_end} min={1} max={24}
+                    onChange={(v) => upd({ session_end: v })} />
+                </div>
+              )}
+            </div>
+          </Section>
+
+          {/* Expire + pullback */}
+          <div className="grid grid-cols-2 gap-4">
             <NumField label="Expire bare" value={session.expire_bars} min={1} max={20}
               tip={TIPS.expire_bars} onChange={(v) => upd({ expire_bars: v })} />
             <NumField label="Pullback window" value={session.pullback_window} min={1} max={20}
@@ -385,6 +402,32 @@ export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted 
                       : "bg-surface-border/50 text-slate-400 hover:bg-surface-border"
                   }`}>{meta.weekday_names[String(d)]}</button>
               ))}
+            </div>
+          </Section>
+
+          {/* Vineri close */}
+          <Section label="Închidere Vineri" tip={TIPS.friday_close}>
+            <div className="space-y-2">
+              <Toggle
+                label="Închidere automată Vineri"
+                value={session.friday_close_enabled ?? true}
+                onChange={(v) => upd({ friday_close_enabled: v })}
+              />
+              {(session.friday_close_enabled ?? true) && (
+                <div className="space-y-1.5">
+                  <div className="max-w-[140px]">
+                    <NumField
+                      label="Oră închidere"
+                      value={session.friday_close_hour ?? 20}
+                      min={0} max={23}
+                      onChange={(v) => upd({ friday_close_hour: v })}
+                    />
+                  </div>
+                  <p className="text-[10px] text-slate-600">
+                    Sesiunile crypto (ex: BTC) pot dezactiva această regulă — piața rulează și sâmbătă/duminică.
+                  </p>
+                </div>
+              )}
             </div>
           </Section>
 
