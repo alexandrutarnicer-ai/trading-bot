@@ -83,6 +83,14 @@ export const useCreateProfile = () => {
   });
 };
 
+export const useDeleteProfile = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiFetch(`/profiles/${id}`, { method: "DELETE" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["profiles"] }),
+  });
+};
+
 export const useRunBacktest = () =>
   useMutation({
     mutationFn: (payload: { session: object; date_from?: string; date_to?: string }) =>

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import {
-  useProfileList, useProfile, useMeta, useSaveProfile, useCreateProfile,
+  useProfileList, useProfile, useMeta, useSaveProfile, useCreateProfile, useDeleteProfile,
 } from "../api/hooks";
 import { SessionEditor } from "../components/SessionEditor";
 import { InfoTooltip } from "../components/InfoTooltip";
@@ -60,11 +60,13 @@ export function ProfilePage() {
     }
   }, [serverProfile]);
 
-  const save = useSaveProfile();
+  const save   = useSaveProfile();
   const create = useCreateProfile();
+  const del    = useDeleteProfile();
   const [newId, setNewId] = useState("");
   const [newName, setNewName] = useState("");
   const [showNew, setShowNew] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const handleSessionChange = (idx: number, updated: ProfileSession) => {
@@ -125,6 +127,16 @@ export function ProfilePage() {
     }
   };
 
+  const handleDelete = async () => {
+    try {
+      await del.mutateAsync(activeId);
+      setConfirmDelete(false);
+      setActiveId("standard");
+    } catch (e: unknown) {
+      setSaveError(e instanceof Error ? e.message : "Eroare la stergere");
+    }
+  };
+
   if (loadingList || !meta) {
     return <div className="flex items-center justify-center h-64 text-slate-500 text-sm">Se încarcă...</div>;
   }
@@ -152,6 +164,30 @@ export function ProfilePage() {
         >
           + Profil nou
         </button>
+
+        {/* Stergere profil — ascuns pentru standard */}
+        {activeId !== "standard" && (
+          confirmDelete ? (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-loss">Stergi profilul „{draft?.name}"?</span>
+              <button onClick={handleDelete} disabled={del.isPending}
+                className="text-xs px-2.5 py-1 rounded bg-loss/80 hover:bg-loss text-white transition-colors disabled:opacity-50">
+                {del.isPending ? "..." : "Da, sterge"}
+              </button>
+              <button onClick={() => setConfirmDelete(false)}
+                className="text-xs px-2.5 py-1 rounded border border-surface-border text-slate-400 hover:text-white transition-colors">
+                Anulează
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setConfirmDelete(true)}
+              className="text-xs px-3 py-1.5 rounded-lg border border-loss/40 text-loss/70 hover:border-loss hover:text-loss transition-colors"
+            >
+              Șterge profil
+            </button>
+          )
+        )}
 
         {dirty && (
           <div className="flex items-center gap-2 ml-auto">

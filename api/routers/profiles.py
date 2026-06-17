@@ -93,6 +93,17 @@ def update_profile(profile_id: str, body: dict):
     return existing
 
 
+@router.delete("/{profile_id}")
+def delete_profile(profile_id: str):
+    if profile_id == "standard":
+        raise HTTPException(403, "Profilul standard nu poate fi sters")
+    path = _profile_path(profile_id)
+    if not os.path.exists(path):
+        raise HTTPException(404, f"Profil negasit: {profile_id}")
+    os.remove(path)
+    return {"deleted": profile_id}
+
+
 @router.post("")
 def create_profile(body: dict):
     profile_id = body.get("id", "").strip().lower().replace(" ", "_")
