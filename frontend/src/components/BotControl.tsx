@@ -34,9 +34,14 @@ export function BotControl({ profileId, profileName }: Props) {
   const isDifferentProfile = running && !!activeProfileId && !!profileId && activeProfileId !== profileId;
   const isKnownSameProfile = running && !!activeProfileId && activeProfileId === profileId;
 
+  // Afisam intotdeauna numele profilului cand rulam — fie cel curent, fie cel diferit
+  const runningName = isKnownSameProfile
+    ? (profileName ?? activeProfileName ?? activeProfileId)
+    : (activeProfileName ?? activeProfileId);
+
   const statusLabel =
-    isDifferentProfile  ? `Bot activ pe: ${activeProfileName ?? activeProfileId}` :
-    isKnownSameProfile  ? "Bot activ pe acest profil" :
+    isDifferentProfile  ? `Bot activ pe: ${runningName}` :
+    isKnownSameProfile  ? `Bot activ · ${runningName}` :
     running             ? "Bot activ" :
     "Bot oprit";
 

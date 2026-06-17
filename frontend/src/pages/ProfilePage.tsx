@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import {
   useProfileList, useProfile, useMeta, useSaveProfile, useCreateProfile, useDeleteProfile,
+  useBotStatus,
 } from "../api/hooks";
 import { SessionEditor } from "../components/SessionEditor";
 import { InfoTooltip } from "../components/InfoTooltip";
@@ -59,6 +60,9 @@ const PROFILE_TIP =
 export function ProfilePage() {
   const { data: profiles, isLoading: loadingList } = useProfileList();
   const { data: meta } = useMeta();
+  const { data: botStatus } = useBotStatus();
+
+  const runningProfileId = botStatus?.running ? (botStatus.active_profile_id ?? null) : null;
 
   const [activeId, setActiveId] = useState<string>("standard");
   const { data: serverProfile, isLoading: loadingProfile } = useProfile(activeId);
@@ -164,16 +168,33 @@ export function ProfilePage() {
       {/* Profile selector */}
       <div className="flex items-center gap-3 flex-wrap">
         <div className="flex items-center gap-2">
-          <select
-            value={activeId}
-            onChange={(e) => setActiveId(e.target.value)}
-            className="bg-surface-card border border-surface-border text-white text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:border-blue-500"
-          >
-            {profiles?.map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-          </select>
+          <div className="relative">
+            <select
+              value={activeId}
+              onChange={(e) => setActiveId(e.target.value)}
+              className="bg-surface-card border border-surface-border text-white text-sm rounded-lg px-3 py-1.5 focus:outline-none focus:border-blue-500"
+            >
+              {profiles?.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.id === runningProfileId ? `▶ ${p.name}` : p.name}
+                </option>
+              ))}
+            </select>
+          </div>
           <InfoTooltip text={PROFILE_TIP} />
+          {/* Badge "ACTIV" cand vizualizezi profilul care ruleaza */}
+          {runningProfileId && activeId === runningProfileId && (
+            <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-profit/20 text-profit font-medium">
+              <span className="w-1.5 h-1.5 rounded-full bg-profit animate-pulse inline-block" />
+              ACTIV
+            </span>
+          )}
+          {/* Badge "alt profil ruleaza" cand esti pe alt profil */}
+          {runningProfileId && activeId !== runningProfileId && (
+            <span className="text-xs text-warn">
+              ▶ rulează: {botStatus?.active_profile_name ?? runningProfileId}
+            </span>
+          )}
         </div>
 
         <button
