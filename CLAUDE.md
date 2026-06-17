@@ -38,6 +38,9 @@ python scripts/descarca_date_istorice.py
 # Analiza rezultate live
 python scripts/analiza_observe.py
 python scripts/analiza_observe.py --session session1
+
+# Test aplicare parametri profil in sesiuni live (77 teste)
+python scripts/test_profile_params.py
 ```
 
 Nu există test suite sau linter configurat. Validarea corectitudinii se face prin reproducerea numerelor baseline (vezi mai jos).
@@ -57,13 +60,14 @@ api/               — FastAPI backend pentru dashboard web
   routers/         — bot, sessions, profiles, backtest, backtest_history, markets,
                      data_download, settings, mt5status
   models.py        — Pydantic models (BotStatus, SessionStatus, etc.)
+  telegram.py      — helper Telegram (citeste token/chat_id din data/telegram_config.json)
 frontend/          — React + Vite + TypeScript + Tailwind CSS (dark theme)
   src/api/         — types.ts, hooks.ts, client.ts
-  src/components/  — BotControl, SessionEditor, BacktestPanel, Mt5Status, etc.
-  src/pages/       — ProfilePage, DashboardPage, etc.
-config/            — standard_profile.json (profil validat)
+  src/components/  — BotControl, SessionEditor, BacktestPanel, SignalFeed, etc.
+  src/pages/       — Dashboard, ProfilePage, HistoryPage
+config/            — standard_profile.json (config backtest legacy — nu modifica)
 data/              — CSV-uri OHLC + output sesiuni live + profiles/ + backtest_history.json
-scripts/           — descarca date, analiza, research (nu pentru productie)
+scripts/           — descarca date, analiza, research, teste (nu pentru productie)
 ```
 
 ### Fluxul de date
@@ -127,6 +131,13 @@ Ruleaza in loop infinit la fiecare bara noua. Per iteratie:
 
 **Invariant critic:** Daca `execute_trades=True` si semnalul nu are ticket MT5 (`sig_id not in state["mt5_tickets"]`), nu se marcheaza niciodata `triggered=True` din bare. `outcomes.csv` reflecta doar ordine executate real in MT5.
 
+**Aplicare parametri profil activ (`_apply_profile_overrides`):**
+La pornire, `run_generator` cauta `data/active_profile_runtime.json` (scris de API la start bot). Daca exista, gaseste sesiunea dupa `session_key` si suprascrie:
+- In `session_cfg`: `pullback_window`, `session_start/end`, `skip_hours`, `skip_weekdays`, `expire_bars`, `execute_trades`, `account_fraction`, `risk_pct`, `only_long`
+- In `cfg` (strategy): RSI thresholds, EMA alignment toggle, body_strength, reward_ladder (r_base/mid/top/max si praguri)
+
+Cand botul e pornit din CLI (`python live/run_all.py`) fara profil activ, valorile hardcodate din fiecare script SESSION_CONFIG sunt folosite. Fiecare script are `"session_key": "sessionN"` pentru mapare la profil.
+
 Starea persistenta per sesiune: `state.pkl` (pending dict + counter + tickets MT5), `signals.csv` (toate semnalele), `outcomes.csv` (rezultate finale), `generator.log`.
 
 ### `live/run_all.py` — lansator
@@ -143,45 +154,55 @@ Fiecare sesiune are si propriul `session.lock` (PID file per sesiune) care previ
 - `profiles` — CRUD profile JSON din `data/profiles/`. `standard` este protejat (403 la stergere)
 - `backtest` — `POST /backtest/run` (async job), `GET /backtest/{job_id}` (poll)
 - `backtest_history` — `GET/POST/DELETE /backtest/history` — stocheaza rezultate in `data/backtest_history.json`
-- `mt5status` — `GET /mt5/status` — conectare directa la MT5, returneaza cont/balance/equity
+- `mt5status` — `GET /mt5/status` — conectare directa la MT5, returneaza cont/balance/equity/currency
 - `data_download` — descarca CSV-uri din MT5 via `Mt5DataSource`
 - `markets` — lista simboluri disponibile in MT5
-- `settings` — configurare Telegram (token/chat_id criptate in `data/telegram_config.json`)
+- `settings` — configurare Telegram (token/chat_id in `data/telegram_config.json`)
 
 **Date persistente create de API:**
 - `data/profiles/*.json` — profile utilizator
 - `data/active_profile.json` — profilul activ curent (cu `started_at`), sters la stop
+- `data/active_profile_runtime.json` — profilul complet activ la runtime (citit de signal_generator), sters la stop
 - `data/bot_run_log.json` — `{last_started_at, last_stopped_at}` — persistent
 - `data/backtest_history.json` — toate rezultatele backtest (max 200 intrari)
 
-### Structura unui profil JSON
+**`_pid_alive()` Windows:**
+Ambele routere `bot.py` si `sessions.py` folosesc `GetExitCodeProcess(STILL_ACTIVE=259)` in loc de doar `OpenProcess`. `OpenProcess` singur returneaza True pentru procese moarte recent (kernel object lifecycle).
+
+**Telegram:**
+`api/telegram.py` — helper shared folosit de `bot.py` pentru notificare la start/stop din UI. Citeste credentialele din `data/telegram_config.json` cu fallback pe env vars. `live/signal_generator.py` isi are propriul `_get_tg_creds()` care citeste acelasi fisier.
+
+### Structura unui profil JSON (`data/profiles/*.json`)
 
 ```json
 {
   "id": "standard",
-  "name": "Standard",
+  "name": "Standard Profile",
+  "start_balance": 1000,
   "sessions": [{
     "id": "S1",
-    "markets": ["EURUSD", "GBPUSD"],
+    "session_key": "session1",
+    "markets": ["EURUSD", "GBPUSD", "EURJPY"],
     "entry_tf": "M15", "trend_tf": "M30",
     "direction": "LONG",
     "pullback_window": 8,
-    "account_fraction": 0.125,
-    "risk_base": 0.01,   "risk_mid": 0.01,
-    "risk_top": 0.012,   "risk_max": 0.015,
-    "r_base": 2.5,  "r_mid": 3.5,  "r_top": 4.5,  "r_max": 5.5,
-    "r_mid_threshold": 1, "r_top_threshold": 2, "r_max_threshold": 3,
+    "session_start": 10, "session_end": 18,
+    "skip_hours": [15, 16], "skip_weekdays": [0],
+    "expire_bars": 4,
+    "account_fraction": 0.125, "risk_pct": 0.01,
+    "risk_base": 0.01, "risk_mid": 0.01, "risk_top": 0.012, "risk_max": 0.015,
+    "execute_trades": true,
     "rsi_enabled": true, "rsi_buy_min": 40, "rsi_buy_max": 65,
+    "rsi_sell_min": 35, "rsi_sell_max": 60,
     "ema_alignment_enabled": true,
     "body_strength_enabled": false, "body_strength_min_atr_ratio": 0.15,
-    "reward_ladder": {
-      "rr_if_3_criteria": 2.5, "rr_if_4_criteria": 3.5,
-      "rr_if_5_criteria": 4.5, "rr_if_6_criteria": 5.5,
-      "threshold_mid": 1, "threshold_top": 2, "threshold_max": 3
-    }
+    "r_base": 2.5, "r_mid": 3.5, "r_top": 4.5, "r_max": 5.5,
+    "r_mid_threshold": 1, "r_top_threshold": 2, "r_max_threshold": 3
   }]
 }
 ```
+
+**Nota:** `config/standard_profile.json` este config-ul legacy folosit de backtest si de sesiunile live cand nu exista profil activ runtime. NU modifica structura — este citit de `engine/portfolio.py` si `live/signal_generator.py`. `data/profiles/standard.json` este profilul UI (acelasi continut logic, format diferit).
 
 ---
 
@@ -190,15 +211,13 @@ Fiecare sesiune are si propriul `session.lock` (PID file per sesiune) care previ
 | ID | Script | Piete | TF | Directie | Status | Execute |
 |----|--------|-------|----|----------|--------|---------|
 | S1 | session1_m15_long.py | EURUSD/GBPUSD/EURJPY | M15+M30 | LONG | validat | True |
-| S2 | session2_m5_both.py | +USDJPY/AUDJPY/NZDJPY | M15+M30 | BOTH | validat | True |
+| S2 | session2_m5_both.py | USDJPY/AUDJPY/NZDJPY | M15+M30 | BOTH | validat | True |
 | S3 | session3_btc_both.py | BTCUSD | M15+M30 | BOTH | validat p=0.0075*** | True |
 | S4 | session4_obs.py | GER40+US30 | M15+M30 | LONG | DEMO — re-eval Dec 2026 | True |
-| S5 | session5_ger40_h1.py | GER40+USDCHF | H1+D1 | BOTH | OBSERVARE | **False** |
+| S5 | session5_ger40_h1.py | GER40+USDCHF | H1+D1 | BOTH | DEMO activ (din 1ce6a8e) | True |
 | S6 | session6_us30_m15.py | US30 | M15+M30 | LONG | DEMO | True |
 
-S5 are `execute_trades=False` — logheaza semnale si trimite Telegram, nu plaseaza ordine MT5.
-
-Capital: S3=62.5% din equity, S1/S2/S4/S6=12.5% fiecare. Sizing dinamic: botul citeste equity real MT5 la fiecare trade.
+Capital: S3=62.5% din equity, S1/S2/S4/S6=12.5% fiecare. S5: account_fraction=0 (Demo fara capital alocat). Sizing dinamic: botul citeste equity real MT5 la fiecare trade.
 
 ---
 
@@ -238,6 +257,24 @@ Daca numerele se schimba semnificativ → bug introdus, nu progres.
 **AutoTrading dezactivat (retcode 10026/10027):** returneaza `None` (retry bara urm.), nu `False`.
 
 **`body_strength` criteriu optional:** dezactivat by default (`enabled: false`) pentru a nu schimba baselines. Verifica intotdeauna ca `body_strength_enabled: false` in profilul standard inainte de a rula backtests de validare.
+
+---
+
+## Dashboard web — componente principale
+
+**Dashboard.tsx:** Pagina principala. Afiseaza cont/balance/equity MT5 in header (citit din `useMt5Status`), profil activ, grid sesiuni (SessionCard), SignalFeed cu sume USD calculate per trade, EquityChart.
+
+**SignalFeed.tsx:** Primeste `balanceUsd` si `capitalPct` ca props. Calculeaza `riskUsd = balance × (capitalPct/100) × 0.01`. La TP afiseaza `+3.5R TP (+175 USD)`, la SL afiseaza `-1R SL (-50 USD)`. USD = null daca MT5 deconectat.
+
+**BotStatusBar.tsx:** Indicator running/stopped. Cand running: puls verde + "Bot activ — N sesiuni + PID". Cand stopped: ultima ora de oprire relativa ("azi 10:30", "ieri 14:45").
+
+**BotControl.tsx:** Buton Start/Stop. La start trimite `{ profile_id, profile_name }` din profilul selectat curent. Afiseaza timpul de la ultima pornire/oprire.
+
+**BacktestPanel.tsx:** Per sesiune profil. Capital + alocare per piata, range selector (1An/3Ani/Tot/Custom), verificare CSV → download daca lipsesc → run async → afisare rezultate + auto-save in history.
+
+**HistoryPage.tsx:** Tab dedicat pentru toate backtestele rulate. Filtru sesiune, sumar stats (exp medie, nr rulari +), tabel expandabil cu params snapshot + per-symbol breakdown.
+
+**NavBar.tsx:** 3 tab-uri: Dashboard / Profile / Istoric. Istoric afiseaza badge cu numarul de rulari.
 
 ---
 
