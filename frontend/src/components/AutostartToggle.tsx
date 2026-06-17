@@ -42,7 +42,7 @@ export function AutostartToggle() {
   }
 
   return (
-    <div className="flex items-center">
+    <div className="flex items-center gap-2">
       <InfoTooltip text={AUTOSTART_TIP} position="below" align="right" wide />
       <button
         onClick={() => {
