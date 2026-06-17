@@ -3,11 +3,13 @@ import sys
 import json
 import ctypes
 import subprocess
+import threading
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, Body
 from typing import Optional
 from api.config import ROOT, DATA_DIR, PID_FILE, SESSIONS
 from api.models import BotStatus
+from api import telegram as tg
 
 router = APIRouter(prefix="/bot", tags=["bot"])
 
@@ -152,5 +154,21 @@ def stop_bot():
             os.remove(PID_FILE)
     except Exception:
         pass
+
+    ap = _read_active_profile()
+    profile_name = ap.get("name") or "necunoscut"
     _clear_active_profile()
-    return {"stopped": result.returncode == 0, "pid": pid}
+
+    # Trimite notificare Telegram in background (run_all.py nu a apucat sa trimita)
+    stopped_ok = result.returncode == 0
+    if stopped_ok:
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+        def _notify():
+            tg.send_message(
+                f"Bot Trading <b>oprit</b>  {now_str}\n"
+                f"Profil: {profile_name}\n"
+                f"Oprit manual din interfata web."
+            )
+        threading.Thread(target=_notify, daemon=True).start()
+
+    return {"stopped": stopped_ok, "pid": pid}
