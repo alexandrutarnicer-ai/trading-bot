@@ -126,11 +126,19 @@ Write-Host "  Setup complet!" -ForegroundColor Green
 Write-Host "=================================================" -ForegroundColor Green
 Write-Host ""
 Write-Host "  Pasi urmatori:" -ForegroundColor Cyan
-Write-Host "  1. Deschide MetaTrader 5 si conecteaza-te pe cont demo" -ForegroundColor White
-Write-Host "  2. Ruleaza start_app.ps1 pentru a porni aplicatia:" -ForegroundColor White
 Write-Host ""
+Write-Host "  1. Deschide MetaTrader 5 si conecteaza-te pe cont demo" -ForegroundColor White
+Write-Host ""
+Write-Host "  2. Porneste aplicatia web:" -ForegroundColor White
 Write-Host "     Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass" -ForegroundColor Gray
 Write-Host "     .\start_app.ps1" -ForegroundColor Gray
+Write-Host "     Acces: http://localhost:5173" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "  Acces: http://localhost:5173" -ForegroundColor Cyan
+Write-Host "  3. Din interfata web:" -ForegroundColor White
+Write-Host "     - Profile → Telegram Settings: configureaza token + chat ID" -ForegroundColor Gray
+Write-Host "     - Dashboard: apasa Start pentru a porni botul" -ForegroundColor Gray
+Write-Host ""
+Write-Host "  4. (Optional) Autostart la pornire Windows (necesita Administrator):" -ForegroundColor White
+Write-Host "     Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass" -ForegroundColor Gray
+Write-Host "     .\scripts\setup_autostart.ps1" -ForegroundColor Gray
 Write-Host ""

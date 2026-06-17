@@ -5,15 +5,16 @@ Ruleaza o singura data dupa `git clone`.
 
 Automatizeaza:
   1. Verifica Python >= 3.10
-  2. pip install -r requirements.txt
-  3. Creeaza directoarele necesare (data/, live_signals/, etc.)
-  4. Configureaza .env (cere token/chat_id daca lipsesc)
-  5. Testeaza conexiunea Telegram
+  2. Verifica Node.js >= 18
+  3. pip install -r requirements.txt
+  4. npm install (frontend React)
+  5. Creeaza directoarele necesare + data/profiles/standard.json
   6. Descarca date istorice din MT5 (necesita MT5 pornit + logat)
-  7. Adauga bot la Windows autostart (Task Scheduler, la login)
+  7. Configureaza autostart Windows (Task Scheduler)
 
 Necesita interventie manuala INAINTE:
-  - Python 3.10+ instalat
+  - Python 3.10+ instalat si adaugat in PATH
+  - Node.js 18+ instalat (https://nodejs.org/)
   - MT5 instalat, deschis si logat pe contul demo
   - git clone <repo> facut deja
 """
@@ -21,27 +22,28 @@ Necesita interventie manuala INAINTE:
 import os
 import sys
 import json
-import time
 import shutil
 import subprocess
-import urllib.request
 from pathlib import Path
 
-ROOT    = Path(__file__).parent.resolve()
-PYTHON  = sys.executable
-BAT     = ROOT / "live" / "start_bot.bat"
-ENV_FILE = ROOT / ".env"
-REQS    = ROOT / "requirements.txt"
+ROOT     = Path(__file__).parent.resolve()
+PYTHON   = sys.executable
+REQS     = ROOT / "requirements.txt"
+FRONTEND = ROOT / "frontend"
+DATA     = ROOT / "data"
+PROFILES = DATA / "profiles"
 
 SEP  = "=" * 60
 sep2 = "-" * 60
 
 DATA_DIRS = [
-    ROOT / "data",
-    ROOT / "data" / "live_signals" / "session1",
-    ROOT / "data" / "live_signals" / "session2",
-    ROOT / "data" / "live_signals" / "session3",
-    ROOT / "data" / "live_signals" / "session4",
+    DATA / "live_signals" / "session1",
+    DATA / "live_signals" / "session2",
+    DATA / "live_signals" / "session3",
+    DATA / "live_signals" / "session4",
+    DATA / "live_signals" / "session5",
+    DATA / "live_signals" / "session6",
+    PROFILES,
 ]
 
 
@@ -62,134 +64,124 @@ def check_python() -> bool:
     info(f"Python {v.major}.{v.minor}.{v.micro}  ({PYTHON})")
     if v < (3, 10):
         err("Necesita Python >= 3.10. Instaleaza o versiune mai noua.")
+        err("Descarca de la: https://www.python.org/downloads/")
+        err("Bifeaza 'Add Python to PATH' la instalare.")
         return False
     ok("Versiune Python OK")
     return True
 
 
-# ─── 2. pip install ───────────────────────────────────────────────────────────
+# ─── 2. Node.js version ───────────────────────────────────────────────────────
 
-def install_deps() -> bool:
-    hdr("2. Instaleaza dependente (pip)")
+def check_nodejs() -> bool:
+    hdr("2. Verifica Node.js")
+    try:
+        r = subprocess.run(["node", "--version"], capture_output=True, text=True, timeout=10)
+        ver = r.stdout.strip()
+        if r.returncode == 0 and ver.startswith("v"):
+            major = int(ver.lstrip("v").split(".")[0])
+            if major >= 18:
+                ok(f"Node.js {ver}")
+                return True
+            else:
+                err(f"Node.js {ver} gasit, dar necesar >= v18.")
+        else:
+            err("Node.js nu a raspuns corect.")
+    except FileNotFoundError:
+        err("Node.js nu a fost gasit in PATH.")
+    except Exception as e:
+        err(f"Eroare la verificare Node.js: {e}")
+    err("Descarca de la: https://nodejs.org/ (versiunea LTS)")
+    err("Dupa instalare, reporneste terminalul si ruleaza din nou setup.py")
+    return False
+
+
+# ─── 3. pip install ───────────────────────────────────────────────────────────
+
+def install_python_deps() -> bool:
+    hdr("3. Instaleaza dependente Python (pip)")
     if not REQS.exists():
         err(f"Lipseste {REQS}")
         return False
-    info(f"Ruleaza: pip install -r {REQS.name}")
+    info(f"Ruleaza: pip install -r {REQS.name} --upgrade")
     r = subprocess.run(
-        [PYTHON, "-m", "pip", "install", "-r", str(REQS), "--quiet"],
+        [PYTHON, "-m", "pip", "install", "-r", str(REQS), "--quiet", "--upgrade"],
         capture_output=True, text=True
     )
     if r.returncode != 0:
         err("pip install a esuat:")
         print(r.stderr[-800:])
         return False
-    ok("Toate dependentele instalate")
+    ok("Toate dependentele Python instalate")
     return True
 
 
-# ─── 3. Directoare ────────────────────────────────────────────────────────────
+# ─── 4. npm install ───────────────────────────────────────────────────────────
 
-def create_dirs() -> None:
-    hdr("3. Creeaza directoare")
+def install_frontend_deps() -> bool:
+    hdr("4. Instaleaza dependente frontend (npm install)")
+    if not FRONTEND.exists():
+        err(f"Directorul frontend/ nu exista la {FRONTEND}")
+        return False
+    info("Ruleaza: npm install in frontend/")
+    r = subprocess.run(
+        ["npm", "install"],
+        cwd=str(FRONTEND),
+        capture_output=True, text=True
+    )
+    if r.returncode != 0:
+        err("npm install a esuat:")
+        print(r.stderr[-800:])
+        return False
+    ok("Dependente frontend instalate")
+    return True
+
+
+# ─── 5. Directoare + profil standard ─────────────────────────────────────────
+
+def create_dirs_and_profile() -> None:
+    hdr("5. Creeaza directoare necesare")
     for d in DATA_DIRS:
         d.mkdir(parents=True, exist_ok=True)
         ok(str(d.relative_to(ROOT)))
 
+    # Profil standard pentru UI — copiat din config/ sau creat minimal
+    std_profile = PROFILES / "standard.json"
+    if std_profile.exists():
+        ok("data/profiles/standard.json exista deja")
+        return
 
-# ─── 4. .env ─────────────────────────────────────────────────────────────────
+    # Incearca sa copieze din config/standard_profile.json (daca exista si are formatul UI)
+    # Altfel creaza un profil minimal — sesiunile se configureaza din UI
+    src = ROOT / "config" / "standard_profile.json"
+    if src.exists():
+        try:
+            with open(src, encoding="utf-8") as f:
+                cfg = json.load(f)
+            # Daca are format profil UI (cu 'sessions' ca list de obiecte cu 'session_key')
+            sessions = cfg.get("sessions", [])
+            if sessions and isinstance(sessions[0], dict) and "session_key" in sessions[0]:
+                shutil.copy2(src, std_profile)
+                ok("data/profiles/standard.json copiat din config/")
+                return
+        except Exception:
+            pass
 
-def setup_env() -> bool:
-    hdr("4. Configureaza .env (Telegram)")
-
-    if ENV_FILE.exists():
-        tok, cid = _read_env()
-        if tok and cid:
-            ok(f".env exista si are TOKEN + CHAT_ID={cid}")
-            return True
-        info(".env exista dar lipsesc valorile — il completez.")
-
-    # Citeste din registry Windows (daca sunt deja setate pe aceasta masina)
-    tok = _reg_env("TELEGRAM_TOKEN")
-    cid = _reg_env("TELEGRAM_CHAT_ID")
-
-    if tok and cid:
-        info("Gasit in registry Windows — copiez in .env.")
-    else:
-        print()
-        print("  Introdu credentialele Telegram.")
-        print("  (Gasesti TOKEN-ul la @BotFather, CHAT_ID la @userinfobot)")
-        print()
-        if not tok:
-            tok = input("  TELEGRAM_TOKEN  : ").strip()
-        if not cid:
-            cid = input("  TELEGRAM_CHAT_ID: ").strip()
-
-    if not tok or not cid:
-        err("Credentialele lipsesc — sari peste Telegram.")
-        return False
-
-    ENV_FILE.write_text(
-        "# Telegram bot credentials\n"
-        "# NU commitati acest fisier in git!\n"
-        f"TELEGRAM_TOKEN={tok}\n"
-        f"TELEGRAM_CHAT_ID={cid}\n",
-        encoding="utf-8",
-    )
-    ok(f".env creat la {ENV_FILE}")
-    return True
-
-
-def _read_env():
-    tok = cid = ""
-    if not ENV_FILE.exists():
-        return tok, cid
-    for line in ENV_FILE.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if line.startswith("TELEGRAM_TOKEN="):
-            tok = line.split("=", 1)[1]
-        elif line.startswith("TELEGRAM_CHAT_ID="):
-            cid = line.split("=", 1)[1]
-    return tok, cid
-
-
-def _reg_env(name: str) -> str:
-    try:
-        import winreg
-        k = winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment")
-        v, _ = winreg.QueryValueEx(k, name)
-        return v
-    except Exception:
-        return ""
-
-
-# ─── 5. Test Telegram ─────────────────────────────────────────────────────────
-
-def test_telegram() -> bool:
-    hdr("5. Testeaza Telegram")
-    tok, cid = _read_env()
-    if not tok or not cid:
-        info("Credentialele lipsesc din .env — skip.")
-        return False
-    try:
-        payload = json.dumps({
-            "chat_id": cid,
-            "text": "<b>Trading Bot — setup nou</b>\nInstalare reusita pe aceasta masina!",
-            "parse_mode": "HTML",
-        }).encode()
-        req = urllib.request.Request(
-            f"https://api.telegram.org/bot{tok}/sendMessage",
-            data=payload,
-            headers={"Content-Type": "application/json"},
-        )
-        resp = urllib.request.urlopen(req, timeout=10)
-        data = json.loads(resp.read())
-        ok(f"Telegram OK — message_id={data['result']['message_id']}")
-        return True
-    except urllib.request.HTTPError as e:
-        err(f"Telegram HTTP {e.code}: {e.read().decode()[:200]}")
-    except Exception as e:
-        err(f"Telegram eroare retea: {e}")
-    return False
+    # Creeaza profil minimal — userul il completeaza din UI
+    from datetime import datetime
+    ts = datetime.now().isoformat(timespec="seconds")
+    minimal = {
+        "id": "standard",
+        "name": "Standard Profile",
+        "description": "Configuratia implicita",
+        "start_balance": 1000,
+        "sessions": [],
+        "updated_at": ts,
+    }
+    with open(std_profile, "w", encoding="utf-8") as f:
+        json.dump(minimal, f, indent=2, ensure_ascii=False)
+    ok("data/profiles/standard.json creat (gol — configureaza sesiunile din UI)")
+    info("NOTA: Telegram se configureaza din UI: Profile → sectiunea Telegram Settings")
 
 
 # ─── 6. Descarca date MT5 ─────────────────────────────────────────────────────
@@ -197,31 +189,34 @@ def test_telegram() -> bool:
 def download_data() -> bool:
     hdr("6. Descarca date istorice din MT5")
     print("  Necesita MT5 deschis si logat.")
-    print("  Apasa ENTER pentru a incepe sau 'skip' pentru a sari: ", end="")
+    print("  Apasa ENTER pentru a incepe sau scrie 'skip' pentru a sari: ", end="")
     ans = input().strip().lower()
     if ans == "skip":
         info("Sarit. Ruleaza manual: python scripts/descarca_date.py")
         return True
 
     scripts = [
-        ("scripts/descarca_date.py",          "Forex + indici (M15/M30/H1/D1)"),
-        ("scripts/descarca_crypto.py",         "Crypto BTC/ETH/BNB/SOL/XRP (M15/M30)"),
-        ("scripts/descarca_date_istorice.py",  "Date istorice suplimentare"),
+        ("scripts/descarca_date.py",         "Forex + indici (M15/M30/H1/D1)"),
+        ("scripts/descarca_crypto.py",        "Crypto BTC (M15/M30)"),
+        ("scripts/descarca_date_istorice.py", "Date istorice suplimentare"),
     ]
 
     ok_count = 0
     for rel, label in scripts:
         script = ROOT / rel
         if not script.exists():
-            info(f"  Lipseste {rel} — skip")
+            info(f"Lipseste {rel} — skip")
             continue
-        info(f"  Ruleaza {rel}  ({label})...")
-        r = subprocess.run([PYTHON, str(script)], cwd=str(ROOT), timeout=300)
-        if r.returncode == 0:
-            ok(label)
-            ok_count += 1
-        else:
-            err(f"{label} — eroare (exit {r.returncode})")
+        info(f"Ruleaza {rel}  ({label})...")
+        try:
+            r = subprocess.run([PYTHON, str(script)], cwd=str(ROOT), timeout=300)
+            if r.returncode == 0:
+                ok(label)
+                ok_count += 1
+            else:
+                err(f"{label} — eroare (exit {r.returncode})")
+        except subprocess.TimeoutExpired:
+            err(f"{label} — timeout dupa 5 minute")
 
     return ok_count > 0
 
@@ -230,37 +225,33 @@ def download_data() -> bool:
 
 def setup_autostart() -> bool:
     hdr("7. Windows autostart (Task Scheduler)")
-
-    if not BAT.exists():
-        err(f"Lipseste {BAT}")
+    autostart_ps = ROOT / "scripts" / "setup_autostart.ps1"
+    if not autostart_ps.exists():
+        err(f"Lipseste {autostart_ps}")
         return False
 
-    task_name = "TradingBot_Autostart"
+    print("  Creeaza task-uri Windows pentru pornire automata la login.")
+    print("  ATENTIE: necesita privilegii Administrator.")
+    print("  Apasa ENTER pentru a continua sau scrie 'skip' pentru a sari: ", end="")
+    ans = input().strip().lower()
+    if ans == "skip":
+        info("Sarit. Ruleaza manual (ca Administrator):")
+        info(f"  Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass")
+        info(f"  .\\scripts\\setup_autostart.ps1")
+        return True
 
-    # Sterge task existent daca exista
-    subprocess.run(
-        ["schtasks", "/delete", "/tn", task_name, "/f"],
-        capture_output=True
-    )
-
-    # Creeaza task nou: ruleaza start_bot.bat la logon
     r = subprocess.run([
-        "schtasks", "/create",
-        "/tn",      task_name,
-        "/tr",      f'"{BAT}"',
-        "/sc",      "ONLOGON",
-        "/delay",   "0001:00",   # delay 1 minut dupa logon
-        "/rl",      "HIGHEST",
-        "/f",
-    ], capture_output=True, text=True)
+        "powershell", "-ExecutionPolicy", "Bypass",
+        "-File", str(autostart_ps)
+    ], cwd=str(ROOT))
 
-    if r.returncode != 0:
-        err(f"schtasks eroare: {r.stderr.strip()[:200]}")
-        info("Alternativa manuala: Task Scheduler > Creare task > La logon > start_bot.bat")
+    if r.returncode == 0:
+        ok("Autostart configurat (TradingBot-MT5 + TradingBot-RunAll)")
+        return True
+    else:
+        err("setup_autostart.ps1 a esuat sau a fost anulat.")
+        info("Incearca manual ca Administrator.")
         return False
-
-    ok(f"Task '{task_name}' creat — pornire automata la logon")
-    return True
 
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
@@ -273,41 +264,57 @@ def main():
 
     results = {}
 
-    results["python"]    = check_python()
+    results["python"] = check_python()
     if not results["python"]:
         print("\n  Oprire: Python incompatibil.")
         sys.exit(1)
 
-    results["deps"]      = install_deps()
-    create_dirs()
-    results["env"]       = setup_env()
-    results["telegram"]  = test_telegram()
-    results["data"]      = download_data()
-    results["autostart"] = setup_autostart()
+    results["nodejs"] = check_nodejs()
+    if not results["nodejs"]:
+        print("\n  ATENTIE: fara Node.js frontend-ul nu va porni.")
+        print("  Continui oricum? (y/n): ", end="")
+        if input().strip().lower() != "y":
+            sys.exit(1)
+
+    results["pip"]      = install_python_deps()
+    results["npm"]      = install_frontend_deps()
+    create_dirs_and_profile()
+    results["data"]     = download_data()
+    results["autostart"]= setup_autostart()
 
     # Sumar final
     hdr("SUMAR")
     checks = [
-        ("Python 3.10+",           results["python"]),
-        ("Dependente pip",         results["deps"]),
-        (".env Telegram",          results["env"]),
-        ("Test Telegram",          results["telegram"]),
-        ("Date MT5 descarcate",    results["data"]),
-        ("Windows autostart",      results["autostart"]),
+        ("Python 3.10+",        results["python"]),
+        ("Node.js 18+",         results["nodejs"]),
+        ("Dependente Python",   results["pip"]),
+        ("Dependente frontend", results["npm"]),
+        ("Date MT5",            results["data"]),
+        ("Windows autostart",   results["autostart"]),
     ]
     all_ok = True
     for label, passed in checks:
         icon = "OK " if passed else "!! "
+        col  = "" if passed else ""
         print(f"  [{icon}] {label}")
         if not passed:
             all_ok = False
 
     print()
     if all_ok:
-        print("  Setup complet! Porneste botul cu: live\\start_bot.bat")
+        print("  Setup complet! Pasi urmatori:")
     else:
-        print("  Setup partial. Verifica erorile de mai sus.")
-        print("  Dupa rezolvare poti rula din nou setup.py — sare peste ce e deja facut.")
+        print("  Setup partial. Verifica erorile de mai sus. Pasi urmatori:")
+    print()
+    print("  1. Deschide MetaTrader 5 si conecteaza-te pe cont demo")
+    print("  2. Porneste aplicatia web:")
+    print()
+    print("     Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass")
+    print("     .\\start_app.ps1")
+    print()
+    print("  3. Deschide http://localhost:5173")
+    print("  4. In Profile → Telegram Settings configureaza token + chat ID")
+    print("  5. Porneste botul din Dashboard (butonul Start)")
     print(SEP)
 
 
