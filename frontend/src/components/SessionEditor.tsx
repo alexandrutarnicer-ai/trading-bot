@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { Pause, Play } from "lucide-react";
 import type { ProfileSession, Meta } from "../api/types";
 import { useMt5Markets } from "../api/hooks";
 import { BacktestPanel } from "./BacktestPanel";
@@ -10,6 +11,8 @@ interface Props {
   onChange: (updated: ProfileSession) => void;
   onRemove?: () => void;
   onJobStarted?: () => void;
+  paused?: boolean;
+  onPauseToggle?: () => void;
 }
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
@@ -41,7 +44,7 @@ const TIPS = {
   friday_close:  "Vineri la ora configurată, toate pozițiile deschise (triggerate) sunt închise automat printr-un ordin la piață. Dezactivează pentru sesiunile crypto — BTC tranzacționează și în weekend.",
 };
 
-export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted }: Props) {
+export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted, paused, onPauseToggle }: Props) {
   const [open, setOpen]           = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [showMt5Search, setShowMt5Search] = useState(false);
@@ -120,9 +123,28 @@ export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted 
           }
           <span className="text-slate-500">{open ? "▲" : "▼"}</span>
         </button>
+        {/* Pause/Play */}
+        {onPauseToggle && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onPauseToggle(); }}
+            title={paused ? "Reia sesiunea" : "Pune sesiunea pe pauză"}
+            className={`ml-1 p-1 rounded transition-colors ${
+              paused
+                ? "text-profit hover:bg-profit/10"
+                : "text-slate-500 hover:text-warn hover:bg-warn/10"
+            }`}
+          >
+            {paused
+              ? <Play size={13} fill="currentColor" />
+              : <Pause size={13} />
+            }
+          </button>
+        )}
+
+        {/* Delete */}
         {onRemove && (
           confirmRemove ? (
-            <div className="flex items-center gap-1.5 ml-2">
+            <div className="flex items-center gap-1.5 ml-1">
               <span className="text-xs text-loss">Stergi?</span>
               <button onClick={onRemove}
                 className="text-xs px-2 py-0.5 rounded bg-loss/80 hover:bg-loss text-white transition-colors">Da</button>
@@ -131,7 +153,7 @@ export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted 
             </div>
           ) : (
             <button onClick={() => setConfirmRemove(true)}
-              className="ml-2 text-slate-600 hover:text-loss transition-colors text-sm px-1"
+              className="ml-1 text-slate-600 hover:text-loss transition-colors text-sm px-1"
               title="Sterge sesiunea">✕</button>
           )
         )}

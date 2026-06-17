@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import {
   useProfileList, useProfile, useMeta, useSaveProfile, useCreateProfile, useDeleteProfile,
-  useBotStatus,
+  useBotStatus, useSessions, usePauseSession, useResumeSession,
 } from "../api/hooks";
 import { SessionEditor } from "../components/SessionEditor";
 import { InfoTooltip } from "../components/InfoTooltip";
@@ -76,6 +76,10 @@ export function ProfilePage({ onNavigateToAudit }: { onNavigateToAudit: () => vo
       setDirty(false);
     }
   }, [serverProfile]);
+
+  const { data: liveSessions } = useSessions();
+  const pauseS  = usePauseSession();
+  const resumeS = useResumeSession();
 
   const save   = useSaveProfile();
   const create = useCreateProfile();
@@ -331,16 +335,26 @@ export function ProfilePage({ onNavigateToAudit }: { onNavigateToAudit: () => vo
               Nicio sesiune. Apasă „+ Adaugă sesiune" pentru a configura prima sesiune.
             </div>
           )}
-          {draft.sessions.map((session, idx) => (
-            <SessionEditor
-              key={session.id + idx}
-              session={session}
-              meta={meta}
-              onJobStarted={onNavigateToAudit}
-              onChange={(updated) => handleSessionChange(idx, updated)}
-              onRemove={() => handleSessionRemove(idx)}
-            />
-          ))}
+          {draft.sessions.map((session, idx) => {
+            const liveS  = liveSessions?.find(s => s.id === session.session_key);
+            const isPaused = liveS?.paused ?? false;
+            return (
+              <SessionEditor
+                key={session.id + idx}
+                session={session}
+                meta={meta}
+                onJobStarted={onNavigateToAudit}
+                onChange={(updated) => handleSessionChange(idx, updated)}
+                onRemove={() => handleSessionRemove(idx)}
+                paused={isPaused}
+                onPauseToggle={() =>
+                  isPaused
+                    ? resumeS.mutate(session.session_key)
+                    : pauseS.mutate(session.session_key)
+                }
+              />
+            );
+          })}
           <button
             onClick={handleAddSession}
             className="w-full py-3 rounded-xl border border-dashed border-surface-border text-slate-500 hover:text-slate-300 hover:border-slate-500 transition-colors text-sm"
