@@ -39,7 +39,8 @@ SPREAD_DEFAULTS = {
 
 def _run_backtest_job(job_id: str, session_cfg: dict,
                       date_from: str | None = None,
-                      date_to: str | None = None) -> None:
+                      date_to: str | None = None,
+                      start_balance: float = 1000) -> None:
     _jobs[job_id]["status"] = "running"
     try:
         with open(CONFIG, encoding="utf-8") as f:
@@ -74,6 +75,11 @@ def _run_backtest_job(job_id: str, session_cfg: dict,
             _jobs[job_id].update({"status": "error", "error": "Nicio piata disponibila in date CSV"})
             return
 
+        # Retine intervalul real al datelor inainte de filtrare date
+        all_times_raw = pd.concat([df["time"] for df in data.values()])
+        data_from_actual = str(all_times_raw.min().date())
+        data_to_actual   = str(all_times_raw.max().date())
+
         # Filtreaza intervalul de date daca e specificat
         if date_from or date_to:
             filtered = {}
@@ -97,7 +103,7 @@ def _run_backtest_job(job_id: str, session_cfg: dict,
         params = {
             "spread_pips":                {s: SPREAD_DEFAULTS.get(s, 1.0) for s in data},
             "leverage":                   30,
-            "start_balance":              1000,
+            "start_balance":              start_balance,
             "expire_bars":                session_cfg["expire_bars"],
             "pullback_window":            session_cfg["pullback_window"],
             "depth_range":                None,
@@ -152,6 +158,9 @@ def _run_backtest_job(job_id: str, session_cfg: dict,
                 "expectancy":   round(float(df_t["R"].mean()), 3),
                 "max_dd":       round(dd, 1),
                 "split_date":   str(split_time.date()),
+                "date_from":    data_from_actual,
+                "date_to":      data_to_actual,
+                "start_balance": start_balance,
                 "train": {
                     "trades":     len(train),
                     "expectancy": round(float(train["R"].mean()), 3) if len(train) else 0,
@@ -180,15 +189,16 @@ def run_backtest(body: dict):
     if not session_cfg:
         raise HTTPException(400, "session lipsa in body")
 
-    date_from = body.get("date_from") or None
-    date_to   = body.get("date_to")   or None
+    date_from     = body.get("date_from") or None
+    date_to       = body.get("date_to")   or None
+    start_balance = float(body.get("start_balance") or 1000)
 
     job_id = str(uuid.uuid4())[:8]
     _jobs[job_id] = {"status": "pending", "results": None, "error": None}
 
     t = threading.Thread(
         target=_run_backtest_job,
-        args=(job_id, session_cfg, date_from, date_to),
+        args=(job_id, session_cfg, date_from, date_to, start_balance),
         daemon=True,
     )
     t.start()

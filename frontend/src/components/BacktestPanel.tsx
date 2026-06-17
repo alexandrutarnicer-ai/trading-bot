@@ -8,6 +8,7 @@ import type { BacktestResult, DataCheckResult, ProfileSession } from "../api/typ
 
 interface Props {
   session: ProfileSession;
+  startBalance?: number;
 }
 
 type Range = "1y" | "3y" | "all" | "custom";
@@ -33,7 +34,7 @@ type Phase =
   | "done"
   | "error";
 
-export function BacktestPanel({ session }: Props) {
+export function BacktestPanel({ session, startBalance = 1000 }: Props) {
   const [phase, setPhase]       = useState<Phase>("idle");
   const [range, setRange]       = useState<Range>("all");
   const [dateFrom, setDateFrom] = useState("");
@@ -76,7 +77,7 @@ export function BacktestPanel({ session }: Props) {
     setBtJobId(null);
     setPhase("running");
     try {
-      const res = await runBt.mutateAsync({ session, ...getDateRange() }) as { job_id: string };
+      const res = await runBt.mutateAsync({ session, ...getDateRange(), start_balance: startBalance }) as { job_id: string };
       setBtJobId(res.job_id);
     } catch (e: unknown) {
       setPhaseError(e instanceof Error ? e.message : "Eroare");
@@ -315,6 +316,21 @@ export function BacktestPanel({ session }: Props) {
       {/* ── DONE — Results ── */}
       {phase === "done" && btResults && (
         <>
+          {/* Perioada testata */}
+          {btResults.date_from && btResults.date_to && (
+            <div className="flex items-center gap-2 text-xs text-slate-500 bg-surface-border/30 rounded-lg px-3 py-1.5">
+              <span>Perioadă testată:</span>
+              <span className="text-slate-300 font-medium">{btResults.date_from}</span>
+              <span>→</span>
+              <span className="text-slate-300 font-medium">{btResults.date_to}</span>
+              <span className="text-slate-600 ml-1">
+                ({Math.round((new Date(btResults.date_to).getTime() - new Date(btResults.date_from).getTime()) / (365.25 * 24 * 3600 * 1000) * 10) / 10} ani)
+              </span>
+              <span className="ml-auto text-slate-600">
+                Capital simulat: {startBalance.toLocaleString("ro-RO")} USD
+              </span>
+            </div>
+          )}
           <div className="grid grid-cols-4 gap-3">
             <Stat label="Trades" value={String(btResults.total_trades)}
               tip="Numărul total de tranzacții simulate în intervalul selectat. Minim recomandat ≥ 30 pentru relevanță statistică." />

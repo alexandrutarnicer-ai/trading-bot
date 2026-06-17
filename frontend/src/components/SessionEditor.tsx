@@ -9,6 +9,7 @@ interface Props {
   meta: Meta;
   onChange: (updated: ProfileSession) => void;
   onRemove?: () => void;
+  startBalance?: number;
 }
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
@@ -37,7 +38,7 @@ const TIPS = {
   skip_weekdays: "Zile ale săptămânii în care sesiunea nu tranzacționează.",
 };
 
-export function SessionEditor({ session, meta, onChange, onRemove }: Props) {
+export function SessionEditor({ session, meta, onChange, onRemove, startBalance = 1000 }: Props) {
   const [open, setOpen]           = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [showMt5Search, setShowMt5Search] = useState(false);
@@ -347,7 +348,7 @@ export function SessionEditor({ session, meta, onChange, onRemove }: Props) {
 
           {/* Backtest */}
           <Section label="Backtest">
-            <BacktestPanel session={session} />
+            <BacktestPanel session={session} startBalance={startBalance} />
           </Section>
         </div>
       )}

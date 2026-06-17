@@ -54,6 +54,8 @@ class BotStatus(BaseModel):
     running: bool
     pid: Optional[int]
     sessions_active: int
+    active_profile_id: Optional[str] = None
+    active_profile_name: Optional[str] = None
 
 
 class EquityCurvePoint(BaseModel):

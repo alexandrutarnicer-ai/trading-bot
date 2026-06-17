@@ -3,7 +3,7 @@ import { apiFetch } from "./client";
 import type {
   BotStatus, SessionStatus, Signal, Outcome, EquityCurvePoint,
   Profile, ProfileSummary, Meta,
-  DataCheckResult, DownloadJob, TelegramConfig,
+  DataCheckResult, DownloadJob, TelegramConfig, Mt5Status,
 } from "./types";
 
 const POLL = 30_000; // refresh la 30s
@@ -94,7 +94,7 @@ export const useDeleteProfile = () => {
 
 export const useRunBacktest = () =>
   useMutation({
-    mutationFn: (payload: { session: object; date_from?: string; date_to?: string }) =>
+    mutationFn: (payload: { session: object; date_from?: string; date_to?: string; start_balance?: number }) =>
       apiFetch("/backtest/run", { method: "POST", body: payload }),
   });
 
@@ -147,10 +147,19 @@ export const useDownloadJob = (jobId: string | null) =>
 export const useStartBot = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => apiFetch("/bot/start", { method: "POST" }),
+    mutationFn: (body?: { profile_id?: string; profile_name?: string }) =>
+      apiFetch("/bot/start", { method: "POST", body: body ?? {} }),
     onSuccess: () => { setTimeout(() => qc.invalidateQueries({ queryKey: ["bot-status"] }), 1500); },
   });
 };
+
+export const useMt5Status = () =>
+  useQuery<Mt5Status>({
+    queryKey: ["mt5-status"],
+    queryFn:  () => apiFetch("/mt5/status"),
+    refetchInterval: POLL,
+    retry: false,
+  });
 
 export const useStopBot = () => {
   const qc = useQueryClient();

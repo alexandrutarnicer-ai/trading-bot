@@ -1,12 +1,16 @@
 import os
 import sys
+import json
 import ctypes
 import subprocess
-from fastapi import APIRouter, HTTPException
-from api.config import ROOT, PID_FILE, SESSIONS
+from fastapi import APIRouter, HTTPException, Body
+from typing import Optional
+from api.config import ROOT, DATA_DIR, PID_FILE, SESSIONS
 from api.models import BotStatus
 
 router = APIRouter(prefix="/bot", tags=["bot"])
+
+ACTIVE_PROFILE_FILE = os.path.join(DATA_DIR, "active_profile.json")
 
 
 def _pid_alive(pid: int) -> bool:
@@ -28,6 +32,28 @@ def _read_pid(path: str) -> int | None:
         return None
 
 
+def _read_active_profile() -> dict:
+    try:
+        with open(ACTIVE_PROFILE_FILE, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {"id": None, "name": None}
+
+
+def _save_active_profile(profile_id: str, profile_name: str) -> None:
+    os.makedirs(DATA_DIR, exist_ok=True)
+    with open(ACTIVE_PROFILE_FILE, "w", encoding="utf-8") as f:
+        json.dump({"id": profile_id, "name": profile_name}, f)
+
+
+def _clear_active_profile() -> None:
+    try:
+        if os.path.exists(ACTIVE_PROFILE_FILE):
+            os.remove(ACTIVE_PROFILE_FILE)
+    except Exception:
+        pass
+
+
 @router.get("/status", response_model=BotStatus)
 def bot_status():
     pid = _read_pid(PID_FILE) if os.path.exists(PID_FILE) else None
@@ -45,11 +71,20 @@ def bot_status():
                 if spid and _pid_alive(spid):
                     active += 1
 
-    return BotStatus(running=running, pid=pid if running else None, sessions_active=active)
+    ap = _read_active_profile() if running else {"id": None, "name": None}
+
+    return BotStatus(
+        running=running,
+        pid=pid if running else None,
+        sessions_active=active,
+        active_profile_id=ap.get("id"),
+        active_profile_name=ap.get("name"),
+    )
 
 
 @router.post("/start")
-def start_bot():
+def start_bot(body: Optional[dict] = Body(default=None)):
+    body = body or {}
     pid = _read_pid(PID_FILE) if os.path.exists(PID_FILE) else None
     if pid and _pid_alive(pid):
         raise HTTPException(409, f"Bot-ul ruleaza deja (PID={pid})")
@@ -61,13 +96,17 @@ def start_bot():
     proc = subprocess.Popen(
         [sys.executable, script],
         cwd=ROOT,
-        # Detasat complet: supravietuieste daca API-ul se opreste
         creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         close_fds=True,
     )
-    return {"started": True, "pid": proc.pid}
+
+    profile_id   = body.get("profile_id")   or "standard"
+    profile_name = body.get("profile_name") or "Standard"
+    _save_active_profile(profile_id, profile_name)
+
+    return {"started": True, "pid": proc.pid, "profile_id": profile_id}
 
 
 @router.post("/stop")
@@ -80,4 +119,5 @@ def stop_bot():
         ["taskkill", "/F", "/T", "/PID", str(pid)],
         capture_output=True, text=True,
     )
+    _clear_active_profile()
     return {"stopped": result.returncode == 0, "pid": pid}

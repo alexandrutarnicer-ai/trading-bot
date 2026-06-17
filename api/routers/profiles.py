@@ -86,9 +86,10 @@ def get_profile(profile_id: str):
 @router.put("/{profile_id}")
 def update_profile(profile_id: str, body: dict):
     existing = _load_profile(profile_id)
-    existing["name"]        = body.get("name", existing["name"])
-    existing["description"] = body.get("description", existing.get("description", ""))
-    existing["sessions"]    = body.get("sessions", existing["sessions"])
+    existing["name"]          = body.get("name", existing["name"])
+    existing["description"]   = body.get("description", existing.get("description", ""))
+    existing["sessions"]      = body.get("sessions", existing["sessions"])
+    existing["start_balance"] = body.get("start_balance", existing.get("start_balance", 1000))
     _save_profile(existing)
     return existing
 
@@ -112,10 +113,11 @@ def create_profile(body: dict):
     if os.path.exists(_profile_path(profile_id)):
         raise HTTPException(409, f"Profil exista deja: {profile_id}")
     profile = {
-        "id":          profile_id,
-        "name":        body.get("name", profile_id),
-        "description": body.get("description", ""),
-        "sessions":    [],
+        "id":            profile_id,
+        "name":          body.get("name", profile_id),
+        "description":   body.get("description", ""),
+        "start_balance": 1000,
+        "sessions":      [],
     }
     _save_profile(profile)
     return profile

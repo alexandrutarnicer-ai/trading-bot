@@ -2,6 +2,18 @@ export interface BotStatus {
   running: boolean;
   pid: number | null;
   sessions_active: number;
+  active_profile_id: string | null;
+  active_profile_name: string | null;
+}
+
+export interface Mt5Status {
+  connected: boolean;
+  account: string | null;
+  server: string | null;
+  balance: number | null;
+  equity: number | null;
+  currency: string | null;
+  error: string | null;
 }
 
 export interface SessionStatus {
@@ -105,6 +117,7 @@ export interface Profile {
   description: string;
   updated_at: string | null;
   sessions: ProfileSession[];
+  start_balance: number;
 }
 
 export interface ProfileSummary {
@@ -121,6 +134,9 @@ export interface BacktestResult {
   expectancy: number;
   max_dd: number;
   split_date: string;
+  date_from: string | null;
+  date_to: string | null;
+  start_balance: number;
   train: { trades: number; expectancy: number };
   test: { trades: number; expectancy: number };
   per_symbol: Record<string, { trades: number; win_rate: number; expectancy: number }>;

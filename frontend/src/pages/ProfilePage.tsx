@@ -6,6 +6,7 @@ import { SessionEditor } from "../components/SessionEditor";
 import { InfoTooltip } from "../components/InfoTooltip";
 import { BotControl } from "../components/BotControl";
 import { TelegramSettings } from "../components/TelegramSettings";
+import { Mt5Status } from "../components/Mt5Status";
 import type { Profile, ProfileSession } from "../api/types";
 
 const DEFAULT_SESSION = (id: string): ProfileSession => ({
@@ -148,8 +149,9 @@ export function ProfilePage() {
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-6 space-y-5">
-      {/* Bot control + Telegram */}
-      <BotControl />
+      {/* MT5 + Bot control + Telegram */}
+      <Mt5Status />
+      <BotControl profileId={activeId} profileName={draft?.name} />
       <TelegramSettings />
 
       {/* Profile selector */}
@@ -245,9 +247,9 @@ export function ProfilePage() {
         </div>
       )}
 
-      {/* Profile info */}
+      {/* Profile info + capital */}
       {draft && (
-        <div className="flex items-center gap-3 text-xs text-slate-500">
+        <div className="flex items-center gap-3 flex-wrap text-xs text-slate-500">
           <span className="text-slate-300 font-medium">{draft.name}</span>
           {draft.description && <span>· {draft.description}</span>}
           <span className="text-slate-600">
@@ -258,6 +260,33 @@ export function ProfilePage() {
               Ultima salvare: {draft.updated_at.slice(0, 16).replace("T", " ")}
             </span>
           )}
+        </div>
+      )}
+
+      {/* Capital backtest */}
+      {draft && (
+        <div className="flex items-center gap-3 bg-surface-card border border-surface-border rounded-xl px-4 py-3">
+          <div className="flex-1">
+            <div className="text-xs font-semibold text-white mb-0.5">Capital simulat backtest</div>
+            <div className="text-[10px] text-slate-500">
+              Suma de pornire folosită în simulare. Nu afectează trading-ul live — acolo se citește equity-ul real din MT5.
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min={100}
+              step={100}
+              value={draft.start_balance ?? 1000}
+              onChange={(e) => {
+                const val = parseFloat(e.target.value) || 1000;
+                setDraft({ ...draft, start_balance: val });
+                setDirty(true);
+              }}
+              className="w-28 bg-surface border border-surface-border rounded px-2 py-1.5 text-sm text-white text-right font-mono focus:outline-none focus:border-blue-500"
+            />
+            <span className="text-xs text-slate-500">USD</span>
+          </div>
         </div>
       )}
 
@@ -282,6 +311,7 @@ export function ProfilePage() {
               meta={meta}
               onChange={(updated) => handleSessionChange(idx, updated)}
               onRemove={() => handleSessionRemove(idx)}
+              startBalance={draft.start_balance ?? 1000}
             />
           ))}
           <button
