@@ -43,6 +43,7 @@ export function AutostartToggle() {
 
   return (
     <div className="flex items-center">
+      <InfoTooltip text={AUTOSTART_TIP} position="below" align="right" wide />
       <button
         onClick={() => {
           if (enabled) {
@@ -61,7 +62,6 @@ export function AutostartToggle() {
         <Power size={11} />
         <span>Autostart {enabled ? "ON" : "OFF"}</span>
       </button>
-      <InfoTooltip text={AUTOSTART_TIP} position="below" wide />
     </div>
   );
 }
