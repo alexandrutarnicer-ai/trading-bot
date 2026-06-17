@@ -1,0 +1,194 @@
+import os
+import ctypes
+from datetime import date, datetime
+from typing import Optional
+
+import pandas as pd
+from fastapi import APIRouter, HTTPException
+
+from api.config import DATA_DIR, SESSIONS, SESSION_MAP
+from api.models import SessionStatus, Signal, Outcome, EquityCurvePoint
+
+router = APIRouter(prefix="/sessions", tags=["sessions"])
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        h = ctypes.windll.kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if h:
+            ctypes.windll.kernel32.CloseHandle(h)
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def _session_dir(session_id: str) -> str:
+    return os.path.join(DATA_DIR, "live_signals", session_id)
+
+
+def _read_pid(path: str) -> Optional[int]:
+    try:
+        return int(open(path).read().strip())
+    except Exception:
+        return None
+
+
+def _session_running(session_id: str) -> tuple[bool, Optional[int]]:
+    lock = os.path.join(_session_dir(session_id), "session.lock")
+    if not os.path.exists(lock):
+        return False, None
+    pid = _read_pid(lock)
+    if pid and _pid_alive(pid):
+        return True, pid
+    return False, None
+
+
+def _read_signals(session_id: str) -> pd.DataFrame:
+    f = os.path.join(_session_dir(session_id), "signals.csv")
+    if not os.path.exists(f):
+        return pd.DataFrame()
+    try:
+        return pd.read_csv(f)
+    except Exception:
+        return pd.DataFrame()
+
+
+def _read_outcomes(session_id: str) -> pd.DataFrame:
+    f = os.path.join(_session_dir(session_id), "outcomes.csv")
+    if not os.path.exists(f):
+        return pd.DataFrame()
+    try:
+        return pd.read_csv(f)
+    except Exception:
+        return pd.DataFrame()
+
+
+def _sig_stats(session_id: str) -> dict:
+    df = _read_signals(session_id)
+    if df.empty:
+        return {"today": 0, "total": 0, "last_time": None}
+    today = str(date.today())
+    today_mask = df["time"].astype(str).str.startswith(today)
+    count_today = int(today_mask.sum())
+    last_time = None
+    if len(df):
+        last = df["time"].astype(str).iloc[-1]
+        last_time = last[11:16] if len(last) >= 16 else last
+    return {"today": count_today, "total": len(df), "last_time": last_time}
+
+
+def _outcome_stats(session_id: str) -> dict:
+    df = _read_outcomes(session_id)
+    if df.empty:
+        return {"total": 0, "wins": 0, "losses": 0}
+    closed = df[df["status"].isin(["TP", "SL"])]
+    wins   = int((closed["result_r"] > 0).sum()) if len(closed) else 0
+    losses = int((closed["result_r"] < 0).sum()) if len(closed) else 0
+    return {"total": len(closed), "wins": wins, "losses": losses}
+
+
+@router.get("", response_model=list[SessionStatus])
+def list_sessions():
+    result = []
+    for s in SESSIONS:
+        running, pid = _session_running(s["id"])
+        sig  = _sig_stats(s["id"])
+        out  = _outcome_stats(s["id"])
+        result.append(SessionStatus(
+            id=s["id"],
+            label=s["label"],
+            markets=s["markets"],
+            direction=s["direction"],
+            tf=s["tf"],
+            hours=s["hours"],
+            validated=s["validated"],
+            execute=s["execute"],
+            capital_pct=s["capital_pct"],
+            running=running,
+            pid=pid,
+            signals_today=sig["today"],
+            signals_total=sig["total"],
+            last_signal_time=sig["last_time"],
+            outcomes_total=out["total"],
+            wins=out["wins"],
+            losses=out["losses"],
+        ))
+    return result
+
+
+@router.get("/{session_id}/signals", response_model=list[Signal])
+def get_signals(session_id: str, limit: int = 50):
+    if session_id not in SESSION_MAP:
+        raise HTTPException(404, f"Sesiune necunoscuta: {session_id}")
+    df = _read_signals(session_id)
+    if df.empty:
+        return []
+    df = df.tail(limit).iloc[::-1]
+    result = []
+    for _, row in df.iterrows():
+        result.append(Signal(
+            signal_id=str(row.get("signal_id", "")),
+            time=str(row.get("time", "")),
+            symbol=str(row.get("symbol", "")),
+            direction=int(row.get("direction", 0)),
+            dir_str=str(row.get("dir_str", "")),
+            entry=float(row.get("entry", 0)),
+            sl=float(row.get("sl", 0)),
+            tp=float(row.get("tp", 0)),
+            r_ratio=float(row.get("r_ratio", 0)),
+        ))
+    return result
+
+
+@router.get("/{session_id}/outcomes", response_model=list[Outcome])
+def get_outcomes(session_id: str, limit: int = 100):
+    if session_id not in SESSION_MAP:
+        raise HTTPException(404, f"Sesiune necunoscuta: {session_id}")
+    df = _read_outcomes(session_id)
+    if df.empty:
+        return []
+    df = df.tail(limit).iloc[::-1]
+    result = []
+    for _, row in df.iterrows():
+        result.append(Outcome(
+            signal_id=str(row.get("signal_id", "")),
+            time_check=str(row.get("time_check", "")),
+            symbol=str(row.get("symbol", "")),
+            direction=int(row.get("direction", 0)),
+            status=str(row.get("status", "")),
+            entry=float(row.get("entry", 0)),
+            sl=float(row.get("sl", 0)),
+            tp=float(row.get("tp", 0)),
+            r_ratio=float(row.get("r_ratio", 0)),
+            triggered_at=str(row["triggered_at"]) if pd.notna(row.get("triggered_at")) else None,
+            exit_price=float(row["exit_price"]) if pd.notna(row.get("exit_price")) else None,
+            exit_time=str(row["exit_time"]) if pd.notna(row.get("exit_time")) else None,
+            result_r=float(row.get("result_r", 0)),
+        ))
+    return result
+
+
+@router.get("/all/equity-curve", response_model=list[EquityCurvePoint])
+def equity_curve():
+    """R cumulat per sesiune, sortat cronologic — pentru graficul de performanta."""
+    points = []
+    for s in SESSIONS:
+        df = _read_outcomes(s["id"])
+        if df.empty:
+            continue
+        closed = df[df["status"].isin(["TP", "SL"])].copy()
+        if closed.empty:
+            continue
+        closed["exit_time"] = pd.to_datetime(closed["exit_time"], errors="coerce")
+        closed = closed.dropna(subset=["exit_time"]).sort_values("exit_time")
+        closed["cum_r"] = closed["result_r"].cumsum()
+        for _, row in closed.iterrows():
+            points.append(EquityCurvePoint(
+                date=row["exit_time"].strftime("%Y-%m-%d %H:%M"),
+                cumulative_r=round(float(row["cum_r"]), 3),
+                session_id=s["id"],
+            ))
+    points.sort(key=lambda p: p.date)
+    return points
