@@ -1,7 +1,9 @@
 """
-Backtest runner async — job-based.
+Backtest runner async — job-based cu persistenta pe disc.
 POST /api/backtest/run   → { job_id }
-GET  /api/backtest/{job_id} → { status, results }
+GET  /api/backtest/jobs  → [ { job_id, status, ... } ]
+GET  /api/backtest/{job_id} → { status, results, error }
+DELETE /api/backtest/jobs/{job_id}
 """
 
 import os
@@ -11,6 +13,7 @@ import uuid
 import threading
 import numpy as np
 import pandas as pd
+from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, HTTPException
 
@@ -24,8 +27,63 @@ from engine.portfolio import run_portfolio
 
 router = APIRouter(prefix="/backtest", tags=["backtest"])
 
-# In-memory job store (suficient pentru uz local single-user)
-_jobs: dict[str, dict] = {}
+JOBS_FILE  = os.path.join(DATA_DIR, "backtest_jobs.json")
+MAX_JOBS   = 150
+
+_jobs_lock = threading.Lock()
+
+# ── Persistenta ──────────────────────────────────────────────────────────────
+
+def _load_from_file() -> list[dict]:
+    try:
+        if os.path.exists(JOBS_FILE):
+            with open(JOBS_FILE, encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return []
+
+
+def _save_to_file(jobs: list[dict]) -> None:
+    """Salveaza lista de joburi pe disc. Apeleaza cu _jobs_lock tinut."""
+    try:
+        # Prune: pastreaza max MAX_JOBS, cele mai noi mai intai
+        if len(jobs) > MAX_JOBS:
+            running  = [j for j in jobs if j["status"] in ("pending", "running")]
+            finished = sorted(
+                [j for j in jobs if j["status"] not in ("pending", "running")],
+                key=lambda j: j.get("started_at", ""),
+                reverse=True,
+            )[: MAX_JOBS - len(running)]
+            jobs = running + finished
+        with open(JOBS_FILE, "w", encoding="utf-8") as f:
+            json.dump(jobs, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+
+# Incarcare la startup si recuperare joburi intrerupte
+_jobs_list: list[dict] = _load_from_file()
+for _j in _jobs_list:
+    if _j.get("status") in ("pending", "running"):
+        _j["status"]       = "error"
+        _j["error"]        = "Job întrerupt — serverul API a fost repornit."
+        _j["completed_at"] = datetime.now().isoformat(timespec="seconds")
+_save_to_file(_jobs_list)
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _find_job(job_id: str) -> dict | None:
+    return next((j for j in _jobs_list if j["job_id"] == job_id), None)
+
+
+def _update_job(job_id: str, **kwargs) -> None:
+    with _jobs_lock:
+        job = _find_job(job_id)
+        if job:
+            job.update(kwargs)
+        _save_to_file(_jobs_list)
 
 
 SPREAD_DEFAULTS = {
@@ -37,16 +95,20 @@ SPREAD_DEFAULTS = {
 }
 
 
-def _run_backtest_job(job_id: str, session_cfg: dict,
-                      date_from: str | None = None,
-                      date_to: str | None = None,
-                      start_balance: float = 1000) -> None:
-    _jobs[job_id]["status"] = "running"
+# ── Runner ────────────────────────────────────────────────────────────────────
+
+def _run_backtest_job(
+    job_id: str,
+    session_cfg: dict,
+    date_from:    str | None = None,
+    date_to:      str | None = None,
+    start_balance: float = 1000,
+) -> None:
+    _update_job(job_id, status="running")
     try:
         with open(CONFIG, encoding="utf-8") as f:
             cfg = json.load(f)
 
-        # Aplica parametrii profilului peste config standard
         cfg["reward_ladder"]["rr_if_3_criteria"]  = session_cfg["r_base"]
         cfg["reward_ladder"]["rr_if_4_criteria"]  = session_cfg["r_mid"]
         cfg["reward_ladder"]["rr_if_5_criteria"]  = session_cfg["r_top"]
@@ -58,19 +120,17 @@ def _run_backtest_job(job_id: str, session_cfg: dict,
         cfg["optional_criteria"]["rsi"]["sell_min"]  = session_cfg["rsi_sell_min"]
         cfg["optional_criteria"]["rsi"]["sell_max"]  = session_cfg["rsi_sell_max"]
         cfg["optional_criteria"]["ema_alignment"]["enabled"] = session_cfg["ema_alignment_enabled"]
-        # Criteriu 3: corp lumanare — dezactivat implicit
         cfg["optional_criteria"]["body_strength"] = {
             "enabled":       session_cfg.get("body_strength_enabled", False),
             "min_atr_ratio": session_cfg.get("body_strength_min_atr_ratio", 0.15),
         }
-        # Praguri configurabile la nivelul sesiunii
         cfg["reward_ladder"]["threshold_mid"] = session_cfg.get("r_mid_threshold", 1)
         cfg["reward_ladder"]["threshold_top"] = session_cfg.get("r_top_threshold", 2)
         cfg["reward_ladder"]["threshold_max"] = session_cfg.get("r_max_threshold", 3)
         if "r_max" in session_cfg:
             cfg["reward_ladder"]["rr_if_6_criteria"] = session_cfg["r_max"]
 
-        src = CsvDataSource(DATA_DIR)
+        src  = CsvDataSource(DATA_DIR)
         data = {}
         for symbol in session_cfg["markets"]:
             try:
@@ -85,10 +145,14 @@ def _run_backtest_job(job_id: str, session_cfg: dict,
                 pass
 
         if not data:
-            _jobs[job_id].update({"status": "error", "error": "Nicio piata disponibila in date CSV"})
+            _update_job(
+                job_id,
+                status="error",
+                error="Nicio piata disponibila in date CSV",
+                completed_at=datetime.now().isoformat(timespec="seconds"),
+            )
             return
 
-        # Filtreaza intervalul de date daca e specificat
         if date_from or date_to:
             filtered = {}
             for sym, df in data.items():
@@ -101,12 +165,15 @@ def _run_backtest_job(job_id: str, session_cfg: dict,
                     filtered[sym] = df_f.reset_index(drop=True)
             data = filtered
             if not data:
-                _jobs[job_id].update({"status": "error",
-                                      "error": "Nicio piata cu date in intervalul selectat"})
+                _update_job(
+                    job_id,
+                    status="error",
+                    error="Nicio piata cu date in intervalul selectat",
+                    completed_at=datetime.now().isoformat(timespec="seconds"),
+                )
                 return
 
-        # Intervalul real dupa filtrare (reflecta ce s-a testat efectiv)
-        all_times_raw = pd.concat([df["time"] for df in data.values()])
+        all_times_raw   = pd.concat([df["time"] for df in data.values()])
         data_from_actual = str(all_times_raw.min().date())
         data_to_actual   = str(all_times_raw.max().date())
 
@@ -136,7 +203,12 @@ def _run_backtest_job(job_id: str, session_cfg: dict,
             run_portfolio(data, cfg, params)
 
         if not trades:
-            _jobs[job_id].update({"status": "error", "error": "Niciun trade generat"})
+            _update_job(
+                job_id,
+                status="error",
+                error="Niciun trade generat",
+                completed_at=datetime.now().isoformat(timespec="seconds"),
+            )
             return
 
         df_t = pd.DataFrame(trades)
@@ -163,9 +235,10 @@ def _run_backtest_job(job_id: str, session_cfg: dict,
                 "expectancy": round(float(sub["R"].mean()), 3),
             }
 
-        _jobs[job_id].update({
-            "status": "done",
-            "results": {
+        _update_job(job_id,
+            status="done",
+            completed_at=datetime.now().isoformat(timespec="seconds"),
+            results={
                 "total_trades": total,
                 "win_rate":     round(wins / total * 100, 1) if total else 0,
                 "expectancy":   round(float(df_t["R"].mean()), 3),
@@ -186,18 +259,22 @@ def _run_backtest_job(job_id: str, session_cfg: dict,
                 "markets":    session_cfg["markets"],
                 "session_id": session_cfg.get("id", ""),
             },
-        })
+        )
 
     except Exception as e:
         import traceback
-        _jobs[job_id].update({"status": "error", "error": f"{e}\n{traceback.format_exc()}"})
+        _update_job(
+            job_id,
+            status="error",
+            error=f"{e}\n{traceback.format_exc()}",
+            completed_at=datetime.now().isoformat(timespec="seconds"),
+        )
 
+
+# ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @router.post("/run")
 def run_backtest(body: dict):
-    """
-    body: { session: <session config dict>, date_from?: "YYYY-MM-DD", date_to?: "YYYY-MM-DD" }
-    """
     session_cfg = body.get("session")
     if not session_cfg:
         raise HTTPException(400, "session lipsa in body")
@@ -207,7 +284,28 @@ def run_backtest(body: dict):
     start_balance = float(body.get("start_balance") or 1000)
 
     job_id = str(uuid.uuid4())[:8]
-    _jobs[job_id] = {"status": "pending", "results": None, "error": None}
+    new_job = {
+        "job_id":          job_id,
+        "status":          "pending",
+        "session_id":      session_cfg.get("id", ""),
+        "session_label":   session_cfg.get("label", session_cfg.get("id", "")),
+        "markets":         session_cfg.get("markets", []),
+        "entry_tf":        session_cfg.get("entry_tf", "M15"),
+        "trend_tf":        session_cfg.get("trend_tf", "M30"),
+        "direction":       session_cfg.get("direction", "LONG"),
+        "started_at":      datetime.now().isoformat(timespec="seconds"),
+        "completed_at":    None,
+        "date_from":       date_from,
+        "date_to":         date_to,
+        "start_balance":   start_balance,
+        "error":           None,
+        "results":         None,
+        "session_snapshot": body.get("session_snapshot"),
+    }
+
+    with _jobs_lock:
+        _jobs_list.insert(0, new_job)
+        _save_to_file(_jobs_list)
 
     t = threading.Thread(
         target=_run_backtest_job,
@@ -219,9 +317,30 @@ def run_backtest(body: dict):
     return {"job_id": job_id}
 
 
+@router.get("/jobs")
+def list_jobs():
+    with _jobs_lock:
+        return list(_jobs_list)
+
+
+@router.delete("/jobs/{job_id}")
+def delete_job(job_id: str):
+    global _jobs_list
+    with _jobs_lock:
+        job = _find_job(job_id)
+        if not job:
+            raise HTTPException(404, f"Job necunoscut: {job_id}")
+        if job["status"] in ("pending", "running"):
+            raise HTTPException(400, "Nu poti sterge un job in curs de rulare")
+        _jobs_list = [j for j in _jobs_list if j["job_id"] != job_id]
+        _save_to_file(_jobs_list)
+    return {"ok": True}
+
+
 @router.get("/{job_id}")
 def get_result(job_id: str):
-    job = _jobs.get(job_id)
+    with _jobs_lock:
+        job = _find_job(job_id)
     if not job:
         raise HTTPException(404, f"Job necunoscut: {job_id}")
     return job

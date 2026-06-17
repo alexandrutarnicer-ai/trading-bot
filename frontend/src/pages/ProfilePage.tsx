@@ -57,7 +57,7 @@ const PROFILE_TIP =
   "Fiecare sesiune are propriile piețe, timeframe, filtre și parametri. " +
   "Profilul Standard este cel validat și activ — modifică-l cu atenție.";
 
-export function ProfilePage() {
+export function ProfilePage({ onNavigateToAudit }: { onNavigateToAudit: () => void }) {
   const { data: profiles, isLoading: loadingList } = useProfileList();
   const { data: meta } = useMeta();
   const { data: botStatus } = useBotStatus();
@@ -336,6 +336,7 @@ export function ProfilePage() {
               key={session.id + idx}
               session={session}
               meta={meta}
+              onJobStarted={onNavigateToAudit}
               onChange={(updated) => handleSessionChange(idx, updated)}
               onRemove={() => handleSessionRemove(idx)}
             />

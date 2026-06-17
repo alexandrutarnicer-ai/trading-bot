@@ -3,7 +3,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { NavBar } from "./components/NavBar";
 import { Dashboard } from "./pages/Dashboard";
 import { ProfilePage } from "./pages/ProfilePage";
-import { HistoryPage } from "./pages/HistoryPage";
+import { AuditPage } from "./pages/AuditPage";
+import { useBacktestJobs } from "./api/hooks";
 
 const qc = new QueryClient({
   defaultOptions: {
@@ -15,19 +16,32 @@ const qc = new QueryClient({
   },
 });
 
-type Tab = "dashboard" | "profile" | "history";
+type Tab = "dashboard" | "profile" | "audit";
 
-export default function App() {
+function AppInner() {
   const [tab, setTab] = useState<Tab>("dashboard");
 
+  // Polling global pentru joburi active — activ indiferent de tab
+  useBacktestJobs();
+
+  return (
+    <div className="min-h-screen bg-surface text-white">
+      <NavBar active={tab} onChange={setTab} />
+      {tab === "dashboard" ? (
+        <Dashboard />
+      ) : tab === "audit" ? (
+        <AuditPage />
+      ) : (
+        <ProfilePage onNavigateToAudit={() => setTab("audit")} />
+      )}
+    </div>
+  );
+}
+
+export default function App() {
   return (
     <QueryClientProvider client={qc}>
-      <div className="min-h-screen bg-surface text-white">
-        <NavBar active={tab} onChange={setTab} />
-        {tab === "dashboard" ? <Dashboard /> :
-         tab === "history"   ? <HistoryPage /> :
-                               <ProfilePage />}
-      </div>
+      <AppInner />
     </QueryClientProvider>
   );
 }

@@ -153,6 +153,25 @@ export interface BacktestResult {
   session_id: string;
 }
 
+export interface BacktestJob {
+  job_id: string;
+  status: "pending" | "running" | "done" | "error";
+  session_id: string;
+  session_label: string;
+  markets: string[];
+  entry_tf: string;
+  trend_tf: string;
+  direction: string;
+  started_at: string;
+  completed_at: string | null;
+  date_from: string | null;
+  date_to: string | null;
+  start_balance: number;
+  error: string | null;
+  results: BacktestResult | null;
+  session_snapshot: Record<string, unknown> | null;
+}
+
 export interface BacktestHistoryEntry {
   id: string;
   timestamp: string;

@@ -4,7 +4,7 @@ import type {
   BotStatus, SessionStatus, Signal, Outcome, EquityCurvePoint,
   Profile, ProfileSummary, Meta,
   DataCheckResult, DownloadJob, TelegramConfig, Mt5Status,
-  BacktestHistoryEntry,
+  BacktestHistoryEntry, BacktestJob,
 } from "./types";
 
 const POLL = 15_000; // refresh la 15s
@@ -96,11 +96,19 @@ export const useDeleteProfile = () => {
   });
 };
 
-export const useRunBacktest = () =>
-  useMutation({
-    mutationFn: (payload: { session: object; date_from?: string; date_to?: string; start_balance?: number }) =>
-      apiFetch("/backtest/run", { method: "POST", body: payload }),
+export const useRunBacktest = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: {
+      session: object;
+      date_from?: string;
+      date_to?: string;
+      start_balance?: number;
+      session_snapshot?: Record<string, unknown>;
+    }) => apiFetch("/backtest/run", { method: "POST", body: payload }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["backtest-jobs"] }),
   });
+};
 
 export const useBacktestJob = (jobId: string | null) =>
   useQuery<{ status: string; results: object | null; error: string | null }>({
@@ -199,7 +207,29 @@ export const useClearTelegram = () => {
   });
 };
 
-// ── Backtest history ────────────────────────────────────────────────────────
+// ── Backtest jobs (Audit) ────────────────────────────────────────────────────
+
+export const useBacktestJobs = () =>
+  useQuery<BacktestJob[]>({
+    queryKey: ["backtest-jobs"],
+    queryFn:  () => apiFetch("/backtest/jobs"),
+    refetchInterval: (query) => {
+      const jobs = query.state.data;
+      const hasActive = jobs?.some(j => j.status === "pending" || j.status === "running");
+      return hasActive ? 3_000 : 15_000;
+    },
+    refetchIntervalInBackground: true,
+  });
+
+export const useDeleteBacktestJob = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (jobId: string) => apiFetch(`/backtest/jobs/${jobId}`, { method: "DELETE" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["backtest-jobs"] }),
+  });
+};
+
+// ── Backtest history (legacy) ─────────────────────────────────────────────────
 
 export const useBacktestHistory = (sessionId?: string) =>
   useQuery<BacktestHistoryEntry[]>({
