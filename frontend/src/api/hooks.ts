@@ -85,8 +85,8 @@ export const useCreateProfile = () => {
 
 export const useRunBacktest = () =>
   useMutation({
-    mutationFn: (session: object) =>
-      apiFetch("/backtest/run", { method: "POST", body: { session } }),
+    mutationFn: (payload: { session: object; date_from?: string; date_to?: string }) =>
+      apiFetch("/backtest/run", { method: "POST", body: payload }),
   });
 
 export const useBacktestJob = (jobId: string | null) =>

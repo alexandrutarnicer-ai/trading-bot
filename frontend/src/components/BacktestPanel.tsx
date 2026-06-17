@@ -1,19 +1,52 @@
 import { useState } from "react";
 import { useRunBacktest, useBacktestJob } from "../api/hooks";
+import { InfoTooltip } from "./InfoTooltip";
 import type { BacktestResult, ProfileSession } from "../api/types";
 
 interface Props {
   session: ProfileSession;
 }
 
+type Range = "1y" | "3y" | "all" | "custom";
+
+const RANGE_LABELS: Record<Range, string> = {
+  "1y": "1 An", "3y": "3 Ani", "all": "Tot", "custom": "Custom",
+};
+
+const BACKTEST_INFO =
+  "Backtest rulează pe date CSV istorice (offline). " +
+  "Split train/test la 70%/30% din tranzacții — nu din timp — " +
+  "pentru a evita bias-ul pe perioade scurte. " +
+  "Rezultatele nu garantează performanță viitoare; " +
+  "interpreteaza expectancy pozitiv pe TEST ca semnal relevant.";
+
 export function BacktestPanel({ session }: Props) {
   const [jobId, setJobId] = useState<string | null>(null);
+  const [range, setRange] = useState<Range>("all");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+
   const run = useRunBacktest();
   const { data: job } = useBacktestJob(jobId);
 
+  const getDateRange = (): { date_from?: string; date_to?: string } => {
+    const offset = (years: number) => {
+      const d = new Date();
+      d.setFullYear(d.getFullYear() - years);
+      return d.toISOString().slice(0, 10);
+    };
+    if (range === "1y") return { date_from: offset(1) };
+    if (range === "3y") return { date_from: offset(3) };
+    if (range === "custom") return {
+      date_from: dateFrom || undefined,
+      date_to:   dateTo   || undefined,
+    };
+    return {};
+  };
+
   const handleRun = async () => {
     setJobId(null);
-    const res = await run.mutateAsync(session) as { job_id: string };
+    const res = await run.mutateAsync({ session, ...getDateRange() }) as { job_id: string };
     setJobId(res.job_id);
   };
 
@@ -22,6 +55,42 @@ export function BacktestPanel({ session }: Props) {
 
   return (
     <div className="space-y-3">
+      {/* Range selector */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-xs text-slate-500">Interval:</span>
+        {(["1y", "3y", "all", "custom"] as Range[]).map((r) => (
+          <button
+            key={r}
+            onClick={() => setRange(r)}
+            className={`text-xs px-2.5 py-1 rounded border transition-colors ${
+              range === r
+                ? "bg-blue-600 border-blue-500 text-white"
+                : "bg-transparent border-surface-border text-slate-400 hover:border-slate-500"
+            }`}
+          >
+            {RANGE_LABELS[r]}
+          </button>
+        ))}
+        <InfoTooltip text={BACKTEST_INFO} wide />
+      </div>
+
+      {/* Custom date pickers */}
+      {range === "custom" && (
+        <div className="flex items-center gap-3">
+          <div className="space-y-0.5">
+            <label className="text-xs text-slate-500">De la</label>
+            <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)}
+              className="bg-surface border border-surface-border rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-blue-500" />
+          </div>
+          <div className="space-y-0.5">
+            <label className="text-xs text-slate-500">Până la</label>
+            <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)}
+              className="bg-surface border border-surface-border rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-blue-500" />
+          </div>
+        </div>
+      )}
+
+      {/* Run button */}
       <div className="flex items-center gap-3">
         <button
           onClick={handleRun}
@@ -31,10 +100,10 @@ export function BacktestPanel({ session }: Props) {
           {isRunning ? (
             <>
               <span className="w-2.5 h-2.5 rounded-full border-2 border-white border-t-transparent animate-spin" />
-              Se ruleaza...
+              Se rulează...
             </>
           ) : (
-            <>▶ Backtest</>
+            <>▶ Rulează Backtest</>
           )}
         </button>
         {job?.status === "error" && (
@@ -42,6 +111,7 @@ export function BacktestPanel({ session }: Props) {
         )}
       </div>
 
+      {/* Results */}
       {results && (
         <div className="bg-surface rounded-xl p-4 space-y-3 border border-surface-border">
           <div className="grid grid-cols-4 gap-3">
@@ -52,11 +122,7 @@ export function BacktestPanel({ session }: Props) {
               value={`${results.expectancy >= 0 ? "+" : ""}${results.expectancy}R`}
               color={results.expectancy >= 0 ? "text-profit" : "text-loss"}
             />
-            <Stat
-              label="Max DD"
-              value={`${results.max_dd}%`}
-              color="text-warn"
-            />
+            <Stat label="Max DD" value={`${results.max_dd}%`} color="text-warn" />
           </div>
           <div className="flex gap-6 text-xs text-slate-400 border-t border-surface-border pt-2">
             <span>

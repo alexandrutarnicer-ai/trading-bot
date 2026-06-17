@@ -37,7 +37,9 @@ SPREAD_DEFAULTS = {
 }
 
 
-def _run_backtest_job(job_id: str, session_cfg: dict) -> None:
+def _run_backtest_job(job_id: str, session_cfg: dict,
+                      date_from: str | None = None,
+                      date_to: str | None = None) -> None:
     _jobs[job_id]["status"] = "running"
     try:
         with open(CONFIG, encoding="utf-8") as f:
@@ -71,6 +73,23 @@ def _run_backtest_job(job_id: str, session_cfg: dict) -> None:
         if not data:
             _jobs[job_id].update({"status": "error", "error": "Nicio piata disponibila in date CSV"})
             return
+
+        # Filtreaza intervalul de date daca e specificat
+        if date_from or date_to:
+            filtered = {}
+            for sym, df in data.items():
+                df_f = df
+                if date_from:
+                    df_f = df_f[df_f["time"] >= pd.Timestamp(date_from)]
+                if date_to:
+                    df_f = df_f[df_f["time"] <= pd.Timestamp(date_to)]
+                if len(df_f) > 100:
+                    filtered[sym] = df_f.reset_index(drop=True)
+            data = filtered
+            if not data:
+                _jobs[job_id].update({"status": "error",
+                                      "error": "Nicio piata cu date in intervalul selectat"})
+                return
 
         skip_hours = tuple(session_cfg.get("skip_hours", []))
         skip_wd    = set(session_cfg.get("skip_weekdays", []))
@@ -155,16 +174,23 @@ def _run_backtest_job(job_id: str, session_cfg: dict) -> None:
 @router.post("/run")
 def run_backtest(body: dict):
     """
-    body: { session: <session config dict from profile> }
+    body: { session: <session config dict>, date_from?: "YYYY-MM-DD", date_to?: "YYYY-MM-DD" }
     """
     session_cfg = body.get("session")
     if not session_cfg:
         raise HTTPException(400, "session lipsa in body")
 
+    date_from = body.get("date_from") or None
+    date_to   = body.get("date_to")   or None
+
     job_id = str(uuid.uuid4())[:8]
     _jobs[job_id] = {"status": "pending", "results": None, "error": None}
 
-    t = threading.Thread(target=_run_backtest_job, args=(job_id, session_cfg), daemon=True)
+    t = threading.Thread(
+        target=_run_backtest_job,
+        args=(job_id, session_cfg, date_from, date_to),
+        daemon=True,
+    )
     t.start()
 
     return {"job_id": job_id}

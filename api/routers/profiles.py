@@ -100,12 +100,11 @@ def create_profile(body: dict):
         raise HTTPException(400, "id lipsa")
     if os.path.exists(_profile_path(profile_id)):
         raise HTTPException(409, f"Profil exista deja: {profile_id}")
-    # Porneste de la standard ca template
-    template = _load_profile("standard")
-    template["id"]          = profile_id
-    template["name"]        = body.get("name", profile_id)
-    template["description"] = body.get("description", "")
-    for s in template["sessions"]:
-        s["backtest_results"] = None
-    _save_profile(template)
-    return template
+    profile = {
+        "id":          profile_id,
+        "name":        body.get("name", profile_id),
+        "description": body.get("description", ""),
+        "sessions":    [],
+    }
+    _save_profile(profile)
+    return profile
