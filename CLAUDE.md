@@ -125,20 +125,33 @@ Split train/test automat la 70%/30% din evenimente (nu din timp). `split_time` e
 ### `live/signal_generator.py` — engine-ul live
 
 Ruleaza in loop infinit la fiecare bara noua. Per iteratie:
-1. `_update_outcomes()` — verifica semnalele pending din `state.pkl` (SL/TP atins, expirare, invalidare). Anuleaza automat ordinele MT5 la expirare.
-2. `_check_signals()` — detecteaza setup-uri noi pe ultimele 3 bare (offset 3, 2, 1)
-3. `_place_order()` — plaseaza BUY_STOP/SELL_STOP in MT5. Returneaza: `int` (ticket OK), `None` (pret deja depasit — retry bara urm.), `False` (eroare MT5 reala — scoate din pending)
+1. `_is_paused()` — verifica daca sesiunea e pe pauza (`data/paused_sessions.json`)
+2. `_update_outcomes()` — verifica semnalele pending din `state.pkl` (SL/TP atins, expirare, invalidare). Anuleaza automat ordinele MT5 la expirare. **Ruleaza intotdeauna, inclusiv cand sesiunea e pe pauza.**
+3. `_check_signals()` — detecteaza setup-uri noi pe ultimele 3 bare (offset 3, 2, 1). **Sarit cand sesiunea e pe pauza.**
+4. `_place_order()` — plaseaza BUY_STOP/SELL_STOP in MT5. Returneaza: `int` (ticket OK), `None` (pret deja depasit — retry bara urm.), `False` (eroare MT5 reala — scoate din pending). **Sarit cand sesiunea e pe pauza.**
+5. `_friday_close_check()` — vineri la ora configurata, inchide pozitiile triggerate deschise printr-un ordin TRADE_ACTION_DEAL. Executa o singura data pe saptamana (tracking `state["friday_close_date"]`).
 
 **Invariant critic:** Daca `execute_trades=True` si semnalul nu are ticket MT5 (`sig_id not in state["mt5_tickets"]`), nu se marcheaza niciodata `triggered=True` din bare. `outcomes.csv` reflecta doar ordine executate real in MT5.
 
+**Pauza sesiune (`_is_paused`):**
+Citeste `data/paused_sessions.json` la fiecare iteratie. Cand sesiunea e pe pauza:
+- `_update_outcomes()` continua → pozitiile deschise sunt monitorizate pana la SL/TP
+- `_check_signals()` si retry ordine noi sunt sarite → nu se deschid pozitii noi
+- Efectul pauzei intra la bara urmatoare (max 15 min pentru M15). **Nu necesita restart bot.**
+
+**Inchidere Vineri (`_friday_close_check`):**
+Apelata dupa procesarea semnalelor, la fiecare iteratie de vineri. Parametri din `session_cfg`:
+- `friday_close_enabled` (default `True`) — dezactivat pentru S3/BTC (piata deschisa weekend)
+- `friday_close_hour` (default `20`) — ora la care se inchid pozitiile
+
 **Aplicare parametri profil activ (`_apply_profile_overrides`):**
 La pornire, `run_generator` cauta `data/active_profile_runtime.json` (scris de API la start bot). Daca exista, gaseste sesiunea dupa `session_key` si suprascrie:
-- In `session_cfg`: `pullback_window`, `session_start/end`, `skip_hours`, `skip_weekdays`, `expire_bars`, `execute_trades`, `account_fraction`, `risk_pct`, `only_long`
+- In `session_cfg`: `pullback_window`, `session_start/end`, `skip_hours`, `skip_weekdays`, `expire_bars`, `execute_trades`, `account_fraction`, `risk_pct`, `only_long`, `friday_close_enabled`, `friday_close_hour`
 - In `cfg` (strategy): RSI thresholds, EMA alignment toggle, body_strength, reward_ladder (r_base/mid/top/max si praguri)
 
 Cand botul e pornit din CLI (`python live/run_all.py`) fara profil activ, valorile hardcodate din fiecare script SESSION_CONFIG sunt folosite. Fiecare script are `"session_key": "sessionN"` pentru mapare la profil.
 
-Starea persistenta per sesiune: `state.pkl` (pending dict + counter + tickets MT5), `signals.csv` (toate semnalele), `outcomes.csv` (rezultate finale), `generator.log`.
+Starea persistenta per sesiune: `state.pkl` (pending dict + counter + tickets MT5 + friday_close_date), `signals.csv` (toate semnalele), `outcomes.csv` (rezultate finale), `generator.log`.
 
 ### `live/run_all.py` — lansator
 
@@ -165,6 +178,18 @@ Fiecare sesiune are si propriul `session.lock` (PID file per sesiune) care previ
 - `data/active_profile_runtime.json` — profilul complet activ la runtime (citit de signal_generator), sters la stop
 - `data/bot_run_log.json` — `{last_started_at, last_stopped_at}` — persistent
 - `data/backtest_history.json` — toate rezultatele backtest (max 200 intrari)
+- `data/backtest_jobs.json` — joburi backtest async (max 150, supravietuiesc restart API)
+- `data/paused_sessions.json` — lista session_id-urilor pe pauza (ex: `["session1", "session3"]`), persistent peste restart bot
+
+**Routere sessions — endpoints noi:**
+- `POST /sessions/{session_id}/pause` — adauga in `paused_sessions.json`
+- `POST /sessions/{session_id}/resume` — sterge din `paused_sessions.json`
+- `SessionStatus` include acum campul `paused: bool`
+
+**Routere backtest — endpoints:**
+- `GET /backtest/jobs` — lista tuturor joburilor (din `backtest_jobs.json`)
+- `DELETE /backtest/jobs/{job_id}` — sterge job finalizat
+- Rezultatele includ `skipped_markets` (piete fara CSV) si `final_balance`
 
 **`_pid_alive()` Windows:**
 Ambele routere `bot.py` si `sessions.py` folosesc `GetExitCodeProcess(STILL_ACTIVE=259)` in loc de doar `OpenProcess`. `OpenProcess` singur returneaza True pentru procese moarte recent (kernel object lifecycle).
@@ -197,10 +222,15 @@ Ambele routere `bot.py` si `sessions.py` folosesc `GetExitCodeProcess(STILL_ACTI
     "ema_alignment_enabled": true,
     "body_strength_enabled": false, "body_strength_min_atr_ratio": 0.15,
     "r_base": 2.5, "r_mid": 3.5, "r_top": 4.5, "r_max": 5.5,
-    "r_mid_threshold": 1, "r_top_threshold": 2, "r_max_threshold": 3
+    "r_mid_threshold": 1, "r_top_threshold": 2, "r_max_threshold": 3,
+    "friday_close_enabled": true, "friday_close_hour": 20
   }]
 }
 ```
+
+**Campuri noi in sesiune:**
+- `session_start: 0` + `session_end: 24` → sesiune Non-stop (fara restrictie de ore). Signal generator-ul deja trateaza 0-24 corect.
+- `friday_close_enabled` (bool, default `true`) + `friday_close_hour` (int 0-23, default `20`) — S3/BTC are `friday_close_enabled: false`.
 
 **Nota:** `config/standard_profile.json` este config-ul legacy folosit de backtest si de sesiunile live cand nu exista profil activ runtime. NU modifica structura — este citit de `engine/portfolio.py` si `live/signal_generator.py`. `data/profiles/standard.json` este profilul UI (acelasi continut logic, format diferit).
 
@@ -270,11 +300,25 @@ Daca numerele se schimba semnificativ → bug introdus, nu progres.
 
 **BotControl.tsx:** Buton Start/Stop. La start trimite `{ profile_id, profile_name }` din profilul selectat curent. Afiseaza timpul de la ultima pornire/oprire.
 
-**BacktestPanel.tsx:** Per sesiune profil. Capital + alocare per piata, range selector (1An/3Ani/Tot/Custom), verificare CSV → download daca lipsesc → run async → afisare rezultate + auto-save in history.
+**SessionCard.tsx:** Card per sesiune in Dashboard. Include buton Pause/Play (⏸/▶) in header. Cand pe pauza: dot galben, badge "PAUZA", stats dimmate. Butonul apeleaza `POST /sessions/{id}/pause` sau `/resume`. Nu necesita restart bot — efectul intra la bara urmatoare.
 
-**HistoryPage.tsx:** Tab dedicat pentru toate backtestele rulate. Filtru sesiune, sumar stats (exp medie, nr rulari +), tabel expandabil cu params snapshot + per-symbol breakdown.
+**BacktestPanel.tsx:** Per sesiune profil. Capital + alocare per piata, range selector (1An/3Ani/Tot/Custom), verificare CSV → download daca lipsesc → trimite job in Audit tab (nu mai afiseaza inline).
 
-**NavBar.tsx:** 3 tab-uri: Dashboard / Profile / Istoric. Istoric afiseaza badge cu numarul de rulari.
+**SessionEditor.tsx (Profile):** Editor complet per sesiune. Include:
+- Toggle Non-stop (session_start=0/session_end=24) — ascunde campurile de ora
+- Sectiune Criterii Optionale cu 4 carduri R/R (Base/Mid/Top/Max) + praguri + risk% per nivel
+- Sectiune Inchidere Vineri (friday_close_enabled + friday_close_hour)
+- Buton Pause/Play langa delete — acelasi mecanism ca Dashboard-ul, fara restart
+
+**AuditPage.tsx:** Tab Audit (fostul Istoric). Joburi backtest grupate: In rulare / Erori / Finalizate.
+- Rezultate expandabile cu tooltips (i) pentru fiecare metrica (Trades, WR, Expectancy, Max DD, Train/Test)
+- Snapshot parametri structurat pe sectiuni: Strategie, Ore sesiune, R-Ladder, Criterii optionale, Capital
+- Capital final: `CapitalSummary` — start → final + P&L absolut si procentual (verde/rosu)
+- Piete fara date CSV: afisate in per-symbol cu badge "lipsa CSV" si mesaj de instructiuni
+- Erori clasificate: no_data / no_data_range / no_trades / generic (cu stacktrace)
+- Joburile persista peste refresh pagina si restart API (`data/backtest_jobs.json`)
+
+**NavBar.tsx:** 3 tab-uri: Dashboard / Profile / Audit. Badge pe Audit: dot albastru pulsant + count cand sunt joburi in rulare, count gri cand finalizate.
 
 ---
 
