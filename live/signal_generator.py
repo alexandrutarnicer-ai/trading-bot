@@ -741,6 +741,22 @@ def _reconcile_mt5_tickets(state: dict, log) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Pauza sesiune
+# ---------------------------------------------------------------------------
+
+def _is_paused(session_key: str) -> bool:
+    """Verifica daca sesiunea e in pauza (data/paused_sessions.json)."""
+    paused_file = os.path.join(DATA_DIR, "paused_sessions.json")
+    try:
+        if os.path.exists(paused_file):
+            with open(paused_file, encoding="utf-8") as f:
+                return session_key in json.load(f)
+    except Exception:
+        pass
+    return False
+
+
+# ---------------------------------------------------------------------------
 # Vineri close — inchide pozitii triggerate la ora configurata
 # ---------------------------------------------------------------------------
 
@@ -1118,6 +1134,11 @@ def run_generator(session_cfg: dict):
             log.info(f"--- {session_cfg['session_id']} iter {iteration} "
                      f"@ {datetime.now().strftime('%H:%M:%S')} ---")
 
+            session_paused = _is_paused(session_cfg.get("session_key", ""))
+            if session_paused:
+                log.info("  [PAUZA] Sesiune in pauza — semnal checking dezactivat. "
+                         "Pozitiile deschise sunt in continuare monitorizate.")
+
             new_sigs = 0
             for market, symbol in resolved.items():
                 df = _prepare_live(
@@ -1133,6 +1154,9 @@ def run_generator(session_cfg: dict):
                                 bar_minutes=session_cfg["bar_minutes"],
                                 session_id=session_cfg.get("session_id", ""),
                                 execute_trades=session_cfg.get("execute_trades", False))
+
+                if session_paused:
+                    continue  # skip signal detection si plasare ordine noi
 
                 sigs = _check_signals(df, symbol, cfg, state, session_cfg)
                 for sig in sigs:
@@ -1216,7 +1240,7 @@ def run_generator(session_cfg: dict):
 
                 # Retry plasare pentru semnale pending fara ticket MT5 inca
                 # (order_send a returnat None la bara precedenta — eroare tranzitorie)
-                if session_cfg.get("execute_trades", False):
+                if not session_paused and session_cfg.get("execute_trades", False):
                     frac    = session_cfg.get("account_fraction")
                     capital = session_cfg.get("session_capital", 1000)
                     if frac and _mt5_exec is not None:

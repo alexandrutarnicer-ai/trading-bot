@@ -20,6 +20,7 @@ class SessionStatus(BaseModel):
     outcomes_total: int
     wins: int
     losses: int
+    paused: bool = False
 
 
 class Signal(BaseModel):

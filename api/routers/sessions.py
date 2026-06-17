@@ -1,4 +1,5 @@
 import os
+import json
 import ctypes
 from datetime import date, datetime
 from typing import Optional
@@ -10,6 +11,26 @@ from api.config import DATA_DIR, SESSIONS, SESSION_MAP
 from api.models import SessionStatus, Signal, Outcome, EquityCurvePoint
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
+
+PAUSED_FILE = os.path.join(DATA_DIR, "paused_sessions.json")
+
+
+def _load_paused() -> set[str]:
+    try:
+        if os.path.exists(PAUSED_FILE):
+            with open(PAUSED_FILE, encoding="utf-8") as f:
+                return set(json.load(f))
+    except Exception:
+        pass
+    return set()
+
+
+def _save_paused(paused: set[str]) -> None:
+    try:
+        with open(PAUSED_FILE, "w", encoding="utf-8") as f:
+            json.dump(sorted(paused), f)
+    except Exception:
+        pass
 
 
 def _pid_alive(pid: int) -> bool:
@@ -94,6 +115,7 @@ def _outcome_stats(session_id: str) -> dict:
 
 @router.get("", response_model=list[SessionStatus])
 def list_sessions():
+    paused = _load_paused()
     result = []
     for s in SESSIONS:
         running, pid = _session_running(s["id"])
@@ -117,8 +139,29 @@ def list_sessions():
             outcomes_total=out["total"],
             wins=out["wins"],
             losses=out["losses"],
+            paused=s["id"] in paused,
         ))
     return result
+
+
+@router.post("/{session_id}/pause")
+def pause_session(session_id: str):
+    if session_id not in SESSION_MAP:
+        raise HTTPException(404, f"Sesiune necunoscuta: {session_id}")
+    paused = _load_paused()
+    paused.add(session_id)
+    _save_paused(paused)
+    return {"ok": True, "session_id": session_id, "paused": True}
+
+
+@router.post("/{session_id}/resume")
+def resume_session(session_id: str):
+    if session_id not in SESSION_MAP:
+        raise HTTPException(404, f"Sesiune necunoscuta: {session_id}")
+    paused = _load_paused()
+    paused.discard(session_id)
+    _save_paused(paused)
+    return {"ok": True, "session_id": session_id, "paused": False}
 
 
 @router.get("/{session_id}/signals", response_model=list[Signal])

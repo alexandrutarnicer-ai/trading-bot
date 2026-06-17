@@ -229,6 +229,46 @@ function ResultsGrid({ r }: { r: BacktestResult }) {
   );
 }
 
+// ── Capital summary ───────────────────────────────────────────────────────────
+
+function CapitalSummary({ start, final: fin }: { start: number; final: number }) {
+  const pnl    = fin - start;
+  const pnlPct = start > 0 ? (pnl / start) * 100 : 0;
+  const pos    = pnl >= 0;
+
+  return (
+    <div className="mt-3 flex items-center gap-3 px-3 py-2.5 rounded-lg bg-surface border border-surface-border">
+      <div className="flex-1 text-center">
+        <div className="text-[9px] text-slate-500 uppercase tracking-wider mb-0.5">Capital inițial</div>
+        <div className="text-sm font-mono font-semibold text-slate-300">
+          {start.toLocaleString("ro-RO", { maximumFractionDigits: 0 })} USD
+        </div>
+      </div>
+
+      <div className="text-slate-600 text-xs">→</div>
+
+      <div className="flex-1 text-center">
+        <div className="text-[9px] text-slate-500 uppercase tracking-wider mb-0.5">Capital final</div>
+        <div className={`text-sm font-mono font-semibold ${pos ? "text-profit" : "text-loss"}`}>
+          {fin.toLocaleString("ro-RO", { maximumFractionDigits: 0 })} USD
+        </div>
+      </div>
+
+      <div className="w-px h-8 bg-surface-border" />
+
+      <div className="flex-1 text-center">
+        <div className="text-[9px] text-slate-500 uppercase tracking-wider mb-0.5">P&L</div>
+        <div className={`text-sm font-mono font-semibold ${pos ? "text-profit" : "text-loss"}`}>
+          {pos ? "+" : ""}{pnl.toLocaleString("ro-RO", { maximumFractionDigits: 0 })} USD
+        </div>
+        <div className={`text-[10px] ${pos ? "text-profit/70" : "text-loss/70"}`}>
+          {pos ? "+" : ""}{pnlPct.toFixed(1)}%
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Job row ───────────────────────────────────────────────────────────────────
 
 function JobRow({
@@ -442,6 +482,11 @@ function JobRow({
           <div>
             <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-2">Rezultate</div>
             <ResultsGrid r={r} />
+
+            {/* Capital final */}
+            {r.final_balance != null && (
+              <CapitalSummary start={r.start_balance} final={r.final_balance} />
+            )}
           </div>
 
           {/* Per-symbol */}

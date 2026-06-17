@@ -238,6 +238,8 @@ def _run_backtest_job(
                 "expectancy": round(float(sub["R"].mean()), 3),
             }
 
+        final_balance = float(eq_arr[-1]) if len(eq_arr) else start_balance
+
         _update_job(job_id,
             status="done",
             completed_at=datetime.now().isoformat(timespec="seconds"),
@@ -250,6 +252,7 @@ def _run_backtest_job(
                 "date_from":    data_from_actual,
                 "date_to":      data_to_actual,
                 "start_balance": start_balance,
+                "final_balance": round(final_balance, 2),
                 "train": {
                     "trades":     len(train),
                     "expectancy": round(float(train["R"].mean()), 3) if len(train) else 0,

@@ -154,6 +154,26 @@ export const useDownloadJob = (jobId: string | null) =>
         : false,
   });
 
+// ── Session pause/resume ─────────────────────────────────────────────────────
+
+export const usePauseSession = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (sessionId: string) =>
+      apiFetch(`/sessions/${sessionId}/pause`, { method: "POST" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["sessions"] }),
+  });
+};
+
+export const useResumeSession = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (sessionId: string) =>
+      apiFetch(`/sessions/${sessionId}/resume`, { method: "POST" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["sessions"] }),
+  });
+};
+
 // ── Bot start/stop ──────────────────────────────────────────────────────────
 
 export const useStartBot = () => {

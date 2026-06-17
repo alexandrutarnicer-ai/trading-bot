@@ -36,6 +36,7 @@ export interface SessionStatus {
   outcomes_total: number;
   wins: number;
   losses: number;
+  paused: boolean;
 }
 
 export interface Signal {
@@ -148,6 +149,7 @@ export interface BacktestResult {
   date_from: string | null;
   date_to: string | null;
   start_balance: number;
+  final_balance?: number;
   train: { trades: number; expectancy: number };
   test: { trades: number; expectancy: number };
   per_symbol: Record<string, { trades: number; win_rate: number; expectancy: number }>;
