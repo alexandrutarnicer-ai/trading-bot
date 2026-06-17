@@ -1,6 +1,13 @@
 import { useState } from "react";
 import { Power } from "lucide-react";
 import { useAutostartStatus, useAutostartEnable, useAutostartDisable } from "../api/hooks";
+import { InfoTooltip } from "./InfoTooltip";
+
+const AUTOSTART_TIP =
+  "Pornire automată Windows: la fiecare login, MT5 și botul " +
+  "pornesc automat fără intervenție manuală. " +
+  "Activarea/dezactivarea necesită drepturi de Administrator (prompt UAC).";
+
 
 export function AutostartToggle() {
   const { data, isLoading } = useAutostartStatus();
@@ -35,24 +42,26 @@ export function AutostartToggle() {
   }
 
   return (
-    <button
-      onClick={() => {
-        if (enabled) {
-          setConfirm(true);
-        } else {
-          enable.mutate();
-        }
-      }}
-      disabled={pending}
-      title={enabled ? "Autostart activ — click pentru dezactivare" : "Autostart inactiv — click pentru activare (necesita Administrator)"}
-      className={`flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-lg border transition-colors disabled:opacity-50 ${
-        enabled
-          ? "border-profit/40 text-profit/80 hover:border-profit hover:text-profit"
-          : "border-surface-border text-slate-500 hover:border-slate-500 hover:text-slate-300"
-      }`}
-    >
-      <Power size={11} />
-      <span>Autostart {enabled ? "ON" : "OFF"}</span>
-    </button>
+    <div className="flex items-center">
+      <button
+        onClick={() => {
+          if (enabled) {
+            setConfirm(true);
+          } else {
+            enable.mutate();
+          }
+        }}
+        disabled={pending}
+        className={`flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-lg border transition-colors disabled:opacity-50 ${
+          enabled
+            ? "border-profit/40 text-profit/80 hover:border-profit hover:text-profit"
+            : "border-surface-border text-slate-500 hover:border-slate-500 hover:text-slate-300"
+        }`}
+      >
+        <Power size={11} />
+        <span>Autostart {enabled ? "ON" : "OFF"}</span>
+      </button>
+      <InfoTooltip text={AUTOSTART_TIP} position="below" wide />
+    </div>
   );
 }
