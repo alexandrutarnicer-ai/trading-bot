@@ -13,6 +13,7 @@ interface Props {
   onJobStarted?: () => void;
   paused?: boolean;
   onPauseToggle?: () => void;
+  onSaveAndNavigate?: () => void;
 }
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
@@ -44,7 +45,7 @@ const TIPS = {
   friday_close:  "Vineri la ora configurată, toate pozițiile deschise (triggerate) sunt închise automat printr-un ordin la piață. Dezactivează pentru sesiunile crypto — BTC tranzacționează și în weekend.",
 };
 
-export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted, paused, onPauseToggle }: Props) {
+export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted, paused, onPauseToggle, onSaveAndNavigate }: Props) {
   const [open, setOpen]           = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [showMt5Search, setShowMt5Search] = useState(false);
@@ -455,7 +456,11 @@ export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted,
 
           {/* Backtest */}
           <Section label="Backtest">
-            <BacktestPanel session={session} onJobStarted={onJobStarted} />
+            <BacktestPanel
+              session={session}
+              onJobStarted={onJobStarted}
+              onSaveAndNavigate={onSaveAndNavigate}
+            />
           </Section>
         </div>
       )}

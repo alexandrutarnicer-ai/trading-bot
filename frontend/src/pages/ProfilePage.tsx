@@ -344,6 +344,7 @@ export function ProfilePage({ onNavigateToAudit }: { onNavigateToAudit: () => vo
                 session={session}
                 meta={meta}
                 onJobStarted={onNavigateToAudit}
+                onSaveAndNavigate={async () => { await handleSave(); onNavigateToAudit(); }}
                 onChange={(updated) => handleSessionChange(idx, updated)}
                 onRemove={() => handleSessionRemove(idx)}
                 paused={isPaused}

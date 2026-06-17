@@ -8,7 +8,8 @@ import type { DataCheckResult, ProfileSession } from "../api/types";
 
 interface Props {
   session: ProfileSession;
-  onJobStarted?: () => void;
+  onJobStarted?: () => void;        // navighează la Audit fără să salveze
+  onSaveAndNavigate?: () => void;   // salvează profilul + navighează la Audit
 }
 
 type Range = "1y" | "3y" | "all" | "custom";
@@ -38,7 +39,7 @@ type Phase =
   | "error"
   | "submitted";
 
-export function BacktestPanel({ session, onJobStarted }: Props) {
+export function BacktestPanel({ session, onJobStarted, onSaveAndNavigate }: Props) {
   const [phase, setPhase]       = useState<Phase>("idle");
   const [range, setRange]       = useState<Range>("all");
   const [startBalance, setStartBalance] = useState(1000);
@@ -105,8 +106,8 @@ export function BacktestPanel({ session, onJobStarted }: Props) {
     if (dlJob.status === "done")   setPhase("download_done");
     if (dlJob.status === "error") { setPhaseError(dlJob.error); setPhase("error"); }
   }
-  // Sync backtest job phase — doar daca onJobStarted nu e disponibil (fallback inline)
-  if (btJobId && btJob && phase === "running" && !onJobStarted) {
+  // Sync backtest job phase — doar in modul inline (fara Audit tab)
+  if (btJobId && btJob && phase === "running" && !onJobStarted && !onSaveAndNavigate) {
     if (btJob.status === "done")  setPhase("done");
     if (btJob.status === "error") { setPhaseError(btJob.error as string | null); setPhase("error"); }
   }
@@ -168,12 +169,8 @@ export function BacktestPanel({ session, onJobStarted }: Props) {
         },
       }) as { job_id: string };
       setBtJobId(res.job_id);
-      if (onJobStarted) {
-        onJobStarted();
-        reset();
-      } else {
-        setPhase("submitted");
-      }
+      // Nu redirectionam automat — afisam starea "submitted" cu butoane de actiune
+      setPhase("submitted");
     } catch (e: unknown) {
       setPhaseError(e instanceof Error ? e.message : "Eroare");
       setPhase("error");
@@ -323,18 +320,65 @@ export function BacktestPanel({ session, onJobStarted }: Props) {
         </div>
       )}
 
-      {/* ── IDLE / DONE / SUBMITTED ── */}
-      {(phase === "idle" || phase === "done" || phase === "submitted") && (
-        <div className="flex items-center gap-3 flex-wrap">
-          <button onClick={handleRun}
-            className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium rounded-lg bg-blue-600 hover:bg-blue-500 transition-colors">
-            ▶ Rulează Backtest
-          </button>
-          {phase === "submitted" && (
-            <span className="text-xs text-blue-400">
-              Job trimis → vezi rezultatele în tab-ul Audit
-            </span>
+      {/* ── IDLE / DONE ── */}
+      {(phase === "idle" || phase === "done") && (
+        <button onClick={handleRun}
+          className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium rounded-lg bg-blue-600 hover:bg-blue-500 transition-colors">
+          ▶ Rulează Backtest
+        </button>
+      )}
+
+      {/* ── SUBMITTED — job trimis, ramane pe pagina ── */}
+      {phase === "submitted" && (
+        <div className="rounded-xl border border-blue-500/30 bg-blue-500/5 p-3 space-y-2.5">
+          {/* Status job */}
+          <div className="flex items-center gap-2">
+            {btJob?.status === "done" ? (
+              <span className="text-[11px] font-medium text-profit">✓ Backtest finalizat</span>
+            ) : btJob?.status === "error" ? (
+              <span className="text-[11px] font-medium text-loss">✗ Backtest eșuat — vezi Audit</span>
+            ) : (
+              <>
+                <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse flex-shrink-0" />
+                <span className="text-[11px] text-blue-400 font-medium">Backtest în progres în Audit...</span>
+              </>
+            )}
+          </div>
+
+          {/* Avertisment modificari nesalvate */}
+          {onSaveAndNavigate && (
+            <p className="text-[10px] text-slate-500 leading-relaxed">
+              Modificările din sesiune sunt <strong className="text-slate-400">nesalvate</strong>.
+              Salvează înainte să vizionezi rezultatele, altfel configurația din Audit
+              poate diferi de ce ai testat.
+            </p>
           )}
+
+          {/* Butoane */}
+          <div className="flex flex-wrap gap-2">
+            {onSaveAndNavigate && (
+              <button
+                onClick={onSaveAndNavigate}
+                className="text-xs px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 transition-colors font-medium"
+              >
+                Salvează și mergi la Audit
+              </button>
+            )}
+            {onJobStarted && (
+              <button
+                onClick={() => { reset(); onJobStarted(); }}
+                className="text-xs px-3 py-1.5 rounded-lg border border-surface-border text-slate-400 hover:text-white transition-colors"
+              >
+                Mergi la Audit fără să salvezi
+              </button>
+            )}
+            <button
+              onClick={reset}
+              className="text-xs px-3 py-1.5 rounded-lg border border-surface-border text-slate-400 hover:text-white transition-colors"
+            >
+              Rulează alt backtest
+            </button>
+          </div>
         </div>
       )}
 
