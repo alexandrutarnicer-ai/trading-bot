@@ -152,6 +152,29 @@ def start_bot(body: Optional[dict] = Body(default=None)):
     profile_name = body.get("profile_name") or "Standard"
     _save_active_profile(profile_id, profile_name)
 
+    # Trimite notificare Telegram cu profilul si sesiunile active
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+    def _notify_start():
+        lines = [f"Bot Trading <b>pornit</b>  {now_str}", f"Profil: <b>{profile_name}</b>"]
+        try:
+            with open(RUNTIME_PROFILE_FILE, encoding="utf-8") as f:
+                profile_data = json.load(f)
+            sessions = profile_data.get("sessions", [])
+            if sessions:
+                lines.append("")
+                for s in sessions:
+                    sid       = s.get("id", "?")
+                    markets   = ", ".join(s.get("markets", []))
+                    direction = s.get("direction", "?")
+                    etf       = s.get("entry_tf", "?")
+                    label     = s.get("label", "")
+                    name_part = f"{label} " if label else ""
+                    lines.append(f"• <b>{sid}</b> {name_part}— {markets} | {etf} | {direction}")
+        except Exception:
+            pass
+        tg.send_message("\n".join(lines))
+    threading.Thread(target=_notify_start, daemon=True).start()
+
     return {"started": True, "pid": proc.pid, "profile_id": profile_id}
 
 
