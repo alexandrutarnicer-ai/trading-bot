@@ -3,21 +3,47 @@ import type { Outcome } from "../api/types";
 
 interface Props {
   sessionId: string;
+  balanceUsd?: number | null;
+  capitalPct?: number;
 }
 
-function statusBadge(o: Outcome) {
-  if (o.status === "TP") return <span className="text-[10px] font-bold text-profit">+{o.r_ratio}R TP</span>;
-  if (o.status === "SL") return <span className="text-[10px] font-bold text-loss">-1R SL</span>;
-  if (o.status === "expirat") return <span className="text-[10px] text-slate-500">expirat</span>;
+function statusBadge(o: Outcome, riskUsd: number | null) {
+  const usd = riskUsd !== null
+    ? (n: number) => ` (${n >= 0 ? "+" : ""}${n.toFixed(0)} USD)`
+    : () => "";
+
+  if (o.status === "TP") {
+    const gain = riskUsd !== null ? o.result_r * riskUsd : null;
+    return (
+      <span className="text-[10px] font-bold text-profit">
+        +{o.r_ratio}R TP{gain !== null ? <span className="font-normal opacity-75">{usd(gain)}</span> : null}
+      </span>
+    );
+  }
+  if (o.status === "SL") {
+    const loss = riskUsd !== null ? -riskUsd : null;
+    return (
+      <span className="text-[10px] font-bold text-loss">
+        -1R SL{loss !== null ? <span className="font-normal opacity-75">{usd(loss)}</span> : null}
+      </span>
+    );
+  }
+  if (o.status === "expirat")  return <span className="text-[10px] text-slate-500">expirat</span>;
   if (o.status === "invalidat") return <span className="text-[10px] text-warn">invalidat</span>;
   return <span className="text-[10px] text-slate-500">{o.status}</span>;
 }
 
-export function SignalFeed({ sessionId }: Props) {
+export function SignalFeed({ sessionId, balanceUsd, capitalPct }: Props) {
   const { data: signals, isLoading: loadSig } = useSignals(sessionId);
   const { data: outcomes } = useOutcomes(sessionId);
 
   const outcomeMap = new Map((outcomes ?? []).map(o => [o.signal_id, o]));
+
+  // Risc per trade in USD: balance × capitalPct% × 1% risc
+  const riskUsd: number | null =
+    balanceUsd && capitalPct
+      ? balanceUsd * (capitalPct / 100) * 0.01
+      : null;
 
   if (loadSig) {
     return (
@@ -50,7 +76,7 @@ export function SignalFeed({ sessionId }: Props) {
             className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-surface-border/20 hover:bg-surface-border/40 transition-colors"
           >
             {/* Direction badge */}
-            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded flex-shrink-0 ${
               isLong ? "bg-profit/20 text-profit" : "bg-loss/20 text-loss"
             }`}>
               {sig.dir_str}
@@ -70,7 +96,7 @@ export function SignalFeed({ sessionId }: Props) {
             {/* R ratio + outcome */}
             <div className="text-right flex-shrink-0">
               <div className="text-xs text-slate-400">{sig.r_ratio}R</div>
-              {outcome ? statusBadge(outcome) : (
+              {outcome ? statusBadge(outcome, riskUsd) : (
                 <span className="text-[10px] text-slate-600">pending</span>
               )}
             </div>

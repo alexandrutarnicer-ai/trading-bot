@@ -16,6 +16,7 @@ from backtest import DATA_DIR
 
 SESSION_CONFIG = {
     "session_id":   "S1-M15-LONG",
+    "session_key":  "session1",     # cheie profil UI
     "description":  "M15 LONG PW=8 | best edge backtested | +0.375R test",
 
     # Piete

@@ -33,6 +33,7 @@ from backtest import DATA_DIR
 
 SESSION_CONFIG = {
     "session_id":   "S6-US30-M15",
+    "session_key":  "session6",
     "description":  (
         "US30 M15+M30 | LONG | PW=10 | 13-21h UTC | skipMon | "
         "test=+0.2349R p=0.1508 8/10yr+ DD=-16.1% | scan_comprehensive 2026-06-12"

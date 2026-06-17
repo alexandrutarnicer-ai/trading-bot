@@ -13,8 +13,10 @@ from api import telegram as tg
 
 router = APIRouter(prefix="/bot", tags=["bot"])
 
-ACTIVE_PROFILE_FILE = os.path.join(DATA_DIR, "active_profile.json")
-RUN_LOG_FILE        = os.path.join(DATA_DIR, "bot_run_log.json")
+ACTIVE_PROFILE_FILE   = os.path.join(DATA_DIR, "active_profile.json")
+RUNTIME_PROFILE_FILE  = os.path.join(DATA_DIR, "active_profile_runtime.json")
+RUN_LOG_FILE          = os.path.join(DATA_DIR, "bot_run_log.json")
+PROFILES_DIR          = os.path.join(ROOT, "data", "profiles")
 
 
 def _pid_alive(pid: int) -> bool:
@@ -53,12 +55,27 @@ def _save_active_profile(profile_id: str, profile_name: str) -> None:
     with open(ACTIVE_PROFILE_FILE, "w", encoding="utf-8") as f:
         json.dump({"id": profile_id, "name": profile_name, "started_at": now}, f)
     _update_run_log(last_started_at=now)
+    # Scrie profilul complet in fisierul runtime pe care il citesc sesiunile live
+    profile_path = os.path.join(PROFILES_DIR, f"{profile_id}.json")
+    if os.path.exists(profile_path):
+        try:
+            with open(profile_path, encoding="utf-8") as f:
+                profile_data = json.load(f)
+            with open(RUNTIME_PROFILE_FILE, "w", encoding="utf-8") as f:
+                json.dump(profile_data, f, indent=2, ensure_ascii=False)
+        except Exception:
+            pass
 
 
 def _clear_active_profile() -> None:
     try:
         if os.path.exists(ACTIVE_PROFILE_FILE):
             os.remove(ACTIVE_PROFILE_FILE)
+    except Exception:
+        pass
+    try:
+        if os.path.exists(RUNTIME_PROFILE_FILE):
+            os.remove(RUNTIME_PROFILE_FILE)
     except Exception:
         pass
     _update_run_log(last_stopped_at=datetime.now().isoformat())

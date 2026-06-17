@@ -24,6 +24,7 @@ from backtest import DATA_DIR
 
 SESSION_CONFIG = {
     "session_id":   "S2-M15-BOTH",
+    "session_key":  "session2",
     "description":  "M15 BOTH PW=6 | JPY 02-10h UTC | USDJPY/AUDJPY/NZDJPY | EUR pairs -> S1",
 
     # Piete — doar JPY pairs sesiune asiatica (EUR pairs mutate in S1 pentru a evita overlap)

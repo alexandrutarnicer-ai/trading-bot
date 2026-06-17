@@ -36,6 +36,7 @@ else:
 
 SESSION_CONFIG = {
     "session_id":   "S3-BTC-BOTH",
+    "session_key":  "session3",
     "description":  "BTC M15 BOTH | crypto sesiune | +0.336R test p=0.0075 | 2.4/sapt",
 
     # Piete

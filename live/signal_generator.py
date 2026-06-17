@@ -741,6 +741,82 @@ def _reconcile_mt5_tickets(state: dict, log) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Aplicare parametri profil activ
+# ---------------------------------------------------------------------------
+
+def _apply_profile_overrides(session_cfg: dict, cfg: dict, log) -> None:
+    """
+    Daca botul a fost pornit din UI cu un profil, aplica parametrii profilului
+    peste session_cfg (ore, PW, execute) si cfg (RSI, EMA, R-ladder).
+    Fara fisier de profil activ → no-op (valorile hardcodate raman).
+    """
+    runtime_file = os.path.join(DATA_DIR, "active_profile_runtime.json")
+    if not os.path.exists(runtime_file):
+        return
+    try:
+        with open(runtime_file, encoding="utf-8") as f:
+            profile = json.load(f)
+    except Exception as e:
+        log.warning(f"  [PROFIL] Nu pot citi {runtime_file}: {e}")
+        return
+
+    key = session_cfg.get("session_key")
+    if not key:
+        return
+
+    ps = next((s for s in profile.get("sessions", []) if s.get("session_key") == key), None)
+    if ps is None:
+        log.info(f"  [PROFIL] Sesiunea '{key}' nu e in profil — parametri hardcodati.")
+        return
+
+    # --- parametri sesiune (session_cfg) ---
+    for field in ("pullback_window", "session_start", "session_end",
+                  "expire_bars", "execute_trades", "account_fraction", "risk_pct"):
+        if field in ps:
+            session_cfg[field] = ps[field]
+
+    if "skip_hours" in ps:
+        session_cfg["skip_hours"] = tuple(ps["skip_hours"])
+    if "skip_weekdays" in ps:
+        skip_wd = set(ps["skip_weekdays"])
+        session_cfg["skip_weekdays"] = skip_wd
+        # compatibilitate skip_monday
+        session_cfg["skip_monday"] = 0 in skip_wd
+
+    if "direction" in ps:
+        session_cfg["only_long"] = ps["direction"] == "LONG"
+
+    # --- parametri strategie (cfg) ---
+    if ps.get("rsi_enabled") is not None:
+        cfg["optional_criteria"]["rsi"]["enabled"] = ps["rsi_enabled"]
+    for rsi_key in ("buy_min", "buy_max", "sell_min", "sell_max"):
+        prof_key = f"rsi_{rsi_key}"
+        if prof_key in ps:
+            cfg["optional_criteria"]["rsi"][rsi_key] = ps[prof_key]
+
+    if ps.get("ema_alignment_enabled") is not None:
+        cfg["optional_criteria"]["ema_alignment"]["enabled"] = ps["ema_alignment_enabled"]
+
+    if ps.get("body_strength_enabled") is not None:
+        cfg["optional_criteria"].setdefault("body_strength", {})
+        cfg["optional_criteria"]["body_strength"]["enabled"] = ps["body_strength_enabled"]
+    if "body_strength_min_atr_ratio" in ps:
+        cfg["optional_criteria"].setdefault("body_strength", {})
+        cfg["optional_criteria"]["body_strength"]["min_atr_ratio"] = ps["body_strength_min_atr_ratio"]
+
+    rl = cfg["reward_ladder"]
+    if "r_base" in ps: rl["rr_if_3_criteria"] = ps["r_base"]
+    if "r_mid"  in ps: rl["rr_if_4_criteria"] = ps["r_mid"]
+    if "r_top"  in ps: rl["rr_if_5_criteria"] = ps["r_top"]
+    if "r_max"  in ps: rl["rr_if_6_criteria"] = ps["r_max"]
+    if "r_mid_threshold" in ps: rl["threshold_mid"] = ps["r_mid_threshold"]
+    if "r_top_threshold" in ps: rl["threshold_top"] = ps["r_top_threshold"]
+    if "r_max_threshold" in ps: rl["threshold_max"] = ps["r_max_threshold"]
+
+    log.info(f"  [PROFIL] Profil '{profile.get('name', '?')}' aplicat pe {key}.")
+
+
+# ---------------------------------------------------------------------------
 # Engine principal
 # ---------------------------------------------------------------------------
 
@@ -838,6 +914,9 @@ def run_generator(session_cfg: dict):
     with open(CONFIG, encoding="utf-8") as f:
         cfg = json.load(f)
     cfg["optional_criteria"]["rsi"]["sell_max"] = 60  # RSI simetric pentru SELL
+
+    # Aplica parametrii din profilul activ (daca botul a fost pornit din UI)
+    _apply_profile_overrides(session_cfg, cfg, log)
 
     log.info("=" * 65)
     log.info(f"  {session_cfg['session_id']} — {session_cfg['description']}")

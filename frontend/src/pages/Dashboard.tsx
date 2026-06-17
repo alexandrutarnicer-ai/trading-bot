@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { RefreshCw } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useSessions, useBotStatus } from "../api/hooks";
+import { useSessions, useBotStatus, useMt5Status } from "../api/hooks";
 import { BotStatusBar } from "../components/BotStatusBar";
 import { SessionCard } from "../components/SessionCard";
 import { SignalFeed } from "../components/SignalFeed";
@@ -10,6 +10,7 @@ import { EquityChart } from "../components/EquityChart";
 export function Dashboard() {
   const { data: sessions, isLoading, dataUpdatedAt } = useSessions();
   const { data: botStatus } = useBotStatus();
+  const { data: mt5 } = useMt5Status();
   const [selectedSession, setSelectedSession] = useState<string>("session3");
   const [now, setNow] = useState(Date.now());
   const qc = useQueryClient();
@@ -31,14 +32,44 @@ export function Dashboard() {
     qc.invalidateQueries();
   }
 
+  const profileLabel = botStatus?.active_profile_name ?? "Standard";
+
   return (
-    <div className="p-4 md:p-6 space-y-6">
+    <div className="p-4 md:p-6 space-y-5">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <p className="text-xs text-slate-500">
-          {botStatus?.active_profile_name ?? "Standard"} Profile
-        </p>
-        <div className="flex items-center gap-3">
+      <div className="flex items-center justify-between gap-4">
+        {/* Stanga: profil + cont MT5 */}
+        <div className="flex items-center gap-4 flex-wrap">
+          <span className="text-sm font-semibold text-white">{profileLabel} Profile</span>
+          {mt5?.connected && (
+            <div className="flex items-center gap-3 text-xs text-slate-400 bg-surface-card border border-surface-border rounded-lg px-3 py-1.5">
+              <span className="text-slate-500">Cont</span>
+              <span className="font-mono text-white">{mt5.account}</span>
+              {mt5.server && <span className="text-slate-600">· {mt5.server}</span>}
+              <span className="w-px h-3 bg-surface-border" />
+              <span className="text-slate-500">Balance</span>
+              <span className="font-mono text-white font-medium">
+                {mt5.balance?.toLocaleString("ro-RO", { maximumFractionDigits: 2 })} {mt5.currency}
+              </span>
+              <span className="text-slate-500">Equity</span>
+              <span className={`font-mono font-medium ${
+                mt5.equity !== null && mt5.balance !== null
+                  ? mt5.equity >= mt5.balance ? "text-profit" : "text-loss"
+                  : "text-white"
+              }`}>
+                {mt5.equity?.toLocaleString("ro-RO", { maximumFractionDigits: 2 })} {mt5.currency}
+              </span>
+            </div>
+          )}
+          {mt5 && !mt5.connected && (
+            <span className="text-[10px] text-slate-600 bg-surface-card border border-surface-border rounded px-2 py-1">
+              MT5 deconectat
+            </span>
+          )}
+        </div>
+
+        {/* Dreapta: bot status + timer + refresh */}
+        <div className="flex items-center gap-3 flex-shrink-0">
           <BotStatusBar />
           {updateLabel && (
             <span className="text-[10px] text-slate-600 tabular-nums">
@@ -104,7 +135,11 @@ export function Dashboard() {
               ))}
             </div>
           </div>
-          <SignalFeed sessionId={selectedSession} />
+          <SignalFeed
+            sessionId={selectedSession}
+            balanceUsd={mt5?.connected ? mt5.balance : null}
+            capitalPct={selected?.capital_pct}
+          />
         </div>
 
         {/* Equity chart + stats */}
@@ -126,8 +161,8 @@ export function Dashboard() {
                 {
                   label: "Win Rate",
                   value: (() => {
-                    const wins   = sessions?.reduce((a, s) => a + s.wins, 0) ?? 0;
-                    const total  = sessions?.reduce((a, s) => a + s.outcomes_total, 0) ?? 0;
+                    const wins  = sessions?.reduce((a, s) => a + s.wins, 0) ?? 0;
+                    const total = sessions?.reduce((a, s) => a + s.outcomes_total, 0) ?? 0;
                     return total > 0 ? `${Math.round(wins / total * 100)}%` : "—";
                   })(),
                 },

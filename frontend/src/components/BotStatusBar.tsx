@@ -21,18 +21,7 @@ export function BotStatusBar() {
             <span className="relative inline-flex rounded-full h-2 w-2 bg-profit" />
           </span>
           <Activity size={13} className="flex-shrink-0" />
-          <span>Bot activ</span>
-          {data?.active_profile_name && (
-            <>
-              <span className="opacity-30">·</span>
-              <span className="text-profit/80 font-semibold text-xs">
-                {data.active_profile_name}
-              </span>
-            </>
-          )}
-          <span className="opacity-40 font-normal text-xs">
-            — {data?.sessions_active} sesiuni
-          </span>
+          <span>Bot activ — {data?.sessions_active} sesiuni</span>
           {data?.pid && (
             <span className="opacity-30 font-normal text-xs">PID {data.pid}</span>
           )}

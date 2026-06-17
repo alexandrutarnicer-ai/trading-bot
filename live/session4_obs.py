@@ -25,6 +25,7 @@ from backtest import DATA_DIR
 
 SESSION_CONFIG = {
     "session_id":   "S4-DEMO",
+    "session_key":  "session4",
     "description":  (
         "GER40 09-14h | LONG only | DEMO | "
         "p=0.045 pre-Bonferroni | re-test Dec 2026 | US30 -> S6"

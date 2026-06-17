@@ -62,7 +62,7 @@ SESSIONS = [
         "tf":        "H1",
         "hours":     "07–17h UTC",
         "validated": False,
-        "execute":   False,
+        "execute":   True,
         "capital_pct": 0,
     },
     {
