@@ -32,6 +32,8 @@ sys.path.insert(0, ROOT)
 
 from backtest import DATA_DIR
 
+PID_FILE = os.path.join(DATA_DIR, "run_all.pid")
+
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
@@ -87,6 +89,45 @@ SESSIONS = [
 ]
 
 STATUS_INTERVAL = 300   # afiseaza status la fiecare 5 minute
+
+
+def _kill_old_instance() -> None:
+    """Ucide instanta run_all deja pornita, impreuna cu toate sesiunile copil."""
+    if not os.path.exists(PID_FILE):
+        return
+    try:
+        with open(PID_FILE) as f:
+            old_pid = int(f.read().strip())
+    except (ValueError, OSError):
+        try:
+            os.remove(PID_FILE)
+        except OSError:
+            pass
+        return
+
+    if old_pid == os.getpid():
+        return
+
+    print(f"\n  [!] Instanta anterioara detectata (PID={old_pid}). Inchid procesul si sesiunile...")
+    result = subprocess.run(
+        ["taskkill", "/F", "/T", "/PID", str(old_pid)],
+        capture_output=True, text=True,
+    )
+    if result.returncode == 0:
+        print(f"  [+] PID={old_pid} oprit cu succes. Astept 3s curatare...")
+        _send_telegram(
+            f"⚠️ <b>Trading Bot repornit</b>  {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
+            f"Instanta anterioara (PID={old_pid}) a fost inchisa automat."
+        )
+        time.sleep(3)
+    else:
+        # Procesul nu mai era activ — PID file ramas din sesiune anterioara
+        print(f"  [~] PID={old_pid} nu mai era activ (bot era deja oprit).")
+
+    try:
+        os.remove(PID_FILE)
+    except OSError:
+        pass
 
 
 def _load_dotenv() -> None:
@@ -189,6 +230,12 @@ def _print_status(sp_list):
 # ---------------------------------------------------------------------------
 
 def main():
+    _kill_old_instance()
+
+    os.makedirs(DATA_DIR, exist_ok=True)
+    with open(PID_FILE, "w") as f:
+        f.write(str(os.getpid()))
+
     sep = "=" * 74
     print(sep)
     print("  TRADING BOT  —  LANSARE SESIUNI")
@@ -247,6 +294,10 @@ def main():
             except subprocess.TimeoutExpired:
                 proc.kill()
         print("  Toate sesiunile oprite.\n")
+        try:
+            os.remove(PID_FILE)
+        except OSError:
+            pass
         sys.exit(0)
 
     signal.signal(signal.SIGINT,  _stop_all)
