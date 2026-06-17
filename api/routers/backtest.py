@@ -50,12 +50,25 @@ def _run_backtest_job(job_id: str, session_cfg: dict,
         cfg["reward_ladder"]["rr_if_3_criteria"]  = session_cfg["r_base"]
         cfg["reward_ladder"]["rr_if_4_criteria"]  = session_cfg["r_mid"]
         cfg["reward_ladder"]["rr_if_5_criteria"]  = session_cfg["r_top"]
+        if "r_max" in session_cfg:
+            cfg["reward_ladder"]["rr_if_6_criteria"] = session_cfg["r_max"]
         cfg["optional_criteria"]["rsi"]["enabled"]   = session_cfg["rsi_enabled"]
         cfg["optional_criteria"]["rsi"]["buy_min"]   = session_cfg["rsi_buy_min"]
         cfg["optional_criteria"]["rsi"]["buy_max"]   = session_cfg["rsi_buy_max"]
         cfg["optional_criteria"]["rsi"]["sell_min"]  = session_cfg["rsi_sell_min"]
         cfg["optional_criteria"]["rsi"]["sell_max"]  = session_cfg["rsi_sell_max"]
         cfg["optional_criteria"]["ema_alignment"]["enabled"] = session_cfg["ema_alignment_enabled"]
+        # Criteriu 3: corp lumanare — dezactivat implicit
+        cfg["optional_criteria"]["body_strength"] = {
+            "enabled":       session_cfg.get("body_strength_enabled", False),
+            "min_atr_ratio": session_cfg.get("body_strength_min_atr_ratio", 0.15),
+        }
+        # Praguri configurabile la nivelul sesiunii
+        cfg["reward_ladder"]["threshold_mid"] = session_cfg.get("r_mid_threshold", 1)
+        cfg["reward_ladder"]["threshold_top"] = session_cfg.get("r_top_threshold", 2)
+        cfg["reward_ladder"]["threshold_max"] = session_cfg.get("r_max_threshold", 3)
+        if "r_max" in session_cfg:
+            cfg["reward_ladder"]["rr_if_6_criteria"] = session_cfg["r_max"]
 
         src = CsvDataSource(DATA_DIR)
         data = {}

@@ -21,10 +21,19 @@
     "alternatives": ["close_above_ema8"]
   },
   "stop_loss": { "place_beyond_pullback_swing": true, "extra_buffer_points": 0 },
-  "reward_ladder": { "rr_if_3_criteria": 2.5, "rr_if_4_criteria": 3.5, "rr_if_5_criteria": 4.5 },
+  "reward_ladder": {
+    "rr_if_3_criteria": 2.5,
+    "rr_if_4_criteria": 3.5,
+    "rr_if_5_criteria": 4.5,
+    "rr_if_6_criteria": 5.5,
+    "threshold_mid": 1,
+    "threshold_top": 2,
+    "threshold_max": 3
+  },
   "optional_criteria": {
     "rsi": { "enabled": true, "period": 14, "buy_min": 40, "buy_max": 65, "sell_min": 35, "sell_max": 50 },
-    "ema_alignment": { "enabled": true, "periods": [8, 20, 50] }
+    "ema_alignment": { "enabled": true, "periods": [8, 20, 50] },
+    "body_strength": { "enabled": false, "min_atr_ratio": 0.15 }
   },
   "risk_management": { "max_trades_per_day": 10, "max_consecutive_losses": 4 },
   "news_filter": { "enabled": true, "pause_minutes_before": 30, "pause_minutes_after": 30 },

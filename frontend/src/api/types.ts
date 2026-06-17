@@ -90,6 +90,7 @@ export interface ProfileSession {
   risk_base: number;
   risk_mid: number;
   risk_top: number;
+  risk_max: number;
   execute_trades: boolean;
   rsi_enabled: boolean;
   rsi_buy_min: number;
@@ -97,11 +98,17 @@ export interface ProfileSession {
   rsi_sell_min: number;
   rsi_sell_max: number;
   ema_alignment_enabled: boolean;
+  body_strength_enabled: boolean;
+  body_strength_min_atr_ratio: number;
   atr_max_pips: Record<string, number>;
   circuit_breaker: number;
   r_base: number;
   r_mid: number;
   r_top: number;
+  r_max: number;
+  r_mid_threshold: number;
+  r_top_threshold: number;
+  r_max_threshold: number;
   backtest_results: BacktestResult | null;
 }
 

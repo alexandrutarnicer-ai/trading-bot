@@ -23,9 +23,10 @@ const TIPS = {
   direction:     "LONG = doar cumpărări; SHORT = doar vânzări; BOTH = ambele direcții.",
   pullback_window: "Numărul maxim de bare în care se caută un pullback valid după un Higher High. Valori mici = setup-uri mai stricte.",
   expire_bars:   "Ordinul pending se anulează automat după N bare dacă nu a fost triggerat.",
-  criteria:      "Criterii opționale care cresc R/R-ul. 0 active → R-base; 1 activ → R-mid; 2 active → R-top. Ambele sunt independente — le poți activa pe oricare.",
+  criteria:      "3 criterii opționale care cresc R/R-ul. Fiecare nivel R are un prag configurabil (La ≥ N criterii). Praguri default: R-mid la ≥1, R-top la ≥2, R-max la ≥3. Criteriile sunt independente — activează oricare combinație.",
   rsi:           "RSI filtrează entry-urile în zone de supraCumpărare/supraVânzare. Gama recomandată: buy 40–65, sell 35–60.",
   ema:           "EMA8 > EMA20 > EMA50 pe TF de intrare — confirmă că trendul de scurt termen e aliniat cu cel de mediu termen.",
+  body_strength: "Corp lumânare: bara de intrare trebuie să aibă un corp (close−open) mai mare decât ATR × ratio în direcția trade-ului. Confirmă că breakout-ul are impuls. Dezactivat implicit. Ratio recomandat: 0.10–0.25.",
   circuit_breaker: "Oprește tranzacționarea după N pierderi consecutive în aceeași zi. Repornește la miezul nopții.",
   risk_pct:      "Procentul din equity riscat per tranzacție. Equity-ul este citit din MT5 la fiecare ordin.",
   execute_trades: [
@@ -75,8 +76,23 @@ export function SessionEditor({ session, meta, onChange, onRemove, startBalance 
   };
 
   // Calcul impact criterii opționale
-  const activeCriteria = [session.rsi_enabled, session.ema_alignment_enabled].filter(Boolean).length;
-  const currentR = [session.r_base, session.r_mid, session.r_top][activeCriteria] ?? session.r_top;
+  const activeCriteria = [
+    session.rsi_enabled,
+    session.ema_alignment_enabled,
+    session.body_strength_enabled ?? false,
+  ].filter(Boolean).length;
+
+  const tMid = session.r_mid_threshold ?? 1;
+  const tTop = session.r_top_threshold ?? 2;
+  const tMax = session.r_max_threshold ?? 3;
+  const getR = (n: number): number => {
+    if (n >= tMax) return session.r_max ?? 5.5;
+    if (n >= tTop) return session.r_top;
+    if (n >= tMid) return session.r_mid;
+    return session.r_base;
+  };
+  const currentR = getR(activeCriteria);
+  const activeCard = activeCriteria >= tMax ? 3 : activeCriteria >= tTop ? 2 : activeCriteria >= tMid ? 1 : 0;
 
   const dirBadgeColor = {
     LONG:  "bg-profit/20 text-profit",
@@ -233,39 +249,49 @@ export function SessionEditor({ session, meta, onChange, onRemove, startBalance 
                 ))}
               </div>
               <span className="text-xs text-slate-400">
-                {activeCriteria}/2 active →{" "}
+                {activeCriteria}/3 active →{" "}
                 <span className="font-semibold text-white">{currentR}R</span>
               </span>
             </div>
 
-            {/* Scală R/R + Risk */}
-            <div className="grid grid-cols-3 gap-2 mb-3">
+            {/* 4 carduri R/R cu thresholds */}
+            <div className="grid grid-cols-4 gap-2 mb-3">
               {([
-                { n: 0, label: "0 criterii", rField: "r_base" as const, riskField: "risk_base" as const },
-                { n: 1, label: "1 criteriu",  rField: "r_mid"  as const, riskField: "risk_mid"  as const },
-                { n: 2, label: "2 criterii",  rField: "r_top"  as const, riskField: "risk_top"  as const },
-              ] as const).map(({ n, label, rField, riskField }) => (
-                <div key={n} className={`rounded-lg p-2 border transition-colors ${
-                  activeCriteria === n
+                { cardIdx: 0, label: "Base",   rField: "r_base" as const, riskField: "risk_base" as const, tField: null,                  tDefault: 0 },
+                { cardIdx: 1, label: "Mid",    rField: "r_mid"  as const, riskField: "risk_mid"  as const, tField: "r_mid_threshold" as const, tDefault: 1 },
+                { cardIdx: 2, label: "Top",    rField: "r_top"  as const, riskField: "risk_top"  as const, tField: "r_top_threshold" as const, tDefault: 2 },
+                { cardIdx: 3, label: "Max",    rField: "r_max"  as const, riskField: "risk_max"  as const, tField: "r_max_threshold" as const, tDefault: 3 },
+              ] as const).map(({ cardIdx, label, rField, riskField, tField, tDefault }) => (
+                <div key={cardIdx} className={`rounded-lg p-2 border transition-colors ${
+                  activeCard === cardIdx
                     ? "border-blue-500 bg-blue-500/10"
                     : "border-surface-border bg-surface-border/20"
                 }`}>
-                  <div className="text-xs text-slate-500 text-center mb-1">{label}</div>
+                  <div className="text-[10px] text-slate-500 text-center mb-1.5 font-medium uppercase tracking-wider">{label}</div>
                   <div className="space-y-1">
                     <div>
-                      <div className="text-[10px] text-slate-600 text-center">Reward R</div>
+                      <div className="text-[9px] text-slate-600 text-center">Reward R</div>
                       <input type="number" step={0.5} min={1}
-                        value={session[rField]}
+                        value={session[rField] ?? (rField === "r_max" ? 5.5 : 2.5)}
                         onChange={(e) => upd({ [rField]: Number(e.target.value) })}
                         className="w-full bg-transparent text-center text-sm font-bold text-white focus:outline-none" />
                     </div>
                     <div className="border-t border-surface-border/50 pt-1">
-                      <div className="text-[10px] text-slate-600 text-center">Risk %</div>
+                      <div className="text-[9px] text-slate-600 text-center">Risk %</div>
                       <input type="number" step={0.1} min={0.1} max={10}
-                        value={+((session[riskField] ?? session.risk_pct) * 100).toFixed(2)}
+                        value={+((session[riskField] ?? session.risk_pct ?? 0.01) * 100).toFixed(2)}
                         onChange={(e) => upd({ [riskField]: Number(e.target.value) / 100 })}
                         className="w-full bg-transparent text-center text-xs font-semibold text-slate-300 focus:outline-none" />
                     </div>
+                    {tField && (
+                      <div className="border-t border-surface-border/50 pt-1">
+                        <div className="text-[9px] text-slate-600 text-center">La ≥ cr.</div>
+                        <input type="number" step={1} min={1} max={3}
+                          value={session[tField] ?? tDefault}
+                          onChange={(e) => upd({ [tField]: Number(e.target.value) })}
+                          className="w-full bg-transparent text-center text-[11px] text-slate-400 focus:outline-none" />
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
@@ -274,7 +300,7 @@ export function SessionEditor({ session, meta, onChange, onRemove, startBalance 
             {/* Criteriu 1 — RSI */}
             <div className="border border-surface-border rounded-lg p-3 space-y-2">
               <div className="flex items-center gap-2">
-                <Toggle label="RSI Filter" value={session.rsi_enabled}
+                <Toggle label="1. RSI Filter" value={session.rsi_enabled}
                   onChange={(v) => upd({ rsi_enabled: v })} />
                 <InfoTooltip text={TIPS.rsi} />
               </div>
@@ -295,10 +321,26 @@ export function SessionEditor({ session, meta, onChange, onRemove, startBalance 
             {/* Criteriu 2 — EMA */}
             <div className="border border-surface-border rounded-lg p-3">
               <div className="flex items-center gap-2">
-                <Toggle label="EMA Alignment (EMA8 > EMA20 > EMA50)" value={session.ema_alignment_enabled}
+                <Toggle label="2. EMA Alignment (EMA8 > EMA20 > EMA50)" value={session.ema_alignment_enabled}
                   onChange={(v) => upd({ ema_alignment_enabled: v })} />
                 <InfoTooltip text={TIPS.ema} />
               </div>
+            </div>
+
+            {/* Criteriu 3 — Corp lumânare */}
+            <div className="border border-surface-border rounded-lg p-3 space-y-2">
+              <div className="flex items-center gap-2">
+                <Toggle label="3. Corp Lumânare (Body Strength)" value={session.body_strength_enabled ?? false}
+                  onChange={(v) => upd({ body_strength_enabled: v })} />
+                <InfoTooltip text={TIPS.body_strength} />
+              </div>
+              {(session.body_strength_enabled ?? false) && (
+                <div className="pt-1 max-w-[160px]">
+                  <NumField label="ATR ratio min" step={0.05}
+                    value={session.body_strength_min_atr_ratio ?? 0.15}
+                    onChange={(v) => upd({ body_strength_min_atr_ratio: v })} />
+                </div>
+              )}
             </div>
           </Section>
 
