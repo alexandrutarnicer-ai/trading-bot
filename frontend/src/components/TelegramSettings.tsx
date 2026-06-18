@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useTelegramConfig, useSaveTelegram, useClearTelegram } from "../api/hooks";
+import { useTelegramConfig, useSaveTelegram, useClearTelegram, useTestTelegram } from "../api/hooks";
 import { InfoTooltip } from "./InfoTooltip";
 
 const TG_GUIDE = [
@@ -29,12 +29,16 @@ export function TelegramSettings() {
   const save  = useSaveTelegram();
   const clear = useClearTelegram();
 
-  const [open, setOpen]         = useState(false);
+  const test  = useTestTelegram();
+
+  const [open, setOpen]           = useState(false);
   const [showGuide, setShowGuide] = useState(false);
-  const [token, setToken]       = useState("");
-  const [chatId, setChatId]     = useState("");
-  const [saved, setSaved]       = useState(false);
-  const [error, setError]       = useState<string | null>(null);
+  const [token, setToken]         = useState("");
+  const [chatId, setChatId]       = useState("");
+  const [saved, setSaved]         = useState(false);
+  const [error, setError]         = useState<string | null>(null);
+  const [testOk, setTestOk]       = useState<boolean | null>(null);
+  const [testErr, setTestErr]     = useState<string | null>(null);
 
   const handleSave = async () => {
     setError(null);
@@ -53,6 +57,20 @@ export function TelegramSettings() {
   const handleClear = async () => {
     await clear.mutateAsync();
     setSaved(false);
+    setTestOk(null);
+    setTestErr(null);
+  };
+
+  const handleTest = async () => {
+    setTestOk(null);
+    setTestErr(null);
+    try {
+      await test.mutateAsync();
+      setTestOk(true);
+      setTimeout(() => setTestOk(null), 5000);
+    } catch (e: unknown) {
+      setTestErr(e instanceof Error ? e.message : "Eroare la trimitere");
+    }
   };
 
   return (
@@ -76,23 +94,48 @@ export function TelegramSettings() {
         <div className="border-t border-surface-border px-4 py-4 space-y-4">
           {/* Status curent */}
           {cfg?.configured && (
-            <div className="bg-profit/10 border border-profit/20 rounded-lg p-3 flex items-center justify-between">
-              <div className="text-xs space-y-0.5">
-                <div className="text-slate-300 font-medium">Telegram configurat</div>
-                <div className="text-slate-500">
-                  Token: <span className="text-slate-400 font-mono">{cfg.token_masked}</span>
+            <div className="bg-profit/10 border border-profit/20 rounded-lg p-3 space-y-2.5">
+              <div className="flex items-start justify-between gap-3">
+                <div className="text-xs space-y-0.5">
+                  <div className="text-slate-300 font-medium">Telegram configurat</div>
+                  <div className="text-slate-500">
+                    Token: <span className="text-slate-400 font-mono">{cfg.token_masked}</span>
+                  </div>
+                  <div className="text-slate-500">
+                    Chat ID: <span className="text-slate-400 font-mono">{cfg.chat_id}</span>
+                  </div>
                 </div>
-                <div className="text-slate-500">
-                  Chat ID: <span className="text-slate-400 font-mono">{cfg.chat_id}</span>
-                </div>
+                <button
+                  onClick={handleClear}
+                  disabled={clear.isPending}
+                  className="text-xs px-2.5 py-1 rounded border border-loss/40 text-loss/70 hover:border-loss hover:text-loss transition-colors flex-shrink-0"
+                >
+                  Șterge
+                </button>
               </div>
-              <button
-                onClick={handleClear}
-                disabled={clear.isPending}
-                className="text-xs px-2.5 py-1 rounded border border-loss/40 text-loss/70 hover:border-loss hover:text-loss transition-colors"
-              >
-                Șterge
-              </button>
+
+              {/* Test button row */}
+              <div className="flex items-center gap-3 pt-0.5 border-t border-profit/10">
+                <button
+                  onClick={handleTest}
+                  disabled={test.isPending}
+                  className="text-xs px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 transition-colors font-medium flex items-center gap-1.5"
+                >
+                  {test.isPending ? (
+                    <><span className="animate-spin inline-block">⟳</span> Se trimite...</>
+                  ) : (
+                    <>📨 Trimite mesaj de test</>
+                  )}
+                </button>
+                {testOk === true && (
+                  <span className="text-xs text-profit flex items-center gap-1">
+                    ✓ Mesaj trimis — verifică Telegram
+                  </span>
+                )}
+                {testErr && (
+                  <span className="text-xs text-loss">{testErr}</span>
+                )}
+              </div>
             </div>
           )}
 

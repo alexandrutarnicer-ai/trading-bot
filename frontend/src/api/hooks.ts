@@ -264,6 +264,11 @@ export const useClearTelegram = () => {
   });
 };
 
+export const useTestTelegram = () =>
+  useMutation({
+    mutationFn: () => apiFetch("/settings/telegram/test", { method: "POST" }),
+  });
+
 // ── Backtest jobs (Audit) ────────────────────────────────────────────────────
 
 export const useBacktestJobs = () =>

@@ -1,10 +1,14 @@
 """
-GET    /api/settings/telegram  — citeste config Telegram (token mascat)
-PUT    /api/settings/telegram  — salveaza token + chat_id
-DELETE /api/settings/telegram  — sterge configuratia
+GET    /api/settings/telegram       — citeste config Telegram (token mascat)
+PUT    /api/settings/telegram       — salveaza token + chat_id
+DELETE /api/settings/telegram       — sterge configuratia
+POST   /api/settings/telegram/test  — trimite mesaj de test
 """
 import os
 import json
+import urllib.request
+import urllib.error
+from datetime import datetime
 from fastapi import APIRouter, HTTPException
 from api.config import DATA_DIR
 
@@ -52,3 +56,39 @@ def clear_telegram():
     if os.path.exists(TG_FILE):
         os.remove(TG_FILE)
     return {"ok": True}
+
+
+@router.post("/telegram/test")
+def test_telegram():
+    cfg     = _load()
+    token   = cfg.get("token", "").strip()
+    chat_id = cfg.get("chat_id", "").strip()
+    if not token or not chat_id:
+        raise HTTPException(400, "Telegram nu este configurat — salvează token-ul și Chat ID-ul mai întâi.")
+
+    now  = datetime.now().strftime("%d %b %Y, %H:%M:%S")
+    text = (
+        "🤖 *Trading Bot — Test conexiune*\n\n"
+        "✅ Notificările Telegram funcționează corect\\!\n\n"
+        f"📅 Data: {now}"
+    )
+
+    url  = f"https://api.telegram.org/bot{token}/sendMessage"
+    data = json.dumps({"chat_id": chat_id, "text": text, "parse_mode": "MarkdownV2"}).encode()
+    req  = urllib.request.Request(url, data=data,
+                                  headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            result = json.loads(resp.read())
+        if not result.get("ok"):
+            raise HTTPException(502, f"Telegram API error: {result.get('description', 'unknown')}")
+        return {"ok": True}
+    except urllib.error.HTTPError as e:
+        body = e.read().decode(errors="replace")
+        try:
+            detail = json.loads(body).get("description", body)
+        except Exception:
+            detail = body
+        raise HTTPException(502, f"Telegram API error: {detail}")
+    except urllib.error.URLError as e:
+        raise HTTPException(502, f"Conexiune eșuată: {e.reason}")
