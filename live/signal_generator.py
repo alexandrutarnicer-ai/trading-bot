@@ -450,19 +450,31 @@ def _check_mt5_position_closed(ticket: int, p: dict, log) -> dict | None:
         return None
 
     # Nu e nici pending nici deschisa — cautam in history deals
+    # In netting mode ticket pozitie == ticket ordin; in hedging mode pot diferi
     deals = _mt5_exec.history_deals_get(position=ticket)
     if not deals:
-        # Verifica daca ordinul a fost anulat/respins in MT5 fara sa se execute
         hist_orders = _mt5_exec.history_orders_get(ticket=ticket)
         if hist_orders:
             order = hist_orders[0]
-            # ORDER_STATE: CANCELED=2, REJECTED=4, EXPIRED=6
-            if order.state in (2, 4, 6):
+            # ORDER_STATE: CANCELED=2, REJECTED=5, EXPIRED=6  (FILLED=4 nu e orfan)
+            if order.state in (2, 5, 6):
                 log.warning(
                     f"  [MT5] Ordin #{ticket} anulat/respins in MT5 "
                     f"(state={order.state}) — scos din tracking fara outcome"
                 )
                 return {"__no_outcome__": True}
+            # Hedging mode: position_id poate diferi de order ticket (ordin executat)
+            pos_id = getattr(order, "position_id", None)
+            if pos_id and pos_id != ticket:
+                # Pozitia inca deschisa in hedging mode
+                if _mt5_exec.positions_get(ticket=pos_id):
+                    return None
+                deals = _mt5_exec.history_deals_get(position=pos_id)
+                if deals:
+                    log.info(
+                        f"  [MT5] Hedging mode: ordin #{ticket} → pozitie #{pos_id}"
+                    )
+    if not deals:
         return None
 
     close_deal = next(
