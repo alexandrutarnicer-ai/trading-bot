@@ -5,17 +5,18 @@ interface Props {
   sessions: SessionStatus[];
 }
 
-function Trend({ today, yesterday }: { today: number; yesterday: number }) {
-  if (yesterday === 0 && today === 0) return null;
-  if (yesterday === 0)
-    return <span className="text-[10px] text-profit ml-1">▲ nou</span>;
+function TodayYest({ today, yesterday }: { today: number; yesterday: number }) {
+  if (today === 0 && yesterday === 0) return null;
   const delta = today - yesterday;
-  if (delta === 0)
-    return <span className="text-[10px] text-slate-500 ml-1">= ieri {yesterday}</span>;
+  const arrow = delta > 0 ? "▲" : delta < 0 ? "▼" : null;
+  const arrowColor = delta > 0 ? "text-profit" : "text-warn";
   return (
-    <span className={`text-[10px] ml-1 ${delta > 0 ? "text-profit" : "text-warn"}`}>
-      {delta > 0 ? "▲" : "▼"} {Math.abs(delta)} vs ieri
-    </span>
+    <div className="flex items-center gap-1 mt-1 text-[10px]">
+      <span className="text-slate-400">Azi: <strong className="text-slate-200">{today}</strong></span>
+      <span className="text-slate-600">/</span>
+      <span className="text-slate-500">Ieri: {yesterday}</span>
+      {arrow && <span className={`${arrowColor} font-medium`}>{arrow}</span>}
+    </div>
   );
 }
 
@@ -46,10 +47,7 @@ function StatCard({ label, value, sub, today, yesterday, accent = "text-white", 
       <div className={`text-2xl font-bold font-mono tabular-nums ${accent}`}>{value.toLocaleString()}</div>
       {sub && <div className="text-[10px] text-slate-600 mt-0.5">{sub}</div>}
       {today !== undefined && yesterday !== undefined && (
-        <div className="flex items-center mt-1">
-          <span className="text-xs text-slate-400">{today} azi</span>
-          <Trend today={today} yesterday={yesterday} />
-        </div>
+        <TodayYest today={today} yesterday={yesterday} />
       )}
     </button>
   );
@@ -129,11 +127,12 @@ export function TradingStatsPanel({ sessions }: Props) {
                     <span className="text-xs text-slate-300 font-medium">{s.label}</span>
                     <span className="text-[10px] text-slate-600 truncate">{s.markets.join(" · ")}</span>
                   </div>
-                  <div className="flex items-center gap-3 text-xs text-right">
-                    <span className="text-slate-300 font-mono tabular-nums">{val}</span>
-                    <span className="text-slate-500 text-[10px]">
-                      {tday} azi
-                      {tyes > 0 && <span className="ml-1 text-slate-600">/ {tyes} ieri</span>}
+                  <div className="flex items-center gap-3 text-[10px] text-right flex-shrink-0">
+                    <span className="text-slate-300 font-mono tabular-nums text-xs font-medium">{val} total</span>
+                    <span className="text-slate-500">
+                      Azi: <strong className="text-slate-300">{tday}</strong>
+                      <span className="text-slate-600 mx-1">/</span>
+                      Ieri: {tyes}
                     </span>
                   </div>
                 </div>
