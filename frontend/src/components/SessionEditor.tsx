@@ -125,7 +125,7 @@ function RRDiagram({ session, mt5Connected }: { session: ProfileSession; mt5Conn
     mt5Connected && session.markets.length > 0,
   );
 
-  const unit   = 24;
+  const unit   = 32;   // 32px per 1R — suficient pentru 2 linii text per nivel
   const pTop   = 28;
   const pBot   = 22;
   const pLeft  = 62;
@@ -189,13 +189,13 @@ function RRDiagram({ session, mt5Connected }: { session: ProfileSession; mt5Conn
           <g key={r}>
             <line x1={pLeft} y1={y} x2={pLeft + lineW} y2={y}
               stroke={color} strokeWidth={1} strokeDasharray="4 3" />
-            <text x={pLeft + lineW + 5} y={y + 4} fontSize={9} fill={color} fontWeight="600">
-              {r}R
+            {/* Linia 1: "4.5R  1.2%" pe acelasi rand */}
+            <text x={pLeft + lineW + 5} y={y + 5}>
+              <tspan fontSize={9} fill={color} fontWeight="700">{r}R</tspan>
+              <tspan fontSize={8} fill={color} fillOpacity={0.8}> · {(risk * 100).toFixed(1)}%</tspan>
             </text>
-            <text x={pLeft + lineW + 5} y={y + 13} fontSize={8} fill={color} fillOpacity={0.75}>
-              {(risk * 100).toFixed(1)}% risc
-            </text>
-            <text x={pLeft + lineW + 5} y={y + 22} fontSize={7.5} fill="#475569">
+            {/* Linia 2: threshold */}
+            <text x={pLeft + lineW + 5} y={y + 16} fontSize={7.5} fill="#475569">
               {thr}
             </text>
           </g>
