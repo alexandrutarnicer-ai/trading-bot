@@ -1,4 +1,4 @@
-import { useBacktestJobs } from "../api/hooks";
+import { useBacktestJobs, useDownloadJobs } from "../api/hooks";
 import { AutostartToggle } from "./AutostartToggle";
 
 type Tab = "dashboard" | "profile" | "audit";
@@ -15,10 +15,14 @@ const TABS: { id: Tab; label: string }[] = [
 ];
 
 export function NavBar({ active, onChange }: Props) {
-  const { data: jobs } = useBacktestJobs();
+  const { data: btJobs } = useBacktestJobs();
+  const { data: dlJobs } = useDownloadJobs();
 
-  const runningCount = jobs?.filter(j => j.status === "pending" || j.status === "running").length ?? 0;
-  const totalCount   = jobs?.length ?? 0;
+  const runningCount = (
+    (btJobs?.filter(j => j.status === "pending" || j.status === "running").length ?? 0) +
+    (dlJobs?.filter(j => j.status === "pending" || j.status === "running").length ?? 0)
+  );
+  const totalCount = (btJobs?.length ?? 0) + (dlJobs?.length ?? 0);
 
   return (
     <header className="sticky top-0 z-10 bg-surface border-b border-surface-border flex items-center gap-6 px-6 h-12">

@@ -229,6 +229,7 @@ export interface DataCheckResult {
 
 export interface DownloadFileResult {
   symbol: string;
+  mt5_symbol: string | null;
   tf: string;
   success: boolean;
   bars: number;
@@ -237,7 +238,13 @@ export interface DownloadFileResult {
 }
 
 export interface DownloadJob {
+  job_id: string;
   status: "pending" | "running" | "done" | "error";
+  label: string;
+  markets: string[];
+  timeframes: string[];
+  started_at: string;
+  completed_at: string | null;
   results: DownloadFileResult[];
   any_needs_scroll: boolean;
   error: string | null;

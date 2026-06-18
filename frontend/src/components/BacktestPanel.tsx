@@ -8,8 +8,9 @@ import type { DataCheckResult, ProfileSession } from "../api/types";
 
 interface Props {
   session: ProfileSession;
-  onJobStarted?: () => void;        // navighează la Audit fără să salveze
-  onSaveAndNavigate?: () => void;   // salvează profilul + navighează la Audit
+  onJobStarted?: () => void;        // navighează la Audit fără să salveze (backtest)
+  onSaveAndNavigate?: () => void;   // salvează profilul + navighează la Audit (backtest)
+  onDownloadStarted?: () => void;   // navighează la Audit după pornire descărcare
 }
 
 type Range = "1y" | "3y" | "all" | "custom";
@@ -33,13 +34,14 @@ type Phase =
   | "checking"
   | "needs_download"
   | "downloading"
+  | "dl_submitted"
   | "download_done"
   | "running"
   | "done"
   | "error"
   | "submitted";
 
-export function BacktestPanel({ session, onJobStarted, onSaveAndNavigate }: Props) {
+export function BacktestPanel({ session, onJobStarted, onSaveAndNavigate, onDownloadStarted }: Props) {
   const [phase, setPhase]       = useState<Phase>("idle");
   const [range, setRange]       = useState<Range>("all");
   const [startBalance, setStartBalance] = useState(1000);
@@ -207,12 +209,14 @@ export function BacktestPanel({ session, onJobStarted, onSaveAndNavigate }: Prop
   };
 
   const handleDownload = async () => {
-    const tfs = [...new Set([session.entry_tf, session.trend_tf])];
+    const tfs   = [...new Set([session.entry_tf, session.trend_tf])];
+    const label = `${session.id} — ${session.markets.join(" · ")} — ${tfs.join("+")}`;
     setDlJobId(null);
     setPhase("downloading");
     try {
-      const res = await startDl.mutateAsync({ markets: session.markets, timeframes: tfs });
+      const res = await startDl.mutateAsync({ markets: session.markets, timeframes: tfs, label });
       setDlJobId(res.job_id);
+      setPhase("dl_submitted");
     } catch (e: unknown) {
       setPhaseError(e instanceof Error ? e.message : "Eroare la descărcare");
       setPhase("error");
@@ -377,6 +381,32 @@ export function BacktestPanel({ session, onJobStarted, onSaveAndNavigate }: Prop
               className="text-xs px-3 py-1.5 rounded-lg border border-surface-border text-slate-400 hover:text-white transition-colors"
             >
               Rulează alt backtest
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── DL SUBMITTED — descărcare pornita, merge la Audit ── */}
+      {phase === "dl_submitted" && (
+        <div className="rounded-xl border border-blue-500/30 bg-blue-500/5 p-3 space-y-2.5">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse flex-shrink-0" />
+            <span className="text-[11px] text-blue-400 font-medium">Descărcarea datelor rulează în Audit...</span>
+          </div>
+          <div className="flex gap-2">
+            {onDownloadStarted && (
+              <button
+                onClick={() => { reset(); onDownloadStarted(); }}
+                className="text-xs px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 transition-colors font-medium"
+              >
+                Mergi la Audit
+              </button>
+            )}
+            <button
+              onClick={reset}
+              className="text-xs px-3 py-1.5 rounded-lg border border-surface-border text-slate-400 hover:text-white transition-colors"
+            >
+              Înapoi
             </button>
           </div>
         </div>

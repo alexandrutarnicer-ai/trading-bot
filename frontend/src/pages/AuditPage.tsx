@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { ClipboardList, Trash2, ChevronDown, ChevronRight, X, AlertTriangle } from "lucide-react";
-import { useBacktestJobs, useDeleteBacktestJob } from "../api/hooks";
-import type { BacktestJob, BacktestResult } from "../api/types";
+import { ClipboardList, Trash2, ChevronDown, ChevronRight, X, AlertTriangle, Download } from "lucide-react";
+import { useBacktestJobs, useDeleteBacktestJob, useDownloadJobs, useDeleteDownloadJob } from "../api/hooks";
+import type { BacktestJob, BacktestResult, DownloadJob, DownloadFileResult } from "../api/types";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -558,6 +558,127 @@ function SnapBadge({ label, value }: { label: string; value: string }) {
   );
 }
 
+// ── Download job row ─────────────────────────────────────────────────────────
+
+function dlStatusDot(status: DownloadJob["status"]) {
+  if (status === "running" || status === "pending")
+    return <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse flex-shrink-0" />;
+  if (status === "error")
+    return <span className="w-2 h-2 rounded-full bg-loss flex-shrink-0" />;
+  return <span className="w-2 h-2 rounded-full bg-profit flex-shrink-0" />;
+}
+
+function DownloadJobRow({ job, onDelete }: { job: DownloadJob; onDelete: (id: string) => void }) {
+  const [expanded, setExpanded] = useState(false);
+  const isActive  = job.status === "pending" || job.status === "running";
+  const anyFailed = job.results.some(r => !r.success);
+  const allOk     = job.results.length > 0 && job.results.every(r => r.success);
+  const dur       = duration(job.started_at, job.completed_at);
+
+  return (
+    <div className="border border-surface-border rounded-xl overflow-hidden">
+      {/* Summary row */}
+      <div
+        className={`flex items-center gap-3 px-4 py-3 transition-colors ${
+          !isActive ? "cursor-pointer hover:bg-surface-border/10" : ""
+        }`}
+        onClick={() => !isActive && setExpanded(e => !e)}
+      >
+        {/* Expand chevron */}
+        <span className="text-slate-500 flex-shrink-0 w-4">
+          {!isActive && (
+            expanded
+              ? <ChevronDown size={14} />
+              : <ChevronRight size={14} />
+          )}
+        </span>
+
+        {dlStatusDot(job.status)}
+
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs font-medium text-white truncate">{job.label}</span>
+            <span className="text-[10px] text-slate-500">{job.timeframes.join("+")}</span>
+          </div>
+          {isActive && (
+            <span className="text-[10px] text-blue-400">descărcare în progres...</span>
+          )}
+          {job.status === "error" && job.error && (
+            <span className="text-[10px] text-loss">{job.error}</span>
+          )}
+          {job.status === "done" && (
+            <span className={`text-[10px] ${allOk ? "text-profit" : anyFailed ? "text-warn" : "text-slate-500"}`}>
+              {allOk
+                ? `${job.results.length} fișiere descărcate`
+                : `${job.results.filter(r => r.success).length}/${job.results.length} fișiere OK${job.any_needs_scroll ? " · unele necesită scroll MT5" : ""}`
+              }
+            </span>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2 text-[10px] text-slate-600 flex-shrink-0">
+          {dur && <span>{dur}</span>}
+          <span>{fmtTs(job.started_at)}</span>
+          {!isActive && (
+            <button
+              onClick={(e) => { e.stopPropagation(); if (confirm("Șterge această descărcare din audit?")) onDelete(job.job_id); }}
+              className="p-1 text-slate-600 hover:text-loss transition-colors rounded"
+            >
+              <Trash2 size={12} />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Expanded results */}
+      {expanded && job.results.length > 0 && (
+        <div className="border-t border-surface-border/40 px-4 py-3 space-y-2">
+          {/* Group by symbol */}
+          {Array.from(new Set(job.results.map(r => r.symbol))).map(sym => {
+            const rows: DownloadFileResult[] = job.results.filter(r => r.symbol === sym);
+            const mt5sym = rows.find(r => r.mt5_symbol)?.mt5_symbol;
+            const alias = mt5sym && mt5sym !== sym ? mt5sym : null;
+            return (
+              <div key={sym} className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium text-slate-300">{sym}</span>
+                  {alias && (
+                    <span className="text-[10px] text-slate-500 bg-surface-border/40 rounded px-1.5 py-0.5">
+                      MT5: {alias}
+                    </span>
+                  )}
+                  {rows.every(r => r.error?.includes("nu există")) && (
+                    <span className="text-[10px] text-loss">simbol inexistent în MT5</span>
+                  )}
+                </div>
+                {rows.map((r, i) => (
+                  <div key={i} className="flex items-center gap-2 text-xs pl-3">
+                    <span className={r.success ? "text-profit" : r.needs_scroll ? "text-warn" : "text-loss"}>
+                      {r.success ? "✓" : r.needs_scroll ? "⚠" : "✗"}
+                    </span>
+                    <span className="text-slate-500 font-mono">{r.tf}</span>
+                    {r.success
+                      ? <span className="text-slate-400">{r.bars.toLocaleString()} bare</span>
+                      : <span className="text-slate-500 italic">{r.error}</span>
+                    }
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+
+          {job.any_needs_scroll && (
+            <div className="mt-2 p-2.5 rounded-lg bg-warn/10 border border-warn/30 text-xs text-warn">
+              ⚠ Unele timeframe-uri nu au date — deschide MT5, derulează graficul complet spre stânga,
+              apoi reîncearcă descărcarea din Profile.
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export function AuditPage() {
@@ -565,9 +686,15 @@ export function AuditPage() {
   const deleteJob = useDeleteBacktestJob();
   const [errorJob, setErrorJob] = useState<BacktestJob | null>(null);
 
+  const { data: dlJobs } = useDownloadJobs();
+  const deleteDlJob = useDeleteDownloadJob();
+
   const running = jobs?.filter(j => j.status === "pending" || j.status === "running") ?? [];
   const done    = jobs?.filter(j => j.status === "done") ?? [];
   const error   = jobs?.filter(j => j.status === "error") ?? [];
+
+  const dlRunning = dlJobs?.filter(j => j.status === "pending" || j.status === "running") ?? [];
+  const dlDone    = dlJobs?.filter(j => j.status !== "pending" && j.status !== "running") ?? [];
 
   const handleDelete = (id: string) => {
     if (confirm("Șterge acest job din audit?")) {
@@ -581,93 +708,105 @@ export function AuditPage() {
         <ErrorModal job={errorJob} onClose={() => setErrorJob(null)} />
       )}
 
-      <div className="p-4 md:p-6 space-y-5">
-        {/* Header */}
-        <div className="flex items-center gap-3">
-          <ClipboardList size={18} className="text-blue-400" />
-          <h1 className="text-lg font-semibold text-white">Audit Backteste</h1>
-          {jobs && jobs.length > 0 && (
-            <span className="text-xs text-slate-500 bg-surface-card border border-surface-border rounded-full px-2 py-0.5">
-              {jobs.length} total
-            </span>
-          )}
-          {running.length > 0 && (
-            <span className="flex items-center gap-1.5 text-xs text-blue-400 bg-blue-500/10 border border-blue-500/30 rounded-full px-2.5 py-0.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
-              {running.length} în rulare
-            </span>
-          )}
-        </div>
+      <div className="p-4 md:p-6 space-y-8">
 
-        {/* Loading */}
-        {isLoading ? (
-          <div className="space-y-2">
-            {[...Array(3)].map((_, i) => (
-              <div key={i} className="h-14 rounded-xl bg-surface-card animate-pulse" />
-            ))}
-          </div>
-        ) : jobs?.length === 0 ? (
-          <div className="text-center py-16 text-slate-500">
-            <ClipboardList size={32} className="mx-auto mb-3 opacity-30" />
-            <p className="text-sm">Niciun backtest în audit</p>
-            <p className="text-xs mt-1 text-slate-600">
-              Rulează un backtest din tab-ul Profile → sesiune → Rulează Backtest
-            </p>
-          </div>
-        ) : (
-          <div className="space-y-6">
-            {/* Running */}
-            {running.length > 0 && (
-              <section className="space-y-2">
-                <div className="text-[10px] text-slate-500 uppercase tracking-wider font-medium">
-                  In rulare ({running.length})
-                </div>
-                {running.map(job => (
-                  <JobRow
-                    key={job.job_id}
-                    job={job}
-                    onDelete={handleDelete}
-                    onShowError={setErrorJob}
-                  />
-                ))}
-              </section>
-            )}
+        {/* ── Descărcări date ── */}
+        {(dlJobs && dlJobs.length > 0) && (
+          <section className="space-y-3">
+            <div className="flex items-center gap-3">
+              <Download size={16} className="text-blue-400" />
+              <h2 className="text-sm font-semibold text-white">Descărcări Date</h2>
+              <span className="text-xs text-slate-500 bg-surface-card border border-surface-border rounded-full px-2 py-0.5">
+                {dlJobs.length} total
+              </span>
+              {dlRunning.length > 0 && (
+                <span className="flex items-center gap-1.5 text-xs text-blue-400 bg-blue-500/10 border border-blue-500/30 rounded-full px-2.5 py-0.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+                  {dlRunning.length} în curs
+                </span>
+              )}
+            </div>
 
-            {/* Errors */}
-            {error.length > 0 && (
-              <section className="space-y-2">
-                <div className="text-[10px] text-slate-500 uppercase tracking-wider font-medium">
-                  Erori ({error.length})
-                </div>
-                {error.map(job => (
-                  <JobRow
-                    key={job.job_id}
-                    job={job}
-                    onDelete={handleDelete}
-                    onShowError={setErrorJob}
-                  />
-                ))}
-              </section>
-            )}
-
-            {/* Done */}
-            {done.length > 0 && (
-              <section className="space-y-2">
-                <div className="text-[10px] text-slate-500 uppercase tracking-wider font-medium">
-                  Finalizate ({done.length})
-                </div>
-                {done.map(job => (
-                  <JobRow
-                    key={job.job_id}
-                    job={job}
-                    onDelete={handleDelete}
-                    onShowError={setErrorJob}
-                  />
-                ))}
-              </section>
-            )}
-          </div>
+            <div className="space-y-2">
+              {dlRunning.map(job => (
+                <DownloadJobRow key={job.job_id} job={job} onDelete={(id) => deleteDlJob.mutate(id)} />
+              ))}
+              {dlDone.map(job => (
+                <DownloadJobRow key={job.job_id} job={job} onDelete={(id) => deleteDlJob.mutate(id)} />
+              ))}
+            </div>
+          </section>
         )}
+
+        {/* ── Backteste ── */}
+        <section className="space-y-3">
+          <div className="flex items-center gap-3">
+            <ClipboardList size={16} className="text-blue-400" />
+            <h2 className="text-sm font-semibold text-white">Backteste</h2>
+            {jobs && jobs.length > 0 && (
+              <span className="text-xs text-slate-500 bg-surface-card border border-surface-border rounded-full px-2 py-0.5">
+                {jobs.length} total
+              </span>
+            )}
+            {running.length > 0 && (
+              <span className="flex items-center gap-1.5 text-xs text-blue-400 bg-blue-500/10 border border-blue-500/30 rounded-full px-2.5 py-0.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+                {running.length} în rulare
+              </span>
+            )}
+          </div>
+
+          {/* Loading */}
+          {isLoading ? (
+            <div className="space-y-2">
+              {[...Array(3)].map((_, i) => (
+                <div key={i} className="h-14 rounded-xl bg-surface-card animate-pulse" />
+              ))}
+            </div>
+          ) : jobs?.length === 0 ? (
+            <div className="text-center py-10 text-slate-500">
+              <ClipboardList size={28} className="mx-auto mb-3 opacity-30" />
+              <p className="text-sm">Niciun backtest în audit</p>
+              <p className="text-xs mt-1 text-slate-600">
+                Rulează un backtest din tab-ul Profile → sesiune → Rulează Backtest
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {running.length > 0 && (
+                <div className="space-y-2">
+                  <div className="text-[10px] text-slate-500 uppercase tracking-wider font-medium">
+                    In rulare ({running.length})
+                  </div>
+                  {running.map(job => (
+                    <JobRow key={job.job_id} job={job} onDelete={handleDelete} onShowError={setErrorJob} />
+                  ))}
+                </div>
+              )}
+              {error.length > 0 && (
+                <div className="space-y-2">
+                  <div className="text-[10px] text-slate-500 uppercase tracking-wider font-medium">
+                    Erori ({error.length})
+                  </div>
+                  {error.map(job => (
+                    <JobRow key={job.job_id} job={job} onDelete={handleDelete} onShowError={setErrorJob} />
+                  ))}
+                </div>
+              )}
+              {done.length > 0 && (
+                <div className="space-y-2">
+                  <div className="text-[10px] text-slate-500 uppercase tracking-wider font-medium">
+                    Finalizate ({done.length})
+                  </div>
+                  {done.map(job => (
+                    <JobRow key={job.job_id} job={job} onDelete={handleDelete} onShowError={setErrorJob} />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+
       </div>
     </>
   );

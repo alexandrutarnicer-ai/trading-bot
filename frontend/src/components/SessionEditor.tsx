@@ -11,9 +11,10 @@ interface Props {
   onChange: (updated: ProfileSession) => void;
   onRemove?: () => void;
   onJobStarted?: () => void;
+  onSaveAndNavigate?: () => void;
+  onDownloadStarted?: () => void;
   paused?: boolean;
   onPauseToggle?: () => void;
-  onSaveAndNavigate?: () => void;
 }
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
@@ -264,7 +265,7 @@ function RRDiagram({ session, mt5Connected }: { session: ProfileSession; mt5Conn
 
 // ── SessionEditor ─────────────────────────────────────────────────────────
 
-export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted, paused, onPauseToggle, onSaveAndNavigate }: Props) {
+export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted, onSaveAndNavigate, onDownloadStarted, paused, onPauseToggle }: Props) {
   const [open, setOpen]           = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [showMt5Search, setShowMt5Search] = useState(false);
@@ -835,6 +836,7 @@ export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted,
               session={session}
               onJobStarted={onJobStarted}
               onSaveAndNavigate={onSaveAndNavigate}
+              onDownloadStarted={onDownloadStarted}
             />
           </Section>
         </div>

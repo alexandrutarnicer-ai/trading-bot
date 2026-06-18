@@ -7,6 +7,7 @@ import type {
   BacktestHistoryEntry, BacktestJob,
 } from "./types";
 
+
 const POLL = 15_000; // refresh la 15s
 
 export const useBotStatus = () =>
@@ -150,7 +151,7 @@ export const useCheckData = () =>
 
 export const useStartDownload = () =>
   useMutation({
-    mutationFn: (body: { markets: string[]; timeframes: string[] }) =>
+    mutationFn: (body: { markets: string[]; timeframes: string[]; label?: string }) =>
       apiFetch<{ job_id: string }>("/data/download", { method: "POST", body }),
   });
 
@@ -281,6 +282,27 @@ export const useDeleteBacktestJob = () => {
   return useMutation({
     mutationFn: (jobId: string) => apiFetch(`/backtest/jobs/${jobId}`, { method: "DELETE" }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["backtest-jobs"] }),
+  });
+};
+
+// ── Download jobs (Audit) ────────────────────────────────────────────────────
+
+export const useDownloadJobs = () =>
+  useQuery<DownloadJob[]>({
+    queryKey: ["download-jobs"],
+    queryFn:  () => apiFetch("/data/jobs"),
+    refetchInterval: (query) => {
+      const jobs = query.state.data;
+      const hasActive = jobs?.some(j => j.status === "pending" || j.status === "running");
+      return hasActive ? 2_000 : 15_000;
+    },
+  });
+
+export const useDeleteDownloadJob = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (jobId: string) => apiFetch(`/data/jobs/${jobId}`, { method: "DELETE" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["download-jobs"] }),
   });
 };
 

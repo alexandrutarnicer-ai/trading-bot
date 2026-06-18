@@ -345,6 +345,7 @@ export function ProfilePage({ onNavigateToAudit }: { onNavigateToAudit: () => vo
                 meta={meta}
                 onJobStarted={onNavigateToAudit}
                 onSaveAndNavigate={async () => { await handleSave(); onNavigateToAudit(); }}
+                onDownloadStarted={onNavigateToAudit}
                 onChange={(updated) => handleSessionChange(idx, updated)}
                 onRemove={() => handleSessionRemove(idx)}
                 paused={isPaused}
