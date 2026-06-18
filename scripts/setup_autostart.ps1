@@ -22,11 +22,21 @@ Write-Host "  Trading Bot — Setup Autostart" -ForegroundColor Cyan
 Write-Host "==================================================" -ForegroundColor Cyan
 Write-Host "  Bot dir : $BotDir"
 
-# Gaseste Python
-$PythonExe = (Get-Command python -ErrorAction SilentlyContinue).Source
+# Gaseste Python — py.exe (Python Launcher) e in C:\Windows si merge si in sesiuni elevate
+# 'python' poate lipsi in sesiuni elevate (Windows Store alias nu e disponibil ca Admin)
+$PyLauncher = (Get-Command py -ErrorAction SilentlyContinue).Source
+if ($PyLauncher) {
+    # Obtine calea executabilului real (ex: C:\Python313\python.exe)
+    $PythonExe = (& py -c "import sys; print(sys.executable)" 2>$null).Trim()
+    if (-not $PythonExe -or -not (Test-Path $PythonExe)) {
+        $PythonExe = $PyLauncher   # fallback: folosim py.exe direct
+    }
+} else {
+    $PythonExe = (Get-Command python -ErrorAction SilentlyContinue).Source
+}
 if (-not $PythonExe) {
-    Write-Host "[EROARE] Python nu a fost gasit in PATH." -ForegroundColor Red
-    Write-Host "Instaleaza Python 3.11+ si bifeaza 'Add to PATH'." -ForegroundColor Red
+    Write-Host "[EROARE] Python nu a fost gasit." -ForegroundColor Red
+    Write-Host "Ruleaza setup.bat pentru a instala Python." -ForegroundColor Red
     Read-Host "`nApasa Enter pentru iesire"
     exit 1
 }

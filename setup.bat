@@ -88,21 +88,20 @@ if errorlevel 1 (
 )
 
 
-:: ── Daca s-a instalat ceva nou, CMD nu gaseste executabilele in aceeasi sesiune.
-:: Singura solutie fiabila: inchide si ruleaza din nou setup.bat.
+:: ── Daca s-a instalat ceva nou, CMD nu actualizeaza PATH in sesiunea curenta.
+:: Deschidem automat o fereastra noua cu PATH proaspat care va continua instalarea.
 if "%INSTALLED_SOMETHING%"=="1" (
     echo.
     echo ============================================================
-    echo   Repornire necesara!
+    echo   Finalizeaza instalarea in fereastra noua...
     echo ============================================================
     echo.
     echo  Python / Node.js / Git au fost instalate.
-    echo  CMD nu actualizeaza PATH in fereastra curenta.
+    echo  Deschid automat o fereastra noua pentru a instala
+    echo  dependentele Python si frontend...
     echo.
-    echo  Inchide aceasta fereastra si dublu-click din nou pe
-    echo  setup.bat pentru a finaliza instalarea.
-    echo.
-    pause
+    timeout /t 3 /nobreak >nul
+    start "Trading Bot — Finalizare Setup" cmd /k ""%~f0""
     exit /b 0
 )
 

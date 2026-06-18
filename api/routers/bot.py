@@ -240,7 +240,7 @@ def autostart_enable():
         raise HTTPException(404, "scripts/setup_autostart.ps1 nu a fost gasit")
     subprocess.Popen([
         "powershell", "-Command",
-        f'Start-Process powershell -Verb RunAs -ArgumentList \'-ExecutionPolicy Bypass -File "{script}"\''
+        f'Start-Process powershell -Verb RunAs -ArgumentList \'-NoExit -ExecutionPolicy Bypass -File "{script}"\''
     ])
     return {"started": True}
 
@@ -252,6 +252,6 @@ def autostart_disable():
         raise HTTPException(404, "scripts/remove_autostart.ps1 nu a fost gasit")
     subprocess.Popen([
         "powershell", "-Command",
-        f'Start-Process powershell -Verb RunAs -ArgumentList \'-ExecutionPolicy Bypass -File "{script}"\''
+        f'Start-Process powershell -Verb RunAs -ArgumentList \'-NoExit -ExecutionPolicy Bypass -File "{script}"\''
     ])
     return {"started": True}
