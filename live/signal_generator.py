@@ -1186,14 +1186,20 @@ def run_generator(session_cfg: dict):
     os.makedirs(out_dir, exist_ok=True)
 
     # Previne doua instante ale aceleiasi sesiuni sa ruleze simultan
+    # IMPORTANT: OpenProcess singur returneaza True pentru procese moarte recent
+    # (kernel object raman viu cateva secunde dupa taskkill).
+    # GetExitCodeProcess(STILL_ACTIVE=259) este verificarea corecta.
     def _pid_alive(pid: int) -> bool:
         try:
             import ctypes
             PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+            STILL_ACTIVE = 259
             h = ctypes.windll.kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
             if h:
+                exit_code = ctypes.c_ulong()
+                ctypes.windll.kernel32.GetExitCodeProcess(h, ctypes.byref(exit_code))
                 ctypes.windll.kernel32.CloseHandle(h)
-                return True
+                return exit_code.value == STILL_ACTIVE
         except Exception:
             pass
         return False

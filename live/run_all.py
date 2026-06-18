@@ -283,6 +283,7 @@ def main():
                 [sys.executable, s["script"]],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
+                creationflags=subprocess.CREATE_NO_WINDOW,
             )
             sp_list.append((s, proc))
             tag = "" if s["validated"] else "  [OBSERVARE]"
