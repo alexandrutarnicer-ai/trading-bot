@@ -4,7 +4,7 @@
 .NOTES
     IMPORTANT: Trebuie rulat ca Administrator.
     Mod de rulare:
-      Win → cauta "PowerShell" → click dreapta → "Run as administrator"
+      Win -> cauta "PowerShell" -> click dreapta -> "Run as administrator"
       Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
       & "c:\trading-bot\scripts\remove_autostart.ps1"
 #>
@@ -14,7 +14,7 @@ $BatPath = Join-Path $BotDir "live\start_bot.bat"
 
 Write-Host ""
 Write-Host "==================================================" -ForegroundColor Cyan
-Write-Host "  Trading Bot — Eliminare Autostart" -ForegroundColor Cyan
+Write-Host "  Trading Bot - Eliminare Autostart" -ForegroundColor Cyan
 Write-Host "==================================================" -ForegroundColor Cyan
 Write-Host ""
 
@@ -25,14 +25,14 @@ foreach ($taskName in @("TradingBot-MT5", "TradingBot-RunAll")) {
     if ($task) {
         try {
             Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
-            Write-Host "[OK] Task '$taskName' sters" -ForegroundColor Green
+            Write-Host "[OK] Task $taskName sters" -ForegroundColor Green
             $removed++
         } catch {
-            Write-Host "[EROARE] Nu am putut sterge '$taskName': $_" -ForegroundColor Red
-            Write-Host "         Incearca manual: Task Scheduler → gaseste task-ul → Delete" -ForegroundColor Yellow
+            Write-Host "[EROARE] Nu am putut sterge $taskName : $_" -ForegroundColor Red
+            Write-Host "         Incearca manual: Task Scheduler -> gaseste task-ul -> Delete" -ForegroundColor Yellow
         }
     } else {
-        Write-Host "[--] Task '$taskName' nu exista (deja sters sau neinstalat)" -ForegroundColor Gray
+        Write-Host "[--] Task $taskName nu exista (deja sters sau neinstalat)" -ForegroundColor Gray
     }
 }
 
@@ -54,7 +54,7 @@ if ($removed -gt 0) {
     Write-Host "  NU vor mai porni automat." -ForegroundColor Green
     Write-Host "==================================================" -ForegroundColor Green
 } else {
-    Write-Host "  Niciun task de sters — autostart-ul nu era activ." -ForegroundColor Yellow
+    Write-Host "  Niciun task de sters - autostart-ul nu era activ." -ForegroundColor Yellow
 }
 Write-Host ""
 Read-Host "Apasa Enter pentru iesire"

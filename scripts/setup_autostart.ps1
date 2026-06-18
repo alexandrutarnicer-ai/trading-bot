@@ -6,11 +6,11 @@
 .NOTES
     IMPORTANT: Trebuie rulat ca Administrator.
     Mod recomandat de rulare:
-      Win → cauta "PowerShell" → click dreapta → "Run as administrator"
+      Win -> cauta "PowerShell" -> click dreapta -> "Run as administrator"
       Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
       & "c:\trading-bot\scripts\setup_autostart.ps1"
 
-    Nu trebuie rulat din nou dupa reinstalare Windows — task-urile persista.
+    Nu trebuie rulat din nou dupa reinstalare Windows - task-urile persista.
     Pentru stergere task-uri: Unregister-ScheduledTask -TaskName "TradingBot-*" -Confirm:$false
 #>
 
@@ -18,12 +18,12 @@ $BotDir  = Split-Path $PSScriptRoot -Parent
 $BatPath = Join-Path $BotDir "live\start_bot.bat"
 
 Write-Host "==================================================" -ForegroundColor Cyan
-Write-Host "  Trading Bot — Setup Autostart" -ForegroundColor Cyan
+Write-Host "  Trading Bot - Setup Autostart" -ForegroundColor Cyan
 Write-Host "==================================================" -ForegroundColor Cyan
 Write-Host "  Bot dir : $BotDir"
 
-# Gaseste Python — py.exe (Python Launcher) e in C:\Windows si merge si in sesiuni elevate
-# 'python' poate lipsi in sesiuni elevate (Windows Store alias nu e disponibil ca Admin)
+# Gaseste Python - py.exe (Python Launcher) e in C:\Windows si merge si in sesiuni elevate
+# python poate lipsi in sesiuni elevate (Windows Store alias nu e disponibil ca Admin)
 $PyLauncher = (Get-Command py -ErrorAction SilentlyContinue).Source
 if ($PyLauncher) {
     # Obtine calea executabilului real (ex: C:\Python313\python.exe)
@@ -37,7 +37,7 @@ if ($PyLauncher) {
 if (-not $PythonExe) {
     Write-Host "[EROARE] Python nu a fost gasit." -ForegroundColor Red
     Write-Host "Ruleaza setup.bat pentru a instala Python." -ForegroundColor Red
-    Read-Host "`nApasa Enter pentru iesire"
+    Read-Host "Apasa Enter pentru iesire"
     exit 1
 }
 Write-Host "  Python  : $PythonExe" -ForegroundColor Green
@@ -65,7 +65,7 @@ if ($mt5Exe) {
         $mt5Exe = $mt5Input
         Write-Host "  MT5     : $mt5Exe" -ForegroundColor Green
     } else {
-        Write-Host "  MT5     : omis — porneste-l manual inainte de bot" -ForegroundColor Yellow
+        Write-Host "  MT5     : omis - porneste-l manual inainte de bot" -ForegroundColor Yellow
         $mt5Exe = $null
     }
 }
@@ -73,7 +73,7 @@ if ($mt5Exe) {
 Write-Host ""
 
 # --- Creeaza live\start_bot.bat ---
-# Evitam here-string (@"..."@) — poate avea probleme de encoding pe unele sisteme
+# Folosim array de linii in loc de here-string pentru compatibilitate encoding
 $batLines = @(
     '@echo off',
     'title Trading Bot -- Sesiuni Live',
@@ -100,7 +100,7 @@ if ($mt5Exe) {
              -DontStopIfGoingOnBatteries -StartWhenAvailable
         Register-ScheduledTask -TaskName "TradingBot-MT5" `
             -Action $a -Trigger $t -Settings $s -RunLevel Highest -Force | Out-Null
-        Write-Host "[OK] Task 'TradingBot-MT5'    — MT5 porneste la login" -ForegroundColor Green
+        Write-Host "[OK] Task TradingBot-MT5    - MT5 porneste la login" -ForegroundColor Green
     } catch {
         Write-Host "[EROARE] Task MT5: $_" -ForegroundColor Red
     }
@@ -115,14 +115,14 @@ try {
           -ExecutionTimeLimit (New-TimeSpan -Days 2)
     Register-ScheduledTask -TaskName "TradingBot-RunAll" `
         -Action $a2 -Trigger $t2 -Settings $s2 -RunLevel Highest -Force | Out-Null
-    Write-Host "[OK] Task 'TradingBot-RunAll' — run_all.py porneste la login + 45s" -ForegroundColor Green
+    Write-Host "[OK] Task TradingBot-RunAll - run_all.py porneste la login + 45s" -ForegroundColor Green
 } catch {
     Write-Host "[EROARE] Task RunAll: $_" -ForegroundColor Red
 }
 
 Write-Host ""
 Write-Host "==================================================" -ForegroundColor Cyan
-Write-Host "  GATA — ce se intampla la urmatoarea pornire:" -ForegroundColor Cyan
+Write-Host "  GATA - ce se intampla la urmatoarea pornire:" -ForegroundColor Cyan
 Write-Host "==================================================" -ForegroundColor Cyan
 if ($mt5Exe) {
     Write-Host "  1. MT5 porneste automat la login"
@@ -130,7 +130,7 @@ if ($mt5Exe) {
 Write-Host "  2. Dupa 45 secunde: run_all.py porneste toate sesiunile"
 Write-Host "  3. O fereastra CMD ramane deschisa cu statusul botului"
 Write-Host ""
-Write-Host "  Verificare: cauta 'Task Scheduler' in Start → Task Scheduler Library"
-Write-Host "  Stergere:   Unregister-ScheduledTask -TaskName 'TradingBot-*' -Confirm:`$false"
+Write-Host "  Verificare: cauta Task Scheduler in Start -> Task Scheduler Library"
+Write-Host "  Stergere:   Unregister-ScheduledTask -TaskName TradingBot-* -Confirm:false"
 Write-Host ""
 Read-Host "Apasa Enter pentru iesire"
