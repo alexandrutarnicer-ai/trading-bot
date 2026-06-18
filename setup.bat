@@ -26,18 +26,22 @@ if errorlevel 1 (
 
 
 :: ── 1. Python ─────────────────────────────────────────────────────────────
-:: Folosim "py" (Python Launcher) in loc de "python" pentru a evita
-:: Windows Store App Execution Alias care intercepteaza comanda "python".
+:: Folosim "py" (Python Launcher) — nu este afectat de Windows Store alias.
 echo  [1/5] Verific Python...
 py --version >nul 2>&1
 if errorlevel 1 (
     echo  [~] Python nu este instalat. Instalez via winget ...
-    winget install Python.Python.3 --silent --accept-package-agreements --accept-source-agreements
+    :: Incercam versiunile recente in ordine — Python.Python.3 (generic) a fost
+    :: eliminat din repo; folosim ID-uri explicite cu fallback.
+    winget install --id Python.Python.3.13 --exact --silent --accept-package-agreements --accept-source-agreements >nul 2>&1
     if errorlevel 1 (
-        echo  [!] Instalare Python esuata.
-        echo      Descarca manual: https://python.org
-        pause
-        exit /b 1
+        winget install --id Python.Python.3.12 --exact --silent --accept-package-agreements --accept-source-agreements >nul 2>&1
+        if errorlevel 1 (
+            echo  [!] Instalare Python esuata automat.
+            echo      Descarca manual de la https://python.org si ruleaza setup.bat din nou.
+            pause
+            exit /b 1
+        )
     )
     set "INSTALLED_SOMETHING=1"
     echo  [+] Python instalat.
@@ -51,7 +55,7 @@ echo  [2/5] Verific Node.js...
 node --version >nul 2>&1
 if errorlevel 1 (
     echo  [~] Node.js nu este instalat. Instalez via winget ...
-    winget install OpenJS.NodeJS.LTS --silent --accept-package-agreements --accept-source-agreements
+    winget install --id OpenJS.NodeJS.LTS --exact --silent --accept-package-agreements --accept-source-agreements
     if errorlevel 1 (
         echo  [!] Instalare Node.js esuata.
         echo      Descarca manual: https://nodejs.org
@@ -70,7 +74,7 @@ echo  [3/5] Verific Git...
 git --version >nul 2>&1
 if errorlevel 1 (
     echo  [~] Git nu este instalat. Instalez via winget ...
-    winget install Git.Git --silent --accept-package-agreements --accept-source-agreements
+    winget install --id Git.Git --exact --silent --accept-package-agreements --accept-source-agreements
     if errorlevel 1 (
         echo  [!] Instalare Git esuata.
         echo      Descarca manual: https://git-scm.com
@@ -84,14 +88,22 @@ if errorlevel 1 (
 )
 
 
-:: ── Reincarca PATH daca s-a instalat ceva (cmd nu preia PATH-ul nou automat) ──
+:: ── Daca s-a instalat ceva nou, CMD nu gaseste executabilele in aceeasi sesiune.
+:: Singura solutie fiabila: inchide si ruleaza din nou setup.bat.
 if "%INSTALLED_SOMETHING%"=="1" (
     echo.
-    echo  Reincarc PATH ...
-    for /f "usebackq delims=" %%P in (`powershell -NoProfile -Command ^
-        "[Environment]::GetEnvironmentVariable('PATH','Machine') + ';' + [Environment]::GetEnvironmentVariable('PATH','User')"`) do set "PATH=%%P"
-    echo  [+] PATH actualizat.
+    echo ============================================================
+    echo   Repornire necesara!
+    echo ============================================================
     echo.
+    echo  Python / Node.js / Git au fost instalate.
+    echo  CMD nu actualizeaza PATH in fereastra curenta.
+    echo.
+    echo  Inchide aceasta fereastra si dublu-click din nou pe
+    echo  setup.bat pentru a finaliza instalarea.
+    echo.
+    pause
+    exit /b 0
 )
 
 
