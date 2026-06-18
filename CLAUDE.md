@@ -25,6 +25,9 @@ python live/session4_obs.py
 python live/session5_ger40_h1.py
 python live/session6_us30_m15.py
 
+# Pornire dashboard (API + frontend + browser) cu dublu-click, fara IDE
+start_ui.bat   # Windows: deschide doua ferestre terminal + browser la localhost:5173
+
 # API backend (dashboard web)
 python api/main.py   # sau: uvicorn api.main:app --reload --port 8000
 
@@ -127,9 +130,10 @@ Split train/test automat la 70%/30% din evenimente (nu din timp). `split_time` e
 Ruleaza in loop infinit la fiecare bara noua. Per iteratie:
 1. `_is_paused()` — verifica daca sesiunea e pe pauza (`data/paused_sessions.json`)
 2. `_update_outcomes()` — verifica semnalele pending din `state.pkl` (SL/TP atins, expirare, invalidare). Anuleaza automat ordinele MT5 la expirare. **Ruleaza intotdeauna, inclusiv cand sesiunea e pe pauza.**
-3. `_check_signals()` — detecteaza setup-uri noi pe ultimele 3 bare (offset 3, 2, 1). **Sarit cand sesiunea e pe pauza.**
+3. `_check_signals()` — detecteaza setup-uri noi pe bare INCHISE (offset 3, 2 — offset 1 este bara curenta partiala, ignorata intentionat pentru a preveni detectia dubla). **Sarit cand sesiunea e pe pauza.**
 4. `_place_order()` — plaseaza BUY_STOP/SELL_STOP in MT5. Returneaza: `int` (ticket OK), `None` (pret deja depasit — retry bara urm.), `False` (eroare MT5 reala — scoate din pending). **Sarit cand sesiunea e pe pauza.**
 5. `_friday_close_check()` — vineri la ora configurata, inchide pozitiile triggerate deschise printr-un ordin TRADE_ACTION_DEAL. Executa o singura data pe saptamana (tracking `state["friday_close_date"]`).
+6. `_news_close_check()` — la tranzitia `news_paused False → True`, inchide pozitii triggerate (TRADE_ACTION_DEAL) SI anuleaza ordine pending neactivate (TRADE_ACTION_REMOVE). Apelata o singura data per tranzitie (tracking `_was_news_paused`). Status outcomes: `"news_close"` sau `"news_cancel"`.
 
 **Invariant critic:** Daca `execute_trades=True` si semnalul nu are ticket MT5 (`sig_id not in state["mt5_tickets"]`), nu se marcheaza niciodata `triggered=True` din bare. `outcomes.csv` reflecta doar ordine executate real in MT5.
 
@@ -138,6 +142,14 @@ Citeste `data/paused_sessions.json` la fiecare iteratie. Cand sesiunea e pe pauz
 - `_update_outcomes()` continua → pozitiile deschise sunt monitorizate pana la SL/TP
 - `_check_signals()` si retry ordine noi sunt sarite → nu se deschid pozitii noi
 - Efectul pauzei intra la bara urmatoare (max 15 min pentru M15). **Nu necesita restart bot.**
+- Pauza manuala trimite notificare Telegram (din `api/routers/sessions.py`).
+
+**Protectie la stiri (`_is_news_paused`, `live/news_guard.py`):**
+`news_guard.py` ruleaza ca daemon thread in `run_all.py` (pornit la start bot). Polleaza ForexFactory (primar, fara API key) la fiecare 300s, cu fallback pe MT5 calendar. Scrie `data/news_auto_paused.json` cu session_key-urile care trebuie puse pe pauza. Sesiunile citesc acest fisier via `_is_news_paused()`. La oprire bot, `news_clear_all()` sterge fisierul.
+- `SYMBOL_CURRENCIES` dict mapeaza fiecare simbol la valutele constitutive (ex: EURUSD→[EUR,USD], GER40→[EUR])
+- Pauza automata trimite notificare Telegram per sesiune; auto-resume la expirarea ferestrei de stire
+- Configurabil per sesiune: `news_impact_level` (1/2/3), `news_pre_minutes`, `news_post_minutes`
+- `_news_close_check()` se activeaza o singura data la tranzitia `False→True` — inchide imediat tot
 
 **Inchidere Vineri (`_friday_close_check`):**
 Apelata dupa procesarea semnalelor, la fiecare iteratie de vineri. Parametri din `session_cfg`:
@@ -155,9 +167,11 @@ Starea persistenta per sesiune: `state.pkl` (pending dict + counter + tickets MT
 
 ### `live/run_all.py` — lansator
 
-Porneste S1–S6 ca subprocese independente. La repornire: citeste `data/run_all.pid`, ucide instanta anterioara + toate sesiunile copil via `taskkill /F /T /PID <old>`, asteapta 3s, porneste sesiunile noi. La oprire (Ctrl+C / SIGTERM / SIGBREAK): trimite Telegram, termina toate procesele copil, sterge PID file.
+Porneste S1–S6 ca subprocese independente. La repornire: citeste `data/run_all.pid`, ucide instanta anterioara + toate sesiunile copil via `taskkill /F /T /PID <old>`, asteapta 3s, porneste sesiunile noi. La oprire (Ctrl+C / SIGTERM / SIGBREAK): trimite Telegram, termina toate procesele copil, sterge PID file, sterge `data/news_auto_paused.json`.
 
 Fiecare sesiune are si propriul `session.lock` (PID file per sesiune) care previne doua instante ale aceleiasi sesiuni.
+
+**Telegram start:** Cand botul e pornit din UI (`api/routers/bot.py`), `bot.py` seteaza `env["BOT_API_START"] = "1"` si trimite propriul mesaj Telegram cu profilul si sesiunile active. `run_all.py` verifica variabila si sarita propriul mesaj de start pentru a evita dublura.
 
 ### `api/` — Dashboard web backend
 
@@ -180,11 +194,17 @@ Fiecare sesiune are si propriul `session.lock` (PID file per sesiune) care previ
 - `data/backtest_history.json` — toate rezultatele backtest (max 200 intrari)
 - `data/backtest_jobs.json` — joburi backtest async (max 150, supravietuiesc restart API)
 - `data/paused_sessions.json` — lista session_id-urilor pe pauza (ex: `["session1", "session3"]`), persistent peste restart bot
+- `data/news_auto_paused.json` — lista sesiunilor puse automat pe pauza de News Guard, sters la stop bot
 
 **Routere sessions — endpoints noi:**
-- `POST /sessions/{session_id}/pause` — adauga in `paused_sessions.json`
-- `POST /sessions/{session_id}/resume` — sterge din `paused_sessions.json`
-- `SessionStatus` include acum campul `paused: bool`
+- `POST /sessions/{session_id}/pause` — adauga in `paused_sessions.json`, trimite Telegram
+- `POST /sessions/{session_id}/resume` — sterge din `paused_sessions.json`, trimite Telegram
+- `SessionStatus` include campurile: `paused: bool`, `news_paused: bool`, `news_events: list`
+
+**Routere bot — endpoints noi:**
+- `GET /bot/autostart/status` — verifica daca task-ul TradingBot-RunAll exista in Task Scheduler
+- `POST /bot/autostart/enable` — ruleaza `scripts/setup_autostart.ps1` cu UAC elevation
+- `POST /bot/autostart/disable` — ruleaza `scripts/remove_autostart.ps1` cu UAC elevation
 
 **Routere backtest — endpoints:**
 - `GET /backtest/jobs` — lista tuturor joburilor (din `backtest_jobs.json`)
@@ -231,6 +251,8 @@ Ambele routere `bot.py` si `sessions.py` folosesc `GetExitCodeProcess(STILL_ACTI
 **Campuri noi in sesiune:**
 - `session_start: 0` + `session_end: 24` → sesiune Non-stop (fara restrictie de ore). Signal generator-ul deja trateaza 0-24 corect.
 - `friday_close_enabled` (bool, default `true`) + `friday_close_hour` (int 0-23, default `20`) — S3/BTC are `friday_close_enabled: false`.
+- `account_fraction` (float 0-1) — fractia din equity MT5 alocata sesiunii. Vizibil si editabil in SessionEditor cu breakdown live ($capital × fractie, risc/trade în USD).
+- `news_protection_enabled` (bool, default `false`) + `news_impact_level` (1/2/3) + `news_pre_minutes` + `news_post_minutes` — protectie automata la stiri. Cand activa, sesiunea intra pe pauza automatic + ordine/pozitii inchise imediat.
 
 **Nota:** `config/standard_profile.json` este config-ul legacy folosit de backtest si de sesiunile live cand nu exista profil activ runtime. NU modifica structura — este citit de `engine/portfolio.py` si `live/signal_generator.py`. `data/profiles/standard.json` este profilul UI (acelasi continut logic, format diferit).
 
@@ -306,9 +328,13 @@ Daca numerele se schimba semnificativ → bug introdus, nu progres.
 
 **SessionEditor.tsx (Profile):** Editor complet per sesiune. Include:
 - Toggle Non-stop (session_start=0/session_end=24) — ascunde campurile de ora
+- Camp `account_fraction` cu breakdown live: $capital sesiune · $X/piata + risc/trade ~$Y (din equity MT5 live)
+- Sectiune Criterii Obligatorii (dropdown, intotdeauna active — nu se pot dezactiva)
 - Sectiune Criterii Optionale cu 4 carduri R/R (Base/Mid/Top/Max) + praguri + risk% per nivel
 - Sectiune Inchidere Vineri (friday_close_enabled + friday_close_hour)
+- Sectiune Protectie Stiri (news_protection_enabled + impact_level 1/2/3 + pre/post minutes)
 - Buton Pause/Play langa delete — acelasi mecanism ca Dashboard-ul, fara restart
+- Tooltips (i) pentru expire_bars (exemplu: "4 bare = 1h") si pullback_window (exemplu: "8 = 2h M15")
 
 **AuditPage.tsx:** Tab Audit (fostul Istoric). Joburi backtest grupate: In rulare / Erori / Finalizate.
 - Rezultate expandabile cu tooltips (i) pentru fiecare metrica (Trades, WR, Expectancy, Max DD, Train/Test)
@@ -318,7 +344,7 @@ Daca numerele se schimba semnificativ → bug introdus, nu progres.
 - Erori clasificate: no_data / no_data_range / no_trades / generic (cu stacktrace)
 - Joburile persista peste refresh pagina si restart API (`data/backtest_jobs.json`)
 
-**NavBar.tsx:** 3 tab-uri: Dashboard / Profile / Audit. Badge pe Audit: dot albastru pulsant + count cand sunt joburi in rulare, count gri cand finalizate.
+**NavBar.tsx:** 3 tab-uri: Dashboard / Profile / Audit. Badge pe Audit: dot albastru pulsant + count cand sunt joburi in rulare, count gri cand finalizate. Contine si toggle Autostart Windows (GET/POST `/bot/autostart/*`) cu tooltip explicativ.
 
 ---
 
@@ -329,6 +355,13 @@ Daca numerele se schimba semnificativ → bug introdus, nu progres.
 # TradingBot-MT5 (MT5 la login) + TradingBot-RunAll (run_all.py + 45s delay)
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 & "c:\trading-bot\scripts\setup_autostart.ps1"
+
+# Dezactivare autostart (sterge ambele task-uri):
+& "c:\trading-bot\scripts\remove_autostart.ps1"
 ```
 
+Autostart-ul poate fi activat/dezactivat si din NavBar-ul din UI (toggle cu UAC elevation automat — necesita acceptarea promptului de Administrator).
+
 Variabilele Telegram (`TELEGRAM_TOKEN`, `TELEGRAM_CHAT_ID`) se seteaza in User Environment Variables Windows (nu in .env) — sunt citite de `start_bot.bat` din registry. In UI, configurarea se face din sectiunea Telegram Settings (accordion in ProfilePage).
+
+**start_ui.bat** — Script dublu-click pentru pornire dashboard fara IDE. Deschide doua ferestre terminal (API pe 8000 + frontend dev pe 5173) si browserul la `http://localhost:5173`. Necesita Python si Node.js in PATH.

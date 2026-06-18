@@ -31,6 +31,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 from backtest import DATA_DIR
+from live.news_guard import start_guard, clear_all as news_clear_all
 
 PID_FILE = os.path.join(DATA_DIR, "run_all.pid")
 
@@ -89,6 +90,36 @@ SESSIONS = [
 ]
 
 STATUS_INTERVAL = 300   # afiseaza status la fiecare 5 minute
+
+RUNTIME_PROFILE = os.path.join(DATA_DIR, "active_profile_runtime.json")
+
+
+def _load_news_guard_configs() -> list[dict]:
+    """
+    Citeste profilul activ si returneaza sesiunile cu news_protection_enabled=True.
+    Fara profil activ (bot pornit direct din CLI) returneaza lista goala.
+    """
+    if not os.path.exists(RUNTIME_PROFILE):
+        return []
+    try:
+        with open(RUNTIME_PROFILE, encoding="utf-8") as f:
+            profile = json.load(f)
+        configs = []
+        for s in profile.get("sessions", []):
+            if not s.get("news_protection_enabled", False):
+                continue
+            configs.append({
+                "session_key":           s.get("session_key", ""),
+                "markets":               s.get("markets", []),
+                "news_protection_enabled": True,
+                "news_impact_level":     s.get("news_impact_level", 3),
+                "news_pre_minutes":      s.get("news_pre_minutes", 15),
+                "news_post_minutes":     s.get("news_post_minutes", 15),
+            })
+        return configs
+    except Exception as e:
+        print(f"  [!] News Guard: eroare citire profil — {e}")
+        return []
 
 
 def _kill_old_instance() -> None:
@@ -263,19 +294,30 @@ def main():
         print("  Nicio sesiune pornita. Iesire.")
         return
 
+    # Porneste News Guard daca cel putin o sesiune are protectie activa
+    guard_configs = _load_news_guard_configs()
+    if guard_configs:
+        start_guard(guard_configs, _send_telegram)
+        print(f"  [+] News Guard pornit — {len(guard_configs)} sesiuni monitorizate")
+    else:
+        print("  [~] News Guard inactiv (nicio sesiune cu protectie la stiri configurata)")
+
     n = len(sp_list)
     print(f"\n  {n} sesiune{'a' if n==1 else 'i'} pornite. "
           f"Status la fiecare {STATUS_INTERVAL // 60} min. Ctrl+C pentru oprire.\n")
 
-    lines = "\n".join(
-        f"  • {s['label']}  ({s['hours']})"
-        + ("  [obs]" if not s["validated"] else "")
-        for s, _ in sp_list
-    )
-    _send_telegram(
-        f"<b>Trading Bot pornit</b>  {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
-        f"{n} sesiuni active:\n{lines}"
-    )
+    # Cand e pornit din UI (bot.py seteaza BOT_API_START=1), API-ul trimite
+    # deja mesajul de start cu profilul si sesiunile → nu mai trimitem al doilea.
+    if not os.environ.get("BOT_API_START"):
+        lines = "\n".join(
+            f"  • {s['label']}  ({s['hours']})"
+            + ("  [obs]" if not s["validated"] else "")
+            for s, _ in sp_list
+        )
+        _send_telegram(
+            f"<b>Trading Bot pornit</b>  {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
+            f"{n} sesiuni active:\n{lines}"
+        )
 
     # Handler Ctrl+C / SIGTERM / restart Windows — opreste toate procesele copil
     def _stop_all(sig=None, frame=None):
@@ -293,6 +335,7 @@ def main():
                 proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 proc.kill()
+        news_clear_all()   # sterge news_auto_paused.json la oprire
         print("  Toate sesiunile oprite.\n")
         try:
             os.remove(PID_FILE)

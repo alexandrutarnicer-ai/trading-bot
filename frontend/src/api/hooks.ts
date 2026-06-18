@@ -30,7 +30,6 @@ export const useSignals = (sessionId: string) =>
     queryKey: ["signals", sessionId],
     queryFn:  () => apiFetch(`/sessions/${sessionId}/signals?limit=30`),
     refetchInterval: POLL,
-    refetchIntervalInBackground: true,
   });
 
 export const useOutcomes = (sessionId: string) =>
@@ -263,7 +262,6 @@ export const useBacktestJobs = () =>
       const hasActive = jobs?.some(j => j.status === "pending" || j.status === "running");
       return hasActive ? 3_000 : 15_000;
     },
-    refetchIntervalInBackground: true,
   });
 
 export const useDeleteBacktestJob = () => {

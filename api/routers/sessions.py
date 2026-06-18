@@ -1,6 +1,7 @@
 import os
 import json
 import ctypes
+import threading
 from datetime import date, datetime
 from typing import Optional
 
@@ -9,10 +10,16 @@ from fastapi import APIRouter, HTTPException
 
 from api.config import DATA_DIR, SESSIONS, SESSION_MAP
 from api.models import SessionStatus, Signal, Outcome, EquityCurvePoint
+from api.telegram import send_message as _tg_send
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
-PAUSED_FILE = os.path.join(DATA_DIR, "paused_sessions.json")
+PAUSED_FILE      = os.path.join(DATA_DIR, "paused_sessions.json")
+NEWS_PAUSED_FILE = os.path.join(DATA_DIR, "news_auto_paused.json")
+
+
+def _notify(text: str) -> None:
+    threading.Thread(target=_tg_send, args=(text,), daemon=True).start()
 
 
 def _load_paused() -> set[str]:
@@ -23,6 +30,16 @@ def _load_paused() -> set[str]:
     except Exception:
         pass
     return set()
+
+
+def _load_news_paused() -> dict:
+    try:
+        if os.path.exists(NEWS_PAUSED_FILE):
+            with open(NEWS_PAUSED_FILE, encoding="utf-8") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return {}
 
 
 def _save_paused(paused: set[str]) -> None:
@@ -115,12 +132,14 @@ def _outcome_stats(session_id: str) -> dict:
 
 @router.get("", response_model=list[SessionStatus])
 def list_sessions():
-    paused = _load_paused()
+    paused      = _load_paused()
+    news_paused = _load_news_paused()
     result = []
     for s in SESSIONS:
         running, pid = _session_running(s["id"])
         sig  = _sig_stats(s["id"])
         out  = _outcome_stats(s["id"])
+        np_entry  = news_paused.get(s["id"], {})
         result.append(SessionStatus(
             id=s["id"],
             label=s["label"],
@@ -140,6 +159,8 @@ def list_sessions():
             wins=out["wins"],
             losses=out["losses"],
             paused=s["id"] in paused,
+            news_paused=bool(np_entry),
+            news_events=np_entry.get("events", []),
         ))
     return result
 
@@ -151,6 +172,12 @@ def pause_session(session_id: str):
     paused = _load_paused()
     paused.add(session_id)
     _save_paused(paused)
+    label = SESSION_MAP[session_id].get("label", session_id)
+    _notify(
+        f"⏸ <b>Sesiune pe pauză</b> — {label}\n"
+        f"Oprită manual din Dashboard la {datetime.now().strftime('%H:%M')}.\n"
+        f"Semnale noi suspendate. Pozițiile deschise continuă să fie monitorizate."
+    )
     return {"ok": True, "session_id": session_id, "paused": True}
 
 
@@ -161,6 +188,11 @@ def resume_session(session_id: str):
     paused = _load_paused()
     paused.discard(session_id)
     _save_paused(paused)
+    label = SESSION_MAP[session_id].get("label", session_id)
+    _notify(
+        f"▶️ <b>Sesiune reluată</b> — {label}\n"
+        f"Repornită manual din Dashboard la {datetime.now().strftime('%H:%M')}."
+    )
     return {"ok": True, "session_id": session_id, "paused": False}
 
 

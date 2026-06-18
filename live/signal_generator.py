@@ -352,7 +352,11 @@ def _check_signals(df: pd.DataFrame, symbol: str, cfg: dict,
     skip_weekdays = set(session_cfg.get("skip_weekdays", []))
 
     n = len(df)
-    for offset in range(3, 0, -1):
+    # Offset 1 = bara curent deschisa (incompleta) — ignorata intentionat.
+    # Semnalele se detecteaza doar pe bare INCHISE (offset 2 si 3).
+    # Altfel, aceeasi bara poate fi detectata de doua ori: odata ca partiala
+    # la offset=1, si din nou ca bara inchisa la offset=2 in iteratia urmatoare.
+    for offset in range(3, 1, -1):
         j = n - offset
         if j < 60:
             continue
@@ -741,19 +745,38 @@ def _reconcile_mt5_tickets(state: dict, log) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Pauza sesiune
+# Pauza sesiune (manuala + automata din protectie stiri)
 # ---------------------------------------------------------------------------
 
+_PAUSED_FILE      = os.path.join(DATA_DIR, "paused_sessions.json")
+_NEWS_PAUSED_FILE = os.path.join(DATA_DIR, "news_auto_paused.json")
+
+
 def _is_paused(session_key: str) -> bool:
-    """Verifica daca sesiunea e in pauza (data/paused_sessions.json)."""
-    paused_file = os.path.join(DATA_DIR, "paused_sessions.json")
+    """Verifica daca sesiunea e in pauza manuala (data/paused_sessions.json)."""
     try:
-        if os.path.exists(paused_file):
-            with open(paused_file, encoding="utf-8") as f:
+        if os.path.exists(_PAUSED_FILE):
+            with open(_PAUSED_FILE, encoding="utf-8") as f:
                 return session_key in json.load(f)
     except Exception:
         pass
     return False
+
+
+def _is_news_paused(session_key: str) -> tuple[bool, list]:
+    """
+    Verifica daca sesiunea e pe pauza automata din protectie la stiri.
+    Returneaza (paused: bool, events: list) din data/news_auto_paused.json.
+    """
+    try:
+        if os.path.exists(_NEWS_PAUSED_FILE):
+            with open(_NEWS_PAUSED_FILE, encoding="utf-8") as f:
+                data = json.load(f)
+            if session_key in data:
+                return True, data[session_key].get("events", [])
+    except Exception:
+        pass
+    return False, []
 
 
 # ---------------------------------------------------------------------------
@@ -885,6 +908,147 @@ def _friday_close_check(
         state["pending"].get(symbol, {}).pop(sig_id, None)
 
 
+def _news_close_check(
+    state: dict,
+    outcomes_file: str,
+    log,
+    session_id: str = "",
+    execute_trades: bool = False,
+) -> None:
+    """
+    La prima iteratie de pauza de stiri (tranzitia False → True):
+    - anuleaza ordinele pending neactivate (TRADE_ACTION_REMOVE)
+    - inchide la piata pozitiile triggerate deschise (TRADE_ACTION_DEAL)
+    Apelat o singura data per tranzitie, din bucla principala.
+    """
+    total = sum(len(v) for v in state["pending"].values())
+    if total == 0:
+        log.info("  [STIRI] Nicio pozitie/ordin activ — nimic de inchis.")
+        return
+
+    outcome_rows   = []
+    sigs_to_remove = []
+    now = datetime.now()
+
+    for symbol, pending in list(state["pending"].items()):
+        for sig_id, p in list(pending.items()):
+            d         = p["direction"]
+            fmt       = ".2f" if p["entry"] > 100 else ".5f"
+            dir_str   = "LONG" if d == 1 else "SHORT"
+            ticket    = state.get("mt5_tickets", {}).get(sig_id)
+            triggered = p.get("triggered", False)
+
+            if not execute_trades:
+                sigs_to_remove.append((symbol, sig_id))
+                log.info(f"  [STIRI] {sig_id} {symbol} scos din pending (OBS, news_close)")
+                continue
+
+            if not ticket or _mt5_exec is None:
+                sigs_to_remove.append((symbol, sig_id))
+                log.info(f"  [STIRI] {sig_id} {symbol}: fara ticket MT5 — scos din pending")
+                continue
+
+            if triggered:
+                positions = _mt5_exec.positions_get(ticket=ticket)
+                if not positions:
+                    state.get("mt5_tickets", {}).pop(sig_id, None)
+                    sigs_to_remove.append((symbol, sig_id))
+                    continue
+
+                pos  = positions[0]
+                tick = _mt5_exec.symbol_info_tick(symbol)
+                if tick is None:
+                    log.warning(f"  [STIRI] {sig_id}: nu pot obtine tick pentru {symbol}")
+                    continue
+
+                close_price = tick.bid if d == 1 else tick.ask
+                close_type  = (_mt5_exec.ORDER_TYPE_SELL if d == 1 else _mt5_exec.ORDER_TYPE_BUY)
+                result = _mt5_exec.order_send({
+                    "action":       _mt5_exec.TRADE_ACTION_DEAL,
+                    "symbol":       symbol,
+                    "volume":       pos.volume,
+                    "type":         close_type,
+                    "position":     ticket,
+                    "price":        close_price,
+                    "comment":      "news_close",
+                    "type_time":    _mt5_exec.ORDER_TIME_GTC,
+                    "type_filling": _mt5_exec.ORDER_FILLING_IOC,
+                })
+                if result and result.retcode == _mt5_exec.TRADE_RETCODE_DONE:
+                    exit_price = result.price
+                    risk_dist  = abs(p["entry"] - p["sl"])
+                    result_r   = (round((exit_price - p["entry"]) * d / risk_dist, 3)
+                                  if risk_dist > 0 else 0.0)
+                    outcome_rows.append({
+                        **p,
+                        "signal_id":    sig_id,
+                        "symbol":       symbol,
+                        "status":       "news_close",
+                        "result_r":     result_r,
+                        "exit_price":   exit_price,
+                        "exit_time":    now,
+                        "triggered_at": p.get("triggered_at", now),
+                        "time_check":   now,
+                    })
+                    state.get("mt5_tickets", {}).pop(sig_id, None)
+                    sigs_to_remove.append((symbol, sig_id))
+                    log.info(
+                        f"  [STIRI] {sig_id} {symbol} {dir_str} inchis la stire: "
+                        f"exit={exit_price:{fmt[1:]}}  result={result_r:+.3f}R"
+                    )
+                    _send_telegram(
+                        f"⚡ <b>Inchis la știre: {dir_str} {symbol}</b>\n"
+                        f"Entry {format(p['entry'], fmt)} → {format(exit_price, fmt)}\n"
+                        f"Result: {result_r:+.2f}R\n"
+                        f"<i>{session_id}</i>"
+                    )
+                else:
+                    retcode = result.retcode if result else "None"
+                    log.warning(f"  [STIRI] {sig_id}: inchidere pozitie esuata retcode={retcode}")
+
+            else:
+                # Ordin pending neactivat — anuleaza din MT5
+                r = _mt5_exec.order_send({
+                    "action": _mt5_exec.TRADE_ACTION_REMOVE,
+                    "order":  ticket,
+                })
+                if r and r.retcode == _mt5_exec.TRADE_RETCODE_DONE:
+                    log.info(f"  [STIRI] {sig_id} {symbol}: ordin #{ticket} anulat la stire")
+                else:
+                    log.warning(
+                        f"  [STIRI] {sig_id}: anulare #{ticket} esuata "
+                        f"({_mt5_exec.last_error()})"
+                    )
+                state.get("mt5_tickets", {}).pop(sig_id, None)
+                outcome_rows.append({
+                    **p,
+                    "signal_id":  sig_id,
+                    "symbol":     symbol,
+                    "status":     "news_cancel",
+                    "result_r":   0.0,
+                    "exit_time":  now,
+                    "time_check": now,
+                })
+                sigs_to_remove.append((symbol, sig_id))
+
+    if outcome_rows:
+        existing_ids: set = set()
+        if os.path.exists(outcomes_file):
+            try:
+                existing_ids = set(
+                    pd.read_csv(outcomes_file, usecols=["signal_id"])["signal_id"].dropna()
+                )
+            except Exception:
+                pass
+        new_rows = [r for r in outcome_rows if r.get("signal_id") not in existing_ids]
+        if new_rows:
+            pd.DataFrame(new_rows).reindex(columns=_OUTCOMES_COLS).to_csv(
+                outcomes_file, mode="a", header=False, index=False)
+
+    for symbol, sig_id in sigs_to_remove:
+        state["pending"].get(symbol, {}).pop(sig_id, None)
+
+
 # ---------------------------------------------------------------------------
 # Aplicare parametri profil activ
 # ---------------------------------------------------------------------------
@@ -935,6 +1099,11 @@ def _apply_profile_overrides(session_cfg: dict, cfg: dict, log) -> None:
         session_cfg["friday_close_enabled"] = ps["friday_close_enabled"]
     if "friday_close_hour" in ps:
         session_cfg["friday_close_hour"] = ps["friday_close_hour"]
+
+    for news_field in ("news_protection_enabled", "news_impact_level",
+                       "news_pre_minutes", "news_post_minutes"):
+        if news_field in ps:
+            session_cfg[news_field] = ps[news_field]
 
     # --- parametri strategie (cfg) ---
     if ps.get("rsi_enabled") is not None:
@@ -1104,6 +1273,7 @@ def run_generator(session_cfg: dict):
 
     bar_min = session_cfg["bar_minutes"]
     iteration = 0
+    _was_news_paused = False   # pentru detectia tranzitiei False → True
 
     # Notificare la orice oprire (manuala, crash, SIGTERM/kill Windows)
     import signal as _signal
@@ -1134,10 +1304,33 @@ def run_generator(session_cfg: dict):
             log.info(f"--- {session_cfg['session_id']} iter {iteration} "
                      f"@ {datetime.now().strftime('%H:%M:%S')} ---")
 
-            session_paused = _is_paused(session_cfg.get("session_key", ""))
-            if session_paused:
-                log.info("  [PAUZA] Sesiune in pauza — semnal checking dezactivat. "
+            session_key    = session_cfg.get("session_key", "")
+            manual_paused  = _is_paused(session_key)
+            news_paused, news_events = _is_news_paused(session_key)
+            session_paused = manual_paused or news_paused
+
+            if manual_paused:
+                log.info("  [PAUZA] Sesiune in pauza manuala — semnal checking dezactivat. "
                          "Pozitiile deschise sunt in continuare monitorizate.")
+            elif news_paused:
+                top = news_events[0] if news_events else {}
+                log.info(f"  [STIRI] Pauza automata — {top.get('title','?')} "
+                         f"({top.get('currency','?')}, {top.get('impact','?')}, "
+                         f"{top.get('minutes_to','?')} min)")
+
+            # La prima iteratie de pauza de stiri, inchide imediat ordine/pozitii active
+            if news_paused and not _was_news_paused:
+                log.info("  [STIRI] Tranzitie → pauza: inchid ordine/pozitii active.")
+                _news_close_check(
+                    state=state,
+                    outcomes_file=outcomes_file,
+                    log=log,
+                    session_id=session_cfg.get("session_id", ""),
+                    execute_trades=session_cfg.get("execute_trades", False),
+                )
+                with open(state_file, "wb") as f:
+                    pickle.dump(state, f)
+            _was_news_paused = news_paused
 
             new_sigs = 0
             for market, symbol in resolved.items():

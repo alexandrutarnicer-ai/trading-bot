@@ -16,10 +16,11 @@ export function SessionCard({ session: s, onClick, selected }: Props) {
     ? Math.round((s.wins / s.outcomes_total) * 100)
     : null;
 
-  const isPaused  = s.paused;
-  const isRunning = s.running;
+  const isPaused   = s.paused;
+  const isNewsPaused = s.news_paused;
+  const isRunning  = s.running;
 
-  const dotColor = isPaused
+  const dotColor = isPaused || isNewsPaused
     ? "bg-warn"
     : isRunning
     ? "bg-profit"
@@ -27,7 +28,7 @@ export function SessionCard({ session: s, onClick, selected }: Props) {
 
   const borderColor = selected
     ? "border-blue-500"
-    : isPaused
+    : isPaused || isNewsPaused
     ? "border-warn/30"
     : isRunning
     ? "border-profit/20"
@@ -64,7 +65,17 @@ export function SessionCard({ session: s, onClick, selected }: Props) {
             <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-border text-slate-400 font-medium">OBS</span>
           )}
 
-          {/* Paused badge */}
+          {/* News paused badge */}
+          {isNewsPaused && !isPaused && (
+            <span
+              title={s.news_events[0] ? `${s.news_events[0].title} (${s.news_events[0].currency}, ${s.news_events[0].minutes_to >= 0 ? `in ${s.news_events[0].minutes_to} min` : `acum ${Math.abs(s.news_events[0].minutes_to)} min in urma`})` : "Pauza automata stiri"}
+              className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 font-medium cursor-help"
+            >
+              ⚡ ȘTIRI
+            </span>
+          )}
+
+          {/* Manual paused badge */}
           {isPaused && (
             <span className="text-[10px] px-1.5 py-0.5 rounded bg-warn/20 text-warn font-medium">PAUZA</span>
           )}
@@ -107,7 +118,7 @@ export function SessionCard({ session: s, onClick, selected }: Props) {
       </div>
 
       {/* Stats row */}
-      <div className={`grid grid-cols-3 gap-2 text-center ${isPaused ? "opacity-60" : ""}`}>
+      <div className={`grid grid-cols-3 gap-2 text-center ${isPaused || isNewsPaused ? "opacity-60" : ""}`}>
         <div>
           <div className="text-lg font-bold text-white">{s.signals_today}</div>
           <div className="text-[10px] text-slate-500">azi</div>

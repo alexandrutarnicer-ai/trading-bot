@@ -139,9 +139,12 @@ def start_bot(body: Optional[dict] = Body(default=None)):
     if not os.path.exists(script):
         raise HTTPException(404, "live/run_all.py nu a fost gasit")
 
+    env = os.environ.copy()
+    env["BOT_API_START"] = "1"   # semnalizeaza run_all.py sa nu trimita propriul mesaj de start
     proc = subprocess.Popen(
         [sys.executable, script],
         cwd=ROOT,
+        env=env,
         creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,

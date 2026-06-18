@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { Pause, Play } from "lucide-react";
 import type { ProfileSession, Meta } from "../api/types";
-import { useMt5Markets } from "../api/hooks";
+import { useMt5Markets, useMt5Status } from "../api/hooks";
 import { BacktestPanel } from "./BacktestPanel";
 import { InfoTooltip } from "./InfoTooltip";
 
@@ -19,20 +19,69 @@ interface Props {
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 const WD_KEYS = [0, 1, 2, 3, 4, 5, 6] as const;
 
+const MANDATORY_CRITERIA = [
+  {
+    title: "Trend confirmat (EMA200 M30)",
+    desc: "Prețul trebuie să fie DEASUPRA EMA200 pe Trend TF pentru LONG, SUB pentru SHORT. Fără filtru de trend, niciun setup nu e luat în considerare.",
+  },
+  {
+    title: "Minimum 2 Higher Highs consecutive",
+    desc: "Structura de piață confirmată: botul verifică cel puțin 2 maxime crescătoare (HH) înainte de a căuta pullback-ul.",
+  },
+  {
+    title: "Pullback valid (Higher Low)",
+    desc: "După ultimul HH, prețul retrage și formează un minim mai sus decât cel anterior. Trebuie să apară în fereastra configurată (Pullback window).",
+  },
+  {
+    title: "Breakout confirmat pe bara curentă",
+    desc: "Prima bară care se ÎNCHIDE deasupra maximului barei de pullback declanșează semnalul. Ordinul BUY_STOP e plasat la acel maxim + 1 pip.",
+  },
+  {
+    title: "Capital + circuit breaker OK",
+    desc: "Contul MT5 are marjă suficientă și nu s-a atins limita de pierderi consecutive pe zi (circuit breaker). Dacă una din condiții lipsește, ordinul nu e plasat.",
+  },
+];
+
 const TIPS = {
   markets:       "Piețele pe care sesiunea generează semnale. Bifează simbolurile disponibile în contul tău MT5.",
   mt5_search:    "Caută orice simbol disponibil în contul MT5 curent (forex, indici, crypto, materii prime). MT5 trebuie să fie deschis și conectat.",
   entry_tf:      "Timeframe-ul barei de intrare — semnalul este detectat pe acest TF.",
   trend_tf:      "Timeframe mai mare folosit pentru filtrarea trendului (EMA200). Trebuie să fie > Entry TF.",
   direction:     "LONG = doar cumpărări; SHORT = doar vânzări; BOTH = ambele direcții.",
-  pullback_window: "Numărul maxim de bare în care se caută un pullback valid după un Higher High. Valori mici = setup-uri mai stricte.",
-  expire_bars:   "Ordinul pending se anulează automat după N bare dacă nu a fost triggerat.",
+  pullback_window: [
+    "Fereastra de căutare a pullback-ului după un Higher High (HH).",
+    "",
+    "Botul detectează un HH, apoi caută un Higher Low (HL) — o retragere — în MAXIM N bare. Prima bară care revine peste maximul retragerii declanșează ordinul de intrare.",
+    "",
+    "Ex: 8 = retragerea trebuie să apară în max 8 bare M15 (2h). Dacă pullback-ul durează mai mult, setup-ul e ignorat.",
+    "",
+    "Mare (10-12): mai multe semnale, retrageri mai lungi acceptate.",
+    "Mic (4-6): semnale mai puține dar mai stricte, doar retrageri scurte și rapide.",
+  ].join("\n"),
+  expire_bars: [
+    "Cât timp rămâne activ un ordin pending după plasare.",
+    "",
+    "Botul plasează BUY_STOP/SELL_STOP și așteaptă. Dacă prețul nu ajunge la entry în N bare M15, ordinul e ANULAT automat.",
+    "",
+    "Ex: 4 bare = ordinul e valid 1 oră (4×15min). Dacă prețul nu sparge nivelul în 1h, setup-ul expiră.",
+    "",
+    "Mic (2-3): intri doar când momentum-ul e proaspăt și direcția e clară.",
+    "Mare (6-8): aștepți mai mult, dar riscul de entry în condiții deja schimbate crește.",
+  ].join("\n"),
   criteria:      "3 criterii opționale care cresc R/R-ul. Fiecare nivel R are un prag configurabil (La ≥ N criterii). Praguri default: R-mid la ≥1, R-top la ≥2, R-max la ≥3. Criteriile sunt independente — activează oricare combinație.",
   rsi:           "RSI filtrează entry-urile în zone de supraCumpărare/supraVânzare. Gama recomandată: buy 40–65, sell 35–60.",
   ema:           "EMA8 > EMA20 > EMA50 pe TF de intrare — confirmă că trendul de scurt termen e aliniat cu cel de mediu termen.",
   body_strength: "Corp lumânare: bara de intrare trebuie să aibă un corp (close−open) mai mare decât ATR × ratio în direcția trade-ului. Confirmă că breakout-ul are impuls. Dezactivat implicit. Ratio recomandat: 0.10–0.25.",
   circuit_breaker: "Oprește tranzacționarea după N pierderi consecutive în aceeași zi. Repornește la miezul nopții.",
   risk_pct:      "Procentul din equity riscat per tranzacție. Equity-ul este citit din MT5 la fiecare ordin.",
+  account_fraction: [
+    "Fracția din equity-ul total MT5 alocat acestei sesiuni.",
+    "",
+    "Ex: 12.5% → la $800 equity → $100 capital sesiune.",
+    "Fiecare trade din sesiune riscă risk% din această sumă.",
+    "",
+    "Sesiunea poate tranzacționa simultan pe mai multe piețe — capitalul NU e împărțit per piață, ci fiecare trade folosește aceeași bază de calcul a lot-ului.",
+  ].join("\n"),
   execute_trades: [
     "ON → bot-ul plasează ordine reale BUY_STOP/SELL_STOP în MT5.",
     "OFF → mod observare: semnalele sunt loggate și trimise pe Telegram, fără ordine în MT5.",
@@ -43,6 +92,17 @@ const TIPS = {
   skip_hours:    "Ore server MT5 în care nu se plasează ordine noi. Util pentru evitarea știrilor (ex: 15:30 NFP).",
   skip_weekdays: "Zile ale săptămânii în care sesiunea nu tranzacționează.",
   friday_close:  "Vineri la ora configurată, toate pozițiile deschise (triggerate) sunt închise automat printr-un ordin la piață. Dezactivează pentru sesiunile crypto — BTC tranzacționează și în weekend.",
+  news_protection: [
+    "Când este activată, botul verifică calendarul economic la fiecare 5 minute (ForexFactory → MT5 calendar).",
+    "Dacă există un eveniment de impact ridicat pentru valutele sesiunii în fereastra configurată, sesiunea este pusă pe pauză automat.",
+    "",
+    "Impact: 1=Scăzut, 2=Mediu, 3=Ridicat. Recomandat: 3 (doar știri mari: NFP, CPI, Fed, BCE).",
+    "Pre-știre: minute înainte de eveniment — sesiunea intră pe pauză preventiv.",
+    "Post-știre: minute după eveniment — sesiunea rămâne pe pauză pentru a lăsa volatilitatea să se calmeze.",
+  ].join("\n"),
+  news_impact:    "Nivelul minim de impact pentru a declanșa pauza. 1=Scăzut, 2=Mediu, 3=Ridicat (recomandat). Sursa principală: ForexFactory. Backup: MT5 calendar built-in.",
+  news_pre:       "Minute înainte de eveniment în care sesiunea intră pe pauză preventiv. Recomandat: 15–30 min.",
+  news_post:      "Minute după eveniment cât sesiunea rămâne pe pauză. Recomandat: 15–30 min pentru a lăsa volatilitatea să se calmeze.",
 };
 
 export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted, paused, onPauseToggle, onSaveAndNavigate }: Props) {
@@ -50,8 +110,10 @@ export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted,
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [showMt5Search, setShowMt5Search] = useState(false);
   const [mt5Query, setMt5Query]   = useState("");
+  const [showMandatory, setShowMandatory] = useState(false);
 
   const { data: mt5Data, isLoading: loadingMt5 } = useMt5Markets();
+  const { data: mt5Status } = useMt5Status();
 
   const mt5Filtered = useMemo(() => {
     if (!mt5Data?.symbols) return [];
@@ -279,6 +341,31 @@ export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted,
 
           {/* ── CRITERII OPȚIONALE ── */}
           <Section label="Criterii Opționale" tip={TIPS.criteria}>
+            {/* Criterii Obligatorii dropdown */}
+            <div className="mb-3">
+              <button
+                onClick={() => setShowMandatory((v) => !v)}
+                className="flex items-center gap-1.5 text-[10px] text-slate-600 hover:text-slate-400 transition-colors"
+              >
+                <span className="text-[8px]">{showMandatory ? "▲" : "▼"}</span>
+                Criterii obligatorii (întotdeauna active)
+              </button>
+              {showMandatory && (
+                <div className="mt-1.5 border border-surface-border/40 rounded-lg p-3 space-y-2.5 bg-surface-border/10">
+                  {MANDATORY_CRITERIA.map((c, i) => (
+                    <div key={i} className="space-y-0.5">
+                      <div className="text-[10px] font-semibold text-slate-300">
+                        {i + 1}. {c.title}
+                      </div>
+                      <div className="text-[10px] text-slate-500 leading-relaxed">
+                        {c.desc}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             {/* Counter vizual */}
             <div className="flex items-center gap-3 mb-3">
               <div className="flex gap-1">
@@ -386,6 +473,52 @@ export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted,
 
           {/* Setări generale */}
           <Section label="Setări Generale">
+            {/* Alocare capital */}
+            {(() => {
+              const frac    = session.account_fraction ?? 0;
+              const equity  = mt5Status?.equity ?? null;
+              const capital = equity != null ? equity * frac : null;
+              const riskUsd = capital != null ? capital * (session.risk_pct ?? 0.01) : null;
+              const fmt     = (v: number) => v >= 100 ? v.toFixed(0) : v.toFixed(2);
+              return (
+                <div className="mb-4 p-3 rounded-lg border border-surface-border/50 bg-surface-border/10 space-y-2">
+                  <div className="flex items-center gap-3">
+                    <div className="max-w-[110px]">
+                      <NumField
+                        label="Fracție cont"
+                        value={+(frac * 100).toFixed(1)}
+                        min={0} max={100} step={0.5}
+                        tip={TIPS.account_fraction}
+                        onChange={(v) => upd({ account_fraction: +(v / 100).toFixed(4) })}
+                      />
+                    </div>
+                    <div className="flex-1 text-xs text-slate-500 leading-relaxed pt-3">
+                      {equity != null && capital != null && riskUsd != null ? (
+                        <>
+                          <span className="text-slate-300 font-medium">${fmt(capital)}</span>
+                          {" "}capital sesiune
+                          {session.markets.length > 1 && (
+                            <> · <span className="text-slate-400">${fmt(capital / session.markets.length)}</span>/piață</>
+                          )}
+                          <br />
+                          risc/trade: <span className="text-loss font-medium">~${fmt(riskUsd)}</span>
+                          {session.markets.length > 0 && (
+                            <span className="text-slate-600"> × max {session.markets.length} piețe simultan</span>
+                          )}
+                        </>
+                      ) : (
+                        <span className="text-slate-600">
+                          {frac > 0
+                            ? `${(frac * 100).toFixed(1)}% din equity MT5`
+                            : "0% — sesiunea nu alocă capital"}
+                          {equity == null ? " (MT5 deconectat)" : ""}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Toggle label="Execute trades (LIVE)" value={session.execute_trades}
@@ -448,6 +581,66 @@ export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted,
                   </div>
                   <p className="text-[10px] text-slate-600">
                     Sesiunile crypto (ex: BTC) pot dezactiva această regulă — piața rulează și sâmbătă/duminică.
+                  </p>
+                </div>
+              )}
+            </div>
+          </Section>
+
+          {/* Protecție Știri */}
+          <Section label="Protecție Știri" tip={TIPS.news_protection}>
+            <div className="space-y-2">
+              <Toggle
+                label="Pauză automată la știri"
+                value={session.news_protection_enabled ?? false}
+                onChange={(v) => upd({ news_protection_enabled: v })}
+              />
+              {(session.news_protection_enabled ?? false) && (
+                <div className="space-y-3 pt-1">
+                  <div className="space-y-1.5">
+                    <div className="text-xs text-slate-500">Impact minim <InfoTooltip text={TIPS.news_impact} /></div>
+                    <div className="flex gap-1">
+                      {[
+                        { v: 1, label: "Scăzut" },
+                        { v: 2, label: "Mediu" },
+                        { v: 3, label: "Ridicat" },
+                      ].map(({ v, label }) => (
+                        <button
+                          key={v}
+                          onClick={() => upd({ news_impact_level: v })}
+                          className={`text-xs px-2 py-1 rounded border transition-colors ${
+                            (session.news_impact_level ?? 3) === v
+                              ? "bg-amber-600/80 border-amber-500 text-white"
+                              : "bg-transparent border-surface-border text-slate-400 hover:border-slate-500"
+                          }`}
+                        >
+                          {v} — {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="max-w-[130px]">
+                      <NumField
+                        label="Pre-știre (min)"
+                        value={session.news_pre_minutes ?? 15}
+                        min={0} max={120}
+                        tip={TIPS.news_pre}
+                        onChange={(v) => upd({ news_pre_minutes: v })}
+                      />
+                    </div>
+                    <div className="max-w-[130px]">
+                      <NumField
+                        label="Post-știre (min)"
+                        value={session.news_post_minutes ?? 15}
+                        min={0} max={120}
+                        tip={TIPS.news_post}
+                        onChange={(v) => upd({ news_post_minutes: v })}
+                      />
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-slate-600">
+                    Sursa principală: ForexFactory (fără cheie API). Backup: MT5 calendar built-in. Verificare la fiecare 5 min.
                   </p>
                 </div>
               )}

@@ -37,6 +37,14 @@ export interface SessionStatus {
   wins: number;
   losses: number;
   paused: boolean;
+  news_paused: boolean;
+  news_events: Array<{
+    title: string;
+    currency: string;
+    impact: string;
+    event_time: string;
+    minutes_to: number;
+  }>;
 }
 
 export interface Signal {
@@ -115,6 +123,10 @@ export interface ProfileSession {
   backtest_results: BacktestResult | null;
   friday_close_enabled?: boolean;
   friday_close_hour?: number;
+  news_protection_enabled?: boolean;
+  news_impact_level?: number;
+  news_pre_minutes?: number;
+  news_post_minutes?: number;
 }
 
 export interface TelegramConfig {

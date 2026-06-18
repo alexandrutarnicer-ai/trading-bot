@@ -21,6 +21,8 @@ class SessionStatus(BaseModel):
     wins: int
     losses: int
     paused: bool = False
+    news_paused: bool = False
+    news_events: list = []
 
 
 class Signal(BaseModel):
