@@ -393,13 +393,29 @@ export function BacktestPanel({ session, onJobStarted, onSaveAndNavigate, onDown
             <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse flex-shrink-0" />
             <span className="text-[11px] text-blue-400 font-medium">Descărcarea datelor rulează în Audit...</span>
           </div>
-          <div className="flex gap-2">
+
+          {onSaveAndNavigate && (
+            <p className="text-[10px] text-slate-500 leading-relaxed">
+              Modificările din sesiune sunt <strong className="text-slate-400">nesalvate</strong>.
+              Salvează înainte să vizionezi rezultatele.
+            </p>
+          )}
+
+          <div className="flex flex-wrap gap-2">
+            {onSaveAndNavigate && (
+              <button
+                onClick={onSaveAndNavigate}
+                className="text-xs px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 transition-colors font-medium"
+              >
+                Salvează și mergi la Audit
+              </button>
+            )}
             {onDownloadStarted && (
               <button
                 onClick={() => { reset(); onDownloadStarted(); }}
-                className="text-xs px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 transition-colors font-medium"
+                className="text-xs px-3 py-1.5 rounded-lg border border-surface-border text-slate-400 hover:text-white transition-colors"
               >
-                Mergi la Audit
+                {onSaveAndNavigate ? "Mergi fără să salvezi" : "Mergi la Audit"}
               </button>
             )}
             <button
