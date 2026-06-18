@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { Pause, Play } from "lucide-react";
 import type { ProfileSession, Meta } from "../api/types";
-import { useMt5Markets, useMt5Status } from "../api/hooks";
+import { useMt5Markets, useMt5Status, useMarketAtr } from "../api/hooks";
 import { BacktestPanel } from "./BacktestPanel";
 import { InfoTooltip } from "./InfoTooltip";
 
@@ -106,25 +106,34 @@ const TIPS = {
 };
 
 // ── Diagrama R:R proporțională ─────────────────────────────────────────────
-function RRDiagram({ session }: { session: ProfileSession }) {
-  const rBase = session.r_base ?? 2.5;
-  const rMid  = session.r_mid  ?? 3.5;
-  const rTop  = session.r_top  ?? 4.5;
-  const rMax  = session.r_max  ?? 5.5;
-  const tMid  = session.r_mid_threshold ?? 1;
-  const tTop  = session.r_top_threshold ?? 2;
-  const tMax  = session.r_max_threshold ?? 3;
+function RRDiagram({ session, mt5Connected }: { session: ProfileSession; mt5Connected: boolean }) {
+  const rBase    = session.r_base ?? 2.5;
+  const rMid     = session.r_mid  ?? 3.5;
+  const rTop     = session.r_top  ?? 4.5;
+  const rMax     = session.r_max  ?? 5.5;
+  const tMid     = session.r_mid_threshold ?? 1;
+  const tTop     = session.r_top_threshold ?? 2;
+  const tMax     = session.r_max_threshold ?? 3;
+  const riskBase = session.risk_base ?? session.risk_pct ?? 0.01;
+  const riskMid  = session.risk_mid  ?? riskBase;
+  const riskTop  = session.risk_top  ?? riskBase;
+  const riskMaxV = session.risk_max  ?? riskBase;
 
-  const unit   = 24;           // px per 1R
-  const pTop   = 28;           // padding top
-  const pBot   = 20;           // padding bottom
-  const pLeft  = 62;           // candle zone width
-  const pRight = 68;           // labels zone width
-  const lineW  = 150;          // horizontal line width
+  const { data: atrData } = useMarketAtr(
+    session.markets,
+    session.entry_tf ?? "M15",
+    mt5Connected && session.markets.length > 0,
+  );
+
+  const unit   = 24;
+  const pTop   = 28;
+  const pBot   = 22;
+  const pLeft  = 62;
+  const pRight = 82;
+  const lineW  = 140;
   const W      = pLeft + lineW + pRight;
   const H      = (rMax + 1) * unit + pTop + pBot;
 
-  // Y coordinates (SVG: y increases downward)
   const entryY  = pTop + rMax * unit;
   const slY     = entryY + unit;
   const tpBaseY = entryY - rBase * unit;
@@ -132,87 +141,124 @@ function RRDiagram({ session }: { session: ProfileSession }) {
   const tpTopY  = entryY - rTop  * unit;
   const tpMaxY  = entryY - rMax  * unit;
 
-  // fake candles — body [openOffset, closeOffset], wick [highOffset, lowOffset] (R units, + = below entry)
   const candles: Array<[number, number, number, number, boolean]> = [
-    [1.0, 0.5, 0.45, 1.1,  true ],  // uptrend bar 1
-    [0.5, 0.1, 0.05, 0.6,  true ],  // uptrend bar 2
-    [0.1, 0.4, 0.0,  0.5,  false],  // pullback 1
-    [0.4, 0.6, 0.3,  0.7,  false],  // pullback 2
-    [0.6, 0.0, -0.05,0.65, true ],  // breakout / entry bar
+    [1.0, 0.5, 0.45, 1.1,  true ],
+    [0.5, 0.1, 0.05, 0.6,  true ],
+    [0.1, 0.4, 0.0,  0.5,  false],
+    [0.4, 0.6, 0.3,  0.7,  false],
+    [0.6, 0.0, -0.05,0.65, true ],
   ];
-  const cW = 7;  // candle body width
-  const cGap = 4;
+  const cW = 7; const cGap = 4;
   const cStart = pLeft - candles.length * (cW + cGap) + cGap;
 
   const levels = [
-    { y: tpBaseY, r: rBase, label: `${rBase}R`, color: "#94a3b8", thresh: 0,    threshLabel: `≥0 cr.` },
-    { y: tpMidY,  r: rMid,  label: `${rMid}R`,  color: "#60a5fa", thresh: tMid, threshLabel: `≥${tMid} cr.` },
-    { y: tpTopY,  r: rTop,  label: `${rTop}R`,  color: "#4ade80", thresh: tTop, threshLabel: `≥${tTop} cr.` },
-    { y: tpMaxY,  r: rMax,  label: `${rMax}R`,  color: "#fbbf24", thresh: tMax, threshLabel: `≥${tMax} cr.` },
+    { y: tpBaseY, r: rBase, color: "#94a3b8", risk: riskBase, thr: `≥0 cr.` },
+    { y: tpMidY,  r: rMid,  color: "#60a5fa", risk: riskMid,  thr: `≥${tMid} cr.` },
+    { y: tpTopY,  r: rTop,  color: "#4ade80", risk: riskTop,  thr: `≥${tTop} cr.` },
+    { y: tpMaxY,  r: rMax,  color: "#fbbf24", risk: riskMaxV, thr: `≥${tMax} cr.` },
   ];
 
+  // ATR-based SL distance per piata
+  const atrRows = atrData?.data
+    ? Object.entries(atrData.data)
+        .filter(([, v]) => v != null)
+        .map(([sym, v]) => {
+          const d = v!;
+          // pips sau puncte in functie de instrument
+          const isIndex  = d.digits <= 2;
+          const isCrypto = d.pip_size >= 0.01 && d.digits === 2;
+          const slDist   = d.atr;  // 1R = 1×ATR (default sl_atr_factor=1)
+          const label    = isIndex || isCrypto
+            ? `${slDist.toFixed(isIndex ? 0 : 1)} pts`
+            : `${d.atr_pips ?? "?"} pips`;
+          return { sym, label };
+        })
+    : [];
+
   return (
-    <svg width={W} height={H} className="select-none">
-      {/* Profit zone */}
-      <rect x={pLeft} y={pTop} width={lineW} height={entryY - pTop}
-        fill="#22c55e" fillOpacity={0.06} />
-      {/* Loss zone */}
-      <rect x={pLeft} y={entryY} width={lineW} height={unit}
-        fill="#ef4444" fillOpacity={0.10} />
+    <div className="space-y-2">
+      <svg width={W} height={H} className="select-none">
+        {/* Zone colorata */}
+        <rect x={pLeft} y={pTop} width={lineW} height={entryY - pTop}
+          fill="#22c55e" fillOpacity={0.06} />
+        <rect x={pLeft} y={entryY} width={lineW} height={unit}
+          fill="#ef4444" fillOpacity={0.10} />
 
-      {/* TP lines */}
-      {levels.map(({ y, r, label, color, threshLabel }) => (
-        <g key={r}>
-          <line x1={pLeft} y1={y} x2={pLeft + lineW} y2={y}
-            stroke={color} strokeWidth={1} strokeDasharray="4 3" />
-          <text x={pLeft + lineW + 5} y={y + 4} fontSize={9} fill={color} fontWeight="600">
-            {label}
-          </text>
-          <text x={pLeft + lineW + 5} y={y + 14} fontSize={8} fill="#64748b">
-            {threshLabel}
-          </text>
-        </g>
-      ))}
-
-      {/* Entry line */}
-      <line x1={pLeft - 6} y1={entryY} x2={pLeft + lineW} y2={entryY}
-        stroke="#e2e8f0" strokeWidth={1.5} />
-      <text x={pLeft + lineW + 5} y={entryY + 4} fontSize={9} fill="#e2e8f0" fontWeight="700">
-        Entry
-      </text>
-
-      {/* SL line */}
-      <line x1={pLeft} y1={slY} x2={pLeft + lineW} y2={slY}
-        stroke="#f87171" strokeWidth={1} strokeDasharray="4 3" />
-      <text x={pLeft + lineW + 5} y={slY + 4} fontSize={9} fill="#f87171" fontWeight="600">
-        -1R SL
-      </text>
-
-      {/* Fake candles */}
-      {candles.map(([open, close, high, low, bull], i) => {
-        const x  = cStart + i * (cW + cGap);
-        const oY = entryY + open  * unit;
-        const cY = entryY + close * unit;
-        const hY = entryY + high  * unit;
-        const lY = entryY + low   * unit;
-        const bodyY = Math.min(oY, cY);
-        const bodyH = Math.max(Math.abs(oY - cY), 1.5);
-        const midX  = x + cW / 2;
-        const col   = bull ? "#4ade80" : "#f87171";
-        return (
-          <g key={i}>
-            <line x1={midX} y1={hY} x2={midX} y2={lY} stroke={col} strokeWidth={0.8} />
-            <rect x={x} y={bodyY} width={cW} height={bodyH}
-              fill={bull ? col : "none"} stroke={col} strokeWidth={0.8}
-              rx={0.5} />
+        {/* Linii TP */}
+        {levels.map(({ y, r, color, risk, thr }) => (
+          <g key={r}>
+            <line x1={pLeft} y1={y} x2={pLeft + lineW} y2={y}
+              stroke={color} strokeWidth={1} strokeDasharray="4 3" />
+            <text x={pLeft + lineW + 5} y={y + 4} fontSize={9} fill={color} fontWeight="600">
+              {r}R
+            </text>
+            <text x={pLeft + lineW + 5} y={y + 13} fontSize={8} fill={color} fillOpacity={0.75}>
+              {(risk * 100).toFixed(1)}% risc
+            </text>
+            <text x={pLeft + lineW + 5} y={y + 22} fontSize={7.5} fill="#475569">
+              {thr}
+            </text>
           </g>
-        );
-      })}
+        ))}
 
-      {/* Label "1R" for SL distance */}
-      <text x={pLeft - 4} y={entryY + unit / 2 + 3} fontSize={8} fill="#f87171"
-        textAnchor="middle">1R</text>
-    </svg>
+        {/* Entry */}
+        <line x1={pLeft - 6} y1={entryY} x2={pLeft + lineW} y2={entryY}
+          stroke="#e2e8f0" strokeWidth={1.5} />
+        <text x={pLeft + lineW + 5} y={entryY + 4} fontSize={9} fill="#e2e8f0" fontWeight="700">
+          Entry
+        </text>
+
+        {/* SL */}
+        <line x1={pLeft} y1={slY} x2={pLeft + lineW} y2={slY}
+          stroke="#f87171" strokeWidth={1} strokeDasharray="4 3" />
+        <text x={pLeft + lineW + 5} y={slY + 4} fontSize={9} fill="#f87171" fontWeight="600">
+          -1R SL
+        </text>
+
+        {/* Lumânări fake */}
+        {candles.map(([open, close, high, low, bull], i) => {
+          const x   = cStart + i * (cW + cGap);
+          const oY  = entryY + open  * unit;
+          const cY  = entryY + close * unit;
+          const hY  = entryY + high  * unit;
+          const lY  = entryY + low   * unit;
+          const bY  = Math.min(oY, cY);
+          const bH  = Math.max(Math.abs(oY - cY), 1.5);
+          const mX  = x + cW / 2;
+          const col = bull ? "#4ade80" : "#f87171";
+          return (
+            <g key={i}>
+              <line x1={mX} y1={hY} x2={mX} y2={lY} stroke={col} strokeWidth={0.8} />
+              <rect x={x} y={bY} width={cW} height={bH}
+                fill={bull ? col : "none"} stroke={col} strokeWidth={0.8} rx={0.5} />
+            </g>
+          );
+        })}
+
+        <text x={pLeft - 4} y={entryY + unit / 2 + 3} fontSize={8} fill="#f87171"
+          textAnchor="middle">1R</text>
+      </svg>
+
+      {/* ATR per piata — distanta SL reala */}
+      {atrRows.length > 0 && (
+        <div className="flex flex-wrap gap-x-3 gap-y-1 px-1">
+          <span className="text-[10px] text-slate-600 w-full">SL ≈ 1×ATR per piață:</span>
+          {atrRows.map(({ sym, label }) => (
+            <span key={sym} className="text-[10px] text-slate-400">
+              <span className="text-slate-300 font-medium">{sym}</span> {label}
+            </span>
+          ))}
+        </div>
+      )}
+      {mt5Connected && session.markets.length > 0 && !atrData && (
+        <p className="text-[10px] text-slate-600 px-1">Se încarcă ATR din MT5...</p>
+      )}
+      {!mt5Connected && (
+        <p className="text-[10px] text-slate-600 px-1">
+          Conectează MT5 pentru distanțe reale SL per piață.
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -548,8 +594,8 @@ export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted,
                 Vizualizare R:R proporțional
               </button>
               {showRRChart && (
-                <div className="mt-2 flex justify-center border border-surface-border/30 rounded-lg bg-surface-border/5 py-3">
-                  <RRDiagram session={session} />
+                <div className="mt-2 border border-surface-border/30 rounded-lg bg-surface-border/5 p-3">
+                  <RRDiagram session={session} mt5Connected={!!mt5Status?.equity} />
                 </div>
               )}
             </div>

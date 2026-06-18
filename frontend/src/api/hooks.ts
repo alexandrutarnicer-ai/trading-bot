@@ -128,6 +128,18 @@ export const useMt5Markets = () =>
     retry: false,
   });
 
+export const useMarketAtr = (symbols: string[], tf: string, enabled: boolean) =>
+  useQuery<{
+    error: string | null;
+    data: Record<string, { atr: number; atr_pips: number | null; pip_size: number; digits: number } | null>;
+  }>({
+    queryKey: ["market-atr", symbols.join(","), tf],
+    queryFn:  () => apiFetch(`/markets/atr?symbols=${symbols.join(",")}&tf=${tf}`),
+    enabled:  enabled && symbols.length > 0,
+    staleTime: 2 * 60 * 1000,
+    retry: false,
+  });
+
 export const useCheckData = () =>
   useMutation({
     mutationFn: (params: { markets: string; entry_tf: string; trend_tf: string }) =>
