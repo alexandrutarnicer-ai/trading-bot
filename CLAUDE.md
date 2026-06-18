@@ -182,9 +182,9 @@ Fiecare sesiune are si propriul `session.lock` (PID file per sesiune) care previ
 - `backtest` — `POST /backtest/run` (async job), `GET /backtest/{job_id}` (poll)
 - `backtest_history` — `GET/POST/DELETE /backtest/history` — stocheaza rezultate in `data/backtest_history.json`
 - `mt5status` — `GET /mt5/status` — conectare directa la MT5, returneaza cont/balance/equity/currency
-- `data_download` — descarca CSV-uri din MT5 via `Mt5DataSource`
+- `data_download` — descarca CSV-uri din MT5 via `Mt5DataSource`. Rezolva automat alias-uri de simboluri per broker (ex: GER40→DE40). Joburi persistate in `data/download_jobs.json`.
 - `markets` — lista simboluri disponibile in MT5
-- `settings` — configurare Telegram (token/chat_id in `data/telegram_config.json`)
+- `settings` — configurare Telegram (token/chat_id in `data/telegram_config.json`). `POST /settings/telegram/test` trimite mesaj de test direct via Telegram API.
 
 **Date persistente create de API:**
 - `data/profiles/*.json` — profile utilizator
@@ -193,13 +193,20 @@ Fiecare sesiune are si propriul `session.lock` (PID file per sesiune) care previ
 - `data/bot_run_log.json` — `{last_started_at, last_stopped_at}` — persistent
 - `data/backtest_history.json` — toate rezultatele backtest (max 200 intrari)
 - `data/backtest_jobs.json` — joburi backtest async (max 150, supravietuiesc restart API)
+- `data/download_jobs.json` — joburi descarcare date MT5 async (max 50, supravietuiesc restart API)
 - `data/paused_sessions.json` — lista session_id-urilor pe pauza (ex: `["session1", "session3"]`), persistent peste restart bot
 - `data/news_auto_paused.json` — lista sesiunilor puse automat pe pauza de News Guard, sters la stop bot
 
 **Routere sessions — endpoints noi:**
 - `POST /sessions/{session_id}/pause` — adauga in `paused_sessions.json`, trimite Telegram
 - `POST /sessions/{session_id}/resume` — sterge din `paused_sessions.json`, trimite Telegram
-- `SessionStatus` include campurile: `paused: bool`, `news_paused: bool`, `news_events: list`
+- `SessionStatus` include campurile: `paused: bool`, `news_paused: bool`, `news_events: list`, `signals_yesterday: int`, `outcomes_today: int`, `outcomes_yesterday: int` (folosite de TradingStatsPanel pentru trend azi vs ieri)
+
+**Routere data_download — endpoints:**
+- `GET /data/jobs` — lista tuturor joburilor de descarcare (din `download_jobs.json`)
+- `DELETE /data/jobs/{job_id}` — sterge job finalizat
+- `POST /data/download` — accepta si campul `label` (string human-readable afisat in Audit)
+- `SYMBOL_ALIASES` in `data_download.py` — mapeaza simboluri canonice la variante broker: `GER40→[GER40, DE40, DAX40, ...]`, `US30→[US30, DJ30, ...]`, `UK100→[UK100, FTSE100, ...]` etc. Backend incearca candidatii in ordine; salveaza CSV sub numele canonic. Campul `mt5_symbol` in rezultat indica simbolul real gasit.
 
 **Routere bot — endpoints noi:**
 - `GET /bot/autostart/status` — verifica daca task-ul TradingBot-RunAll exista in Task Scheduler
@@ -326,7 +333,7 @@ Daca numerele se schimba semnificativ → bug introdus, nu progres.
 
 **SessionCard.tsx:** Card per sesiune in Dashboard. Include buton Pause/Play (⏸/▶) in header. Cand pe pauza: dot galben, badge "PAUZA", stats dimmate. Butonul apeleaza `POST /sessions/{id}/pause` sau `/resume`. Nu necesita restart bot — efectul intra la bara urmatoare.
 
-**BacktestPanel.tsx:** Per sesiune profil. Capital + alocare per piata, range selector (1An/3Ani/Tot/Custom), verificare CSV → download daca lipsesc → trimite job in Audit tab (nu mai afiseaza inline).
+**BacktestPanel.tsx:** Per sesiune profil. Capital + alocare per piata, range selector (1An/3Ani/Tot/Custom), verificare CSV → download daca lipsesc → trimite job in Audit tab (nu mai afiseaza inline). Dupa pornire descarcare: starea `dl_submitted` arata "Descarcarea rulează în Audit..." cu buton "Mergi la Audit" — identic cu flow-ul backtest. Prop `onDownloadStarted` pentru navigare la Audit.
 
 **SessionEditor.tsx (Profile):** Editor complet per sesiune. Include:
 - Toggle Non-stop (session_start=0/session_end=24) — ascunde campurile de ora
@@ -338,15 +345,13 @@ Daca numerele se schimba semnificativ → bug introdus, nu progres.
 - Buton Pause/Play langa delete — acelasi mecanism ca Dashboard-ul, fara restart
 - Tooltips (i) pentru expire_bars (exemplu: "4 bare = 1h") si pullback_window (exemplu: "8 = 2h M15")
 
-**AuditPage.tsx:** Tab Audit (fostul Istoric). Joburi backtest grupate: In rulare / Erori / Finalizate.
-- Rezultate expandabile cu tooltips (i) pentru fiecare metrica (Trades, WR, Expectancy, Max DD, Train/Test)
-- Snapshot parametri structurat pe sectiuni: Strategie, Ore sesiune, R-Ladder, Criterii optionale, Capital
-- Capital final: `CapitalSummary` — start → final + P&L absolut si procentual (verde/rosu)
-- Piete fara date CSV: afisate in per-symbol cu badge "lipsa CSV" si mesaj de instructiuni
-- Erori clasificate: no_data / no_data_range / no_trades / generic (cu stacktrace)
-- Joburile persista peste refresh pagina si restart API (`data/backtest_jobs.json`)
+**AuditPage.tsx:** Tab Audit (fostul Istoric). Doua sectiuni: **Descarcari Date** si **Backteste**.
+- *Descarcari Date*: `DownloadJobRow` expandabil per simbol — arata alias MT5 folosit (ex: "MT5: DE40"), ✓/⚠/✗ per timeframe, warning scroll daca istoricul nu e incarcat. Joburile persista in `data/download_jobs.json`.
+- *Backteste*: Joburi grupate In rulare / Erori / Finalizate. Rezultate expandabile cu tooltips, snapshot parametri, `CapitalSummary`. Erori clasificate: no_data / no_data_range / no_trades / generic. Persista in `data/backtest_jobs.json`.
 
-**NavBar.tsx:** 3 tab-uri: Dashboard / Profile / Audit. Badge pe Audit: dot albastru pulsant + count cand sunt joburi in rulare, count gri cand finalizate. Contine si toggle Autostart Windows (GET/POST `/bot/autostart/*`) cu tooltip explicativ.
+**TradingStatsPanel.tsx:** Panel statistici in Dashboard. 4 carduri: Total Semnale, Total Trades, Castiguri, Pierderi. Fiecare arata numarul agregat + "X azi" + indicator trend ▲/▼ vs ieri. Click pe "Total Semnale" sau "Total Trades" expandeaza breakdown per sesiune (ascunde sesiunile cu 0 activitate).
+
+**NavBar.tsx:** 3 tab-uri: Dashboard / Profile / Audit. Badge pe Audit: include atat joburi backtest cat si descarcari date in curs. Dot albastru pulsant + count cand in rulare, count gri cand finalizate. Contine si toggle Autostart Windows.
 
 ---
 
@@ -364,6 +369,10 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 
 Autostart-ul poate fi activat/dezactivat si din NavBar-ul din UI (toggle cu UAC elevation automat — necesita acceptarea promptului de Administrator).
 
-Variabilele Telegram (`TELEGRAM_TOKEN`, `TELEGRAM_CHAT_ID`) se seteaza in User Environment Variables Windows (nu in .env) — sunt citite de `start_bot.bat` din registry. In UI, configurarea se face din sectiunea Telegram Settings (accordion in ProfilePage).
+**`scripts/setup_autostart.ps1` — detectare Python in sesiuni elevate:** Foloseste `py.exe` (Python Launcher, `C:\Windows\py.exe`) in loc de `python` pentru a gasi Python. `python` nu este disponibil in sesiuni elevate (UAC) cand e instalat ca Windows Store alias — `py.exe` este system-wide si functioneaza intotdeauna. API-ul adauga `-NoExit` la `Start-Process` pentru a tine fereastra deschisa dupa terminarea scriptului (vizibil si la erori).
 
-**start_ui.bat** — Script dublu-click pentru pornire dashboard fara IDE. Deschide doua ferestre terminal (API pe 8000 + frontend dev pe 5173) si browserul la `http://localhost:5173`. Necesita Python si Node.js in PATH.
+Variabilele Telegram (`TELEGRAM_TOKEN`, `TELEGRAM_CHAT_ID`) se seteaza in User Environment Variables Windows (nu in .env) — sunt citite de `start_bot.bat` din registry. In UI, configurarea se face din sectiunea Telegram Settings (accordion in ProfilePage). Butonul "Trimite mesaj de test" (`POST /settings/telegram/test`) verifica conexiunea real-time.
+
+**setup.bat** — Instalare Python/Node/Git via winget. Daca se instaleaza ceva nou, deschide automat o fereastra CMD noua cu PATH proaspat si continua instalarea pip/npm fara interventia utilizatorului (nu mai necesita rulare de doua ori). Foloseste `py` (Python Launcher) in loc de `python` pentru a evita Windows Store alias.
+
+**start_ui.bat** — Script dublu-click pentru pornire dashboard fara IDE. Deschide doua ferestre terminal (API pe 8000 + frontend dev pe 5173) si browserul la `http://localhost:5173`. Foloseste `py` in loc de `python`.
