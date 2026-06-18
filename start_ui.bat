@@ -10,11 +10,11 @@ echo   Trading Bot — Pornire Dashboard
 echo ============================================================
 echo.
 
-:: Verifica Python
-python --version >nul 2>&1
+:: Verifica Python — folosim "py" (Python Launcher) care evita Windows Store alias
+py --version >nul 2>&1
 if errorlevel 1 (
     echo  [!] Python nu este instalat sau nu este in PATH.
-    echo      Ruleaza setup.py sau instaleaza Python de la python.org
+    echo      Ruleaza setup.bat sau instaleaza Python de la python.org
     pause
     exit /b 1
 )
@@ -29,10 +29,10 @@ if errorlevel 1 (
 )
 
 echo  [1/3] Pornesc API backend pe portul 8000 ...
-start "Trading Bot — API" cmd /k "cd /d "%ROOT%" && python -m uvicorn api.main:app --port 8000"
+start "Trading Bot — API" cmd /k "cd /d %ROOT% && py -m uvicorn api.main:app --port 8000"
 
 echo  [2/3] Pornesc frontend pe portul 5173 ...
-start "Trading Bot — UI" cmd /k "cd /d "%ROOT%frontend" && npm run dev"
+start "Trading Bot — UI" cmd /k "cd /d %ROOT%frontend && npm run dev"
 
 echo  [3/3] Astept sa porneasca serverele (7 secunde) ...
 timeout /t 7 /nobreak >nul

@@ -26,8 +26,10 @@ if errorlevel 1 (
 
 
 :: ── 1. Python ─────────────────────────────────────────────────────────────
+:: Folosim "py" (Python Launcher) in loc de "python" pentru a evita
+:: Windows Store App Execution Alias care intercepteaza comanda "python".
 echo  [1/5] Verific Python...
-python --version >nul 2>&1
+py --version >nul 2>&1
 if errorlevel 1 (
     echo  [~] Python nu este instalat. Instalez via winget ...
     winget install Python.Python.3 --silent --accept-package-agreements --accept-source-agreements
@@ -40,7 +42,7 @@ if errorlevel 1 (
     set "INSTALLED_SOMETHING=1"
     echo  [+] Python instalat.
 ) else (
-    for /f "tokens=*" %%V in ('python --version 2^>^&1') do echo  [+] %%V deja instalat.
+    for /f "tokens=*" %%V in ('py --version 2^>^&1') do echo  [+] %%V deja instalat.
 )
 
 
@@ -95,8 +97,8 @@ if "%INSTALLED_SOMETHING%"=="1" (
 
 :: ── 4. Dependente Python ──────────────────────────────────────────────────
 echo  [4/5] Instalez dependente Python ...
-python -m pip install --upgrade pip --quiet
-python -m pip install -r "%ROOT%requirements.txt"
+py -m pip install --upgrade pip --quiet
+py -m pip install -r "%ROOT%requirements.txt"
 if errorlevel 1 (
     echo  [!] Eroare la pip install. Verifica requirements.txt si conexiunea.
     pause

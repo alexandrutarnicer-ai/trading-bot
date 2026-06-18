@@ -2,6 +2,10 @@
 chcp 65001 >nul 2>&1
 setlocal
 set "ROOT=%~dp0"
+:: %~dp0 include backslash final (ex: C:\trading-bot\).
+:: git -C nu accepta calea cu backslash + ghilimele: "C:\path\" devine "C:\path" fetch...
+:: Eliminam backslash-ul final pentru a evita eroarea.
+set "GITROOT=%ROOT:~0,-1%"
 title Trading Bot — Update
 
 echo.
@@ -37,10 +41,10 @@ if errorlevel 1 (
 )
 
 :: Salveaza hash-ul curent pentru a detecta ce s-a schimbat
-for /f %%H in ('git -C "%ROOT%" rev-parse HEAD 2^>nul') do set "OLD_HASH=%%H"
+for /f %%H in ('git -C "%GITROOT%" rev-parse HEAD 2^>nul') do set "OLD_HASH=%%H"
 
 echo  [1/4] Descarc modificarile din repository ...
-git -C "%ROOT%" fetch origin main 2>&1
+git -C "%GITROOT%" fetch origin main 2>&1
 if errorlevel 1 (
     echo  [!] Eroare la fetch. Verifica conexiunea la internet.
     pause
@@ -48,7 +52,7 @@ if errorlevel 1 (
 )
 
 :: Verifica daca exista modificari noi
-for /f %%H in ('git -C "%ROOT%" rev-parse origin/main 2^>nul') do set "REMOTE_HASH=%%H"
+for /f %%H in ('git -C "%GITROOT%" rev-parse origin/main 2^>nul') do set "REMOTE_HASH=%%H"
 
 if "%OLD_HASH%"=="%REMOTE_HASH%" (
     echo.
@@ -59,7 +63,7 @@ if "%OLD_HASH%"=="%REMOTE_HASH%" (
 )
 
 echo  [2/4] Aplic modificarile (git pull) ...
-git -C "%ROOT%" pull origin main 2>&1
+git -C "%GITROOT%" pull origin main 2>&1
 if errorlevel 1 (
     echo  [!] Eroare la pull. Poate exista un conflict local.
     echo      Ruleaza manual: git status
@@ -68,16 +72,16 @@ if errorlevel 1 (
 )
 
 :: Detecteaza daca requirements.txt s-a schimbat
-git -C "%ROOT%" diff "%OLD_HASH%" HEAD -- requirements.txt 2>nul | find "+" >nul
+git -C "%GITROOT%" diff "%OLD_HASH%" HEAD -- requirements.txt 2>nul | find "+" >nul
 if not errorlevel 1 (
     echo  [3/4] requirements.txt modificat — actualizez dependentele Python ...
-    python -m pip install -r "%ROOT%requirements.txt" --quiet 2>&1
+    py -m pip install -r "%ROOT%requirements.txt" --quiet 2>&1
 ) else (
     echo  [3/4] requirements.txt neschimbat — skip pip install.
 )
 
 :: Detecteaza daca package.json s-a schimbat
-git -C "%ROOT%" diff "%OLD_HASH%" HEAD -- frontend/package.json 2>nul | find "+" >nul
+git -C "%GITROOT%" diff "%OLD_HASH%" HEAD -- frontend/package.json 2>nul | find "+" >nul
 if not errorlevel 1 (
     echo  [4/4] frontend/package.json modificat — actualizez dependentele Node.js ...
     pushd "%ROOT%frontend"
@@ -94,7 +98,7 @@ echo   Update finalizat!
 echo ============================================================
 echo.
 echo  Modificari aplicate:
-git -C "%ROOT%" log --oneline "%OLD_HASH%..HEAD" 2>&1
+git -C "%GITROOT%" log --oneline "%OLD_HASH%..HEAD" 2>&1
 echo.
 echo  Porneste dashboard-ul cu start_ui.bat
 echo.
