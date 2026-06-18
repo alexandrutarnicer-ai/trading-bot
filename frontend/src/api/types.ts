@@ -31,9 +31,12 @@ export interface SessionStatus {
   running: boolean;
   pid: number | null;
   signals_today: number;
+  signals_yesterday: number;
   signals_total: number;
   last_signal_time: string | null;
   outcomes_total: number;
+  outcomes_today: number;
+  outcomes_yesterday: number;
   wins: number;
   losses: number;
   paused: boolean;

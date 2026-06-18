@@ -2,7 +2,7 @@ import os
 import json
 import ctypes
 import threading
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Optional
 
 import pandas as pd
@@ -109,25 +109,44 @@ def _read_outcomes(session_id: str) -> pd.DataFrame:
 def _sig_stats(session_id: str) -> dict:
     df = _read_signals(session_id)
     if df.empty:
-        return {"today": 0, "total": 0, "last_time": None}
-    today = str(date.today())
-    today_mask = df["time"].astype(str).str.startswith(today)
-    count_today = int(today_mask.sum())
+        return {"today": 0, "yesterday": 0, "total": 0, "last_time": None}
+    today     = str(date.today())
+    yesterday = str(date.today() - timedelta(days=1))
+    times = df["time"].astype(str)
     last_time = None
     if len(df):
-        last = df["time"].astype(str).iloc[-1]
+        last = times.iloc[-1]
         last_time = last[11:16] if len(last) >= 16 else last
-    return {"today": count_today, "total": len(df), "last_time": last_time}
+    return {
+        "today":     int(times.str.startswith(today).sum()),
+        "yesterday": int(times.str.startswith(yesterday).sum()),
+        "total":     len(df),
+        "last_time": last_time,
+    }
 
 
 def _outcome_stats(session_id: str) -> dict:
     df = _read_outcomes(session_id)
     if df.empty:
-        return {"total": 0, "wins": 0, "losses": 0}
+        return {"total": 0, "wins": 0, "losses": 0, "today": 0, "yesterday": 0}
     closed = df[df["status"].isin(["TP", "SL"])]
+    today     = str(date.today())
+    yesterday = str(date.today() - timedelta(days=1))
+    if "exit_time" in closed.columns and len(closed):
+        et = closed["exit_time"].astype(str)
+        today_out     = int(et.str.startswith(today).sum())
+        yesterday_out = int(et.str.startswith(yesterday).sum())
+    else:
+        today_out = yesterday_out = 0
     wins   = int((closed["result_r"] > 0).sum()) if len(closed) else 0
     losses = int((closed["result_r"] < 0).sum()) if len(closed) else 0
-    return {"total": len(closed), "wins": wins, "losses": losses}
+    return {
+        "total":     len(closed),
+        "wins":      wins,
+        "losses":    losses,
+        "today":     today_out,
+        "yesterday": yesterday_out,
+    }
 
 
 @router.get("", response_model=list[SessionStatus])
@@ -153,9 +172,12 @@ def list_sessions():
             running=running,
             pid=pid,
             signals_today=sig["today"],
+            signals_yesterday=sig["yesterday"],
             signals_total=sig["total"],
             last_signal_time=sig["last_time"],
             outcomes_total=out["total"],
+            outcomes_today=out["today"],
+            outcomes_yesterday=out["yesterday"],
             wins=out["wins"],
             losses=out["losses"],
             paused=s["id"] in paused,

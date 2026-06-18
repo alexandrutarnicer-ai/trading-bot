@@ -6,6 +6,7 @@ import { BotStatusBar } from "../components/BotStatusBar";
 import { SessionCard } from "../components/SessionCard";
 import { SignalFeed } from "../components/SignalFeed";
 import { EquityChart } from "../components/EquityChart";
+import { TradingStatsPanel } from "../components/TradingStatsPanel";
 
 export function Dashboard() {
   const { data: sessions, isLoading, dataUpdatedAt } = useSessions();
@@ -149,34 +150,13 @@ export function Dashboard() {
             <EquityChart />
           </div>
 
-          {/* Quick stats */}
+          {/* Trading stats */}
           <div className="bg-surface-card rounded-xl border border-surface-border p-4">
-            <h2 className="text-sm font-semibold text-white mb-3">Sumar</h2>
-            <div className="grid grid-cols-3 gap-3">
-              {[
-                {
-                  label: "Trades închise",
-                  value: sessions?.reduce((a, s) => a + s.outcomes_total, 0) ?? 0,
-                },
-                {
-                  label: "Win Rate",
-                  value: (() => {
-                    const wins  = sessions?.reduce((a, s) => a + s.wins, 0) ?? 0;
-                    const total = sessions?.reduce((a, s) => a + s.outcomes_total, 0) ?? 0;
-                    return total > 0 ? `${Math.round(wins / total * 100)}%` : "—";
-                  })(),
-                },
-                {
-                  label: "Semnale azi",
-                  value: sessions?.reduce((a, s) => a + s.signals_today, 0) ?? 0,
-                },
-              ].map(stat => (
-                <div key={stat.label} className="text-center">
-                  <div className="text-2xl font-bold text-white">{stat.value}</div>
-                  <div className="text-[10px] text-slate-500 mt-0.5">{stat.label}</div>
-                </div>
-              ))}
-            </div>
+            <h2 className="text-sm font-semibold text-white mb-3">Statistici</h2>
+            {sessions && sessions.length > 0
+              ? <TradingStatsPanel sessions={sessions} />
+              : <div className="text-xs text-slate-500 text-center py-4">Nicio sesiune activă</div>
+            }
           </div>
         </div>
       </div>

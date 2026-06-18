@@ -15,9 +15,12 @@ class SessionStatus(BaseModel):
     running: bool
     pid: Optional[int]
     signals_today: int
+    signals_yesterday: int = 0
     signals_total: int
     last_signal_time: Optional[str]
     outcomes_total: int
+    outcomes_today: int = 0
+    outcomes_yesterday: int = 0
     wins: int
     losses: int
     paused: bool = False
