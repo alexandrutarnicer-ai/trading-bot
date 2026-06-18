@@ -73,18 +73,20 @@ if ($mt5Exe) {
 Write-Host ""
 
 # --- Creeaza live\start_bot.bat ---
-@"
-@echo off
-title Trading Bot -- Sesiuni Live
-echo ==================================================
-echo  Trading Bot -- pornire automata
-echo  Astept 45 secunde pentru conectare MT5...
-echo ==================================================
-timeout /t 45 /nobreak
-cd /d "$BotDir"
-"$PythonExe" live\run_all.py
-pause
-"@ | Set-Content -Path $BatPath -Encoding UTF8
+# Evitam here-string (@"..."@) — poate avea probleme de encoding pe unele sisteme
+$batLines = @(
+    '@echo off',
+    'title Trading Bot -- Sesiuni Live',
+    'echo ==================================================',
+    'echo  Trading Bot -- pornire automata',
+    'echo  Astept 45 secunde pentru conectare MT5...',
+    'echo ==================================================',
+    'timeout /t 45 /nobreak',
+    "cd /d `"$BotDir`"",
+    "`"$PythonExe`" live\run_all.py",
+    'pause'
+)
+[System.IO.File]::WriteAllText($BatPath, ($batLines -join "`r`n"), [System.Text.Encoding]::UTF8)
 Write-Host "[OK] Creat: live\start_bot.bat" -ForegroundColor Green
 
 # --- Task Scheduler ---

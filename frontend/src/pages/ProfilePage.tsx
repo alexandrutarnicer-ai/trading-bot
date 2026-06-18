@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   useProfileList, useProfile, useMeta, useSaveProfile, useCreateProfile, useDeleteProfile,
   useBotStatus, useSessions, usePauseSession, useResumeSession,
@@ -90,6 +90,18 @@ export function ProfilePage({ onNavigateToAudit }: { onNavigateToAudit: () => vo
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [profileDropOpen, setProfileDropOpen] = useState(false);
+  const profileDropRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!profileDropOpen) return;
+    function handleOutside(e: MouseEvent) {
+      if (profileDropRef.current && !profileDropRef.current.contains(e.target as Node)) {
+        setProfileDropOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleOutside);
+    return () => document.removeEventListener("mousedown", handleOutside);
+  }, [profileDropOpen]);
 
   const handleSessionChange = (idx: number, updated: ProfileSession) => {
     if (!draft) return;
@@ -176,8 +188,7 @@ export function ProfilePage({ onNavigateToAudit }: { onNavigateToAudit: () => vo
           {/* Custom dropdown cu indicator ON */}
           <div
             className="relative"
-            tabIndex={0}
-            onBlur={() => setTimeout(() => setProfileDropOpen(false), 150)}
+            ref={profileDropRef}
           >
             <button
               onClick={() => setProfileDropOpen((v) => !v)}

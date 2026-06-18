@@ -28,6 +28,15 @@ if errorlevel 1 (
     exit /b 1
 )
 
+echo  [0/3] Opresc instante vechi (daca exista) ...
+for /f "tokens=5" %%a in ('netstat -ano 2^>nul ^| findstr ":8000 " ^| findstr LISTENING') do (
+    taskkill /PID %%a /F >nul 2>&1
+)
+for /f "tokens=5" %%a in ('netstat -ano 2^>nul ^| findstr ":5173 " ^| findstr LISTENING') do (
+    taskkill /PID %%a /F >nul 2>&1
+)
+timeout /t 1 /nobreak >nul
+
 echo  [1/3] Pornesc API backend pe portul 8000 ...
 start "Trading Bot — API" cmd /k "cd /d %ROOT% && py -m uvicorn api.main:app --port 8000"
 
