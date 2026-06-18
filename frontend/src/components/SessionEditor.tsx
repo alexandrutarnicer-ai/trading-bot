@@ -105,12 +105,126 @@ const TIPS = {
   news_post:      "Minute după eveniment cât sesiunea rămâne pe pauză. Recomandat: 15–30 min pentru a lăsa volatilitatea să se calmeze.",
 };
 
+// ── Diagrama R:R proporțională ─────────────────────────────────────────────
+function RRDiagram({ session }: { session: ProfileSession }) {
+  const rBase = session.r_base ?? 2.5;
+  const rMid  = session.r_mid  ?? 3.5;
+  const rTop  = session.r_top  ?? 4.5;
+  const rMax  = session.r_max  ?? 5.5;
+  const tMid  = session.r_mid_threshold ?? 1;
+  const tTop  = session.r_top_threshold ?? 2;
+  const tMax  = session.r_max_threshold ?? 3;
+
+  const unit   = 24;           // px per 1R
+  const pTop   = 28;           // padding top
+  const pBot   = 20;           // padding bottom
+  const pLeft  = 62;           // candle zone width
+  const pRight = 68;           // labels zone width
+  const lineW  = 150;          // horizontal line width
+  const W      = pLeft + lineW + pRight;
+  const H      = (rMax + 1) * unit + pTop + pBot;
+
+  // Y coordinates (SVG: y increases downward)
+  const entryY  = pTop + rMax * unit;
+  const slY     = entryY + unit;
+  const tpBaseY = entryY - rBase * unit;
+  const tpMidY  = entryY - rMid  * unit;
+  const tpTopY  = entryY - rTop  * unit;
+  const tpMaxY  = entryY - rMax  * unit;
+
+  // fake candles — body [openOffset, closeOffset], wick [highOffset, lowOffset] (R units, + = below entry)
+  const candles: Array<[number, number, number, number, boolean]> = [
+    [1.0, 0.5, 0.45, 1.1,  true ],  // uptrend bar 1
+    [0.5, 0.1, 0.05, 0.6,  true ],  // uptrend bar 2
+    [0.1, 0.4, 0.0,  0.5,  false],  // pullback 1
+    [0.4, 0.6, 0.3,  0.7,  false],  // pullback 2
+    [0.6, 0.0, -0.05,0.65, true ],  // breakout / entry bar
+  ];
+  const cW = 7;  // candle body width
+  const cGap = 4;
+  const cStart = pLeft - candles.length * (cW + cGap) + cGap;
+
+  const levels = [
+    { y: tpBaseY, r: rBase, label: `${rBase}R`, color: "#94a3b8", thresh: 0,    threshLabel: `≥0 cr.` },
+    { y: tpMidY,  r: rMid,  label: `${rMid}R`,  color: "#60a5fa", thresh: tMid, threshLabel: `≥${tMid} cr.` },
+    { y: tpTopY,  r: rTop,  label: `${rTop}R`,  color: "#4ade80", thresh: tTop, threshLabel: `≥${tTop} cr.` },
+    { y: tpMaxY,  r: rMax,  label: `${rMax}R`,  color: "#fbbf24", thresh: tMax, threshLabel: `≥${tMax} cr.` },
+  ];
+
+  return (
+    <svg width={W} height={H} className="select-none">
+      {/* Profit zone */}
+      <rect x={pLeft} y={pTop} width={lineW} height={entryY - pTop}
+        fill="#22c55e" fillOpacity={0.06} />
+      {/* Loss zone */}
+      <rect x={pLeft} y={entryY} width={lineW} height={unit}
+        fill="#ef4444" fillOpacity={0.10} />
+
+      {/* TP lines */}
+      {levels.map(({ y, r, label, color, threshLabel }) => (
+        <g key={r}>
+          <line x1={pLeft} y1={y} x2={pLeft + lineW} y2={y}
+            stroke={color} strokeWidth={1} strokeDasharray="4 3" />
+          <text x={pLeft + lineW + 5} y={y + 4} fontSize={9} fill={color} fontWeight="600">
+            {label}
+          </text>
+          <text x={pLeft + lineW + 5} y={y + 14} fontSize={8} fill="#64748b">
+            {threshLabel}
+          </text>
+        </g>
+      ))}
+
+      {/* Entry line */}
+      <line x1={pLeft - 6} y1={entryY} x2={pLeft + lineW} y2={entryY}
+        stroke="#e2e8f0" strokeWidth={1.5} />
+      <text x={pLeft + lineW + 5} y={entryY + 4} fontSize={9} fill="#e2e8f0" fontWeight="700">
+        Entry
+      </text>
+
+      {/* SL line */}
+      <line x1={pLeft} y1={slY} x2={pLeft + lineW} y2={slY}
+        stroke="#f87171" strokeWidth={1} strokeDasharray="4 3" />
+      <text x={pLeft + lineW + 5} y={slY + 4} fontSize={9} fill="#f87171" fontWeight="600">
+        -1R SL
+      </text>
+
+      {/* Fake candles */}
+      {candles.map(([open, close, high, low, bull], i) => {
+        const x  = cStart + i * (cW + cGap);
+        const oY = entryY + open  * unit;
+        const cY = entryY + close * unit;
+        const hY = entryY + high  * unit;
+        const lY = entryY + low   * unit;
+        const bodyY = Math.min(oY, cY);
+        const bodyH = Math.max(Math.abs(oY - cY), 1.5);
+        const midX  = x + cW / 2;
+        const col   = bull ? "#4ade80" : "#f87171";
+        return (
+          <g key={i}>
+            <line x1={midX} y1={hY} x2={midX} y2={lY} stroke={col} strokeWidth={0.8} />
+            <rect x={x} y={bodyY} width={cW} height={bodyH}
+              fill={bull ? col : "none"} stroke={col} strokeWidth={0.8}
+              rx={0.5} />
+          </g>
+        );
+      })}
+
+      {/* Label "1R" for SL distance */}
+      <text x={pLeft - 4} y={entryY + unit / 2 + 3} fontSize={8} fill="#f87171"
+        textAnchor="middle">1R</text>
+    </svg>
+  );
+}
+
+// ── SessionEditor ─────────────────────────────────────────────────────────
+
 export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted, paused, onPauseToggle, onSaveAndNavigate }: Props) {
   const [open, setOpen]           = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [showMt5Search, setShowMt5Search] = useState(false);
   const [mt5Query, setMt5Query]   = useState("");
   const [showMandatory, setShowMandatory] = useState(false);
+  const [showRRChart, setShowRRChart] = useState(false);
 
   const { data: mt5Data, isLoading: loadingMt5 } = useMt5Markets();
   const { data: mt5Status } = useMt5Status();
@@ -424,6 +538,22 @@ export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted,
               ))}
             </div>
 
+            {/* Buton + diagrama R:R */}
+            <div className="mb-1">
+              <button
+                onClick={() => setShowRRChart((v) => !v)}
+                className="flex items-center gap-1.5 text-[10px] text-slate-600 hover:text-slate-400 transition-colors"
+              >
+                <span className="text-[8px]">{showRRChart ? "▲" : "▼"}</span>
+                Vizualizare R:R proporțional
+              </button>
+              {showRRChart && (
+                <div className="mt-2 flex justify-center border border-surface-border/30 rounded-lg bg-surface-border/5 py-3">
+                  <RRDiagram session={session} />
+                </div>
+              )}
+            </div>
+
             {/* Criteriu 1 — RSI */}
             <div className="border border-surface-border rounded-lg p-3 space-y-2">
               <div className="flex items-center gap-2">
@@ -475,11 +605,14 @@ export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted,
           <Section label="Setări Generale">
             {/* Alocare capital */}
             {(() => {
-              const frac    = session.account_fraction ?? 0;
-              const equity  = mt5Status?.equity ?? null;
-              const capital = equity != null ? equity * frac : null;
-              const riskUsd = capital != null ? capital * (session.risk_pct ?? 0.01) : null;
-              const fmt     = (v: number) => v >= 100 ? v.toFixed(0) : v.toFixed(2);
+              const frac        = session.account_fraction ?? 0;
+              const equity      = mt5Status?.equity ?? null;
+              const capital     = equity != null ? equity * frac : null;
+              const rBase       = session.risk_base ?? session.risk_pct ?? 0.01;
+              const rMax        = session.risk_max  ?? 0.015;
+              const riskBaseUsd = capital != null ? capital * rBase : null;
+              const riskMaxUsd  = capital != null ? capital * rMax  : null;
+              const fmt         = (v: number) => v >= 100 ? v.toFixed(0) : v.toFixed(2);
               return (
                 <div className="mb-4 p-3 rounded-lg border border-surface-border/50 bg-surface-border/10 space-y-2">
                   <div className="flex items-center gap-3">
@@ -493,7 +626,7 @@ export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted,
                       />
                     </div>
                     <div className="flex-1 text-xs text-slate-500 leading-relaxed pt-3">
-                      {equity != null && capital != null && riskUsd != null ? (
+                      {equity != null && capital != null && riskBaseUsd != null && riskMaxUsd != null ? (
                         <>
                           <span className="text-slate-300 font-medium">${fmt(capital)}</span>
                           {" "}capital sesiune
@@ -501,7 +634,12 @@ export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted,
                             <> · <span className="text-slate-400">${fmt(capital / session.markets.length)}</span>/piață</>
                           )}
                           <br />
-                          risc/trade: <span className="text-loss font-medium">~${fmt(riskUsd)}</span>
+                          risc/trade:{" "}
+                          <span className="text-loss font-medium">~${fmt(riskBaseUsd)}</span>
+                          {riskBaseUsd !== riskMaxUsd && (
+                            <> → <span className="text-warn font-medium">~${fmt(riskMaxUsd)}</span></>
+                          )}
+                          <span className="text-slate-600"> (Base→Max)</span>
                           {session.markets.length > 0 && (
                             <span className="text-slate-600"> × max {session.markets.length} piețe simultan</span>
                           )}
@@ -524,11 +662,9 @@ export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted,
                 <Toggle label="Execute trades (LIVE)" value={session.execute_trades}
                   tip={TIPS.execute_trades} onChange={(v) => upd({ execute_trades: v })} />
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div>
                 <NumField label="Circuit breaker" value={session.circuit_breaker} min={1}
                   tip={TIPS.circuit_breaker} onChange={(v) => upd({ circuit_breaker: v })} />
-                <NumField label="Risk %" value={+(session.risk_pct * 100).toFixed(2)} step={0.1}
-                  tip={TIPS.risk_pct} onChange={(v) => upd({ risk_pct: v / 100 })} />
               </div>
             </div>
           </Section>

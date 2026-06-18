@@ -1080,7 +1080,9 @@ def _apply_profile_overrides(session_cfg: dict, cfg: dict, log) -> None:
 
     # --- parametri sesiune (session_cfg) ---
     for field in ("pullback_window", "session_start", "session_end",
-                  "expire_bars", "execute_trades", "account_fraction", "risk_pct"):
+                  "expire_bars", "execute_trades", "account_fraction", "risk_pct",
+                  "risk_base", "risk_mid", "risk_top", "risk_max",
+                  "r_mid_threshold", "r_top_threshold", "r_max_threshold"):
         if field in ps:
             session_cfg[field] = ps[field]
 
@@ -1133,6 +1135,24 @@ def _apply_profile_overrides(session_cfg: dict, cfg: dict, log) -> None:
     if "r_max_threshold" in ps: rl["threshold_max"] = ps["r_max_threshold"]
 
     log.info(f"  [PROFIL] Profil '{profile.get('name', '?')}' aplicat pe {key}.")
+
+
+def _pick_risk_pct(n_optional: int, session_cfg: dict) -> float:
+    """
+    Selecteaza risk% in functie de numarul de criterii optionale satisfacute.
+    Daca risk_base/mid/top/max nu sunt in session_cfg, foloseste risk_pct flat.
+    """
+    t_mid = session_cfg.get("r_mid_threshold", 1)
+    t_top = session_cfg.get("r_top_threshold", 2)
+    t_max = session_cfg.get("r_max_threshold", 3)
+    base  = session_cfg.get("risk_base", session_cfg.get("risk_pct", 0.01))
+    if n_optional >= t_max and "risk_max" in session_cfg:
+        return session_cfg["risk_max"]
+    if n_optional >= t_top and "risk_top" in session_cfg:
+        return session_cfg["risk_top"]
+    if n_optional >= t_mid and "risk_mid" in session_cfg:
+        return session_cfg["risk_mid"]
+    return base
 
 
 # ---------------------------------------------------------------------------
@@ -1364,13 +1384,14 @@ def run_generator(session_cfg: dict):
                         pd.DataFrame([sig]).to_csv(signals_file, mode="a",
                                                    header=False, index=False)
                     state["pending"].setdefault(symbol, {})[sig["signal_id"]] = {
-                        "direction": sig["direction"],
-                        "entry":     sig["entry"],
-                        "sl":        sig["sl"],
-                        "tp":        sig["tp"],
-                        "r_ratio":   sig["r_ratio"],
-                        "armed_at":  sig["time"],
-                        "triggered": False,
+                        "direction":  sig["direction"],
+                        "entry":      sig["entry"],
+                        "sl":         sig["sl"],
+                        "tp":         sig["tp"],
+                        "r_ratio":    sig["r_ratio"],
+                        "n_optional": sig.get("n_optional", 0),
+                        "armed_at":   sig["time"],
+                        "triggered":  False,
                     }
                     log.info(
                         f"  *** SEMNAL: {sig['signal_id']} {symbol} {sig['dir_str']} "
@@ -1393,7 +1414,7 @@ def run_generator(session_cfg: dict):
                             )
                         else:
                             capital = session_cfg.get("session_capital", 1000)
-                        risk_pct = session_cfg.get("risk_pct", 0.01)
+                        risk_pct = _pick_risk_pct(sig.get("n_optional", 0), session_cfg)
                         lots   = _calc_lots(sig["symbol"], sig["entry"], sig["sl"],
                                             capital, risk_pct)
                         ticket = _place_order(sig, lots,
@@ -1440,7 +1461,6 @@ def run_generator(session_cfg: dict):
                         _ai = _mt5_exec.account_info()
                         if _ai:
                             capital = _ai.equity * frac
-                    risk_pct = session_cfg.get("risk_pct", 0.01)
 
                     for _sid, _p in list(state["pending"].get(symbol, {}).items()):
                         if _sid in state.get("mt5_tickets", {}):
@@ -1456,7 +1476,8 @@ def run_generator(session_cfg: dict):
                             "sl":        _p["sl"],
                             "tp":        _p["tp"],
                         }
-                        _lots = _calc_lots(symbol, _p["entry"], _p["sl"], capital, risk_pct)
+                        _risk_pct = _pick_risk_pct(_p.get("n_optional", 0), session_cfg)
+                        _lots = _calc_lots(symbol, _p["entry"], _p["sl"], capital, _risk_pct)
                         log.info(f"  [RETRY] {_sid}: incerc plasare ordin (bara precedenta → None)")
                         _ticket = _place_order(_sig_retry, _lots,
                                                session_cfg.get("expire_bars", 4),
