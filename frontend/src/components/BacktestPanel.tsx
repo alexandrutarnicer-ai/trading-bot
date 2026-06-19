@@ -283,8 +283,20 @@ export function BacktestPanel({ session, onJobStarted, onSaveAndNavigate, onDown
                     <span className="text-xs text-slate-500">USD</span>
                     <span className="text-xs text-slate-600 ml-auto">{pct}%</span>
                     {over && (
-                      <span className={`text-[10px] font-mono font-medium ml-1 ${over.factor >= 8 ? "text-loss" : "text-warn"}`}>
+                      <span className={`text-[10px] font-mono font-medium ml-1 flex items-center ${over.factor >= 8 ? "text-loss" : "text-warn"}`}>
                         ⚠ {over.factor.toFixed(0)}×
+                        <InfoTooltip
+                          position="above"
+                          align="right"
+                          wide
+                          text={
+                            `Lotaj minim broker: ${spec!.volMin} loturi.\n\n` +
+                            `La alocarea de $${Math.round(over.intendedRisk / (session.risk_base ?? session.risk_pct ?? 0.01))} pentru ${m}, ` +
+                            `riscul intenționat e $${over.intendedRisk.toFixed(2)} dar lotajul minim forțează ~$${over.actualRisk.toFixed(0)} real.\n\n` +
+                            `${over.factor.toFixed(0)}× = riscul real depășește de ${over.factor.toFixed(0)} ori cel intenționat.\n\n` +
+                            "Notă: backtestul nu aplică lot minim (folosește loturi fracționale). Acest indicator reflectă situația în trading live."
+                          }
+                        />
                       </span>
                     )}
                   </div>

@@ -703,26 +703,69 @@ export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted,
                             if (rows.length === 0) return null;
                             return (
                               <div className="mt-2 pt-2 border-t border-surface-border/30">
-                                <div className="text-[10px] text-slate-600 uppercase tracking-wider mb-1">
+                                <div className="flex items-center gap-1 text-[10px] text-slate-600 uppercase tracking-wider mb-1">
                                   Lot minim broker (estimat live)
+                                  <InfoTooltip
+                                    position="above"
+                                    align="right"
+                                    wide
+                                    text={
+                                      "Brokerul impune un volum minim per ordin (ex: 0.1 loturi pentru indici).\n\n" +
+                                      "Dacă lotajul calculat din (capital × risc%) e sub acest minim, botul plasează automat lotajul minim — " +
+                                      "riscând mai mult decât intenționat.\n\n" +
+                                      "Valorile sunt estimații bazate pe un SL tipic pentru această strategie și cursuri valutare aproximative."
+                                    }
+                                  />
                                 </div>
                                 <div className="space-y-0.5">
                                   {rows.map(({ m, spec, over }) => (
                                     <div key={m} className="flex items-center gap-2 text-[11px]">
                                       <span className="font-mono text-slate-400 w-16 flex-shrink-0">{m}</span>
-                                      <span className="text-slate-600">min {spec.volMin} lot</span>
+                                      <span className="text-slate-600">
+                                        min {spec.volMin} lot
+                                        <InfoTooltip
+                                          position="above"
+                                          text={`Volumul minim acceptat de broker pentru ${m}. Sub această valoare, ordinul este respins.`}
+                                        />
+                                      </span>
                                       {over ? (
                                         <>
                                           <span className="text-slate-600">→</span>
                                           <span className={over.factor >= 8 ? "text-loss" : "text-warn"}>
                                             ~${over.actualRisk.toFixed(0)} real
+                                            <InfoTooltip
+                                              position="above"
+                                              wide
+                                              text={
+                                                `Riscul real estimat la lotajul minim de ${spec.volMin} loturi.\n\n` +
+                                                `Intenționat: $${over.intendedRisk.toFixed(2)} (capital/piață × risc%)\n` +
+                                                `Real (lot min): ~$${over.actualRisk.toFixed(0)}\n\n` +
+                                                "Estimat pe SL tipic al strategiei — variază per semnal."
+                                              }
+                                            />
                                           </span>
                                           <span className={`font-mono text-[10px] ${over.factor >= 8 ? "text-loss/70" : "text-warn/70"}`}>
-                                            ({over.factor.toFixed(0)}× int.)
+                                            ({over.factor.toFixed(0)}× int.
+                                            <InfoTooltip
+                                              position="above"
+                                              wide
+                                              text={
+                                                `De câte ori riscul real depășește cel intenționat din cauza lotajului minim.\n\n` +
+                                                `${over.factor.toFixed(0)}× = riscul real este de ~${over.factor.toFixed(0)} ori mai mare decât cel configurat.\n\n` +
+                                                "Portocaliu = 2–8×, Roșu = peste 8×. Problema dispare când contul crește suficient pentru a genera natural lotajul minim."
+                                              }
+                                            />
+                                            )
                                           </span>
                                         </>
                                       ) : (
-                                        <span className="text-profit text-[10px]">✓ lot calc. ok</span>
+                                        <span className="text-profit text-[10px]">
+                                          ✓ lot calc. ok
+                                          <InfoTooltip
+                                            position="above"
+                                            text="Lotajul calculat din risc% × capital depășește minimul brokerului — riscul real este aproape de cel intenționat."
+                                          />
+                                        </span>
                                       )}
                                     </div>
                                   ))}
