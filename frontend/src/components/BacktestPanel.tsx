@@ -4,6 +4,7 @@ import {
   useCheckData, useStartDownload, useDownloadJob,
 } from "../api/hooks";
 import { InfoTooltip } from "./InfoTooltip";
+import { MARKET_SPECS, calcOvershoot } from "../marketSpecs";
 import type { DataCheckResult, ProfileSession } from "../api/types";
 
 interface Props {
@@ -13,10 +14,10 @@ interface Props {
   onDownloadStarted?: () => void;   // navighează la Audit după pornire descărcare
 }
 
-type Range = "1y" | "3y" | "all" | "custom";
+type Range = "1y" | "3y" | "5y" | "all" | "custom";
 
 const RANGE_LABELS: Record<Range, string> = {
-  "1y": "1 An", "3y": "3 Ani", "all": "Tot", "custom": "Custom",
+  "1y": "1 An", "3y": "3 Ani", "5y": "5 Ani", "all": "Tot", "custom": "Custom",
 };
 
 const BACKTEST_INFO =
@@ -43,7 +44,7 @@ type Phase =
 
 export function BacktestPanel({ session, onJobStarted, onSaveAndNavigate, onDownloadStarted }: Props) {
   const [phase, setPhase]       = useState<Phase>("idle");
-  const [range, setRange]       = useState<Range>("all");
+  const [range, setRange]       = useState<Range>("5y");
   const [startBalance, setStartBalance] = useState(1000);
   const [marketAllocations, setMarketAllocations] = useState<Record<string, number>>({});
   const [dateFrom, setDateFrom] = useState("");
@@ -121,6 +122,7 @@ export function BacktestPanel({ session, onJobStarted, onSaveAndNavigate, onDown
     };
     if (range === "1y") return { date_from: offset(1) };
     if (range === "3y") return { date_from: offset(3) };
+    if (range === "5y") return { date_from: offset(5) };
     if (range === "custom") return { date_from: dateFrom || undefined, date_to: dateTo || undefined };
     return {};
   };
@@ -261,21 +263,40 @@ export function BacktestPanel({ session, onJobStarted, onSaveAndNavigate, onDown
               </button>
             </div>
             {session.markets.map((m) => {
-              const alloc = marketAllocations[m] ?? (startBalance / session.markets.length);
-              const pct   = startBalance > 0 ? (alloc / startBalance * 100).toFixed(0) : "0";
+              const alloc   = marketAllocations[m] ?? (startBalance / session.markets.length);
+              const pct     = startBalance > 0 ? (alloc / startBalance * 100).toFixed(0) : "0";
+              const spec    = MARKET_SPECS[m.toUpperCase()];
+              const riskPct = session.risk_base ?? session.risk_pct ?? 0.01;
+              const over    = spec ? calcOvershoot(alloc, riskPct, spec) : null;
               return (
-                <div key={m} className="flex items-center gap-2">
-                  <span className="text-xs text-slate-400 w-20 flex-shrink-0 font-mono">{m}</span>
-                  <input
-                    type="number" min={0} step={50}
-                    value={Math.round(alloc)}
-                    onChange={(e) => setMarketAllocations(prev => ({
-                      ...prev, [m]: parseFloat(e.target.value) || 0,
-                    }))}
-                    className="w-20 bg-surface border border-surface-border rounded px-2 py-1 text-xs text-right font-mono text-white focus:outline-none focus:border-blue-500"
-                  />
-                  <span className="text-xs text-slate-500">USD</span>
-                  <span className="text-xs text-slate-600 ml-auto">{pct}%</span>
+                <div key={m}>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-400 w-20 flex-shrink-0 font-mono">{m}</span>
+                    <input
+                      type="number" min={0} step={50}
+                      value={Math.round(alloc)}
+                      onChange={(e) => setMarketAllocations(prev => ({
+                        ...prev, [m]: parseFloat(e.target.value) || 0,
+                      }))}
+                      className="w-20 bg-surface border border-surface-border rounded px-2 py-1 text-xs text-right font-mono text-white focus:outline-none focus:border-blue-500"
+                    />
+                    <span className="text-xs text-slate-500">USD</span>
+                    <span className="text-xs text-slate-600 ml-auto">{pct}%</span>
+                    {over && (
+                      <span className={`text-[10px] font-mono font-medium ml-1 ${over.factor >= 8 ? "text-loss" : "text-warn"}`}>
+                        ⚠ {over.factor.toFixed(0)}×
+                      </span>
+                    )}
+                  </div>
+                  {over && (
+                    <div className="text-[10px] text-slate-500 pl-[88px] -mt-0.5 pb-1">
+                      lot min {spec!.volMin} → live risc est.{" "}
+                      <span className={over.factor >= 8 ? "text-loss/80" : "text-warn/80"}>
+                        ~${over.actualRisk.toFixed(0)}
+                      </span>
+                      {" "}vs ${over.intendedRisk.toFixed(2)} intenționat
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -295,7 +316,7 @@ export function BacktestPanel({ session, onJobStarted, onSaveAndNavigate, onDown
       {/* Range selector */}
       <div className="flex items-center gap-2 flex-wrap">
         <span className="text-xs text-slate-500">Interval:</span>
-        {(["1y", "3y", "all", "custom"] as Range[]).map((r) => (
+        {(["1y", "3y", "5y", "all", "custom"] as Range[]).map((r) => (
           <button key={r} onClick={() => setRange(r)}
             className={`text-xs px-2.5 py-1 rounded border transition-colors ${
               range === r

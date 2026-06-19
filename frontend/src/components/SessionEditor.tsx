@@ -4,6 +4,7 @@ import type { ProfileSession, Meta } from "../api/types";
 import { useMt5Markets, useMt5Status, useMarketAtr } from "../api/hooks";
 import { BacktestPanel } from "./BacktestPanel";
 import { InfoTooltip } from "./InfoTooltip";
+import { MARKET_SPECS, calcOvershoot } from "../marketSpecs";
 
 interface Props {
   session: ProfileSession;
@@ -690,6 +691,45 @@ export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted,
                           {session.markets.length > 0 && (
                             <span className="text-slate-600"> × max {session.markets.length} piețe simultan</span>
                           )}
+                          {/* Lot minim per piată */}
+                          {session.markets.length > 0 && (() => {
+                            const capitalPerMarket = capital / session.markets.length;
+                            const rows = session.markets.map(m => {
+                              const spec = MARKET_SPECS[m.toUpperCase()];
+                              if (!spec) return null;
+                              const over = calcOvershoot(capitalPerMarket, rBase, spec);
+                              return { m, spec, over };
+                            }).filter(Boolean) as { m: string; spec: typeof MARKET_SPECS[string]; over: ReturnType<typeof calcOvershoot> }[];
+                            if (rows.length === 0) return null;
+                            return (
+                              <div className="mt-2 pt-2 border-t border-surface-border/30">
+                                <div className="text-[10px] text-slate-600 uppercase tracking-wider mb-1">
+                                  Lot minim broker (estimat live)
+                                </div>
+                                <div className="space-y-0.5">
+                                  {rows.map(({ m, spec, over }) => (
+                                    <div key={m} className="flex items-center gap-2 text-[11px]">
+                                      <span className="font-mono text-slate-400 w-16 flex-shrink-0">{m}</span>
+                                      <span className="text-slate-600">min {spec.volMin} lot</span>
+                                      {over ? (
+                                        <>
+                                          <span className="text-slate-600">→</span>
+                                          <span className={over.factor >= 8 ? "text-loss" : "text-warn"}>
+                                            ~${over.actualRisk.toFixed(0)} real
+                                          </span>
+                                          <span className={`font-mono text-[10px] ${over.factor >= 8 ? "text-loss/70" : "text-warn/70"}`}>
+                                            ({over.factor.toFixed(0)}× int.)
+                                          </span>
+                                        </>
+                                      ) : (
+                                        <span className="text-profit text-[10px]">✓ lot calc. ok</span>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })()}
                         </>
                       ) : (
                         <span className="text-slate-600">
