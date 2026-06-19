@@ -827,6 +827,47 @@ def _friday_close_check(
     outcome_rows   = []
     sigs_to_remove = []   # list of (symbol, sig_id)
 
+    # 1. Anuleaza ordinele pending (neactivate) — ramase ca GTC in MT5
+    for symbol, pending in list(state["pending"].items()):
+        for sig_id, p in list(pending.items()):
+            if p.get("triggered"):
+                continue  # pozitiile triggerate sunt tratate mai jos
+
+            ticket  = state.get("mt5_tickets", {}).get(sig_id)
+            fmt     = ".2f" if p.get("entry", 0) > 100 else ".5f"
+            dir_str = "LONG" if p.get("direction", 1) == 1 else "SHORT"
+
+            if ticket and _mt5_exec is not None and execute_trades:
+                r = _mt5_exec.order_send({
+                    "action": _mt5_exec.TRADE_ACTION_REMOVE,
+                    "order":  ticket,
+                })
+                if r and r.retcode == _mt5_exec.TRADE_RETCODE_DONE:
+                    outcome_rows.append({
+                        **p,
+                        "signal_id":    sig_id,
+                        "symbol":       symbol,
+                        "status":       "vineri_cancel",
+                        "result_r":     0.0,
+                        "exit_price":   None,
+                        "exit_time":    now,
+                        "triggered_at": None,
+                        "time_check":   now,
+                    })
+                    state.get("mt5_tickets", {}).pop(sig_id, None)
+                    sigs_to_remove.append((symbol, sig_id))
+                    log.info(
+                        f"  [VINERI] {sig_id} {symbol} {dir_str} pending anulat "
+                        f"(entry={format(p['entry'], fmt[1:])})"
+                    )
+                else:
+                    retcode = r.retcode if r else "None"
+                    log.warning(f"  [VINERI] {sig_id}: anulare pending esuata retcode={retcode}")
+            elif not execute_trades:
+                sigs_to_remove.append((symbol, sig_id))
+                log.info(f"  [VINERI] {sig_id} {symbol} pending scos din state (OBS, vineri_cancel)")
+
+    # 2. Inchide pozitiile triggerate (open)
     for symbol, pending in list(state["pending"].items()):
         for sig_id, p in list(pending.items()):
             if not p.get("triggered"):
