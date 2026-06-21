@@ -4,7 +4,7 @@ import type {
   BotStatus, SessionStatus, Signal, Outcome, EquityCurvePoint,
   Profile, ProfileSummary, Meta,
   DataCheckResult, DownloadJob, TelegramConfig, Mt5Status,
-  BacktestHistoryEntry, BacktestJob,
+  BacktestHistoryEntry, BacktestJob, WeeklyStats,
 } from "./types";
 
 
@@ -22,6 +22,14 @@ export const useSessions = () =>
   useQuery<SessionStatus[]>({
     queryKey: ["sessions"],
     queryFn:  () => apiFetch("/sessions"),
+    refetchInterval: POLL,
+    refetchIntervalInBackground: true,
+  });
+
+export const useWeeklyStats = () =>
+  useQuery<WeeklyStats>({
+    queryKey: ["weekly-stats"],
+    queryFn:  () => apiFetch("/sessions/weekly_stats"),
     refetchInterval: POLL,
     refetchIntervalInBackground: true,
   });

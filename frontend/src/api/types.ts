@@ -130,6 +130,13 @@ export interface ProfileSession {
   news_impact_level?: number;
   news_pre_minutes?: number;
   news_post_minutes?: number;
+  max_concurrent_per_market?: number;
+  min_bars_between_trades?: number;
+  break_even_enabled?: boolean;
+  be_trigger_pct?: number;
+  be_lock1_pct?: number;
+  be_lock2_pct?: number;
+  be_phase2_zone_pct?: number;
 }
 
 export interface TelegramConfig {
@@ -155,6 +162,21 @@ export interface ProfileSummary {
   sessions: number;
 }
 
+export interface WeekdayStat {
+  name: string;
+  trades: number;
+  losses: number;
+  loss_rate: number;
+  expectancy: number;
+}
+
+export interface HourStat {
+  trades: number;
+  losses: number;
+  loss_rate: number;
+  expectancy: number;
+}
+
 export interface BacktestResult {
   total_trades: number;
   win_rate: number;
@@ -165,12 +187,38 @@ export interface BacktestResult {
   date_to: string | null;
   start_balance: number;
   final_balance?: number;
+  skipped_margin?: number;
   train: { trades: number; expectancy: number };
   test: { trades: number; expectancy: number };
   per_symbol: Record<string, { trades: number; win_rate: number; expectancy: number }>;
+  be_lock_count?: number;
+  be_lock2_count?: number;
   markets: string[];
   skipped_markets?: string[];
   session_id: string;
+  weekday_stats?: Record<number, WeekdayStat>;
+  hour_stats?: Record<number, HourStat>;
+}
+
+export interface WeeklyStats {
+  current_week: {
+    start: string;
+    end: string;
+    trades: number;
+    wins: number;
+    losses: number;
+    total_r: number;
+    win_rate: number;
+  };
+  previous_week: {
+    start: string;
+    end: string;
+    trades: number;
+    wins: number;
+    losses: number;
+    total_r: number;
+    win_rate: number;
+  };
 }
 
 export interface BacktestJob {

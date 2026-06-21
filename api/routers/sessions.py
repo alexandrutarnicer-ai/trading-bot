@@ -149,6 +149,52 @@ def _outcome_stats(session_id: str) -> dict:
     }
 
 
+@router.get("/weekly_stats")
+def weekly_stats():
+    """Statistici agregate pentru saptamana curenta vs precedenta (toate sesiunile)."""
+    now       = datetime.now()
+    # Inceputul saptamanii curente (luni la 00:00)
+    week_start = (now - timedelta(days=now.weekday())).replace(
+        hour=0, minute=0, second=0, microsecond=0)
+    prev_start = week_start - timedelta(weeks=1)
+
+    def _aggregate(start: datetime, end: datetime) -> dict:
+        totals = {"trades": 0, "wins": 0, "losses": 0, "total_r": 0.0}
+        for s in SESSIONS:
+            df = _read_outcomes(s["id"])
+            if df.empty or "exit_time" not in df.columns:
+                continue
+            closed = df[df["status"].isin(["TP", "SL"])].copy()
+            if closed.empty:
+                continue
+            closed["_et"] = pd.to_datetime(closed["exit_time"], errors="coerce")
+            mask = (closed["_et"] >= start) & (closed["_et"] < end)
+            sub  = closed[mask]
+            if sub.empty:
+                continue
+            totals["trades"] += len(sub)
+            totals["wins"]   += int((sub["status"] == "TP").sum())
+            totals["losses"] += int((sub["status"] == "SL").sum())
+            totals["total_r"] += float(sub["result_r"].fillna(0).sum())
+        n = totals["trades"]
+        totals["total_r"]  = round(totals["total_r"], 3)
+        totals["win_rate"] = round(totals["wins"] / n * 100, 1) if n else 0.0
+        return totals
+
+    return {
+        "current_week": {
+            "start": week_start.date().isoformat(),
+            "end":   now.date().isoformat(),
+            **_aggregate(week_start, now + timedelta(days=1)),
+        },
+        "previous_week": {
+            "start": prev_start.date().isoformat(),
+            "end":   (week_start - timedelta(days=1)).date().isoformat(),
+            **_aggregate(prev_start, week_start),
+        },
+    }
+
+
 @router.get("", response_model=list[SessionStatus])
 def list_sessions():
     paused      = _load_paused()

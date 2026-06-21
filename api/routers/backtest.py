@@ -130,6 +130,12 @@ def _run_backtest_job(
         if "r_max" in session_cfg:
             cfg["reward_ladder"]["rr_if_6_criteria"] = session_cfg["r_max"]
 
+        # Task 3: aplica risk% din sesiune (nu din legacy config)
+        risk_base = session_cfg.get("risk_base", session_cfg.get("risk_pct", 0.01))
+        risk_top  = session_cfg.get("risk_top", risk_base)
+        cfg["account"]["risk_per_trade_pct"] = risk_base * 100
+        cfg["account"]["risk_per_trade_pct_all_criteria"] = risk_top * 100
+
         src  = CsvDataSource(DATA_DIR)
         data = {}
         for symbol in session_cfg["markets"]:
@@ -191,15 +197,24 @@ def _run_backtest_job(
             "pullback_window":            session_cfg["pullback_window"],
             "depth_range":                None,
             "skip_monday":                0 in skip_wd,
+            "skip_weekdays":              skip_wd,
             "skip_hours":                 skip_hours,
             "atr_max_pips":               session_cfg.get("atr_max_pips", {}),
             "max_day_consec_losses":      session_cfg.get("circuit_breaker", 3),
             "corr_pairs":                 {},
-            "max_pos_per_symbol":         1,
-            "min_bars_between_same_symbol": 0,
+            # Task 7: max_concurrent_per_market si min_bars_between_trades din sesiune
+            "max_pos_per_symbol":         session_cfg.get("max_concurrent_per_market", 1),
+            "min_bars_between_same_symbol": session_cfg.get("min_bars_between_trades", 0),
             "symbol_sessions":            {},
             "symbol_skip_hours":          {},
             "only_long":                  session_cfg["direction"] == "LONG",
+            "be_cfg": {
+                "enabled":         session_cfg.get("break_even_enabled", False),
+                "trigger_pct":     session_cfg.get("be_trigger_pct",    80),
+                "lock1_pct":       session_cfg.get("be_lock1_pct",      30),
+                "lock2_pct":       session_cfg.get("be_lock2_pct",      50),
+                "phase2_zone_pct": session_cfg.get("be_phase2_zone_pct", 40),
+            },
         }
 
         trades, equity, balance, max_concurrent, skipped_margin, halted_days, split_time = \
@@ -218,7 +233,9 @@ def _run_backtest_job(
         df_t["R"] = df_t["pnl_usd"] / df_t["risk_usd"]
         df_t["entry_t"] = pd.to_datetime(df_t["time"])
 
-        wins  = int((df_t["outcome"] == "win").sum())
+        wins  = int(df_t["outcome"].isin(["win", "be_lock", "be_lock2"]).sum())
+        be_lock_count  = int((df_t["outcome"] == "be_lock").sum())
+        be_lock2_count = int((df_t["outcome"] == "be_lock2").sum())
         total = len(df_t)
 
         eq_arr = np.array([e["balance"] for e in equity])
@@ -231,7 +248,7 @@ def _run_backtest_job(
         per_symbol = {}
         for sym in df_t["symbol"].unique():
             sub = df_t[df_t["symbol"] == sym]
-            w   = int((sub["outcome"] == "win").sum())
+            w   = int(sub["outcome"].isin(["win", "be_lock", "be_lock2"]).sum())
             per_symbol[sym] = {
                 "trades":     len(sub),
                 "win_rate":   round(w / len(sub) * 100, 1) if len(sub) else 0,
@@ -240,19 +257,50 @@ def _run_backtest_job(
 
         final_balance = float(eq_arr[-1]) if len(eq_arr) else start_balance
 
+        # Task 4: Analiza pierderi per zi a saptamanii si per ora
+        _WD_NAMES = ["Luni", "Marți", "Miercuri", "Joi", "Vineri", "Sâmbătă", "Duminică"]
+        weekday_stats: dict = {}
+        for wd in range(7):
+            sub = df_t[df_t["entry_t"].dt.weekday == wd]
+            if len(sub) == 0:
+                continue
+            losses = int((sub["outcome"] == "loss").sum())
+            weekday_stats[wd] = {
+                "name":       _WD_NAMES[wd],
+                "trades":     len(sub),
+                "losses":     losses,
+                "loss_rate":  round(losses / len(sub) * 100, 1),
+                "expectancy": round(float(sub["R"].mean()), 3),
+            }
+
+        hour_stats: dict = {}
+        for h in sorted(df_t["entry_t"].dt.hour.unique()):
+            sub = df_t[df_t["entry_t"].dt.hour == int(h)]
+            losses = int((sub["outcome"] == "loss").sum())
+            hour_stats[int(h)] = {
+                "trades":     len(sub),
+                "losses":     losses,
+                "loss_rate":  round(losses / len(sub) * 100, 1),
+                "expectancy": round(float(sub["R"].mean()), 3),
+            }
+
         _update_job(job_id,
             status="done",
             completed_at=datetime.now().isoformat(timespec="seconds"),
             results={
-                "total_trades": total,
-                "win_rate":     round(wins / total * 100, 1) if total else 0,
-                "expectancy":   round(float(df_t["R"].mean()), 3),
-                "max_dd":       round(dd, 1),
-                "split_date":   str(split_time.date()),
-                "date_from":    data_from_actual,
-                "date_to":      data_to_actual,
-                "start_balance": start_balance,
-                "final_balance": round(final_balance, 2),
+                "total_trades":    total,
+                "win_rate":        round(wins / total * 100, 1) if total else 0,
+                "expectancy":      round(float(df_t["R"].mean()), 3),
+                "max_dd":          round(dd, 1),
+                "split_date":      str(split_time.date()),
+                "date_from":       data_from_actual,
+                "date_to":         data_to_actual,
+                "start_balance":   start_balance,
+                "final_balance":   round(final_balance, 2),
+                "be_lock_count":   be_lock_count,
+                "be_lock2_count":  be_lock2_count,
+                # Task 2: ordine sarite din cauza fondurilor insuficiente
+                "skipped_margin":  skipped_margin,
                 "train": {
                     "trades":     len(train),
                     "expectancy": round(float(train["R"].mean()), 3) if len(train) else 0,
@@ -265,6 +313,9 @@ def _run_backtest_job(
                 "markets":         session_cfg["markets"],
                 "skipped_markets": skipped_markets,
                 "session_id":      session_cfg.get("id", ""),
+                # Task 4: analiza pierderi per zi/ora
+                "weekday_stats":   weekday_stats,
+                "hour_stats":      hour_stats,
             },
         )
 

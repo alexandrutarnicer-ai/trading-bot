@@ -21,10 +21,11 @@ interface Props {
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 const WD_KEYS = [0, 1, 2, 3, 4, 5, 6] as const;
 
-const MANDATORY_CRITERIA = [
+function getMandatoryCriteria(trend_tf: string) {
+  return [
   {
-    title: "Trend confirmat (EMA200 M30)",
-    desc: "Prețul trebuie să fie DEASUPRA EMA200 pe Trend TF pentru LONG, SUB pentru SHORT. Fără filtru de trend, niciun setup nu e luat în considerare.",
+    title: `Trend confirmat (EMA200 ${trend_tf})`,
+    desc: `Prețul trebuie să fie DEASUPRA EMA200 pe ${trend_tf} pentru LONG, SUB pentru SHORT. Fără filtru de trend, niciun setup nu e luat în considerare.`,
   },
   {
     title: "Minimum 2 Higher Highs consecutive",
@@ -42,7 +43,8 @@ const MANDATORY_CRITERIA = [
     title: "Capital + circuit breaker OK",
     desc: "Contul MT5 are marjă suficientă și nu s-a atins limita de pierderi consecutive pe zi (circuit breaker). Dacă una din condiții lipsește, ordinul nu e plasat.",
   },
-];
+  ];
+}
 
 const TIPS = {
   markets:       "Piețele pe care sesiunea generează semnale. Bifează simbolurile disponibile în contul tău MT5.",
@@ -105,6 +107,22 @@ const TIPS = {
   news_impact:    "Nivelul minim de impact pentru a declanșa pauza. 1=Scăzut, 2=Mediu, 3=Ridicat (recomandat). Sursa principală: ForexFactory. Backup: MT5 calendar built-in.",
   news_pre:       "Minute înainte de eveniment în care sesiunea intră pe pauză preventiv. Recomandat: 15–30 min.",
   news_post:      "Minute după eveniment cât sesiunea rămâne pe pauză. Recomandat: 15–30 min pentru a lăsa volatilitatea să se calmeze.",
+  max_concurrent: [
+    "Numărul maxim de poziții simultane (pending + triggerate) permise per piață.",
+    "",
+    "Default: 1 — nu se plasează un nou ordin pe EURUSD dacă există deja unul pending sau deschis.",
+    "2+ — permite mai multe poziții pe același simbol, ex: dacă primul trade merge bine și apare un nou setup.",
+    "",
+    "Se aplică și în backtest și în live. Crește capitalul necesar per sesiune.",
+  ].join("\n"),
+  min_bars_between: [
+    "Numărul minim de bare care trebuie să treacă după plasarea unui semnal pe un simbol înainte de a plasa altul.",
+    "",
+    "Ex: 8 bare M15 = cel puțin 2 ore între ordine pe aceeași piață.",
+    "0 = fără restricție (default) — ordinele pot fi plasate la fiecare bară.",
+    "",
+    "Activ doar când max_concurrent ≥ 2. Previne suprapuneri prea dese pe același simbol.",
+  ].join("\n"),
 };
 
 // ── Diagrama R:R proporțională ─────────────────────────────────────────────
@@ -514,7 +532,7 @@ export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted,
               </button>
               {showMandatory && (
                 <div className="mt-1.5 border border-surface-border/40 rounded-lg p-3 space-y-2.5 bg-surface-border/10">
-                  {MANDATORY_CRITERIA.map((c, i) => (
+                  {getMandatoryCriteria(session.trend_tf).map((c, i) => (
                     <div key={i} className="space-y-0.5">
                       <div className="text-[10px] font-semibold text-slate-300">
                         {i + 1}. {c.title}
@@ -907,6 +925,86 @@ export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted,
                   </div>
                   <p className="text-[10px] text-slate-600">
                     Sursa principală: ForexFactory (fără cheie API). Backup: MT5 calendar built-in. Verificare la fiecare 5 min.
+                  </p>
+                </div>
+              )}
+            </div>
+          </Section>
+
+          {/* Pozitii Simultane */}
+          <Section label="Poziții Simultane" tip={TIPS.max_concurrent}>
+            <div className="space-y-3">
+              <div className="max-w-[160px]">
+                <NumField
+                  label="Max poziții per piață"
+                  value={session.max_concurrent_per_market ?? 1}
+                  min={1} max={5}
+                  tip={TIPS.max_concurrent}
+                  onChange={(v) => upd({ max_concurrent_per_market: v })}
+                />
+              </div>
+              <p className="text-[10px] text-slate-600">
+                Default: 1 (o singură poziție pending/activă per simbol). Crește dacă vrei mai multe
+                intrări pe același simbol simultan — include atât ordine netriggerate cât și pozițiile deschise.
+              </p>
+              {(session.max_concurrent_per_market ?? 1) >= 2 && (
+                <div className="max-w-[160px]">
+                  <NumField
+                    label="Bare minim între ordine"
+                    value={session.min_bars_between_trades ?? 0}
+                    min={0} max={50}
+                    tip={TIPS.min_bars_between}
+                    onChange={(v) => upd({ min_bars_between_trades: v })}
+                  />
+                </div>
+              )}
+              {(session.max_concurrent_per_market ?? 1) >= 2 && (session.min_bars_between_trades ?? 0) > 0 && (
+                <p className="text-[10px] text-slate-600">
+                  Ex: {session.min_bars_between_trades} bare {session.entry_tf} ≈{" "}
+                  {session.entry_tf === "H1" ? `${session.min_bars_between_trades}h`
+                    : session.entry_tf === "H4" ? `${(session.min_bars_between_trades ?? 0) * 4}h`
+                    : session.entry_tf === "M30" ? `${Math.round((session.min_bars_between_trades ?? 0) * 0.5)}h`
+                    : `${Math.round((session.min_bars_between_trades ?? 0) * 15 / 60 * 10) / 10}h`} distanță minimă.
+                </p>
+              )}
+            </div>
+          </Section>
+
+          {/* Break-Even */}
+          <Section label="Break-Even" tip={[
+            "Mută automat SL-ul în profit când trade-ul avansează.",
+            "",
+            "Faza 1: când prețul atinge trigger% din TP și se întoarce → SL mutat la lock1% din TP.",
+            "Faza 2: dacă prețul scade în zona 30-40% dar revine la trigger% și se întoarce din nou → SL mutat la lock2% din TP.",
+            "",
+            "Dezactivat implicit — nu afectează baselines.",
+          ].join("\n")}>
+            <div className="space-y-3">
+              <Toggle
+                label="Activează Break-Even"
+                value={session.break_even_enabled ?? false}
+                onChange={(v) => upd({ break_even_enabled: v })}
+              />
+              {(session.break_even_enabled) && (
+                <div className="space-y-3 pl-2 border-l-2 border-surface-border">
+                  <div className="grid grid-cols-2 gap-3">
+                    <NumField label="Trigger TP%" value={session.be_trigger_pct ?? 80} min={50} max={99}
+                      tip="Prețul trebuie să atingă X% din TP pentru a arma break-even."
+                      onChange={(v) => upd({ be_trigger_pct: v })} />
+                    <NumField label="Lock SL Faza 1%" value={session.be_lock1_pct ?? 30} min={5} max={60}
+                      tip="SL mutat la X% din distanța TP la faza 1."
+                      onChange={(v) => upd({ be_lock1_pct: v })} />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <NumField label="Zonă Faza 2%" value={session.be_phase2_zone_pct ?? 40} min={20} max={70}
+                      tip="Limita superioară a zonei de retragere Faza 2 (lock1–X%)."
+                      onChange={(v) => upd({ be_phase2_zone_pct: v })} />
+                    <NumField label="Lock SL Faza 2%" value={session.be_lock2_pct ?? 50} min={30} max={80}
+                      tip="SL mutat la X% din distanța TP la faza 2."
+                      onChange={(v) => upd({ be_lock2_pct: v })} />
+                  </div>
+                  <p className="text-[10px] text-slate-600">
+                    Notificări Telegram separate la Faza 1 și Faza 2. Se aplică în backtest și live.
                   </p>
                 </div>
               )}

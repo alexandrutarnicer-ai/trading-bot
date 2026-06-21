@@ -1,12 +1,102 @@
 import { useState, useEffect } from "react";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useSessions, useBotStatus, useMt5Status } from "../api/hooks";
+import { useSessions, useBotStatus, useMt5Status, useWeeklyStats } from "../api/hooks";
 import { BotStatusBar } from "../components/BotStatusBar";
 import { SessionCard } from "../components/SessionCard";
 import { SignalFeed } from "../components/SignalFeed";
 import { EquityChart } from "../components/EquityChart";
 import { TradingStatsPanel } from "../components/TradingStatsPanel";
+
+function WeeklyStatsPanel() {
+  const { data, isLoading } = useWeeklyStats();
+
+  if (isLoading) {
+    return <div className="h-24 rounded-xl bg-surface-card animate-pulse" />;
+  }
+  if (!data) return null;
+
+  const cur  = data.current_week;
+  const prev = data.previous_week;
+
+  function Trend({ curr, pre }: { curr: number; pre: number }) {
+    if (pre === 0 && curr === 0) return <Minus size={11} className="text-slate-600" />;
+    if (curr > pre) return <TrendingUp  size={11} className="text-profit" />;
+    if (curr < pre) return <TrendingDown size={11} className="text-loss" />;
+    return <Minus size={11} className="text-slate-600" />;
+  }
+
+  const rColor  = (r: number) => r > 0 ? "text-profit" : r < 0 ? "text-loss" : "text-slate-400";
+  const fmtR    = (r: number) => `${r >= 0 ? "+" : ""}${r.toFixed(3)}R`;
+
+  return (
+    <div className="space-y-2">
+      {/* Header row */}
+      <div className="grid grid-cols-3 text-[10px] text-slate-500 uppercase tracking-wider pb-1">
+        <div />
+        <div className="text-center">Săpt. curentă</div>
+        <div className="text-center">Săpt. anterioară</div>
+      </div>
+
+      {/* Trades */}
+      <div className="grid grid-cols-3 items-center">
+        <div className="text-[11px] text-slate-400">Trades</div>
+        <div className="text-center flex items-center justify-center gap-1">
+          <span className="text-xs font-semibold text-white">{cur.trades}</span>
+          <Trend curr={cur.trades} pre={prev.trades} />
+        </div>
+        <div className="text-center text-[11px] text-slate-500">{prev.trades}</div>
+      </div>
+
+      {/* Wins / Losses */}
+      <div className="grid grid-cols-3 items-center">
+        <div className="text-[11px] text-slate-400">Câștiguri</div>
+        <div className="text-center flex items-center justify-center gap-1">
+          <span className="text-xs font-semibold text-profit">{cur.wins}</span>
+          <Trend curr={cur.wins} pre={prev.wins} />
+        </div>
+        <div className="text-center text-[11px] text-slate-500">{prev.wins}</div>
+      </div>
+
+      <div className="grid grid-cols-3 items-center">
+        <div className="text-[11px] text-slate-400">Pierderi</div>
+        <div className="text-center flex items-center justify-center gap-1">
+          <span className="text-xs font-semibold text-loss">{cur.losses}</span>
+          <Trend curr={prev.losses} pre={cur.losses} />
+        </div>
+        <div className="text-center text-[11px] text-slate-500">{prev.losses}</div>
+      </div>
+
+      {/* Win rate */}
+      <div className="grid grid-cols-3 items-center">
+        <div className="text-[11px] text-slate-400">Win Rate</div>
+        <div className="text-center flex items-center justify-center gap-1">
+          <span className="text-xs font-semibold text-white">{cur.win_rate.toFixed(1)}%</span>
+          <Trend curr={cur.win_rate} pre={prev.win_rate} />
+        </div>
+        <div className="text-center text-[11px] text-slate-500">{prev.win_rate.toFixed(1)}%</div>
+      </div>
+
+      {/* Total R */}
+      <div className="grid grid-cols-3 items-center border-t border-surface-border/40 pt-2">
+        <div className="text-[11px] text-slate-400">Total R</div>
+        <div className="text-center flex items-center justify-center gap-1">
+          <span className={`text-xs font-mono font-semibold ${rColor(cur.total_r)}`}>
+            {fmtR(cur.total_r)}
+          </span>
+          <Trend curr={cur.total_r} pre={prev.total_r} />
+        </div>
+        <div className={`text-center text-[11px] font-mono ${rColor(prev.total_r)}`}>
+          {fmtR(prev.total_r)}
+        </div>
+      </div>
+
+      <div className="text-[10px] text-slate-600 pt-0.5">
+        {cur.start} → {cur.end} · anterior: {prev.start} → {prev.end}
+      </div>
+    </div>
+  );
+}
 
 export function Dashboard() {
   const { data: sessions, isLoading, dataUpdatedAt } = useSessions();
@@ -157,6 +247,12 @@ export function Dashboard() {
               ? <TradingStatsPanel sessions={sessions} />
               : <div className="text-xs text-slate-500 text-center py-4">Nicio sesiune activă</div>
             }
+          </div>
+
+          {/* Weekly index */}
+          <div className="bg-surface-card rounded-xl border border-surface-border p-4">
+            <h2 className="text-sm font-semibold text-white mb-3">Indice Săptămânal</h2>
+            <WeeklyStatsPanel />
           </div>
         </div>
       </div>

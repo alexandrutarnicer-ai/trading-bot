@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ClipboardList, Trash2, ChevronDown, ChevronRight, X, AlertTriangle, Download } from "lucide-react";
 import { useBacktestJobs, useDeleteBacktestJob, useDownloadJobs, useDeleteDownloadJob } from "../api/hooks";
-import type { BacktestJob, BacktestResult, DownloadJob, DownloadFileResult } from "../api/types";
+import type { BacktestJob, BacktestResult, DownloadJob, DownloadFileResult, WeekdayStat, HourStat } from "../api/types";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -269,6 +269,128 @@ function CapitalSummary({ start, final: fin }: { start: number; final: number })
   );
 }
 
+// ── Weekday / Hour analysis ──────────────────────────────────────────────────
+
+function LossAnalysis({ weekday, hour }: {
+  weekday?: Record<number, WeekdayStat>;
+  hour?: Record<number, HourStat>;
+}) {
+  const [tab, setTab] = useState<"weekday" | "hour">("weekday");
+
+  if (!weekday && !hour) return null;
+
+  const wdEntries  = weekday ? Object.entries(weekday).map(([k, v]) => ({ wd: Number(k), ...v })) : [];
+  const hrEntries  = hour    ? Object.entries(hour).map(([k, v]) => ({ h: Number(k), ...v })) : [];
+
+  // Identifica zilele/orele cu pierderi cumulate mari
+  const worstWd   = [...wdEntries].sort((a, b) => a.expectancy - b.expectancy).slice(0, 2);
+  const worstHr   = [...hrEntries].sort((a, b) => a.expectancy - b.expectancy).slice(0, 3);
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <div className="text-[10px] text-slate-500 uppercase tracking-wider">
+          Analiza pierderi (potențial skip)
+        </div>
+        <div className="flex gap-1">
+          <button
+            onClick={() => setTab("weekday")}
+            className={`text-[10px] px-2 py-0.5 rounded transition-colors ${tab === "weekday" ? "bg-blue-500/20 text-blue-400 border border-blue-500/30" : "text-slate-500 hover:text-slate-300"}`}
+          >
+            Zile săptămână
+          </button>
+          <button
+            onClick={() => setTab("hour")}
+            className={`text-[10px] px-2 py-0.5 rounded transition-colors ${tab === "hour" ? "bg-blue-500/20 text-blue-400 border border-blue-500/30" : "text-slate-500 hover:text-slate-300"}`}
+          >
+            Ore
+          </button>
+        </div>
+      </div>
+
+      {tab === "weekday" && wdEntries.length > 0 && (
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-slate-500 border-b border-surface-border">
+                <th className="text-left py-1.5 font-normal">Zi</th>
+                <th className="text-right py-1.5 font-normal">Trades</th>
+                <th className="text-right py-1.5 font-normal">Pierderi</th>
+                <th className="text-right py-1.5 font-normal">Loss %</th>
+                <th className="text-right py-1.5 font-normal">Expectancy</th>
+                <th className="text-right py-1.5 font-normal"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {wdEntries.sort((a, b) => a.wd - b.wd).map(({ wd, name, trades, losses, loss_rate, expectancy }) => (
+                <tr key={wd} className="border-b border-surface-border/30">
+                  <td className="py-1.5 font-medium text-slate-200">{name}</td>
+                  <td className="text-right text-slate-400">{trades}</td>
+                  <td className="text-right text-slate-400">{losses}</td>
+                  <td className="text-right text-slate-400">{loss_rate.toFixed(1)}%</td>
+                  <td className={`text-right font-mono ${expColor(expectancy)}`}>{fmtR(expectancy)}</td>
+                  <td className="text-right pl-2">
+                    {worstWd.some(w => w.wd === wd) && expectancy < 0 && (
+                      <span className="text-[9px] text-warn bg-warn/10 px-1.5 py-0.5 rounded">
+                        skip candidat
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {worstWd.filter(w => w.expectancy < 0).length > 0 && (
+            <p className="text-[10px] text-slate-500 mt-1.5">
+              💡 Zilele cu expectancy negativ sunt candidați pentru <strong className="text-slate-300">skip_weekdays</strong> în configuratorul de sesiune.
+            </p>
+          )}
+        </div>
+      )}
+
+      {tab === "hour" && hrEntries.length > 0 && (
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-slate-500 border-b border-surface-border">
+                <th className="text-left py-1.5 font-normal">Ora</th>
+                <th className="text-right py-1.5 font-normal">Trades</th>
+                <th className="text-right py-1.5 font-normal">Pierderi</th>
+                <th className="text-right py-1.5 font-normal">Loss %</th>
+                <th className="text-right py-1.5 font-normal">Expectancy</th>
+                <th className="text-right py-1.5 font-normal"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {hrEntries.sort((a, b) => a.h - b.h).map(({ h, trades, losses, loss_rate, expectancy }) => (
+                <tr key={h} className="border-b border-surface-border/30">
+                  <td className="py-1.5 font-mono text-slate-200">{String(h).padStart(2, "0")}:00</td>
+                  <td className="text-right text-slate-400">{trades}</td>
+                  <td className="text-right text-slate-400">{losses}</td>
+                  <td className="text-right text-slate-400">{loss_rate.toFixed(1)}%</td>
+                  <td className={`text-right font-mono ${expColor(expectancy)}`}>{fmtR(expectancy)}</td>
+                  <td className="text-right pl-2">
+                    {worstHr.some(w => w.h === h) && expectancy < 0 && (
+                      <span className="text-[9px] text-warn bg-warn/10 px-1.5 py-0.5 rounded">
+                        skip candidat
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {worstHr.filter(w => w.expectancy < 0).length > 0 && (
+            <p className="text-[10px] text-slate-500 mt-1.5">
+              💡 Orele cu expectancy negativ sunt candidați pentru <strong className="text-slate-300">skip_hours</strong> în configuratorul de sesiune.
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Job row ───────────────────────────────────────────────────────────────────
 
 function JobRow({
@@ -487,6 +609,25 @@ function JobRow({
             {r.final_balance != null && (
               <CapitalSummary start={r.start_balance} final={r.final_balance} />
             )}
+
+            {/* Task 2: Ordine sarite + perioada testata */}
+            <div className="mt-2 flex flex-wrap gap-2 text-[10px] text-slate-500">
+              {(r.date_from && r.date_to) && (
+                <span className="bg-surface border border-surface-border rounded px-2 py-1">
+                  📅 Perioadă testată: <strong className="text-slate-300">{r.date_from}</strong> → <strong className="text-slate-300">{r.date_to}</strong>
+                </span>
+              )}
+              {r.skipped_margin != null && r.skipped_margin > 0 && (
+                <span className="bg-warn/10 border border-warn/30 rounded px-2 py-1 text-warn">
+                  ⚠ {r.skipped_margin} ordine anulate — fonduri insuficiente
+                </span>
+              )}
+              {r.skipped_margin === 0 && (
+                <span className="bg-surface border border-surface-border rounded px-2 py-1 text-slate-600">
+                  ✓ 0 ordine anulate din lipsă de fonduri
+                </span>
+              )}
+            </div>
           </div>
 
           {/* Per-symbol */}
@@ -494,38 +635,49 @@ function JobRow({
             <div>
               <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-2">Per simbol</div>
               <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="text-slate-500 border-b border-surface-border">
-                      <th className="text-left py-1.5 font-normal">Simbol</th>
-                      <th className="text-right py-1.5 font-normal">Trades</th>
-                      <th className="text-right py-1.5 font-normal">WR</th>
-                      <th className="text-right py-1.5 font-normal">Exp</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {Object.entries(r.per_symbol).map(([sym, v]) => (
-                      <tr key={sym} className="border-b border-surface-border/30">
-                        <td className="py-1.5 font-mono text-slate-200">{sym}</td>
-                        <td className="text-right text-slate-400">{v.trades}</td>
-                        <td className="text-right text-slate-400">{fmtPct(v.win_rate)}</td>
-                        <td className={`text-right font-mono ${expColor(v.expectancy)}`}>{fmtR(v.expectancy)}</td>
-                      </tr>
-                    ))}
-                    {/* Piete fara date CSV */}
-                    {r.skipped_markets?.map(sym => (
-                      <tr key={sym} className="border-b border-surface-border/20">
-                        <td className="py-1.5 font-mono text-slate-500 flex items-center gap-1.5">
-                          {sym}
-                          <span className="text-[9px] text-loss bg-loss/10 px-1.5 py-0.5 rounded">lipsă CSV</span>
-                        </td>
-                        <td className="text-right text-slate-600">—</td>
-                        <td className="text-right text-slate-600">—</td>
-                        <td className="text-right text-slate-600">—</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                {(() => {
+                  const numMarkets = (r.markets?.length || Object.keys(r.per_symbol).length) + (r.skipped_markets?.length ?? 0);
+                  const capitalPerSym = r.start_balance / (numMarkets || 1);
+                  return (
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="text-slate-500 border-b border-surface-border">
+                          <th className="text-left py-1.5 font-normal">Simbol</th>
+                          <th className="text-right py-1.5 font-normal">Trades</th>
+                          <th className="text-right py-1.5 font-normal">WR</th>
+                          <th className="text-right py-1.5 font-normal">Exp</th>
+                          <th className="text-right py-1.5 font-normal">Capital/Simbol</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Object.entries(r.per_symbol).map(([sym, v]) => (
+                          <tr key={sym} className="border-b border-surface-border/30">
+                            <td className="py-1.5 font-mono text-slate-200">{sym}</td>
+                            <td className="text-right text-slate-400">{v.trades}</td>
+                            <td className="text-right text-slate-400">{fmtPct(v.win_rate)}</td>
+                            <td className={`text-right font-mono ${expColor(v.expectancy)}`}>{fmtR(v.expectancy)}</td>
+                            <td className="text-right font-mono text-slate-400">
+                              {capitalPerSym.toLocaleString("ro-RO", { maximumFractionDigits: 0 })} $
+                            </td>
+                          </tr>
+                        ))}
+                        {/* Piete fara date CSV */}
+                        {r.skipped_markets?.map(sym => (
+                          <tr key={sym} className="border-b border-surface-border/20">
+                            <td className="py-1.5 font-mono text-slate-500 flex items-center gap-1.5">
+                              {sym}
+                              <span className="text-[9px] text-loss bg-loss/10 px-1.5 py-0.5 rounded">lipsă CSV</span>
+                            </td>
+                            <td className="text-right text-slate-600">—</td>
+                            <td className="text-right text-slate-600">—</td>
+                            <td className="text-right text-slate-600">—</td>
+                            <td className="text-right text-slate-600">—</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  );
+                })()}
               </div>
               {r.skipped_markets && r.skipped_markets.length > 0 && (
                 <p className="text-[10px] text-slate-500 mt-1.5">
@@ -536,12 +688,16 @@ function JobRow({
             </div>
           )}
 
+          {/* Task 4: Analiza pierderi per zi/ora */}
+          {(r.weekday_stats || r.hour_stats) && (
+            <LossAnalysis weekday={r.weekday_stats} hour={r.hour_stats} />
+          )}
+
           {/* Meta */}
           <div className="text-[10px] text-slate-600 border-t border-surface-border/40 pt-2">
             Rulat: {fmtTs(job.started_at)}
             {dur && ` · Durată: ${dur}`}
             {r.split_date && ` · Split: ${r.split_date}`}
-            {r.date_from && r.date_to && ` · Date: ${r.date_from} — ${r.date_to}`}
           </div>
         </div>
       )}
@@ -652,15 +808,23 @@ function DownloadJobRow({ job, onDelete }: { job: DownloadJob; onDelete: (id: st
                   )}
                 </div>
                 {rows.map((r, i) => (
-                  <div key={i} className="flex items-center gap-2 text-xs pl-3">
-                    <span className={r.success ? "text-profit" : r.needs_scroll ? "text-warn" : "text-loss"}>
-                      {r.success ? "✓" : r.needs_scroll ? "⚠" : "✗"}
-                    </span>
-                    <span className="text-slate-500 font-mono">{r.tf}</span>
-                    {r.success
-                      ? <span className="text-slate-400">{r.bars.toLocaleString()} bare</span>
-                      : <span className="text-slate-500 italic">{r.error}</span>
-                    }
+                  <div key={i} className="flex flex-col gap-0.5 text-xs pl-3">
+                    <div className="flex items-center gap-2">
+                      <span className={r.success ? "text-profit" : r.needs_scroll ? "text-warn" : "text-loss"}>
+                        {r.success ? "✓" : r.needs_scroll ? "⚠" : "✗"}
+                      </span>
+                      <span className="text-slate-500 font-mono">{r.tf}</span>
+                      {r.success
+                        ? <span className="text-slate-400">{r.bars.toLocaleString()} bare</span>
+                        : <span className="text-slate-500 italic">{r.error}</span>
+                      }
+                    </div>
+                    {/* Task 1: sugestii simbol broker */}
+                    {!r.success && !r.needs_scroll && (r as DownloadFileResult & { suggestions?: string[] }).suggestions?.length ? (
+                      <div className="pl-5 text-[10px] text-blue-400">
+                        Disponibile la broker: {(r as DownloadFileResult & { suggestions?: string[] }).suggestions!.join(", ")}
+                      </div>
+                    ) : null}
                   </div>
                 ))}
               </div>

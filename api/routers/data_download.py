@@ -167,10 +167,37 @@ def _download_job(job_id: str, symbols: list[str], timeframes: list[str]) -> Non
 
                 if mt5_sym is None:
                     tried = ", ".join(candidates[:5])
+                    # Cauta simboluri similare disponibile la broker
+                    suggestions = []
+                    try:
+                        base = sym.upper()
+                        # Incearca cautare partiala (ex: "EURUSD" poate fi "EURUSDm")
+                        similar = _mt5.symbols_get(group=f"*{base}*") or []
+                        suggestions = [s.name for s in similar if s.name not in candidates][:4]
+                    except Exception:
+                        pass
+                    if not suggestions and len(sym) >= 6:
+                        # Incearca cu primele 3 si ultimele 3 caractere separat
+                        try:
+                            prefix = _mt5.symbols_get(group=f"*{sym[:3]}*") or []
+                            suggestions = [
+                                s.name for s in prefix
+                                if sym[:3] in s.name and s.name not in candidates
+                            ][:3]
+                        except Exception:
+                            pass
+
+                    error_msg = f"Simbolul nu există în MT5 (încercat: {tried})"
+                    if suggestions:
+                        error_msg += f". Variante găsite la broker: {', '.join(suggestions)}"
+                    else:
+                        error_msg += ". Verifică Market Watch în MT5 (View → Market Watch → Show All)."
+
                     results.append({
                         "symbol": sym, "mt5_symbol": None, "tf": "—",
                         "success": False, "bars": 0, "needs_scroll": False,
-                        "error": f"Simbolul nu există în MT5 (încercat: {tried})",
+                        "suggestions": suggestions,
+                        "error": error_msg,
                     })
                     continue
 
@@ -189,7 +216,8 @@ def _download_job(job_id: str, symbols: list[str], timeframes: list[str]) -> Non
                             "needs_scroll": True,
                             "error": (
                                 f"Nu s-au primit date pentru {mt5_sym} {tf_name}. "
-                                "Istoricul nu este descărcat în MT5."
+                                f"Deschide graficul {mt5_sym}/{tf_name} în MT5 și derulează "
+                                f"complet spre stânga pentru a forța descărcarea istoricului."
                             ),
                         })
                         continue
