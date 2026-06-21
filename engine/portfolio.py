@@ -21,12 +21,16 @@ def run_portfolio(data, cfg, params):
     pullback_window    = params["pullback_window"]
     depth_range        = params["depth_range"]
     skip_monday        = params["skip_monday"]
+    skip_weekdays      = params.get("skip_weekdays", set())
+    if skip_monday:
+        skip_weekdays = skip_weekdays | {0}
     skip_hours         = params["skip_hours"]
     atr_max_pips       = params["atr_max_pips"]
     max_day_consec_losses = params["max_day_consec_losses"]
     corr_pairs         = params["corr_pairs"]
     max_pos_per_symbol      = params.get("max_pos_per_symbol", 1)
     min_bars_between_symbol = params.get("min_bars_between_same_symbol", 0)
+    be_cfg                  = params.get("be_cfg", None)
     symbol_sessions         = params.get("symbol_sessions", {})    # {symbol: (sh, eh)}
     symbol_skip_hours       = params.get("symbol_skip_hours", {})  # {symbol: tuple}
 
@@ -141,7 +145,7 @@ def run_portfolio(data, cfg, params):
                     else:
                         pv  = p["pv"]
                         spr = spread_pips.get(s, 1.0) * pip
-                        res = simulate_trade(df, jj, p, spr, pip, pv, comm, s)
+                        res = simulate_trade(df, jj, p, spr, pip, pv, comm, s, be_cfg=be_cfg)
                         sc  = swap_cost(s, res["time"], res["exit_time"], p["lots"])
                         res["swap"]     = round(sc, 3)
                         res["pnl_usd"]  = round(res["pnl_usd"] - sc, 2)
@@ -175,7 +179,7 @@ def run_portfolio(data, cfg, params):
         sym_sh, sym_eh = symbol_sessions.get(s, (sh, eh))
         if not (sym_sh <= t.hour < sym_eh):
             continue
-        if skip_monday and t.weekday() == 0:
+        if t.weekday() in skip_weekdays:
             continue
         eff_skip_hours = symbol_skip_hours.get(s, skip_hours)
         if t.hour in eff_skip_hours:

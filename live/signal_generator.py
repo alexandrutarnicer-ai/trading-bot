@@ -343,6 +343,12 @@ def _check_signals(df: pd.DataFrame, symbol: str, cfg: dict,
     pw     = session_cfg["pullback_window"]
     only_long = session_cfg["only_long"]
 
+    # Task 7: limite de pozitii simultane per simbol
+    max_concurrent    = session_cfg.get("max_concurrent_per_market", 1)
+    min_bars_between  = session_cfg.get("min_bars_between_trades", 0)
+    tf_minutes = {"M5": 5, "M15": 15, "M30": 30, "H1": 60, "H4": 240}.get(
+        session_cfg.get("entry_tf", "M15"), 15)
+
     # Sesiunea pentru acest simbol specific
     sym_sessions = session_cfg.get("symbol_sessions", {})
     s_start, s_end = sym_sessions.get(symbol,
@@ -363,6 +369,22 @@ def _check_signals(df: pd.DataFrame, symbol: str, cfg: dict,
 
         row = df.iloc[j]
         t   = pd.Timestamp(row["time"])
+
+        # Task 7: verifica limita de pozitii simultane (pending + triggerate)
+        pending_for_sym = state["pending"].get(symbol, {})
+        if len(pending_for_sym) >= max_concurrent:
+            continue
+
+        # Task 7: verifica distanta minima intre semnale (in bare)
+        if min_bars_between > 0 and pending_for_sym:
+            last_armed = max(
+                (pd.Timestamp(p.get("armed_at", pd.Timestamp.min))
+                 for p in pending_for_sym.values()),
+                default=pd.Timestamp.min,
+            )
+            bars_since = (t - last_armed).total_seconds() / (tf_minutes * 60)
+            if bars_since < min_bars_between:
+                continue
 
         if not (s_start <= t.hour < s_end):
             continue
@@ -522,9 +544,22 @@ _OUTCOMES_COLS = [
 def _update_outcomes(df: pd.DataFrame, symbol: str,
                      state: dict, outcomes_file: str, log,
                      expire_bars: int = 4, bar_minutes: int = 15,
-                     session_id: str = "", execute_trades: bool = False):
+                     session_id: str = "", execute_trades: bool = False,
+                     session_cfg: dict = None):
     if symbol not in state["pending"]:
         return
+
+    _be_cfg = None
+    _be_on  = False
+    if session_cfg is not None:
+        _be_cfg = {
+            "enabled":         session_cfg.get("break_even_enabled", False),
+            "trigger_pct":     session_cfg.get("be_trigger_pct",    80),
+            "lock1_pct":       session_cfg.get("be_lock1_pct",      30),
+            "lock2_pct":       session_cfg.get("be_lock2_pct",      50),
+            "phase2_zone_pct": session_cfg.get("be_phase2_zone_pct", 40),
+        }
+        _be_on = _be_cfg["enabled"]
 
     rows_to_remove = []
     outcome_rows   = []
@@ -650,43 +685,177 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                             f"<i>{session_id} | {sig_id}</i>"
                         )
                 # else: pozitia inca deschisa sau pending — verificam la urmatoarea bara
+                if _be_on and p.get("triggered") and len(df) >= 2:
+                    _bar_be = df.iloc[-2]
+                    _be_last = p.get("be_last_t")
+                    if _be_last is None or pd.Timestamp(_bar_be["time"]) > pd.Timestamp(_be_last):
+                        _bep = p.get("be_phase", 0)
+                        _tpd = abs(p["tp"] - p["entry"])
+                        _be80 = p["entry"] + d * _tpd * (_be_cfg["trigger_pct"]    / 100)
+                        _be30 = p["entry"] + d * _tpd * (_be_cfg["lock1_pct"]      / 100)
+                        _be40 = p["entry"] + d * _tpd * (_be_cfg["phase2_zone_pct"] / 100)
+                        _be50 = p["entry"] + d * _tpd * (_be_cfg["lock2_pct"]      / 100)
+                        _b = _bar_be
+                        if d == 1:
+                            _r80 = _b["high"] >= _be80; _rev = _b["low"] < _be80
+                            _inz = _be30 < _b["low"] <= _be40
+                        else:
+                            _r80 = _b["low"] <= _be80;  _rev = _b["high"] > _be80
+                            _inz = _be40 <= _b["high"] < _be30
+                        _nsl = None; _pname = None
+                        if _bep == 0 and _r80: _bep = 1
+                        if _bep == 1 and _rev: _bep = 2; _nsl = _be30; _pname = "phase1"
+                        if _bep == 2:
+                            if _inz: p["be_in_zone"] = True
+                            if p.get("be_in_zone") and _r80: _bep = 3
+                        if _bep == 3 and _rev: _bep = 4; _nsl = _be50; _pname = "phase2"
+                        if _nsl is not None and _mt5_exec is not None:
+                            _pos_mt5 = None
+                            for _po in (_mt5_exec.positions_get(symbol=symbol) or []):
+                                if _po.ticket == _ticket: _pos_mt5 = _po; break
+                            if _pos_mt5 is None:
+                                _ho = _mt5_exec.history_orders_get(ticket=_ticket)
+                                if _ho:
+                                    _pid2 = getattr(_ho[0], "position_id", None)
+                                    if _pid2:
+                                        _pp2 = _mt5_exec.positions_get(ticket=_pid2)
+                                        if _pp2: _pos_mt5 = _pp2[0]
+                            if _pos_mt5:
+                                _slr = _mt5_exec.order_send({"action": _mt5_exec.TRADE_ACTION_SLTP,
+                                    "symbol": symbol, "position": _pos_mt5.ticket,
+                                    "sl": _nsl, "tp": p["tp"]})
+                                if _slr and _slr.retcode == _mt5_exec.TRADE_RETCODE_DONE:
+                                    p["be_phase"] = _bep; p["be_current_sl"] = _nsl
+                                    _lbl = "Faza 1" if _pname == "phase1" else "Faza 2"
+                                    _pct = _be_cfg["lock1_pct"] if _pname == "phase1" else _be_cfg["lock2_pct"]
+                                    log.info(f"  [BE] {sig_id} {_lbl}: SL → {format(_nsl, fmt)}")
+                                    _send_telegram(
+                                        f"<b>Break-Even {_lbl}: {dir_str} {symbol}</b>\n"
+                                        f"SL mutat la <code>{format(_nsl, fmt)}</code> (+{_pct}% TP)\n"
+                                        f"<i>{session_id} | {sig_id}</i>"
+                                    )
+                                else:
+                                    log.warning(f"  [BE] {sig_id}: SLTP esuat")
+                        p["be_phase"]  = _bep
+                        p["be_last_t"] = _bar_be["time"]
                 continue  # nu facem bar-based tracking cand avem ticket MT5
 
             # Bar-based tracking pentru sesiuni fara executie (execute_trades=False / OBS)
-            df_aft = df[df["time"] > p["triggered_at"]]
-            for _, bar in df_aft.iterrows():
-                sl_hit = (d == 1 and bar["low"]  <= p["sl"]) or \
-                         (d == -1 and bar["high"] >= p["sl"])
-                tp_hit = (d == 1 and bar["high"] >= p["tp"]) or \
-                         (d == -1 and bar["low"]  <= p["tp"])
-                if sl_hit:
-                    outcome_rows.append({**p, "signal_id": sig_id,
-                                         "symbol": symbol, "status": "SL",
-                                         "result_r": -1.0, "exit_price": p["sl"],
-                                         "exit_time": bar["time"],
-                                         "time_check": datetime.now()})
-                    rows_to_remove.append(sig_id)
-                    log.info(f"  PIERDERE: {sig_id} SL -1.0R")
-                    _send_telegram(
-                        f"<b>PIERDERE -1R: {dir_str} {symbol}</b>\n"
-                        f"Entry {format(p['entry'], fmt)} → SL {format(p['sl'], fmt)}\n"
-                        f"<i>{session_id} | {sig_id}</i>"
-                    )
-                    break
-                if tp_hit:
-                    outcome_rows.append({**p, "signal_id": sig_id,
-                                         "symbol": symbol, "status": "TP",
-                                         "result_r": p["r_ratio"], "exit_price": p["tp"],
-                                         "exit_time": bar["time"],
-                                         "time_check": datetime.now()})
-                    rows_to_remove.append(sig_id)
-                    log.info(f"  PROFIT: {sig_id} TP +{p['r_ratio']:.1f}R")
-                    _send_telegram(
-                        f"<b>PROFIT +{p['r_ratio']:.1f}R: {dir_str} {symbol}</b>\n"
-                        f"Entry {format(p['entry'], fmt)} → TP {format(p['tp'], fmt)}\n"
-                        f"<i>{session_id} | {sig_id}</i>"
-                    )
-                    break
+            df_aft = df[df["time"] > p.get("triggered_at")]
+            if _be_on:
+                _bep = 0; _be_inz = False; _be_csl = p["sl"]
+                _tpd  = abs(p["tp"] - p["entry"])
+                _be80 = p["entry"] + d * _tpd * (_be_cfg["trigger_pct"]    / 100)
+                _be30 = p["entry"] + d * _tpd * (_be_cfg["lock1_pct"]      / 100)
+                _be40 = p["entry"] + d * _tpd * (_be_cfg["phase2_zone_pct"] / 100)
+                _be50 = p["entry"] + d * _tpd * (_be_cfg["lock2_pct"]      / 100)
+                _notif = p.get("be_notified_phases", set())
+                _new_n: set = set()
+                for _, bar in df_aft.iterrows():
+                    if d == 1:
+                        _r80 = bar["high"] >= _be80; _rev80 = bar["low"] < _be80
+                        _inz = _be30 < bar["low"] <= _be40
+                    else:
+                        _r80 = bar["low"] <= _be80;  _rev80 = bar["high"] > _be80
+                        _inz = _be40 <= bar["high"] < _be30
+                    if _bep == 0 and _r80:  _bep = 1
+                    if _bep == 1 and _rev80: _bep = 2; _be_csl = _be30; _new_n.add(2)
+                    if _bep == 2:
+                        if _inz: _be_inz = True
+                        if _be_inz and _r80: _bep = 3
+                    if _bep == 3 and _rev80: _bep = 4; _be_csl = _be50; _new_n.add(4)
+                    _sl_hit = (d == 1 and bar["low"] <= _be_csl) or (d == -1 and bar["high"] >= _be_csl)
+                    _tp_hit = (d == 1 and bar["high"] >= p["tp"]) or (d == -1 and bar["low"] <= p["tp"])
+                    if _sl_hit:
+                        if _bep >= 4:   _oc = "be_lock2"; _rr = round((_be_csl - p["entry"]) * d / abs(p["entry"] - p["sl"]), 3)
+                        elif _bep >= 2: _oc = "be_lock";  _rr = round((_be_csl - p["entry"]) * d / abs(p["entry"] - p["sl"]), 3)
+                        else:           _oc = "SL";       _rr = -1.0
+                        outcome_rows.append({**p, "signal_id": sig_id, "symbol": symbol,
+                                             "status": _oc, "result_r": _rr,
+                                             "exit_price": _be_csl, "exit_time": bar["time"],
+                                             "time_check": datetime.now()})
+                        rows_to_remove.append(sig_id)
+                        if _oc == "SL":
+                            log.info(f"  PIERDERE: {sig_id} SL -1.0R")
+                            _send_telegram(
+                                f"<b>PIERDERE -1R: {dir_str} {symbol}</b>\n"
+                                f"Entry {format(p['entry'], fmt)} → SL {format(p['sl'], fmt)}\n"
+                                f"<i>{session_id} | {sig_id}</i>"
+                            )
+                        else:
+                            _lbl = "Faza 1" if _oc == "be_lock" else "Faza 2"
+                            log.info(f"  [BE {_lbl}] {sig_id} +{_rr:.3f}R")
+                            _send_telegram(
+                                f"<b>Break-Even {_lbl}: {dir_str} {symbol}</b>\n"
+                                f"Ieșire la +{_rr:.2f}R\n"
+                                f"<i>{session_id} | {sig_id}</i>"
+                            )
+                        break
+                    if _tp_hit:
+                        outcome_rows.append({**p, "signal_id": sig_id, "symbol": symbol,
+                                             "status": "TP", "result_r": p["r_ratio"],
+                                             "exit_price": p["tp"], "exit_time": bar["time"],
+                                             "time_check": datetime.now()})
+                        rows_to_remove.append(sig_id)
+                        log.info(f"  PROFIT: {sig_id} TP +{p['r_ratio']:.1f}R")
+                        _send_telegram(
+                            f"<b>PROFIT +{p['r_ratio']:.1f}R: {dir_str} {symbol}</b>\n"
+                            f"Entry {format(p['entry'], fmt)} → TP {format(p['tp'], fmt)}\n"
+                            f"<i>{session_id} | {sig_id}</i>"
+                        )
+                        break
+                if sig_id not in rows_to_remove:
+                    p["be_phase"] = _bep; p["be_in_zone"] = _be_inz; p["be_current_sl"] = _be_csl
+                _new_un = _new_n - _notif
+                if _new_un:
+                    p.setdefault("be_notified_phases", set()).update(_new_un)
+                    for _nph in sorted(_new_un):
+                        if _nph == 2:
+                            _send_telegram(
+                                f"<b>Break-Even Faza 1 (OBS): {dir_str} {symbol}</b>\n"
+                                f"SL virtual la +{_be_cfg['lock1_pct']}% din TP\n"
+                                f"<i>{session_id} | {sig_id}</i>"
+                            )
+                        elif _nph == 4:
+                            _send_telegram(
+                                f"<b>Break-Even Faza 2 (OBS): {dir_str} {symbol}</b>\n"
+                                f"SL virtual la +{_be_cfg['lock2_pct']}% din TP\n"
+                                f"<i>{session_id} | {sig_id}</i>"
+                            )
+            else:
+                for _, bar in df_aft.iterrows():
+                    sl_hit = (d == 1 and bar["low"]  <= p["sl"]) or \
+                             (d == -1 and bar["high"] >= p["sl"])
+                    tp_hit = (d == 1 and bar["high"] >= p["tp"]) or \
+                             (d == -1 and bar["low"]  <= p["tp"])
+                    if sl_hit:
+                        outcome_rows.append({**p, "signal_id": sig_id,
+                                             "symbol": symbol, "status": "SL",
+                                             "result_r": -1.0, "exit_price": p["sl"],
+                                             "exit_time": bar["time"],
+                                             "time_check": datetime.now()})
+                        rows_to_remove.append(sig_id)
+                        log.info(f"  PIERDERE: {sig_id} SL -1.0R")
+                        _send_telegram(
+                            f"<b>PIERDERE -1R: {dir_str} {symbol}</b>\n"
+                            f"Entry {format(p['entry'], fmt)} → SL {format(p['sl'], fmt)}\n"
+                            f"<i>{session_id} | {sig_id}</i>"
+                        )
+                        break
+                    if tp_hit:
+                        outcome_rows.append({**p, "signal_id": sig_id,
+                                             "symbol": symbol, "status": "TP",
+                                             "result_r": p["r_ratio"], "exit_price": p["tp"],
+                                             "exit_time": bar["time"],
+                                             "time_check": datetime.now()})
+                        rows_to_remove.append(sig_id)
+                        log.info(f"  PROFIT: {sig_id} TP +{p['r_ratio']:.1f}R")
+                        _send_telegram(
+                            f"<b>PROFIT +{p['r_ratio']:.1f}R: {dir_str} {symbol}</b>\n"
+                            f"Entry {format(p['entry'], fmt)} → TP {format(p['tp'], fmt)}\n"
+                            f"<i>{session_id} | {sig_id}</i>"
+                        )
+                        break
 
     if outcome_rows:
         # Evita duplicate daca doua instante ruleaza simultan pe acelasi fisier
@@ -1135,7 +1304,11 @@ def _apply_profile_overrides(session_cfg: dict, cfg: dict, log) -> None:
     for field in ("pullback_window", "session_start", "session_end",
                   "expire_bars", "execute_trades", "account_fraction", "risk_pct",
                   "risk_base", "risk_mid", "risk_top", "risk_max",
-                  "r_mid_threshold", "r_top_threshold", "r_max_threshold"):
+                  "r_mid_threshold", "r_top_threshold", "r_max_threshold",
+                  # Task 7: pozitii simultane per piata
+                  "max_concurrent_per_market", "min_bars_between_trades",
+                  "break_even_enabled", "be_trigger_pct", "be_lock1_pct",
+                  "be_lock2_pct", "be_phase2_zone_pct"):
         if field in ps:
             session_cfg[field] = ps[field]
 
@@ -1425,7 +1598,8 @@ def run_generator(session_cfg: dict):
                                 expire_bars=session_cfg.get("expire_bars", 4),
                                 bar_minutes=session_cfg["bar_minutes"],
                                 session_id=session_cfg.get("session_id", ""),
-                                execute_trades=session_cfg.get("execute_trades", False))
+                                execute_trades=session_cfg.get("execute_trades", False),
+                                session_cfg=session_cfg)
 
                 if session_paused:
                     continue  # skip signal detection si plasare ordine noi
@@ -1451,6 +1625,11 @@ def run_generator(session_cfg: dict):
                         "n_optional": sig.get("n_optional", 0),
                         "armed_at":   sig["time"],
                         "triggered":  False,
+                        "be_phase":           0,
+                        "be_current_sl":      sig["sl"],
+                        "be_in_zone":         False,
+                        "be_notified_phases": set(),
+                        "be_last_t":          None,
                     }
                     log.info(
                         f"  *** SEMNAL: {sig['signal_id']} {symbol} {sig['dir_str']} "

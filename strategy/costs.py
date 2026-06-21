@@ -19,6 +19,13 @@ _INDEX_TICK = {
     "XAUUSD": (0.01, 1.000000),   # $100.00/pt/lot  (100 oz, tick_val=$1/tick)
 }
 
+# Crypto: 1 lot = 1 moneda. pip_value = tick_value_usd direct (nu /tick_size ca indicii).
+# notional = lots × price_USD (1 BTC = 1 BTC, nu 100_000 unitati forex).
+_CRYPTO_TICK = {
+    "BTCUSD": 0.01,   # tick_value_usd (USD per tick per lot)
+    "ETHUSD": 0.01,
+}
+
 # Swap real din MT5 (swap_long, tratate ca USD per lot per noapte).
 # Forex: valorile existente validate pe backtest.
 # Indici: valori directe MT5 — mode=2 e exact USD; mode=3 e aproximatie flat.
@@ -56,6 +63,8 @@ def pip_value_usd(symbol, price, usdjpy_rate=None):
     if symbol in _INDEX_TICK:
         tick_size, tick_value_usd = _INDEX_TICK[symbol]
         return tick_value_usd / tick_size      # USD per 1 punct per lot
+    if symbol in _CRYPTO_TICK:
+        return _CRYPTO_TICK[symbol]            # tick_value_usd direct (pip = tick_size)
     # ---- forex (cod neschimbat) ----
     pip = pip_size(symbol)
     val_in_quote = pip * CONTRACT
@@ -77,6 +86,8 @@ def notional_usd(symbol, price, lots):
         tick_size, tick_value_usd = _INDEX_TICK[symbol]
         pip_val = tick_value_usd / tick_size
         return lots * price * pip_val          # notional USD = lots × pret × valoare/punct
+    if symbol in _CRYPTO_TICK:
+        return lots * price                    # 1 lot = 1 moneda, notional = lots × price_USD
     # ---- forex (cod neschimbat) ----
     base = symbol[:3]
     if base == "USD":
