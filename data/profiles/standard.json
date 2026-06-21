@@ -58,6 +58,13 @@
       "news_impact_level": 3,
       "news_pre_minutes": 15,
       "news_post_minutes": 15,
+      "max_concurrent_per_market": 1,
+      "min_bars_between_trades": 0,
+      "break_even_enabled": false,
+      "be_trigger_pct": 80,
+      "be_lock1_pct": 30,
+      "be_lock2_pct": 50,
+      "be_phase2_zone_pct": 40,
       "backtest_results": null
     },
     {
@@ -112,6 +119,13 @@
       "news_impact_level": 3,
       "news_pre_minutes": 15,
       "news_post_minutes": 15,
+      "max_concurrent_per_market": 1,
+      "min_bars_between_trades": 0,
+      "break_even_enabled": false,
+      "be_trigger_pct": 80,
+      "be_lock1_pct": 30,
+      "be_lock2_pct": 50,
+      "be_phase2_zone_pct": 40,
       "backtest_results": null
     },
     {
@@ -174,6 +188,13 @@
       "news_impact_level": 3,
       "news_pre_minutes": 15,
       "news_post_minutes": 15,
+      "max_concurrent_per_market": 1,
+      "min_bars_between_trades": 0,
+      "break_even_enabled": false,
+      "be_trigger_pct": 80,
+      "be_lock1_pct": 30,
+      "be_lock2_pct": 50,
+      "be_phase2_zone_pct": 40,
       "backtest_results": null
     },
     {
@@ -225,6 +246,13 @@
       "news_impact_level": 3,
       "news_pre_minutes": 15,
       "news_post_minutes": 15,
+      "max_concurrent_per_market": 1,
+      "min_bars_between_trades": 0,
+      "break_even_enabled": false,
+      "be_trigger_pct": 80,
+      "be_lock1_pct": 30,
+      "be_lock2_pct": 50,
+      "be_phase2_zone_pct": 40,
       "backtest_results": null
     },
     {
@@ -275,6 +303,13 @@
       "news_impact_level": 3,
       "news_pre_minutes": 15,
       "news_post_minutes": 15,
+      "max_concurrent_per_market": 1,
+      "min_bars_between_trades": 0,
+      "break_even_enabled": false,
+      "be_trigger_pct": 80,
+      "be_lock1_pct": 30,
+      "be_lock2_pct": 50,
+      "be_phase2_zone_pct": 40,
       "backtest_results": null
     },
     {
@@ -326,8 +361,15 @@
       "news_impact_level": 3,
       "news_pre_minutes": 15,
       "news_post_minutes": 15,
+      "max_concurrent_per_market": 1,
+      "min_bars_between_trades": 0,
+      "break_even_enabled": false,
+      "be_trigger_pct": 80,
+      "be_lock1_pct": 30,
+      "be_lock2_pct": 50,
+      "be_phase2_zone_pct": 40,
       "backtest_results": null
     }
   ],
-  "updated_at": "2026-06-18T08:31:22"
+  "updated_at": "2026-06-20T11:15:00"
 }
