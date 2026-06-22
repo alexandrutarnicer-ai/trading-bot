@@ -8,7 +8,7 @@ from strategy.patterns import detect_flag, detect_inside_bar
 from strategy.costs import swap_cost, pip_value_usd, notional_usd
 
 
-def run_portfolio(data, cfg, params):
+def run_portfolio(data, cfg, params, verbose=True):
     """
     data   : {symbol: DataFrame} — pre-incarcat de catre entry-point
     params : dict cu setarile de portofoliu (spread, leverage, filtre etc.)
@@ -62,8 +62,9 @@ def run_portfolio(data, cfg, params):
             events.append((times[jj], s, jj))
     events.sort(key=lambda e: e[0])
     split_time = pd.Timestamp(events[int(0.7 * len(events))][0])
-    print(f"  total evenimente: {len(events)}")
-    print(f"  split train/test la: {split_time.date()}\n  rulez...")
+    if verbose:
+        print(f"  total evenimente: {len(events)}")
+        print(f"  split train/test la: {split_time.date()}\n  rulez...")
 
     balance    = start_balance
     equity     = [{"time": events[0][0], "balance": balance}]
