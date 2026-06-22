@@ -1,17 +1,12 @@
 """
-SESSION 4 — GER40, LONG only, DEMO EXECUTION
+SESSION 4 — GER40, M15+M30, LONG+Flag, pw=6
 =============================================
-ATENTIE: Sesiune in validare statistica — nu are semnificatie suficienta pentru real.
-Scopul: acumulare date live ~6 luni, re-evaluare Dec 2026. Demo OK.
+Scan full (2026-06): GER40 pullback+flag LONG  test +0.334R  Score 3.31  DD -19.4%
+Sesiune bursiera EU: 09-17h UTC.
 
-  GER40 Matinal  09-14h UTC  PW=6  LONG  exp_test=+0.480R p=0.045 (pre-Bonferroni)
-
-NOTE: US30 a fost mutat in S6 (session6_us30_m15.py) cu parametrii validati mai buni
-      (PW=10, 13-21h, 8/10 ani pozitivi — scan_comprehensive 2026-06-12).
-
-Orar rulare (ora locala Romania):
-  Vara  (EEST, UTC+3):  12:00 – 17:00
-  Iarna (EET,  UTC+2):  11:00 – 16:00
+Nota: Anterior sesiunea acoperea GER40+US30 (obs). Acum GER40 individual cu
+      flag pattern activat (cel mai bun config din scan). US30 -> S6.
+      Fractie 50% din equity — lot minim GER40 necesita capital mai mare.
 
 Rulare:  python live/session4_obs.py
 Output:  data/live_signals/session4/
@@ -24,52 +19,47 @@ from live.signal_generator import run_generator
 from backtest import DATA_DIR
 
 SESSION_CONFIG = {
-    "session_id":   "S4-DEMO",
+    "session_id":   "S4-GER40",
     "session_key":  "session4",
-    "description":  (
-        "GER40 09-14h | LONG only | DEMO | "
-        "p=0.045 pre-Bonferroni | re-test Dec 2026 | US30 -> S6"
-    ),
+    "description":  "GER40 M15+M30 LONG pw=6 pullback+flag | test +0.334R Score 3.31 | 09-17h",
 
-    # Piete — US30 mutat in S6 cu PW=10 13-21h (parametri mai buni)
     "markets":      ["GER40"],
     "symbol_fallbacks": {
         "GER40": ["GER40", "GER40.cash", "DAX40", "DAX30", "DE30", "DE40"],
     },
 
-    # Timeframe
     "entry_tf":    "M15",
     "trend_tf":    "M30",
     "bar_minutes": 15,
 
-    # Strategie — LONG only confirmat in research
     "only_long":       True,
-    "pullback_window": 6,   # PW=6 optim pentru ambele simboluri
+    "pullback_window": 6,
 
-    # Sesiune GER40: 09-14h (EU morning, pre-US deschidere)
     "session_start": 9,
-    "session_end":   14,
+    "session_end":   17,
     "symbol_sessions": {
-        "GER40": (9, 14),
+        "GER40": (9, 17),
     },
 
-    "skip_monday":   True,
+    "skip_monday":   False,
     "skip_weekdays": [],
     "skip_hours":    (),
 
-    "expire_bars": 4,   # expira setup dupa 1 ora (4 bare M15) fara trigger
+    "expire_bars": 4,
 
-    # Date — 2000 bare M15 (~21 zile), suficient pentru warm-up indici
     "n_bars_entry": 2000,
     "n_bars_trend": 1000,
 
-    # Executie demo — ordine pending in MT5 + CSV logging in paralel
-    "execute_trades":   True,    # plaseaza ordine pending in MT5 (demo)
-    "session_capital":  100,    # capital fallback daca MT5 nu e disponibil
-    "account_fraction": 0.125,  # 12.5% din equity real MT5 ($100 din $800 start)
-    "risk_pct":         0.01,   # risc per trade = 1% din capital efectiv
+    "execute_trades":   True,
+    "session_capital":  400,
+    "account_fraction": 0.50,   # 50% din equity — lot minim GER40 necesita ~$397
+    "risk_pct":         0.01,
 
-    # Output separat de sesiunile validate
+    "flag_enabled":         True,
+    "flag_r_ratio":         2.5,
+    "flag_risk_pct":        0.01,
+    "inside_bar_enabled":   False,
+
     "output_dir": os.path.join(DATA_DIR, "live_signals", "session4"),
 }
 

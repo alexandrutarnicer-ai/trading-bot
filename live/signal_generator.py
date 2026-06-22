@@ -1396,7 +1396,7 @@ def _apply_profile_overrides(session_cfg: dict, cfg: dict, log) -> None:
                   "expire_bars", "execute_trades", "account_fraction", "risk_pct",
                   "risk_base", "risk_mid", "risk_top", "risk_max",
                   "r_mid_threshold", "r_top_threshold", "r_max_threshold",
-                  # Task 7: pozitii simultane per piata
+                  # Pozitii simultane per piata
                   "max_concurrent_per_market", "min_bars_between_trades",
                   "break_even_enabled", "be_phase2_enabled",
                   "be_trigger_pct", "be_lock1_pct",
@@ -1404,7 +1404,9 @@ def _apply_profile_overrides(session_cfg: dict, cfg: dict, log) -> None:
                   # Flag pattern
                   "flag_enabled", "flag_r_ratio", "flag_risk_pct",
                   # Inside Bar pattern
-                  "inside_bar_enabled", "inside_bar_r_ratio", "inside_bar_risk_pct"):
+                  "inside_bar_enabled", "inside_bar_r_ratio", "inside_bar_risk_pct",
+                  # Piete (permite profil sa specifice piata per sesiune)
+                  "markets"):
         if field in ps:
             session_cfg[field] = ps[field]
 

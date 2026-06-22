@@ -1,0 +1,297 @@
+====================================================================================================
+FULL MARKET SCAN -- 2026-06-22 18:21
+Rezultate valide: 1124 | Simboluri: 30
+====================================================================================================
+
+VIABILE (20): AUDCAD, AUDJPY, AUDNZD, BTCUSD, CHFJPY, EURAUD, EURCAD, EURJPY, EURUSD, GBPAUD, GBPCAD, GBPUSD, GER40, NZDJPY, US30, USDCAD, USDCHF, USDJPY, XAUUSD, XRPUSD
+FARA EDGE (10): AUDUSD, CADJPY, ETHUSD, EURGBP, EURNZD, GBPJPY, GBPNZD, NZDUSD, UK100, US500
+
+----------------------------------------------------------------------------------------------------
+DETALII PER PIATA VIABILA (top 5 config)
+----------------------------------------------------------------------------------------------------
+
+--- AUDCAD ---
+  BEST: H1+D1 | LONG | pw=8 expire=4 | pullback+flag+IB
+        Total 68t | WR 22.1% | Exp -0.3163R | DD -24.7%
+        TRAIN 46t exp -0.4795R | TEST 22t exp +0.0250R | Score 0.117
+        Semnale: pullback=12 flag=1 IB=55
+   #       TF  Dir  pw  expire Strategy                TEST exp  TEST t     DD   Score
+   1 H1+ D1 LONG   8       4 pullback+flag+IB         +0.0250R      22t -24.7%   0.117
+
+--- AUDJPY ---
+  BEST: M15+M30 | BOTH | pw=10 expire=4 | pullback+BE
+        Total 88t | WR 23.9% | Exp -0.1589R | DD -30.0%
+        TRAIN 63t exp -0.3844R | TEST 25t exp +0.4095R | Score 2.048
+   #       TF  Dir  pw  expire Strategy                TEST exp  TEST t     DD   Score
+   1 M15+M30 BOTH  10       4 pullback+BE              +0.4095R      25t -30.0%   2.048
+   2 M15+M30 BOTH   8       4 pullback+BE              +0.4095R      25t -30.0%   2.048
+   3 M15+M30 BOTH  10       3 pullback+BE              +0.4091R      25t -29.9%   2.045
+   4 M15+M30 BOTH  10       4 pullback+flag            +0.3011R      26t -35.8%   1.524
+   5 M15+M30 BOTH   8       4 pullback+flag            +0.3011R      26t -35.8%   1.524
+
+--- AUDNZD ---
+  BEST: M15+M30 | BOTH | pw=8 expire=4 | pullback
+        Total 70t | WR 14.3% | Exp -0.4260R | DD -34.6%
+        TRAIN 51t exp -0.7108R | TEST 19t exp +0.3387R | Score -999.000
+   #       TF  Dir  pw  expire Strategy                TEST exp  TEST t     DD   Score
+   1 M15+M30 BOTH   8       4 pullback                 +0.3387R      19t -34.6% -999.000
+   2 M15+M30 BOTH   8       4 pullback+BE              +0.4058R      19t -35.8% -999.000
+   3 M15+M30 BOTH   8       4 pullback+flag            +0.3367R      19t -34.2% -999.000
+
+--- BTCUSD ---
+  BEST: M15+M30 | BOTH | pw=10 expire=3 | pullback+IB
+        Total 2480t | WR 34.1% | Exp +0.0570R | DD -51.5%
+        TRAIN 1755t exp +0.0270R | TEST 725t exp +0.1297R | Score 3.245
+        Semnale: pullback=586 flag=0 IB=1894
+   #       TF  Dir  pw  expire Strategy                TEST exp  TEST t     DD   Score
+   1 M15+M30 BOTH  10       3 pullback+IB              +0.1297R     725t -51.5%   3.245
+   2 M15+M30 BOTH  10       4 pullback+IB              +0.1322R     732t -57.8%   3.235
+   3 M15+M30 BOTH  10       3 pullback+flag+IB         +0.1284R     736t -52.7%   3.218
+   4 M15+M30 BOTH  10       4 pullback+flag+IB         +0.1271R     743t -57.9%   3.121
+   5 M15+M30 BOTH   8       4 pullback+flag+IB         +0.1224R     740t -56.1%   3.012
+
+--- CHFJPY ---
+  BEST: H1+D1 | LONG | pw=8 expire=4 | all
+        Total 269t | WR 38.3% | Exp -0.0273R | DD -24.7%
+        TRAIN 194t exp -0.0678R | TEST 75t exp +0.0776R | Score 0.672
+        Semnale: pullback=64 flag=7 IB=198
+   #       TF  Dir  pw  expire Strategy                TEST exp  TEST t     DD   Score
+   1 H1+ D1 LONG   8       4 all                      +0.0776R      75t -24.7%   0.672
+   2 H1+ D1 BOTH   8       4 all                      +0.0575R      91t -27.5%   0.548
+   3 H1+ D1 BOTH   8       4 pullback+flag+IB         +0.0524R      89t -29.7%   0.494
+   4 H1+ D1 LONG   8       4 pullback+flag+IB         +0.0503R      74t -26.4%   0.432
+   5 H1+ D1 LONG   8       4 pullback+IB              +0.0337R      72t -27.1%   0.286
+
+--- EURAUD ---
+  BEST: H1+D1 | LONG | pw=8 expire=4 | pullback
+        Total 59t | WR 20.3% | Exp +0.0118R | DD -18.7%
+        TRAIN 38t exp -0.1100R | TEST 21t exp +0.2323R | Score 1.064
+   #       TF  Dir  pw  expire Strategy                TEST exp  TEST t     DD   Score
+   1 H1+ D1 LONG   8       4 pullback                 +0.2323R      21t -18.7%   1.064
+   2 H1+ D1 LONG  10       4 pullback                 +0.2280R      21t -18.7%   1.045
+   3 H1+ D1 LONG  10       3 pullback                 +0.2261R      21t -17.9%   1.036
+   4 H1+ D1 LONG  10       3 pullback+BE              +0.1846R      21t -18.7%   0.846
+   5 H1+ D1 LONG  10       4 pullback+BE              +0.1599R      21t -19.5%   0.733
+
+--- EURCAD ---
+  BEST: H1+D1 | LONG | pw=6 expire=4 | pullback+flag
+        Total 65t | WR 23.1% | Exp -0.0799R | DD -23.7%
+        TRAIN 39t exp -0.3894R | TEST 26t exp +0.3843R | Score 1.960
+        Semnale: pullback=58 flag=7 IB=0
+   #       TF  Dir  pw  expire Strategy                TEST exp  TEST t     DD   Score
+   1 H1+ D1 LONG   6       4 pullback+flag            +0.3843R      26t -23.7%   1.960
+   2 H1+ D1 LONG   6       3 pullback+flag            +0.3843R      26t -23.7%   1.960
+   3 H1+ D1 BOTH   6       3 pullback+flag            +0.2814R      28t -19.3%   1.489
+   4 H1+ D1 LONG  10       3 pullback+flag            +0.2544R      33t -26.8%   1.462
+   5 H1+ D1 BOTH   6       4 pullback+flag            +0.2499R      28t -19.2%   1.322
+
+--- EURJPY ---
+  BEST: M15+M30 | LONG | pw=8 expire=4 | pullback
+        Total 264t | WR 22.3% | Exp -0.0153R | DD -30.1%
+        TRAIN 168t exp -0.0669R | TEST 96t exp +0.0752R | Score 0.737
+   #       TF  Dir  pw  expire Strategy                TEST exp  TEST t     DD   Score
+   1 M15+M30 LONG   8       4 pullback                 +0.0752R      96t -30.1%   0.737
+   2 M15+M30 LONG   8       4 pullback+flag            +0.0272R     107t -31.5%   0.282
+   3 M15+M30 LONG   8       4 pullback+BE              +0.0048R      98t -42.4%  -0.064
+
+--- EURUSD ---
+  BEST: M15+M30 | LONG | pw=10 expire=3 | pullback
+        Total 175t | WR 20.6% | Exp -0.0787R | DD -41.8%
+        TRAIN 121t exp -0.3533R | TEST 54t exp +0.5368R | Score 3.842
+   #       TF  Dir  pw  expire Strategy                TEST exp  TEST t     DD   Score
+   1 M15+M30 LONG  10       3 pullback                 +0.5368R      54t -41.8%   3.842
+   2 M15+M30 LONG  10       4 pullback                 +0.4618R      56t -41.5%   3.358
+   3 M15+M30 LONG   6       3 pullback                 +0.4774R      50t -39.5%   3.308
+   4 M15+M30 LONG  10       3 pullback+BE              +0.4606R      54t -40.5%   3.302
+   5 M15+M30 LONG   8       4 pullback                 +0.4446R      54t -40.5%   3.184
+
+--- GBPAUD ---
+  BEST: H1+D1 | BOTH | pw=8 expire=4 | pullback+BE
+        Total 127t | WR 23.6% | Exp -0.0943R | DD -29.0%
+        TRAIN 86t exp -0.1650R | TEST 41t exp +0.0538R | Score 0.345
+   #       TF  Dir  pw  expire Strategy                TEST exp  TEST t     DD   Score
+   1 H1+ D1 BOTH   8       4 pullback+BE              +0.0538R      41t -29.0%   0.345
+   2 H1+ D1 LONG   8       4 pullback+BE              +0.0206R      31t -21.6%   0.115
+
+--- GBPCAD ---
+  BEST: H1+D1 | LONG | pw=8 expire=4 | pullback+flag
+        Total 84t | WR 25.0% | Exp +0.1030R | DD -23.4%
+        TRAIN 52t exp +0.0370R | TEST 32t exp +0.2104R | Score 1.190
+        Semnale: pullback=74 flag=10 IB=0
+   #       TF  Dir  pw  expire Strategy                TEST exp  TEST t     DD   Score
+   1 H1+ D1 LONG   8       4 pullback+flag            +0.2104R      32t -23.4%   1.190
+   2 H1+ D1 LONG   8       4 pullback                 +0.1772R      30t -23.9%   0.971
+   3 H1+ D1 BOTH   8       4 pullback+flag            +0.1060R      36t -36.9%   0.607
+   4 H1+ D1 BOTH   8       4 pullback                 +0.1008R      33t -36.3%   0.560
+   5 H1+ D1 LONG   6       4 pullback                 +0.0832R      28t -23.6%   0.440
+
+--- GBPUSD ---
+  BEST: M15+M30 | LONG | pw=8 expire=4 | pullback
+        Total 233t | WR 17.6% | Exp -0.1458R | DD -48.2%
+        TRAIN 165t exp -0.2401R | TEST 68t exp +0.0829R | Score 0.486
+   #       TF  Dir  pw  expire Strategy                TEST exp  TEST t     DD   Score
+   1 M15+M30 LONG   8       4 pullback                 +0.0829R      68t -48.2%   0.486
+   2 M15+M30 LONG   8       4 pullback+IB              +0.0298R     284t -44.3%   0.362
+   3 M15+M30 LONG   8       4 pullback+BE              +0.0465R      69t -46.1%   0.220
+   4 M15+M30 LONG   8       4 pullback+flag+IB         +0.0153R     295t -51.3%   0.017
+   5 M15+M30 BOTH   8       4 pullback+BE              +0.0235R     135t -53.8%  -0.008
+
+--- GER40 ---
+  BEST: M15+M30 | LONG | pw=6 expire=4 | pullback+flag
+        Total 318t | WR 27.0% | Exp +0.0116R | DD -41.1%
+        TRAIN 214t exp -0.1448R | TEST 104t exp +0.3335R | Score 3.310
+        Semnale: pullback=284 flag=34 IB=0
+   #       TF  Dir  pw  expire Strategy                TEST exp  TEST t     DD   Score
+   1 M15+M30 LONG   6       4 pullback+flag            +0.3335R     104t -41.1%   3.310
+   2 M15+M30 LONG   8       4 pullback+flag            +0.3144R     105t -37.8%   3.179
+   3 M15+M30 LONG  10       4 pullback+flag            +0.3023R     106t -39.9%   3.038
+   4 M15+M30 LONG   6       4 pullback+BE              +0.3319R      93t -46.5%   3.027
+   5 M15+M30 LONG   8       4 pullback+BE              +0.3155R      94t -45.7%   2.898
+
+--- NZDJPY ---
+  BEST: H1+D1 | BOTH | pw=8 expire=4 | pullback+IB
+        Total 274t | WR 33.6% | Exp -0.0301R | DD -29.9%
+        TRAIN 183t exp -0.0458R | TEST 91t exp +0.0015R | Score 0.014
+        Semnale: pullback=67 flag=0 IB=207
+   #       TF  Dir  pw  expire Strategy                TEST exp  TEST t     DD   Score
+   1 H1+ D1 BOTH   8       4 pullback+IB              +0.0015R      91t -29.9%   0.014
+   2 H1+ D1 BOTH   8       4 pullback                 +0.1215R      18t -12.4% -999.000
+
+--- US30 ---
+  BEST: M15+M30 | BOTH | pw=10 expire=4 | pullback
+        Total 491t | WR 24.8% | Exp +0.0590R | DD -30.2%
+        TRAIN 351t exp -0.0089R | TEST 140t exp +0.2291R | Score 2.710
+   #       TF  Dir  pw  expire Strategy                TEST exp  TEST t     DD   Score
+   1 M15+M30 BOTH  10       4 pullback                 +0.2291R     140t -30.2%   2.710
+   2 M15+M30 BOTH   6       4 pullback                 +0.2194R     130t -30.9%   2.502
+   3 M15+M30 LONG  10       4 pullback                 +0.2523R      85t -35.7%   2.316
+   4 M15+M30 BOTH   8       4 pullback                 +0.1904R     136t -32.9%   2.221
+   5 M15+M30 BOTH  10       3 pullback                 +0.1909R     135t -35.4%   2.212
+
+--- USDCAD ---
+  BEST: M15+M30 | LONG | pw=8 expire=4 | pullback+IB
+        Total 151t | WR 35.8% | Exp -0.0053R | DD -30.8%
+        TRAIN 93t exp -0.0960R | TEST 58t exp +0.1400R | Score 1.067
+        Semnale: pullback=35 flag=0 IB=116
+   #       TF  Dir  pw  expire Strategy                TEST exp  TEST t     DD   Score
+   1 M15+M30 LONG   8       4 pullback+IB              +0.1400R      58t -30.8%   1.067
+   2 M15+M30 LONG  10       4 pullback+IB              +0.1400R      58t -30.8%   1.067
+   3 M15+M30 LONG  10       3 pullback+flag+IB         +0.1066R      58t -29.9%   0.812
+   4 M15+M30 LONG   8       4 pullback+flag+IB         +0.0973R      60t -32.0%   0.754
+   5 M15+M30 LONG  10       4 pullback+flag+IB         +0.0973R      60t -32.0%   0.754
+
+--- USDCHF ---
+  BEST: H1+D1 | BOTH | pw=10 expire=3 | pullback
+        Total 97t | WR 28.9% | Exp +0.2990R | DD -13.3%
+        TRAIN 64t exp +0.2401R | TEST 33t exp +0.4132R | Score 2.374
+   #       TF  Dir  pw  expire Strategy                TEST exp  TEST t     DD   Score
+   1 H1+ D1 BOTH  10       3 pullback                 +0.4132R      33t -13.3%   2.374
+   2 H1+ D1 BOTH  10       3 pullback+flag            +0.3574R      33t -14.3%   2.053
+   3 H1+ D1 BOTH  10       3 pullback+BE              +0.3400R      35t -15.2%   2.011
+   4 H1+ D1 BOTH  10       3 pullback+IB              +0.1841R     110t -26.9%   1.931
+   5 H1+ D1 BOTH  10       4 pullback+IB              +0.1812R     113t -29.5%   1.926
+
+--- USDJPY ---
+  BEST: M15+M30 | LONG | pw=6 expire=4 | pullback
+        Total 217t | WR 24.9% | Exp +0.1281R | DD -23.4%
+        TRAIN 141t exp +0.1118R | TEST 76t exp +0.1583R | Score 1.380
+   #       TF  Dir  pw  expire Strategy                TEST exp  TEST t     DD   Score
+   1 M15+M30 LONG   6       4 pullback                 +0.1583R      76t -23.4%   1.380
+   2 M15+M30 LONG   8       4 pullback                 +0.1488R      81t -20.7%   1.339
+   3 M15+M30 LONG  10       4 pullback                 +0.1398R      84t -23.0%   1.281
+   4 M15+M30 LONG  10       4 pullback+BE              +0.1356R      84t -17.5%   1.243
+   5 M15+M30 LONG   6       3 pullback                 +0.1427R      73t -24.1%   1.219
+
+--- XAUUSD ---
+  BEST: M15+M30 | BOTH | pw=8 expire=4 | pullback
+        Total 109t | WR 11.9% | Exp -0.2843R | DD -33.7%
+        TRAIN 105t exp -0.3132R | TEST 4t exp +0.4737R | Score -999.000
+   #       TF  Dir  pw  expire Strategy                TEST exp  TEST t     DD   Score
+   1 M15+M30 BOTH   8       4 pullback                 +0.4737R       4t -33.7% -999.000
+   2 H1+ D1 BOTH   8       4 all                      +1.7753R       2t -11.9% -999.000
+   3 H1+ D1 BOTH   8       4 pullback+flag+IB         +1.6355R       1t -13.5% -999.000
+   4 H1+ D1 BOTH   8       4 pullback+IB              +1.6355R       1t -13.5% -999.000
+   5 H1+ D1 LONG   8       4 all                      +1.7789R       2t -10.8% -999.000
+
+--- XRPUSD ---
+  BEST: M15+M30 | BOTH | pw=10 expire=4 | pullback+flag+IB
+        Total 233t | WR 39.1% | Exp +0.1823R | DD -11.2%
+        TRAIN 76t exp +0.0532R | TEST 157t exp +0.2448R | Score 3.068
+        Semnale: pullback=40 flag=3 IB=190
+   #       TF  Dir  pw  expire Strategy                TEST exp  TEST t     DD   Score
+   1 M15+M30 BOTH  10       4 pullback+flag+IB         +0.2448R     157t -11.2%   3.068
+   2 M15+M30 BOTH   6       4 pullback+IB              +0.2446R     154t -10.9%   3.035
+   3 M15+M30 BOTH   6       3 pullback+flag+IB         +0.2401R     156t -11.3%   2.999
+   4 M15+M30 BOTH  10       3 pullback+flag+IB         +0.2332R     154t -10.6%   2.894
+   5 M15+M30 BOTH   8       4 pullback+flag+IB         +0.2291R     156t -11.2%   2.862
+
+----------------------------------------------------------------------------------------------------
+FARA EDGE (10)
+----------------------------------------------------------------------------------------------------
+  AUDUSD      best test=-0.3196R (155t) | M15+M30 BOTH pw=8
+  CADJPY      best test=-0.0138R (21t) | H1+D1 BOTH pw=8
+  ETHUSD      best test=+0.0000R (0t) | M15+M30 LONG pw=8
+  EURGBP      best test=-0.3062R (47t) | H1+D1 LONG pw=8
+  EURNZD      best test=-0.2540R (326t) | M15+M30 LONG pw=8
+  GBPJPY      best test=-0.1623R (71t) | H1+D1 LONG pw=8
+  GBPNZD      best test=-0.4476R (140t) | M15+M30 BOTH pw=8
+  NZDUSD      best test=-0.1821R (55t) | M15+M30 LONG pw=8
+  UK100       best test=-0.1867R (20t) | H1+D1 LONG pw=8
+  US500       best test=-0.4113R (167t) | M15+M30 BOTH pw=8
+
+----------------------------------------------------------------------------------------------------
+TOP 25 GLOBAL (dupa score)
+----------------------------------------------------------------------------------------------------
+   # Symbol           TF  Dir  pw Strategy                TEST exp  TEST t     DD   Score
+   1 EURUSD     M15+M30 LONG  10 pullback                 +0.5368R      54t -41.8%   3.842
+   2 EURUSD     M15+M30 LONG  10 pullback                 +0.4618R      56t -41.5%   3.358
+   3 GER40      M15+M30 LONG   6 pullback+flag            +0.3335R     104t -41.1%   3.310
+   4 EURUSD     M15+M30 LONG   6 pullback                 +0.4774R      50t -39.5%   3.308
+   5 EURUSD     M15+M30 LONG  10 pullback+BE              +0.4606R      54t -40.5%   3.302
+   6 BTCUSD     M15+M30 BOTH  10 pullback+IB              +0.1297R     725t -51.5%   3.245
+   7 BTCUSD     M15+M30 BOTH  10 pullback+IB              +0.1322R     732t -57.8%   3.235
+   8 BTCUSD     M15+M30 BOTH  10 pullback+flag+IB         +0.1284R     736t -52.7%   3.218
+   9 EURUSD     M15+M30 LONG   8 pullback                 +0.4446R      54t -40.5%   3.184
+  10 GER40      M15+M30 LONG   8 pullback+flag            +0.3144R     105t -37.8%   3.179
+  11 BTCUSD     M15+M30 BOTH  10 pullback+flag+IB         +0.1271R     743t -57.9%   3.121
+  12 XRPUSD     M15+M30 BOTH  10 pullback+flag+IB         +0.2448R     157t -11.2%   3.068
+  13 GER40      M15+M30 LONG  10 pullback+flag            +0.3023R     106t -39.9%   3.038
+  14 XRPUSD     M15+M30 BOTH   6 pullback+IB              +0.2446R     154t -10.9%   3.035
+  15 GER40      M15+M30 LONG   6 pullback+BE              +0.3319R      93t -46.5%   3.027
+  16 BTCUSD     M15+M30 BOTH   8 pullback+flag+IB         +0.1224R     740t -56.1%   3.012
+  17 EURUSD     M15+M30 LONG  10 pullback+BE              +0.4151R      56t -41.5%   3.008
+  18 BTCUSD     M15+M30 BOTH   6 pullback+IB              +0.1170R     714t -43.1%   3.005
+  19 XRPUSD     M15+M30 BOTH   6 pullback+flag+IB         +0.2401R     156t -11.3%   2.999
+  20 BTCUSD     M15+M30 BOTH   8 pullback+IB              +0.1216R     729t -55.0%   2.983
+  21 BTCUSD     M15+M30 BOTH   6 pullback+IB              +0.1152R     707t -40.4%   2.982
+  22 EURUSD     M15+M30 LONG   6 pullback+BE              +0.4253R      50t -40.0%   2.932
+  23 GER40      M15+M30 LONG   8 pullback+BE              +0.3155R      94t -45.7%   2.898
+  24 XRPUSD     M15+M30 BOTH  10 pullback+flag+IB         +0.2332R     154t -10.6%   2.894
+  25 EURUSD     M15+M30 LONG   6 pullback                 +0.4068R      52t -38.2%   2.886
+
+----------------------------------------------------------------------------------------------------
+SUGESTIE ALOCARE CAPITAL ($1000 total)
+----------------------------------------------------------------------------------------------------
+  Simbol           $       TF  Dir  pw Strategy                test_exp     DD
+  EURUSD        130$ M15+M30 LONG  10 pullback                 +0.5368R -41.8%
+  GER40         112$ M15+M30 LONG   6 pullback+flag            +0.3335R -41.1%
+  BTCUSD        109$ M15+M30 BOTH  10 pullback+IB              +0.1297R -51.5%
+  XRPUSD        103$ M15+M30 BOTH  10 pullback+flag+IB         +0.2448R -11.2%
+  US30           91$ M15+M30 BOTH  10 pullback                 +0.2291R -30.2%
+  USDCHF         80$ H1+ D1 BOTH  10 pullback                 +0.4132R -13.3%
+  AUDJPY         69$ M15+M30 BOTH  10 pullback+BE              +0.4095R -30.0%
+  EURCAD         66$ H1+ D1 LONG   6 pullback+flag            +0.3843R -23.7%
+  USDJPY         47$ M15+M30 LONG   6 pullback                 +0.1583R -23.4%
+  GBPCAD         40$ H1+ D1 LONG   8 pullback+flag            +0.2104R -23.4%
+  USDCAD         36$ M15+M30 LONG   8 pullback+IB              +0.1400R -30.8%
+  EURAUD         36$ H1+ D1 LONG   8 pullback                 +0.2323R -18.7%
+  EURJPY         25$ M15+M30 LONG   8 pullback                 +0.0752R -30.1%
+  CHFJPY         23$ H1+ D1 LONG   8 all                      +0.0776R -24.7%
+  GBPUSD         16$ M15+M30 LONG   8 pullback                 +0.0829R -48.2%
+  GBPAUD         12$ H1+ D1 BOTH   8 pullback+BE              +0.0538R -29.0%
+  AUDCAD          4$ H1+ D1 LONG   8 pullback+flag+IB         +0.0250R -24.7%
+  NZDJPY          0$ H1+ D1 BOTH   8 pullback+IB              +0.0015R -29.9%
+  AUDNZD          0$ M15+M30 BOTH   8 pullback                 +0.3387R -34.6%
+  XAUUSD          0$ M15+M30 BOTH   8 pullback                 +0.4737R -33.7%
+
+====================================================================================================

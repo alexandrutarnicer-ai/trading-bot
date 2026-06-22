@@ -50,7 +50,7 @@ SESSION_CONFIG = {
 
     # Strategie
     "only_long":       False,   # BOTH: long si short
-    "pullback_window": 8,       # PW=8 validat pe BTC M15
+    "pullback_window": 10,      # PW=10 per scan full 2026-06
 
     # Sesiune — BTC activ 24/7, filtrul real e prin skip_hours + skip_weekdays
     "session_start": 0,
@@ -64,7 +64,7 @@ SESSION_CONFIG = {
     "skip_weekdays": [5],
 
     "skip_monday":   False,   # Luni activa pentru BTC (duminica seara = luni Asia)
-    "expire_bars":   4,       # expira setup dupa 4 bare M15 (1 ora) fara trigger
+    "expire_bars":   3,       # expira setup dupa 3 bare M15 per scan full 2026-06
 
     "symbol_sessions": {},    # nu avem sesiuni per simbol — filtrul e global prin skip_hours
 
@@ -75,8 +75,12 @@ SESSION_CONFIG = {
     # Executie demo/live
     "execute_trades":   True,    # plaseaza ordine pending in MT5
     "session_capital":  500,    # capital fallback daca MT5 nu e disponibil
-    "account_fraction": 0.625,  # 62.5% din equity real MT5 ($500 din $800 start)
+    "account_fraction": 0.37,   # 37% din equity MT5 — minim necesar lot 0.01 BTC
     "risk_pct":         0.01,   # risc per trade = 1% din capital efectiv
+
+    "inside_bar_enabled":   True,
+    "inside_bar_r_ratio":   2.0,
+    "inside_bar_risk_pct":  0.01,
 
     # Output
     "output_dir": os.path.join(DATA_DIR, "live_signals", "session3"),

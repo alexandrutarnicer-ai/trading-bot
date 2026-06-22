@@ -1,17 +1,31 @@
 """
 run_all.py — Lansator + monitor toate sesiunile
 ================================================
-Porneste S1–S6 simultan si afiseaza status la fiecare 5 minute.
+Porneste S1–S20 simultan (20 piete individuale) si afiseaza status la fiecare 5 minute.
 Fiecare sesiune ruleaza independent si scrie in propriul log.
 Ctrl+C opreste toate sesiunile simultan.
 
-Sesiuni active:
-  S1  FX Long  EURUSD/GBPUSD/EURJPY  M15  10-18h  validated
-  S2  JPY Both  USDJPY/AUDJPY/NZDJPY  M15  02-10h  validated  (EUR pairs -> S1)
-  S3  BTC Both                       M15  00-09h+15-18h  validated
-  S4  GER40    LONG                  M15  09-14h  demo
-  S5  GER40+USDCHF  LONG             H1   07-17h  demo
-  S6  US30     LONG                  M15  13-21h  demo
+Sesiuni:
+  S1  EURUSD    M15+M30  LONG   scan: +0.537R  score 3.84
+  S2  AUDJPY    M15+M30  BOTH   scan: +0.410R  score 2.05
+  S3  BTCUSD    M15+M30  BOTH   scan: +0.130R+ filtre S3
+  S4  GER40     M15+M30  LONG   scan: +0.334R  score 3.31  pullback+flag
+  S5  USDCHF    H1+D1    BOTH   scan: +0.413R  score 2.37
+  S6  US30      M15+M30  BOTH   scan: +0.229R  score 2.71
+  S7  XRPUSD    M15+M30  BOTH   scan: +0.245R  score 3.07  pullback+IB
+  S8  EURCAD    H1+D1    LONG   scan: +0.384R  score 1.96  pullback+flag
+  S9  USDJPY    M15+M30  LONG   scan: +0.158R  score 1.38
+  S10 GBPCAD    H1+D1    LONG   scan: +0.210R  score 1.19  pullback+flag
+  S11 USDCAD    M15+M30  LONG   scan: +0.140R  score 1.07  pullback+IB
+  S12 EURAUD    H1+D1    LONG   scan: +0.232R  score 1.06
+  S13 EURJPY    M15+M30  LONG   scan: +0.075R  score 0.74
+  S14 CHFJPY    H1+D1    LONG   scan: +0.078R  score 0.67  all strategies
+  S15 GBPUSD    M15+M30  LONG   scan: +0.083R  score 0.49
+  S16 GBPAUD    H1+D1    BOTH   scan: +0.054R  score 0.35  pullback+BE
+  S17 AUDCAD    H1+D1    LONG   scan: +0.025R  score 0.12
+  S18 NZDJPY    H1+D1    BOTH   scan: +0.002R  score 0.01  (marginal)
+  S19 AUDNZD    M15+M30  BOTH   scan: +0.339R  (19 test trades, insuficient)
+  S20 XAUUSD    M15+M30  BOTH   obs only — execute_trades=False (lot min prea mare)
 
 Rulare:  python live/run_all.py
 Loguri:  data/live_signals/sessionX/generator.log
@@ -39,54 +53,86 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 SESSIONS = [
-    dict(
-        id="S1",
-        label="S1  FX Long  (EUR/GBP/JPY)",
-        script=os.path.join(ROOT, "live", "session1_m15_long.py"),
-        sig_dir=os.path.join(DATA_DIR, "live_signals", "session1"),
-        hours="10-18h UTC",
-        validated=True,
-    ),
-    dict(
-        id="S2",
-        label="S2  JPY Both  (3 perechi)",
-        script=os.path.join(ROOT, "live", "session2_m5_both.py"),
-        sig_dir=os.path.join(DATA_DIR, "live_signals", "session2"),
-        hours="02-18h UTC",
-        validated=True,
-    ),
-    dict(
-        id="S3",
-        label="S3  BTC Both",
-        script=os.path.join(ROOT, "live", "session3_btc_both.py"),
-        sig_dir=os.path.join(DATA_DIR, "live_signals", "session3"),
-        hours="00-09h + 15-18h UTC",
-        validated=True,
-    ),
-    dict(
-        id="S4",
-        label="S4  GER40",
-        script=os.path.join(ROOT, "live", "session4_obs.py"),
-        sig_dir=os.path.join(DATA_DIR, "live_signals", "session4"),
-        hours="09-14h UTC",
-        validated=True,
-    ),
-    dict(
-        id="S5",
-        label="S5  GER40+USDCHF H1",
-        script=os.path.join(ROOT, "live", "session5_ger40_h1.py"),
-        sig_dir=os.path.join(DATA_DIR, "live_signals", "session5"),
-        hours="07-17h UTC",
-        validated=True,
-    ),
-    dict(
-        id="S6",
-        label="S6  US30 M15 Long",
-        script=os.path.join(ROOT, "live", "session6_us30_m15.py"),
-        sig_dir=os.path.join(DATA_DIR, "live_signals", "session6"),
-        hours="13-21h UTC",
-        validated=True,
-    ),
+    dict(id="S1",  label="S1  EURUSD  M15 LONG",
+         script=os.path.join(ROOT, "live", "session1_m15_long.py"),
+         sig_dir=os.path.join(DATA_DIR, "live_signals", "session1"),
+         hours="0-24h", validated=True),
+    dict(id="S2",  label="S2  AUDJPY  M15 BOTH",
+         script=os.path.join(ROOT, "live", "session2_m5_both.py"),
+         sig_dir=os.path.join(DATA_DIR, "live_signals", "session2"),
+         hours="0-24h", validated=True),
+    dict(id="S3",  label="S3  BTCUSD  M15 BOTH",
+         script=os.path.join(ROOT, "live", "session3_btc_both.py"),
+         sig_dir=os.path.join(DATA_DIR, "live_signals", "session3"),
+         hours="filtre S3", validated=True),
+    dict(id="S4",  label="S4  GER40   M15 LONG",
+         script=os.path.join(ROOT, "live", "session4_obs.py"),
+         sig_dir=os.path.join(DATA_DIR, "live_signals", "session4"),
+         hours="9-17h", validated=True),
+    dict(id="S5",  label="S5  USDCHF  H1 BOTH",
+         script=os.path.join(ROOT, "live", "session5_ger40_h1.py"),
+         sig_dir=os.path.join(DATA_DIR, "live_signals", "session5"),
+         hours="0-24h", validated=True),
+    dict(id="S6",  label="S6  US30    M15 BOTH",
+         script=os.path.join(ROOT, "live", "session6_us30_m15.py"),
+         sig_dir=os.path.join(DATA_DIR, "live_signals", "session6"),
+         hours="14-22h", validated=True),
+    dict(id="S7",  label="S7  XRPUSD  M15 BOTH",
+         script=os.path.join(ROOT, "live", "session7_xrp.py"),
+         sig_dir=os.path.join(DATA_DIR, "live_signals", "session7"),
+         hours="0-24h", validated=True),
+    dict(id="S8",  label="S8  EURCAD  H1 LONG",
+         script=os.path.join(ROOT, "live", "session8_eurcad_h1.py"),
+         sig_dir=os.path.join(DATA_DIR, "live_signals", "session8"),
+         hours="0-24h", validated=True),
+    dict(id="S9",  label="S9  USDJPY  M15 LONG",
+         script=os.path.join(ROOT, "live", "session9_usdjpy.py"),
+         sig_dir=os.path.join(DATA_DIR, "live_signals", "session9"),
+         hours="0-24h", validated=True),
+    dict(id="S10", label="S10 GBPCAD  H1 LONG",
+         script=os.path.join(ROOT, "live", "session10_gbpcad_h1.py"),
+         sig_dir=os.path.join(DATA_DIR, "live_signals", "session10"),
+         hours="0-24h", validated=True),
+    dict(id="S11", label="S11 USDCAD  M15 LONG",
+         script=os.path.join(ROOT, "live", "session11_usdcad.py"),
+         sig_dir=os.path.join(DATA_DIR, "live_signals", "session11"),
+         hours="0-24h", validated=True),
+    dict(id="S12", label="S12 EURAUD  H1 LONG",
+         script=os.path.join(ROOT, "live", "session12_euraud_h1.py"),
+         sig_dir=os.path.join(DATA_DIR, "live_signals", "session12"),
+         hours="0-24h", validated=True),
+    dict(id="S13", label="S13 EURJPY  M15 LONG",
+         script=os.path.join(ROOT, "live", "session13_eurjpy.py"),
+         sig_dir=os.path.join(DATA_DIR, "live_signals", "session13"),
+         hours="0-24h", validated=True),
+    dict(id="S14", label="S14 CHFJPY  H1 LONG",
+         script=os.path.join(ROOT, "live", "session14_chfjpy_h1.py"),
+         sig_dir=os.path.join(DATA_DIR, "live_signals", "session14"),
+         hours="0-24h", validated=True),
+    dict(id="S15", label="S15 GBPUSD  M15 LONG",
+         script=os.path.join(ROOT, "live", "session15_gbpusd.py"),
+         sig_dir=os.path.join(DATA_DIR, "live_signals", "session15"),
+         hours="0-24h", validated=True),
+    dict(id="S16", label="S16 GBPAUD  H1 BOTH",
+         script=os.path.join(ROOT, "live", "session16_gbpaud_h1.py"),
+         sig_dir=os.path.join(DATA_DIR, "live_signals", "session16"),
+         hours="0-24h", validated=True),
+    dict(id="S17", label="S17 AUDCAD  H1 LONG",
+         script=os.path.join(ROOT, "live", "session17_audcad_h1.py"),
+         sig_dir=os.path.join(DATA_DIR, "live_signals", "session17"),
+         hours="0-24h", validated=True),
+    dict(id="S18", label="S18 NZDJPY  H1 BOTH",
+         script=os.path.join(ROOT, "live", "session18_nzdjpy_h1.py"),
+         sig_dir=os.path.join(DATA_DIR, "live_signals", "session18"),
+         hours="0-24h", validated=True),
+    dict(id="S19", label="S19 AUDNZD  M15 BOTH",
+         script=os.path.join(ROOT, "live", "session19_audnzd.py"),
+         sig_dir=os.path.join(DATA_DIR, "live_signals", "session19"),
+         hours="0-24h", validated=True),
+    dict(id="S20", label="S20 XAUUSD  M15 obs",
+         script=os.path.join(ROOT, "live", "session20_xauusd.py"),
+         sig_dir=os.path.join(DATA_DIR, "live_signals", "session20"),
+         hours="0-24h obs", validated=True),
 ]
 
 STATUS_INTERVAL = 300   # afiseaza status la fiecare 5 minute

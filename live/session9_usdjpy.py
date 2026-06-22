@@ -1,11 +1,11 @@
 """
-SESSION 1 — EURUSD, M15+M30, LONG, pw=10
+SESSION 9 — USDJPY, M15+M30, LONG, pw=6
 ==========================================
-Scan full (2026-06): EURUSD pullback LONG  test +0.537R  Score 3.84  DD -23.7%
-O singura piata per sesiune — sesiune non-stop (0-24h, fara filtre de ora).
+Scan full: pullback, test +0.1583R, 76t, DD -23.4%, Score 1.380
+Train pozitiv +0.112R — edge consistent pe 8 ani.
 
-Rulare:  python live/session1_m15_long.py
-Output:  data/live_signals/session1/
+Rulare:  python live/session9_usdjpy.py
+Output:  data/live_signals/session9/
 """
 
 import os, sys
@@ -15,11 +15,11 @@ from live.signal_generator import run_generator
 from backtest import DATA_DIR
 
 SESSION_CONFIG = {
-    "session_id":   "S1-EURUSD",
-    "session_key":  "session1",
-    "description":  "EURUSD M15+M30 LONG pw=10 | test +0.537R Score 3.84",
+    "session_id":   "S9-USDJPY",
+    "session_key":  "session9",
+    "description":  "USDJPY M15+M30 LONG pw=6 pullback | test +0.158R DD -23.4%",
 
-    "markets":      ["EURUSD"],
+    "markets":      ["USDJPY"],
     "symbol_fallbacks": {},
 
     "entry_tf":    "M15",
@@ -27,14 +27,14 @@ SESSION_CONFIG = {
     "bar_minutes": 15,
 
     "only_long":       True,
-    "pullback_window": 10,
+    "pullback_window": 6,
 
     "session_start": 0,
     "session_end":   24,
     "skip_hours":    (),
     "skip_monday":   False,
-    "skip_weekdays": [],
-    "expire_bars":   3,
+    "skip_weekdays": set(),
+    "expire_bars":   4,
     "symbol_sessions": {},
 
     "n_bars_entry": 2000,
@@ -42,13 +42,13 @@ SESSION_CONFIG = {
 
     "execute_trades":   True,
     "session_capital":  100,
-    "account_fraction": 0.07,
+    "account_fraction": 0.05,
     "risk_pct":         0.01,
 
     "flag_enabled":         False,
     "inside_bar_enabled":   False,
 
-    "output_dir": os.path.join(DATA_DIR, "live_signals", "session1"),
+    "output_dir": os.path.join(DATA_DIR, "live_signals", "session9"),
 }
 
 if __name__ == "__main__":
