@@ -60,6 +60,8 @@ class BotStatus(BaseModel):
     running: bool
     pid: Optional[int]
     sessions_active: int
+    sessions_paused: int = 0
+    sessions_total: int = 0
     active_profile_id: Optional[str] = None
     active_profile_name: Optional[str] = None
     last_started_at: Optional[str] = None

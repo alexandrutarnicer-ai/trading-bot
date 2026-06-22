@@ -181,7 +181,10 @@ export const usePauseSession = () => {
   return useMutation({
     mutationFn: (sessionId: string) =>
       apiFetch(`/sessions/${sessionId}/pause`, { method: "POST" }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["sessions"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sessions"] });
+      qc.invalidateQueries({ queryKey: ["bot-status"] });
+    },
   });
 };
 
@@ -190,7 +193,10 @@ export const useResumeSession = () => {
   return useMutation({
     mutationFn: (sessionId: string) =>
       apiFetch(`/sessions/${sessionId}/resume`, { method: "POST" }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["sessions"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sessions"] });
+      qc.invalidateQueries({ queryKey: ["bot-status"] });
+    },
   });
 };
 

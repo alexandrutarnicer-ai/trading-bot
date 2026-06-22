@@ -7,6 +7,9 @@ export function BotStatusBar() {
   if (isLoading) return null;
 
   const running = data?.running ?? false;
+  const total   = data?.sessions_total ?? 0;
+  const paused  = data?.sessions_paused ?? 0;
+  const active  = data?.sessions_active ?? 0;
 
   return (
     <div className={`flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium ${
@@ -21,7 +24,18 @@ export function BotStatusBar() {
             <span className="relative inline-flex rounded-full h-2 w-2 bg-profit" />
           </span>
           <Activity size={13} className="flex-shrink-0" />
-          <span>Bot activ — {data?.sessions_active} sesiuni</span>
+          <span>
+            Bot activ
+            {total > 0 && (
+              <>
+                {" · "}
+                <span>{active}/{total} sesiuni</span>
+                {paused > 0 && (
+                  <span className="text-warn/80 font-normal"> · {paused} pe pauză</span>
+                )}
+              </>
+            )}
+          </span>
           {data?.pid && (
             <span className="opacity-30 font-normal text-xs">PID {data.pid}</span>
           )}
@@ -30,6 +44,11 @@ export function BotStatusBar() {
         <>
           <AlertCircle size={13} className="flex-shrink-0" />
           <span>Bot oprit</span>
+          {total > 0 && paused > 0 && (
+            <span className="text-xs text-slate-600 font-normal ml-1">
+              · {paused}/{total} pe pauză
+            </span>
+          )}
           {data?.last_stopped_at && (
             <span className="text-xs text-slate-600 font-normal ml-1">
               · {formatRelative(data.last_stopped_at)}

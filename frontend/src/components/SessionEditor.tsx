@@ -350,17 +350,27 @@ export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted,
   }[session.direction] ?? "bg-slate-700 text-slate-300";
 
   return (
-    <div className="bg-surface-card rounded-xl border border-surface-border overflow-hidden">
+    <div className={`rounded-xl border overflow-hidden transition-colors ${
+      paused
+        ? "bg-surface-card border-warn/30"
+        : "bg-surface-card border-surface-border"
+    }`}>
       {/* Header */}
-      <div className="flex items-center gap-2 px-4 py-3 hover:bg-surface-border/20 transition-colors">
+      <div className={`flex items-center gap-2 px-4 py-3 hover:bg-surface-border/20 transition-colors ${paused ? "opacity-80" : ""}`}>
         <button className="flex-1 flex items-center gap-3 text-left" onClick={() => setOpen((o) => !o)}>
           <span className="text-sm font-semibold text-white">{session.label || session.id}</span>
           <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${dirBadgeColor}`}>
             {session.direction}
           </span>
-          <span className={`text-xs px-2 py-0.5 rounded-full ${session.execute_trades ? "bg-blue-500/20 text-blue-300" : "bg-slate-700 text-slate-400"}`}>
-            {session.execute_trades ? "LIVE" : "OBS"}
-          </span>
+          {paused ? (
+            <span className="text-xs px-2 py-0.5 rounded-full bg-warn/20 text-warn font-medium">
+              PAUZA
+            </span>
+          ) : (
+            <span className={`text-xs px-2 py-0.5 rounded-full ${session.execute_trades ? "bg-blue-500/20 text-blue-300" : "bg-slate-700 text-slate-400"}`}>
+              {session.execute_trades ? "LIVE" : "OBS"}
+            </span>
+          )}
           {session.markets.length > 0
             ? <span className="text-xs text-slate-400 flex-1 truncate">{session.markets.join(" · ")}</span>
             : <span className="text-xs text-slate-600 flex-1 italic">fără piețe selectate</span>

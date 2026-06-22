@@ -102,6 +102,12 @@ def bot_status():
     pid = _read_pid(PID_FILE) if os.path.exists(PID_FILE) else None
     running = pid is not None and _pid_alive(pid)
 
+    PAUSED_FILE = os.path.join(DATA_DIR, "paused_sessions.json")
+    try:
+        paused_ids = set(json.load(open(PAUSED_FILE, encoding="utf-8"))) if os.path.exists(PAUSED_FILE) else set()
+    except Exception:
+        paused_ids = set()
+
     active = 0
     if running:
         for s in SESSIONS:
@@ -121,6 +127,8 @@ def bot_status():
         running=running,
         pid=pid if running else None,
         sessions_active=active,
+        sessions_paused=len(paused_ids),
+        sessions_total=len(SESSIONS),
         active_profile_id=ap.get("id"),
         active_profile_name=ap.get("name"),
         last_started_at=run_log.get("last_started_at"),

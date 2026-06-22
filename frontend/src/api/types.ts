@@ -2,6 +2,8 @@ export interface BotStatus {
   running: boolean;
   pid: number | null;
   sessions_active: number;
+  sessions_paused: number;
+  sessions_total: number;
   active_profile_id: string | null;
   active_profile_name: string | null;
   last_started_at: string | null;
