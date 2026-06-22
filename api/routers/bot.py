@@ -206,6 +206,23 @@ def stop_bot():
     except Exception:
         pass
 
+    # Curata lock files sesiuni — asigura ca noul start nu gaseste PID-uri "vii" stale
+    # taskkill raporteaza success inainte ca toate procesele copil sa fie complet oprite
+    live_signals_dir = os.path.join(DATA_DIR, "live_signals")
+    if os.path.isdir(live_signals_dir):
+        for session_dir in os.listdir(live_signals_dir):
+            lock_path = os.path.join(live_signals_dir, session_dir, "session.lock")
+            if os.path.exists(lock_path):
+                try:
+                    stale_pid = int(open(lock_path).read().strip())
+                    if not _pid_alive(stale_pid):
+                        os.remove(lock_path)
+                except Exception:
+                    try:
+                        os.remove(lock_path)
+                    except Exception:
+                        pass
+
     ap = _read_active_profile()
     profile_name = ap.get("name") or "necunoscut"
     _clear_active_profile()
