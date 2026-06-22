@@ -106,6 +106,14 @@ def _run_backtest_job(
 ) -> None:
     _update_job(job_id, status="running")
     try:
+        import logging
+        _log = logging.getLogger("backtest.job")
+        _log.warning(
+            "[BACKTEST DEBUG] job=%s flag_enabled=%s inside_bar_enabled=%s",
+            job_id,
+            session_cfg.get("flag_enabled"),
+            session_cfg.get("inside_bar_enabled"),
+        )
         with open(CONFIG, encoding="utf-8") as f:
             cfg = json.load(f)
 
@@ -216,6 +224,16 @@ def _run_backtest_job(
                 "lock2_pct":       session_cfg.get("be_lock2_pct",      50),
                 "phase2_zone_pct": session_cfg.get("be_phase2_zone_pct", 40),
             },
+            "flag_cfg": {
+                "enabled":   session_cfg.get("flag_enabled",   False),
+                "r_ratio":   session_cfg.get("flag_r_ratio",   2.0),
+                "risk_pct":  session_cfg.get("flag_risk_pct",  0.01),
+            },
+            "inside_bar_cfg": {
+                "enabled":   session_cfg.get("inside_bar_enabled",   False),
+                "r_ratio":   session_cfg.get("inside_bar_r_ratio",   2.0),
+                "risk_pct":  session_cfg.get("inside_bar_risk_pct",  0.01),
+            },
         }
 
         trades, equity, balance, max_concurrent, skipped_margin, halted_days, split_time = \
@@ -238,6 +256,22 @@ def _run_backtest_job(
         be_lock_count  = int((df_t["outcome"] == "be_lock").sum())
         be_lock2_count = int((df_t["outcome"] == "be_lock2").sum())
         total = len(df_t)
+
+        # Statistici per tip semnal
+        def _sig_type_stats(type_name: str) -> dict:
+            if "signal_type" not in df_t.columns:
+                return {"trades": 0, "win_rate": 0.0, "expectancy": 0.0}
+            sub = df_t[df_t["signal_type"] == type_name]
+            if len(sub) == 0:
+                return {"trades": 0, "win_rate": 0.0, "expectancy": 0.0}
+            w = int(sub["outcome"].isin(["win", "be_lock", "be_lock2"]).sum())
+            return {
+                "trades":     len(sub),
+                "win_rate":   round(w / len(sub) * 100, 1),
+                "expectancy": round(float(sub["R"].mean()), 3),
+            }
+        flag_stats       = _sig_type_stats("flag")
+        inside_bar_stats = _sig_type_stats("inside_bar")
 
         eq_arr = np.array([e["balance"] for e in equity])
         peak   = np.maximum.accumulate(eq_arr)
@@ -291,6 +325,8 @@ def _run_backtest_job(
             results={
                 "total_trades":    total,
                 "win_rate":        round(wins / total * 100, 1) if total else 0,
+                "flag_was_enabled":        bool(session_cfg.get("flag_enabled", False)),
+                "inside_bar_was_enabled":  bool(session_cfg.get("inside_bar_enabled", False)),
                 "expectancy":      round(float(df_t["R"].mean()), 3),
                 "max_dd":          round(dd, 1),
                 "split_date":      str(split_time.date()),
@@ -300,8 +336,9 @@ def _run_backtest_job(
                 "final_balance":   round(final_balance, 2),
                 "be_lock_count":   be_lock_count,
                 "be_lock2_count":  be_lock2_count,
-                # Task 2: ordine sarite din cauza fondurilor insuficiente
                 "skipped_margin":  skipped_margin,
+                "flag_stats":       flag_stats,
+                "inside_bar_stats": inside_bar_stats,
                 "train": {
                     "trades":     len(train),
                     "expectancy": round(float(train["R"].mean()), 3) if len(train) else 0,
@@ -337,6 +374,15 @@ def run_backtest(body: dict):
     session_cfg = body.get("session")
     if not session_cfg:
         raise HTTPException(400, "session lipsa in body")
+
+    import logging
+    _log = logging.getLogger("backtest.endpoint")
+    _log.warning(
+        "[BACKTEST ENDPOINT] markets=%s flag_enabled=%s inside_bar_enabled=%s",
+        session_cfg.get("markets"),
+        session_cfg.get("flag_enabled"),
+        session_cfg.get("inside_bar_enabled"),
+    )
 
     date_from     = body.get("date_from") or None
     date_to       = body.get("date_to")   or None

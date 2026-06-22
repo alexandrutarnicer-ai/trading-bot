@@ -240,6 +240,38 @@ function ResultsGrid({ r }: { r: BacktestResult }) {
           <span>Total BE: <span className="text-profit font-mono">{beTotal}</span> din {r.total_trades} trades</span>
         </div>
       )}
+      {r.flag_was_enabled && (
+        <div className="flex items-center gap-3 text-[10px] text-slate-500 bg-surface/60 rounded-lg px-3 py-1.5 border border-surface-border/40">
+          <span className="text-slate-400 font-medium">Flag:</span>
+          {(r.flag_stats?.trades ?? 0) > 0 ? (
+            <>
+              <span><span className="text-slate-200 font-mono">{r.flag_stats!.trades}</span> trades</span>
+              <span className="text-slate-600">·</span>
+              <span>WR <span className="text-slate-200 font-mono">{r.flag_stats!.win_rate}%</span></span>
+              <span className="text-slate-600">·</span>
+              <span>Exp <span className={`font-mono ${r.flag_stats!.expectancy >= 0 ? "text-profit" : "text-loss"}`}>{r.flag_stats!.expectancy > 0 ? "+" : ""}{r.flag_stats!.expectancy.toFixed(3)}R</span></span>
+            </>
+          ) : (
+            <span className="text-slate-600 italic">activat · 0 semnale detectate</span>
+          )}
+        </div>
+      )}
+      {r.inside_bar_was_enabled && (
+        <div className="flex items-center gap-3 text-[10px] text-slate-500 bg-surface/60 rounded-lg px-3 py-1.5 border border-surface-border/40">
+          <span className="text-slate-400 font-medium">Inside Bar:</span>
+          {(r.inside_bar_stats?.trades ?? 0) > 0 ? (
+            <>
+              <span><span className="text-slate-200 font-mono">{r.inside_bar_stats!.trades}</span> trades</span>
+              <span className="text-slate-600">·</span>
+              <span>WR <span className="text-slate-200 font-mono">{r.inside_bar_stats!.win_rate}%</span></span>
+              <span className="text-slate-600">·</span>
+              <span>Exp <span className={`font-mono ${r.inside_bar_stats!.expectancy >= 0 ? "text-profit" : "text-loss"}`}>{r.inside_bar_stats!.expectancy > 0 ? "+" : ""}{r.inside_bar_stats!.expectancy.toFixed(3)}R</span></span>
+            </>
+          ) : (
+            <span className="text-slate-600 italic">activat · 0 semnale detectate</span>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -167,6 +167,13 @@ export function BacktestPanel({ session, onJobStarted, onSaveAndNavigate, onDown
           ema_alignment_enabled:      session.ema_alignment_enabled,
           body_strength_enabled:      session.body_strength_enabled,
           body_strength_min_atr_ratio: session.body_strength_min_atr_ratio,
+          // Strategii optionale
+          flag_enabled:               session.flag_enabled,
+          flag_r_ratio:               session.flag_r_ratio,
+          flag_risk_pct:              session.flag_risk_pct,
+          inside_bar_enabled:         session.inside_bar_enabled,
+          inside_bar_r_ratio:         session.inside_bar_r_ratio,
+          inside_bar_risk_pct:        session.inside_bar_risk_pct,
           // Capital per piata
           market_allocations:         marketAllocations,
           start_balance:              startBalance,

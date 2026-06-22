@@ -139,6 +139,14 @@ export interface ProfileSession {
   be_lock1_pct?: number;
   be_lock2_pct?: number;
   be_phase2_zone_pct?: number;
+  // Flag Pattern
+  flag_enabled?: boolean;
+  flag_r_ratio?: number;
+  flag_risk_pct?: number;
+  // Inside Bar Breakout
+  inside_bar_enabled?: boolean;
+  inside_bar_r_ratio?: number;
+  inside_bar_risk_pct?: number;
 }
 
 export interface TelegramConfig {
@@ -195,6 +203,10 @@ export interface BacktestResult {
   per_symbol: Record<string, { trades: number; win_rate: number; expectancy: number }>;
   be_lock_count?: number;
   be_lock2_count?: number;
+  flag_stats?: { trades: number; win_rate: number; expectancy: number };
+  inside_bar_stats?: { trades: number; win_rate: number; expectancy: number };
+  flag_was_enabled?: boolean;
+  inside_bar_was_enabled?: boolean;
   markets: string[];
   skipped_markets?: string[];
   session_id: string;

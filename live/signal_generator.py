@@ -27,6 +27,7 @@ from backtest import CONFIG, DATA_DIR
 from adapters.mt5_source import Mt5DataSource
 from strategy.preparation import _enrich
 from strategy.structure import detect_setup
+from strategy.patterns import detect_flag, detect_inside_bar
 from strategy.signals import pip_size, count_optional, reward_R
 
 
@@ -231,12 +232,20 @@ def _notify_signal(sig: dict, session_id: str) -> None:
     tp    = format(sig["tp"],    fmt)
     sl    = format(sig["sl"],    fmt)
 
-    title = f"Signal {sig['dir_str']} {sym}"
+    sig_type = sig.get("signal_type", "pullback")
+    if sig_type == "flag":
+        type_label = "FLAG"
+    elif sig_type == "inside_bar":
+        type_label = "INSIDE BAR"
+    else:
+        type_label = "PULLBACK"
+
+    title = f"[{type_label}] {sig['dir_str']} {sym}"
     body  = f"{session_id} | entry {entry}  SL {sl}  TP {tp}  ({sig['r_ratio']:.1f}R)"
 
     # Telegram
     _send_telegram(
-        f"<b>{title}</b>\n"
+        f"<b>[{type_label}] {sig['dir_str']} {sym}</b>\n"
         f"Entry: <code>{entry}</code>\n"
         f"SL:    <code>{sl}</code>\n"
         f"TP:    <code>{tp}</code>\n"
@@ -370,21 +379,14 @@ def _check_signals(df: pd.DataFrame, symbol: str, cfg: dict,
         row = df.iloc[j]
         t   = pd.Timestamp(row["time"])
 
-        # Task 7: verifica limita de pozitii simultane (pending + triggerate)
         pending_for_sym = state["pending"].get(symbol, {})
-        if len(pending_for_sym) >= max_concurrent:
-            continue
-
-        # Task 7: verifica distanta minima intre semnale (in bare)
-        if min_bars_between > 0 and pending_for_sym:
-            last_armed = max(
-                (pd.Timestamp(p.get("armed_at", pd.Timestamp.min))
-                 for p in pending_for_sym.values()),
-                default=pd.Timestamp.min,
-            )
-            bars_since = (t - last_armed).total_seconds() / (tf_minutes * 60)
-            if bars_since < min_bars_between:
-                continue
+        # Slot per tip: pullback = limitat de max_concurrent; flag/IB = slot independent
+        pb_pending_count = sum(1 for p in pending_for_sym.values()
+                               if p.get("signal_type", "pullback") == "pullback")
+        fl_pending_count = sum(1 for p in pending_for_sym.values()
+                               if p.get("signal_type") == "flag")
+        ib_pending_count = sum(1 for p in pending_for_sym.values()
+                               if p.get("signal_type") == "inside_bar")
 
         if not (s_start <= t.hour < s_end):
             continue
@@ -406,44 +408,125 @@ def _check_signals(df: pd.DataFrame, symbol: str, cfg: dict,
         if only_long and direction == -1:
             continue
 
-        found = detect_setup(df, j, direction, window=pw)
-        if found is None:
-            continue
+        # --- Pullback-in-trend ---
+        _pb_found = None
+        if pb_pending_count < max_concurrent:
+            _delay_ok = True
+            if min_bars_between > 0 and pending_for_sym:
+                pb_only = {k: v for k, v in pending_for_sym.items()
+                           if v.get("signal_type", "pullback") == "pullback"}
+                if pb_only:
+                    last_armed = max(
+                        pd.Timestamp(p.get("armed_at", pd.Timestamp.min))
+                        for p in pb_only.values()
+                    )
+                    bars_since = (t - last_armed).total_seconds() / (tf_minutes * 60)
+                    if bars_since < min_bars_between:
+                        _delay_ok = False
+            if _delay_ok:
+                _pb_found = detect_setup(df, j, direction, window=pw)
+        found = _pb_found
+        if found is not None:
+            ext, _ = found
+            if direction == 1:
+                entry = row["high"] + buf
+                sl    = ext - buf
+            else:
+                entry = row["low"] - buf
+                sl    = ext + buf
+            risk_dist = abs(entry - sl)
+            if risk_dist > 0:
+                n_opt  = count_optional(row, direction, cfg)
+                R      = reward_R(n_opt, cfg)
+                tp     = entry + direction * risk_dist * R
+                state["signal_counter"] += 1
+                sig_id = f"{session_cfg['session_id']}-SIG{state['signal_counter']:04d}"
+                sigs.append({
+                    "signal_id":  sig_id,
+                    "time":       t,
+                    "symbol":     symbol,
+                    "direction":  direction,
+                    "dir_str":    "LONG" if direction == 1 else "SHORT",
+                    "entry":      round(entry, 5),
+                    "sl":         round(sl, 5),
+                    "tp":         round(tp, 5),
+                    "r_ratio":    round(R, 1),
+                    "atr_pips":   round(row.get("atr", 0) / pip, 1),
+                    "n_optional": n_opt,
+                    "rsi":        round(row.get("rsi", 0), 1),
+                    "signal_type": "pullback",
+                })
 
-        ext, _ = found
+        # --- Flag Pattern (optional, independent — slot propriu) ---
+        if session_cfg.get("flag_enabled", False) and fl_pending_count < 1:
+            _fcfg = {
+                "pole_min_candles":     session_cfg.get("flag_pole_min_candles",    3),
+                "pole_min_body_atr":    session_cfg.get("flag_pole_min_body_atr",   0.5),
+                "flag_min_bars":        session_cfg.get("flag_min_bars",             2),
+                "flag_max_bars":        session_cfg.get("flag_max_bars",             5),
+                "flag_max_retrace_pct": session_cfg.get("flag_max_retrace_pct",    50),
+            }
+            f_res = detect_flag(df, j, direction, _fcfg)
+            if f_res is not None:
+                sl_lv, _ = f_res
+                # Entry la HIGH-ul barei de breakout + buf — BUY_STOP valid in MT5.
+                if direction == 1:
+                    f_entry = row["high"] + buf; f_sl = sl_lv - buf
+                else:
+                    f_entry = row["low"] - buf; f_sl = sl_lv + buf
+                f_risk = abs(f_entry - f_sl)
+                if f_risk > 0:
+                    f_R  = float(session_cfg.get("flag_r_ratio", 2.0))
+                    f_tp = f_entry + direction * f_risk * f_R
+                    state["flag_signal_counter"] += 1
+                    flg_id = f"{session_cfg['session_id']}-FLG{state['flag_signal_counter']:04d}"
+                    sigs.append({
+                        "signal_id":  flg_id,
+                        "time":       t,
+                        "symbol":     symbol,
+                        "direction":  direction,
+                        "dir_str":    "LONG" if direction == 1 else "SHORT",
+                        "entry":      round(f_entry, 5),
+                        "sl":         round(f_sl, 5),
+                        "tp":         round(f_tp, 5),
+                        "r_ratio":    round(f_R, 1),
+                        "atr_pips":   round(row.get("atr", 0) / pip, 1),
+                        "n_optional": 0,
+                        "rsi":        round(row.get("rsi", 0), 1),
+                        "signal_type": "flag",
+                    })
 
-        if direction == 1:
-            entry = row["high"] + buf
-            sl    = ext - buf
-        else:
-            entry = row["low"] - buf
-            sl    = ext + buf
-
-        risk_dist = abs(entry - sl)
-        if risk_dist <= 0:
-            continue
-
-        n_opt = count_optional(row, direction, cfg)
-        R     = reward_R(n_opt, cfg)
-        tp    = entry + direction * risk_dist * R
-
-        state["signal_counter"] += 1
-        sig_id = f"{session_cfg['session_id']}-SIG{state['signal_counter']:04d}"
-
-        sigs.append({
-            "signal_id": sig_id,
-            "time":      t,
-            "symbol":    symbol,
-            "direction": direction,
-            "dir_str":   "LONG" if direction == 1 else "SHORT",
-            "entry":     round(entry, 5),
-            "sl":        round(sl, 5),
-            "tp":        round(tp, 5),
-            "r_ratio":   round(R, 1),
-            "atr_pips":  round(row.get("atr", 0) / pip, 1),
-            "n_optional": n_opt,
-            "rsi":       round(row.get("rsi", 0), 1),
-        })
+        # --- Inside Bar Breakout (optional, independent — slot propriu) ---
+        if session_cfg.get("inside_bar_enabled", False) and ib_pending_count < 1:
+            ib_res = detect_inside_bar(df, j, direction)
+            if ib_res is not None:
+                sl_lv, _ = ib_res
+                # Entry la HIGH-ul barei de breakout + buf — BUY_STOP valid in MT5.
+                if direction == 1:
+                    ib_entry = row["high"] + buf; ib_sl = sl_lv - buf
+                else:
+                    ib_entry = row["low"] - buf; ib_sl = sl_lv + buf
+                ib_risk = abs(ib_entry - ib_sl)
+                if ib_risk > 0:
+                    ib_R  = float(session_cfg.get("inside_bar_r_ratio", 2.0))
+                    ib_tp = ib_entry + direction * ib_risk * ib_R
+                    state["ib_signal_counter"] += 1
+                    ib_id = f"{session_cfg['session_id']}-IB{state['ib_signal_counter']:04d}"
+                    sigs.append({
+                        "signal_id":  ib_id,
+                        "time":       t,
+                        "symbol":     symbol,
+                        "direction":  direction,
+                        "dir_str":    "LONG" if direction == 1 else "SHORT",
+                        "entry":      round(ib_entry, 5),
+                        "sl":         round(ib_sl, 5),
+                        "tp":         round(ib_tp, 5),
+                        "r_ratio":    round(ib_R, 1),
+                        "atr_pips":   round(row.get("atr", 0) / pip, 1),
+                        "n_optional": 0,
+                        "rsi":        round(row.get("rsi", 0), 1),
+                        "signal_type": "inside_bar",
+                    })
 
     return sigs
 
@@ -529,6 +612,11 @@ def _check_mt5_position_closed(ticket: int, p: dict, log) -> dict | None:
         "triggered_at": p.get("triggered_at", exit_time),
     }
 
+
+_SIGNALS_COLS = [
+    "signal_id", "time", "symbol", "direction", "dir_str",
+    "entry", "sl", "tp", "r_ratio", "atr_pips", "n_optional", "rsi",
+]
 
 # ---------------------------------------------------------------------------
 # Update outcome-uri
@@ -1312,7 +1400,11 @@ def _apply_profile_overrides(session_cfg: dict, cfg: dict, log) -> None:
                   "max_concurrent_per_market", "min_bars_between_trades",
                   "break_even_enabled", "be_phase2_enabled",
                   "be_trigger_pct", "be_lock1_pct",
-                  "be_lock2_pct", "be_phase2_zone_pct"):
+                  "be_lock2_pct", "be_phase2_zone_pct",
+                  # Flag pattern
+                  "flag_enabled", "flag_r_ratio", "flag_risk_pct",
+                  # Inside Bar pattern
+                  "inside_bar_enabled", "inside_bar_r_ratio", "inside_bar_risk_pct"):
         if field in ps:
             session_cfg[field] = ps[field]
 
@@ -1461,13 +1553,15 @@ def run_generator(session_cfg: dict):
         ]).to_csv(outcomes_file, index=False)
 
     # Incarca stare (cu fallback la coruptie — ex: reboot in mijlocul scrierii)
-    _empty_state = {"pending": {}, "signal_counter": 0, "last_checked": {}}
+    _empty_state = {"pending": {}, "signal_counter": 0, "flag_signal_counter": 0, "ib_signal_counter": 0, "last_checked": {}}
     try:
         state = pickle.load(open(state_file, "rb")) if os.path.exists(state_file) else _empty_state
     except Exception as _e:
         log.warning(f"state.pkl corupt ({_e}) — resetat la stare goala.")
         state = _empty_state
-    state.setdefault("mt5_tickets", {})   # ticket MT5 per signal_id
+    state.setdefault("mt5_tickets", {})
+    state.setdefault("flag_signal_counter", 0)
+    state.setdefault("ib_signal_counter", 0)
 
     # Sincronizeaza signal_counter cu ce e deja in signals.csv
     # (previne reutilizarea ID-urilor dupa restart cu state.pkl fresh)
@@ -1475,14 +1569,30 @@ def run_generator(session_cfg: dict):
         try:
             import re as _re
             _existing = pd.read_csv(signals_file, usecols=["signal_id"])["signal_id"].dropna()
-            _max_n = max(
+            _max_sig = max(
                 (int(m.group(1)) for sid in _existing
                  if (m := _re.search(r"SIG(\d+)$", str(sid)))),
                 default=0,
             )
-            if _max_n > state["signal_counter"]:
-                state["signal_counter"] = _max_n
-                log.info(f"  signal_counter sincronizat la {_max_n} din signals.csv")
+            _max_flg = max(
+                (int(m.group(1)) for sid in _existing
+                 if (m := _re.search(r"FLG(\d+)$", str(sid)))),
+                default=0,
+            )
+            _max_ib = max(
+                (int(m.group(1)) for sid in _existing
+                 if (m := _re.search(r"IB(\d+)$", str(sid)))),
+                default=0,
+            )
+            if _max_sig > state["signal_counter"]:
+                state["signal_counter"] = _max_sig
+                log.info(f"  signal_counter sincronizat la {_max_sig} din signals.csv")
+            if _max_flg > state["flag_signal_counter"]:
+                state["flag_signal_counter"] = _max_flg
+                log.info(f"  flag_signal_counter sincronizat la {_max_flg} din signals.csv")
+            if _max_ib > state["ib_signal_counter"]:
+                state["ib_signal_counter"] = _max_ib
+                log.info(f"  ib_signal_counter sincronizat la {_max_ib} din signals.csv")
         except Exception:
             pass
 
@@ -1618,8 +1728,8 @@ def run_generator(session_cfg: dict):
                     except Exception:
                         pass
                     if not _sig_exists:
-                        pd.DataFrame([sig]).to_csv(signals_file, mode="a",
-                                                   header=False, index=False)
+                        pd.DataFrame([sig]).reindex(columns=_SIGNALS_COLS).to_csv(
+                            signals_file, mode="a", header=False, index=False)
                     state["pending"].setdefault(symbol, {})[sig["signal_id"]] = {
                         "direction":  sig["direction"],
                         "entry":      sig["entry"],
@@ -1629,6 +1739,7 @@ def run_generator(session_cfg: dict):
                         "n_optional": sig.get("n_optional", 0),
                         "armed_at":   sig["time"],
                         "triggered":  False,
+                        "signal_type": sig.get("signal_type", "pullback"),
                         "be_phase":           0,
                         "be_current_sl":      sig["sl"],
                         "be_in_zone":         False,
@@ -1636,7 +1747,8 @@ def run_generator(session_cfg: dict):
                         "be_last_t":          None,
                     }
                     log.info(
-                        f"  *** SEMNAL: {sig['signal_id']} {symbol} {sig['dir_str']} "
+                        f"  *** SEMNAL [{sig.get('signal_type', 'pullback').upper()}]: "
+                        f"{sig['signal_id']} {symbol} {sig['dir_str']} "
                         f"entry={sig['entry']:.5f} sl={sig['sl']:.5f} tp={sig['tp']:.5f} "
                         f"({sig['r_ratio']:.1f}R) RSI={sig['rsi']:.0f}"
                     )
@@ -1656,7 +1768,13 @@ def run_generator(session_cfg: dict):
                             )
                         else:
                             capital = session_cfg.get("session_capital", 1000)
-                        risk_pct = _pick_risk_pct(sig.get("n_optional", 0), session_cfg)
+                        _sig_type = sig.get("signal_type", "pullback")
+                        if _sig_type == "flag":
+                            risk_pct = session_cfg.get("flag_risk_pct", 0.01)
+                        elif _sig_type == "inside_bar":
+                            risk_pct = session_cfg.get("inside_bar_risk_pct", 0.01)
+                        else:
+                            risk_pct = _pick_risk_pct(sig.get("n_optional", 0), session_cfg)
                         lots   = _calc_lots(sig["symbol"], sig["entry"], sig["sl"],
                                             capital, risk_pct)
                         ticket = _place_order(sig, lots,

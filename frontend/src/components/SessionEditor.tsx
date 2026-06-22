@@ -4,6 +4,7 @@ import type { ProfileSession, Meta } from "../api/types";
 import { useMt5Markets, useMt5Status, useMarketAtr } from "../api/hooks";
 import { BacktestPanel } from "./BacktestPanel";
 import { InfoTooltip } from "./InfoTooltip";
+import { ImageTooltip } from "./ImageTooltip";
 import { MARKET_SPECS, calcOvershoot } from "../marketSpecs";
 
 interface Props {
@@ -1017,6 +1018,80 @@ export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted,
                     Notificări Telegram separate la Faza 1 și Faza 2. Se aplică în backtest și live.
                   </p>
                 </div>
+              )}
+            </div>
+          </Section>
+
+          {/* Flag Pattern */}
+          <Section label="Strategia Flag" tip="Pattern independent de pullback-in-trend. Bull Flag (LONG): pol ascendent + consolidare + breakout sus. Bear Flag (SHORT): pol descendent + consolidare + breakout jos. Statistic: 65–72% win rate în piețe trending cu filtru EMA200 (Bulkowski 2002).">
+            <div className="space-y-3">
+              <div className="flex items-center gap-1">
+                <Toggle
+                  label="Activează Flag Pattern"
+                  value={session.flag_enabled ?? false}
+                  onChange={(v) => upd({ flag_enabled: v })}
+                />
+                <ImageTooltip src="/diagrama_flag.png" alt="Diagrama Bull Flag" position="above" />
+              </div>
+              {session.flag_enabled && (
+                <div className="grid grid-cols-2 gap-3 pl-2 border-l-2 border-surface-border">
+                  <NumField
+                    label="R/R Reward"
+                    value={session.flag_r_ratio ?? 2.0}
+                    min={1.0} max={10.0} step={0.5}
+                    tip="Raportul reward/risk pentru semnalele flag. Independent de reward-ladder-ul pullback."
+                    onChange={(v) => upd({ flag_r_ratio: v })}
+                  />
+                  <NumField
+                    label="Risk % per trade"
+                    value={(session.flag_risk_pct ?? 0.01) * 100}
+                    min={0.1} max={5.0} step={0.1}
+                    tip="Risk % din capital pentru semnalele flag. Independent de risk% pullback."
+                    onChange={(v) => upd({ flag_risk_pct: v / 100 })}
+                  />
+                </div>
+              )}
+              {session.flag_enabled && (
+                <p className="text-[10px] text-slate-600">
+                  Semnalele flag sunt independente de pullback. ID prefix: <code>FLG</code>. Notificare Telegram separată.
+                </p>
+              )}
+            </div>
+          </Section>
+
+          {/* Inside Bar Breakout */}
+          <Section label="Strategia Inside Bar" tip="Pattern independent. O bară complet în interiorul barei anterioare (mother bar), urmată de un breakout în direcția trendului. Statistic: 60–68% win rate în piețe trending (Bulkowski 2021).">
+            <div className="space-y-3">
+              <div className="flex items-center gap-1">
+                <Toggle
+                  label="Activează Inside Bar Breakout"
+                  value={session.inside_bar_enabled ?? false}
+                  onChange={(v) => upd({ inside_bar_enabled: v })}
+                />
+                <ImageTooltip src="/diagrama_inside_bar.png" alt="Diagrama Inside Bar Breakout" position="above" />
+              </div>
+              {session.inside_bar_enabled && (
+                <div className="grid grid-cols-2 gap-3 pl-2 border-l-2 border-surface-border">
+                  <NumField
+                    label="R/R Reward"
+                    value={session.inside_bar_r_ratio ?? 2.0}
+                    min={1.0} max={10.0} step={0.5}
+                    tip="Raportul reward/risk pentru semnalele inside bar."
+                    onChange={(v) => upd({ inside_bar_r_ratio: v })}
+                  />
+                  <NumField
+                    label="Risk % per trade"
+                    value={(session.inside_bar_risk_pct ?? 0.01) * 100}
+                    min={0.1} max={5.0} step={0.1}
+                    tip="Risk % din capital pentru semnalele inside bar."
+                    onChange={(v) => upd({ inside_bar_risk_pct: v / 100 })}
+                  />
+                </div>
+              )}
+              {session.inside_bar_enabled && (
+                <p className="text-[10px] text-slate-600">
+                  Semnalele inside bar sunt independente de pullback și flag. ID prefix: <code>IB</code>. Notificare Telegram separată.
+                </p>
               )}
             </div>
           </Section>

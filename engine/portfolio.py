@@ -4,6 +4,7 @@ import pandas as pd
 from engine.simulator import simulate_trade
 from strategy.signals import pip_size, count_optional, reward_R
 from strategy.structure import detect_setup
+from strategy.patterns import detect_flag, detect_inside_bar
 from strategy.costs import swap_cost, pip_value_usd, notional_usd
 
 
@@ -31,6 +32,8 @@ def run_portfolio(data, cfg, params):
     max_pos_per_symbol      = params.get("max_pos_per_symbol", 1)
     min_bars_between_symbol = params.get("min_bars_between_same_symbol", 0)
     be_cfg                  = params.get("be_cfg", None)
+    flag_cfg                = params.get("flag_cfg", None)
+    inside_bar_cfg          = params.get("inside_bar_cfg", None)
     symbol_sessions         = params.get("symbol_sessions", {})    # {symbol: (sh, eh)}
     symbol_skip_hours       = params.get("symbol_skip_hours", {})  # {symbol: tuple}
 
@@ -67,10 +70,14 @@ def run_portfolio(data, cfg, params):
     trades     = []
 
     # pendings[s]: lista de ordine pending (pana la max_pos_per_symbol per simbol)
-    # active_count[s]: nr de pozitii active (triggerate, neincheiate) per simbol
-    # open_trades: (exit_time, symbol, pnl_usd, margin_reserved)
+    # active_count[s]: total pozitii active per simbol (toate tipurile)
+    # active_pb/fl/ib[s]: pozitii active per tip — slot independent per strategie
+    # open_trades: (exit_time, symbol, pnl_usd, margin_reserved, signal_type)
     pendings         = {s: []   for s in data}
     active_count     = {s: 0    for s in data}
+    active_pb        = {s: 0    for s in data}
+    active_fl        = {s: 0    for s in data}
+    active_ib        = {s: 0    for s in data}
     last_trigger_j   = {s: -9999 for s in data}
     day_state    = {s: None for s in data}
     trades_today = {s: 0    for s in data}
@@ -96,7 +103,7 @@ def run_portfolio(data, cfg, params):
         # --- inchide tranzactii expirate ---
         if open_trades:
             still = []
-            for (xt, xs, pnl, marg) in open_trades:
+            for (xt, xs, pnl, marg, st) in open_trades:
                 if xt <= t:
                     balance += pnl
                     equity.append({"time": xt, "balance": round(balance, 2)})
@@ -105,13 +112,16 @@ def run_portfolio(data, cfg, params):
                     if gconsec >= max_day_consec_losses and not ghalt:
                         ghalt = True; halted_days += 1
                     active_count[xs] -= 1
+                    if st == "flag":       active_fl[xs] = max(0, active_fl[xs] - 1)
+                    elif st == "inside_bar": active_ib[xs] = max(0, active_ib[xs] - 1)
+                    else:                  active_pb[xs] = max(0, active_pb[xs] - 1)
                     open_margin[xs]   = max(0.0, open_margin[xs] - marg)
                     if active_count[xs] <= 0:
                         active_count[xs] = 0
                         active_dir[xs]   = None
                     open_now -= 1
                 else:
-                    still.append((xt, xs, pnl, marg))
+                    still.append((xt, xs, pnl, marg, st))
             open_trades = still
 
         df  = data[s]
@@ -147,14 +157,19 @@ def run_portfolio(data, cfg, params):
                         spr = spread_pips.get(s, 1.0) * pip
                         res = simulate_trade(df, jj, p, spr, pip, pv, comm, s, be_cfg=be_cfg)
                         sc  = swap_cost(s, res["time"], res["exit_time"], p["lots"])
-                        res["swap"]     = round(sc, 3)
-                        res["pnl_usd"]  = round(res["pnl_usd"] - sc, 2)
-                        res["atr_pips"] = p["atr_pips"]
+                        res["swap"]       = round(sc, 3)
+                        res["pnl_usd"]    = round(res["pnl_usd"] - sc, 2)
+                        res["atr_pips"]   = p["atr_pips"]
+                        _st = p.get("signal_type", "pullback")
+                        res["signal_type"] = _st
                         open_trades.append((pd.Timestamp(res["exit_time"]), s,
-                                            res["pnl_usd"], margin))
+                                            res["pnl_usd"], margin, _st))
                         open_margin[s]    += margin
                         active_dir[s]      = d
                         active_count[s]   += 1
+                        if _st == "flag":        active_fl[s] += 1
+                        elif _st == "inside_bar": active_ib[s] += 1
+                        else:                    active_pb[s] += 1
                         last_trigger_j[s]  = jj
                         trades_today[s]   += 1
                         trades.append(res)
@@ -164,15 +179,6 @@ def run_portfolio(data, cfg, params):
                 else:
                     remaining.append(p)
         pendings[s] = remaining
-
-        # --- verifica capacitate: arm nou doar daca suntem sub limita ---
-        if active_count[s] + len(pendings[s]) >= max_pos_per_symbol:
-            continue
-
-        # --- delay intre pozitii pe ACEEASI pereche ---
-        if active_count[s] > 0 and min_bars_between_symbol > 0:
-            if jj - last_trigger_j[s] < min_bars_between_symbol:
-                continue
 
         if ghalt:
             continue
@@ -208,39 +214,110 @@ def run_portfolio(data, cfg, params):
             if corr_dir == direction:
                 continue
 
-        found = detect_setup(df, jj, direction, window=pullback_window, depth_range=depth_range)
-        if found is None:
-            continue
-        ext, _ = found
-
         buf = 2 * pip
-        if direction == 1:
-            entry = row["high"] + buf; sl = ext - buf
+
+        # Slot per tip: pullback respecta max_pos_per_symbol, flag si IB au slot independent
+        pb_pending = sum(1 for p in pendings[s] if p.get("signal_type", "pullback") == "pullback")
+        fl_pending = sum(1 for p in pendings[s] if p.get("signal_type") == "flag")
+        ib_pending = sum(1 for p in pendings[s] if p.get("signal_type") == "inside_bar")
+
+        # --- Pullback-in-trend (strategie principala) ---
+        if active_pb[s] + pb_pending < max_pos_per_symbol:
+          _delay_ok = not (active_pb[s] > 0 and min_bars_between_symbol > 0
+                           and jj - last_trigger_j[s] < min_bars_between_symbol)
+          if _delay_ok:
+            found = detect_setup(df, jj, direction, window=pullback_window, depth_range=depth_range)
+          else:
+            found = None
         else:
-            entry = row["low"] - buf; sl = ext + buf
-        risk_dist = abs(entry - sl)
-        if risk_dist <= 0:
-            continue
+          found = None
+        if found is not None:
+            ext, _ = found
+            if direction == 1:
+                entry = row["high"] + buf; sl = ext - buf
+            else:
+                entry = row["low"] - buf; sl = ext + buf
+            risk_dist = abs(entry - sl)
+            if risk_dist > 0:
+                n_opt = count_optional(row, direction, cfg)
+                R     = reward_R(n_opt, cfg)
+                tp    = entry + direction * risk_dist * R
+                rp    = rp_all if n_opt >= 2 else rp_base
+                risk_usd = balance * rp
+                pv    = pip_value_usd(s, entry, usdjpy_at(t))
+                lots  = np.floor(risk_usd / ((risk_dist / pip) * pv) / 0.01) * 0.01
+                if lots >= 0.01:
+                    pendings[s].append({
+                        "dir": direction, "entry": entry, "sl": sl, "tp": tp,
+                        "lots": lots, "R": R, "invalidate": ext, "armed_at": jj,
+                        "time": t, "risk_usd": risk_usd, "pv": pv,
+                        "atr_pips": round(row["atr"] / pip, 1),
+                        "signal_type": "pullback",
+                    })
 
-        n_opt = count_optional(row, direction, cfg)
-        R     = reward_R(n_opt, cfg)
-        tp    = entry + direction * risk_dist * R
+        # --- Flag pattern (optional, independent — slot propriu, nu depinde de pullback) ---
+        if flag_cfg and flag_cfg.get("enabled") and active_fl[s] + fl_pending < 1:
+            _fcfg = {
+                "pole_min_candles":    flag_cfg.get("pole_min_candles",    3),
+                "pole_min_body_atr":   flag_cfg.get("pole_min_body_atr",   0.5),
+                "flag_min_bars":       flag_cfg.get("flag_min_bars",        2),
+                "flag_max_bars":       flag_cfg.get("flag_max_bars",        5),
+                "flag_max_retrace_pct": flag_cfg.get("flag_max_retrace_pct", 50),
+            }
+            f_res = detect_flag(df, jj, direction, _fcfg)
+            if f_res is not None:
+                sl_lv, _ = f_res
+                # Entry la HIGH-ul barei de breakout + buf (ca la pullback),
+                # nu la flag_high + buf care poate fi deja sub close-ul curent.
+                if direction == 1:
+                    f_entry = row["high"] + buf; f_sl = sl_lv - buf
+                else:
+                    f_entry = row["low"] - buf; f_sl = sl_lv + buf
+                f_risk = abs(f_entry - f_sl)
+                if f_risk > 0:
+                    f_R   = float(flag_cfg.get("r_ratio",   2.0))
+                    f_rp  = float(flag_cfg.get("risk_pct",  0.01))
+                    f_tp  = f_entry + direction * f_risk * f_R
+                    f_ru  = balance * f_rp
+                    pv_f  = pip_value_usd(s, f_entry, usdjpy_at(t))
+                    f_lot = np.floor(f_ru / ((f_risk / pip) * pv_f) / 0.01) * 0.01
+                    if f_lot >= 0.01:
+                        pendings[s].append({
+                            "dir": direction, "entry": f_entry, "sl": f_sl, "tp": f_tp,
+                            "lots": f_lot, "R": f_R, "invalidate": sl_lv,
+                            "armed_at": jj, "time": t, "risk_usd": f_ru, "pv": pv_f,
+                            "atr_pips": round(row["atr"] / pip, 1),
+                            "signal_type": "flag",
+                        })
 
-        rp       = rp_all if n_opt >= 2 else rp_base
-        risk_usd = balance * rp
-        pv       = pip_value_usd(s, entry, usdjpy_at(t))
-        sl_pips  = risk_dist / pip
-        lots     = risk_usd / (sl_pips * pv)
-        lots     = np.floor(lots / 0.01) * 0.01
-        if lots < 0.01:
-            continue
+        # --- Inside Bar Breakout (optional, independent — slot propriu, nu depinde de pullback) ---
+        if inside_bar_cfg and inside_bar_cfg.get("enabled") and active_ib[s] + ib_pending < 1:
+            ib_res = detect_inside_bar(df, jj, direction)
+            if ib_res is not None:
+                sl_lv, _ent_lv = ib_res
+                # Entry la HIGH-ul barei de breakout + buf — BUY_STOP valid in MT5.
+                if direction == 1:
+                    ib_entry = row["high"] + buf; ib_sl = sl_lv - buf
+                else:
+                    ib_entry = row["low"] - buf; ib_sl = sl_lv + buf
+                ib_risk = abs(ib_entry - ib_sl)
+                if ib_risk > 0:
+                    ib_R   = float(inside_bar_cfg.get("r_ratio",  2.0))
+                    ib_rp  = float(inside_bar_cfg.get("risk_pct", 0.01))
+                    ib_tp  = ib_entry + direction * ib_risk * ib_R
+                    ib_ru  = balance * ib_rp
+                    pv_ib  = pip_value_usd(s, ib_entry, usdjpy_at(t))
+                    ib_lot = np.floor(ib_ru / ((ib_risk / pip) * pv_ib) / 0.01) * 0.01
+                    if ib_lot >= 0.01:
+                        pendings[s].append({
+                            "dir": direction, "entry": ib_entry, "sl": ib_sl, "tp": ib_tp,
+                            "lots": ib_lot, "R": ib_R, "invalidate": sl_lv,
+                            "armed_at": jj, "time": t, "risk_usd": ib_ru, "pv": pv_ib,
+                            "atr_pips": round(row["atr"] / pip, 1),
+                            "signal_type": "inside_bar",
+                        })
 
-        pendings[s].append({"dir": direction, "entry": entry, "sl": sl, "tp": tp,
-                             "lots": lots, "R": R, "invalidate": ext, "armed_at": jj,
-                             "time": t, "risk_usd": risk_usd, "pv": pv,
-                             "atr_pips": round(row["atr"] / pip, 1)})
-
-    for (xt, xs, pnl, marg) in open_trades:
+    for (xt, xs, pnl, marg, _st) in open_trades:
         balance += pnl
         equity.append({"time": xt, "balance": round(balance, 2)})
 
