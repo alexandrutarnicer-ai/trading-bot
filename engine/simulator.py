@@ -13,7 +13,8 @@ def simulate_trade(df, j, p, spread, pip, pip_val, comm, symbol, be_cfg=None):
                 "outcome": outcome, "pnl_usd": round(pnl_usd, 2), "exit_j": k}
 
     # Break-even config
-    be_enabled = bool(be_cfg and be_cfg.get("enabled", False))
+    be_enabled  = bool(be_cfg and be_cfg.get("enabled", False))
+    be_phase2_enabled = bool(be_cfg.get("phase2_enabled", True)) if be_cfg else True
     if be_enabled:
         tp_dist    = abs(p["tp"] - p["entry"])
         trig_pct   = be_cfg.get("trigger_pct",    80) / 100
@@ -59,12 +60,12 @@ def simulate_trade(df, j, p, spread, pip, pip_val, comm, symbol, be_cfg=None):
             be_phase = 1
         elif be_phase == 1 and reversed_80:
             current_sl = be_30; be_phase = 2
-        elif be_phase == 2:
+        elif be_phase == 2 and be_phase2_enabled:
             if in_zone:
                 be_in_zone = True
             if be_in_zone and reached_80:
                 be_phase = 3
-        elif be_phase == 3 and reversed_80:
+        elif be_phase == 3 and reversed_80 and be_phase2_enabled:
             current_sl = be_50; be_phase = 4
 
         # hit_sl dupa tranzitii: verifica current_sl actualizat pe aceeasi bara

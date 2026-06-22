@@ -106,7 +106,8 @@ def install_python_deps() -> bool:
     info(f"Ruleaza: pip install -r {REQS.name} --upgrade")
     r = subprocess.run(
         [PYTHON, "-m", "pip", "install", "-r", str(REQS), "--quiet", "--upgrade"],
-        capture_output=True, text=True
+        capture_output=True, text=True,
+        shell=False,
     )
     if r.returncode != 0:
         err("pip install a esuat:")
@@ -124,10 +125,12 @@ def install_frontend_deps() -> bool:
         err(f"Directorul frontend/ nu exista la {FRONTEND}")
         return False
     info("Ruleaza: npm install in frontend/")
+    # shell=True necesar pe Windows: npm este npm.cmd, gasit doar daca CMD rezolva extensiile
     r = subprocess.run(
-        ["npm", "install"],
+        "npm install",
         cwd=str(FRONTEND),
-        capture_output=True, text=True
+        capture_output=True, text=True,
+        shell=True,
     )
     if r.returncode != 0:
         err("npm install a esuat:")

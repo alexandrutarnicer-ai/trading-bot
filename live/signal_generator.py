@@ -554,6 +554,7 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
     if session_cfg is not None:
         _be_cfg = {
             "enabled":         session_cfg.get("break_even_enabled", False),
+            "phase2_enabled":  session_cfg.get("be_phase2_enabled",  True),
             "trigger_pct":     session_cfg.get("be_trigger_pct",    80),
             "lock1_pct":       session_cfg.get("be_lock1_pct",      30),
             "lock2_pct":       session_cfg.get("be_lock2_pct",      50),
@@ -703,12 +704,13 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                             _r80 = _b["low"] <= _be80;  _rev = _b["high"] > _be80
                             _inz = _be40 <= _b["high"] < _be30
                         _nsl = None; _pname = None
+                        _be_p2_on = _be_cfg.get("phase2_enabled", True)
                         if _bep == 0 and _r80: _bep = 1
                         if _bep == 1 and _rev: _bep = 2; _nsl = _be30; _pname = "phase1"
-                        if _bep == 2:
+                        if _bep == 2 and _be_p2_on:
                             if _inz: p["be_in_zone"] = True
                             if p.get("be_in_zone") and _r80: _bep = 3
-                        if _bep == 3 and _rev: _bep = 4; _nsl = _be50; _pname = "phase2"
+                        if _bep == 3 and _rev and _be_p2_on: _bep = 4; _nsl = _be50; _pname = "phase2"
                         if _nsl is not None and _mt5_exec is not None:
                             _pos_mt5 = None
                             for _po in (_mt5_exec.positions_get(symbol=symbol) or []):
@@ -751,6 +753,7 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                 _be50 = p["entry"] + d * _tpd * (_be_cfg["lock2_pct"]      / 100)
                 _notif = p.get("be_notified_phases", set())
                 _new_n: set = set()
+                _be_p2_on_bb = _be_cfg.get("phase2_enabled", True)
                 for _, bar in df_aft.iterrows():
                     if d == 1:
                         _r80 = bar["high"] >= _be80; _rev80 = bar["low"] < _be80
@@ -760,10 +763,10 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                         _inz = _be40 <= bar["high"] < _be30
                     if _bep == 0 and _r80:  _bep = 1
                     if _bep == 1 and _rev80: _bep = 2; _be_csl = _be30; _new_n.add(2)
-                    if _bep == 2:
+                    if _bep == 2 and _be_p2_on_bb:
                         if _inz: _be_inz = True
                         if _be_inz and _r80: _bep = 3
-                    if _bep == 3 and _rev80: _bep = 4; _be_csl = _be50; _new_n.add(4)
+                    if _bep == 3 and _rev80 and _be_p2_on_bb: _bep = 4; _be_csl = _be50; _new_n.add(4)
                     _sl_hit = (d == 1 and bar["low"] <= _be_csl) or (d == -1 and bar["high"] >= _be_csl)
                     _tp_hit = (d == 1 and bar["high"] >= p["tp"]) or (d == -1 and bar["low"] <= p["tp"])
                     if _sl_hit:
@@ -1307,7 +1310,8 @@ def _apply_profile_overrides(session_cfg: dict, cfg: dict, log) -> None:
                   "r_mid_threshold", "r_top_threshold", "r_max_threshold",
                   # Task 7: pozitii simultane per piata
                   "max_concurrent_per_market", "min_bars_between_trades",
-                  "break_even_enabled", "be_trigger_pct", "be_lock1_pct",
+                  "break_even_enabled", "be_phase2_enabled",
+                  "be_trigger_pct", "be_lock1_pct",
                   "be_lock2_pct", "be_phase2_zone_pct"):
         if field in ps:
             session_cfg[field] = ps[field]

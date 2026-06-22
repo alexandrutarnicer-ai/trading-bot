@@ -25,17 +25,21 @@ def mt5_status():
                 "connected": False,
                 "account": None, "server": None,
                 "balance": None, "equity": None, "currency": None,
+                "algo_trading_enabled": None,
                 "error": f"MT5 nu s-a putut initializa: {err}",
             }
         info = mt5.account_info()
+        term = mt5.terminal_info()
         mt5.shutdown()
         if info is None:
             return {
                 "connected": False,
                 "account": None, "server": None,
                 "balance": None, "equity": None, "currency": None,
+                "algo_trading_enabled": None,
                 "error": "Nu ești logat pe niciun cont MT5",
             }
+        algo_ok = bool(term and getattr(term, "trade_allowed", False))
         return {
             "connected": True,
             "account": str(info.login),
@@ -43,6 +47,7 @@ def mt5_status():
             "balance": round(info.balance, 2),
             "equity": round(info.equity, 2),
             "currency": info.currency,
+            "algo_trading_enabled": algo_ok,
             "error": None,
         }
     except ImportError:
@@ -50,6 +55,7 @@ def mt5_status():
             "connected": False,
             "account": None, "server": None,
             "balance": None, "equity": None, "currency": None,
+            "algo_trading_enabled": None,
             "error": "MetaTrader5 nu este instalat",
         }
     except Exception as e:
@@ -57,5 +63,6 @@ def mt5_status():
             "connected": False,
             "account": None, "server": None,
             "balance": None, "equity": None, "currency": None,
+            "algo_trading_enabled": None,
             "error": str(e),
         }

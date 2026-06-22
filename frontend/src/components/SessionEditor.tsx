@@ -995,14 +995,24 @@ export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted,
                       tip="SL mutat la X% din distanța TP la faza 1."
                       onChange={(v) => upd({ be_lock1_pct: v })} />
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <NumField label="Zonă Faza 2%" value={session.be_phase2_zone_pct ?? 40} min={20} max={70}
-                      tip="Limita superioară a zonei de retragere Faza 2 (lock1–X%)."
-                      onChange={(v) => upd({ be_phase2_zone_pct: v })} />
-                    <NumField label="Lock SL Faza 2%" value={session.be_lock2_pct ?? 50} min={30} max={80}
-                      tip="SL mutat la X% din distanța TP la faza 2."
-                      onChange={(v) => upd({ be_lock2_pct: v })} />
-                  </div>
+
+                  {/* Faza 2 — optional */}
+                  <Toggle
+                    label="Activează Faza 2 (opțional)"
+                    value={session.be_phase2_enabled ?? true}
+                    onChange={(v) => upd({ be_phase2_enabled: v })}
+                  />
+                  {(session.be_phase2_enabled ?? true) && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <NumField label="Zonă Faza 2%" value={session.be_phase2_zone_pct ?? 40} min={20} max={70}
+                        tip="Limita superioară a zonei de retragere Faza 2 (lock1–X%)."
+                        onChange={(v) => upd({ be_phase2_zone_pct: v })} />
+                      <NumField label="Lock SL Faza 2%" value={session.be_lock2_pct ?? 50} min={30} max={80}
+                        tip="SL mutat la X% din distanța TP la faza 2."
+                        onChange={(v) => upd({ be_lock2_pct: v })} />
+                    </div>
+                  )}
+
                   <p className="text-[10px] text-slate-600">
                     Notificări Telegram separate la Faza 1 și Faza 2. Se aplică în backtest și live.
                   </p>

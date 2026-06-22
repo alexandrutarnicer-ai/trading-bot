@@ -177,6 +177,20 @@ export function Dashboard() {
         </div>
       </div>
 
+      {/* Banner AutoTrading dezactivat */}
+      {mt5?.connected && mt5.algo_trading_enabled === false && (
+        <div className="flex items-center gap-3 bg-warn/10 border border-warn/40 rounded-xl px-4 py-3">
+          <span className="text-warn text-lg leading-none">⚠</span>
+          <div>
+            <p className="text-sm font-semibold text-warn">Algo Trading dezactivat în MT5!</p>
+            <p className="text-xs text-warn/70 mt-0.5">
+              Semnalele sunt detectate dar ordinele <strong>nu vor fi plasate</strong>.
+              Activează butonul „Algo Trading" din bara de sus a MetaTrader 5.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Sessions grid */}
       <div>
         <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">

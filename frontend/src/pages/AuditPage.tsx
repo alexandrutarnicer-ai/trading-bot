@@ -209,6 +209,10 @@ function ResultCell({ label, value, color }: { label: string; value: string; col
 }
 
 function ResultsGrid({ r }: { r: BacktestResult }) {
+  const beLock  = r.be_lock_count  ?? 0;
+  const beLock2 = r.be_lock2_count ?? 0;
+  const beTotal = beLock + beLock2;
+
   const cells = [
     { label: "Trades",      value: String(r.total_trades) },
     { label: "Win Rate",    value: fmtPct(r.win_rate) },
@@ -221,10 +225,21 @@ function ResultsGrid({ r }: { r: BacktestResult }) {
   ];
 
   return (
-    <div className="grid grid-cols-4 gap-2">
-      {cells.map(c => (
-        <ResultCell key={c.label} label={c.label} value={c.value} color={c.color} />
-      ))}
+    <div className="space-y-2">
+      <div className="grid grid-cols-4 gap-2">
+        {cells.map(c => (
+          <ResultCell key={c.label} label={c.label} value={c.value} color={c.color} />
+        ))}
+      </div>
+      {beTotal > 0 && (
+        <div className="flex items-center gap-3 text-[10px] text-slate-500 bg-surface/60 rounded-lg px-3 py-1.5 border border-surface-border/40">
+          <span className="text-slate-400 font-medium">Break-Even:</span>
+          <span>Faza 1: <span className="text-profit font-mono">{beLock}</span></span>
+          {beLock2 > 0 && <span>Faza 2: <span className="text-profit font-mono">{beLock2}</span></span>}
+          <span className="text-slate-600">·</span>
+          <span>Total BE: <span className="text-profit font-mono">{beTotal}</span> din {r.total_trades} trades</span>
+        </div>
+      )}
     </div>
   );
 }

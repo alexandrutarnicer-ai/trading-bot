@@ -15,6 +15,7 @@ export interface Mt5Status {
   balance: number | null;
   equity: number | null;
   currency: string | null;
+  algo_trading_enabled: boolean | null;
   error: string | null;
 }
 
@@ -133,6 +134,7 @@ export interface ProfileSession {
   max_concurrent_per_market?: number;
   min_bars_between_trades?: number;
   break_even_enabled?: boolean;
+  be_phase2_enabled?: boolean;
   be_trigger_pct?: number;
   be_lock1_pct?: number;
   be_lock2_pct?: number;

@@ -6,11 +6,11 @@ set "ROOT=%~dp0"
 :: git -C nu accepta calea cu backslash + ghilimele: "C:\path\" devine "C:\path" fetch...
 :: Eliminam backslash-ul final pentru a evita eroarea.
 set "GITROOT=%ROOT:~0,-1%"
-title Trading Bot â€” Update
+title Trading Bot — Update
 
 echo.
 echo ============================================================
-echo   Trading Bot â€” Update
+echo   Trading Bot — Update
 echo ============================================================
 echo.
 
@@ -74,21 +74,21 @@ if errorlevel 1 (
 :: Detecteaza daca requirements.txt s-a schimbat
 git -C "%GITROOT%" diff "%OLD_HASH%" HEAD -- requirements.txt 2>nul | find "+" >nul
 if not errorlevel 1 (
-    echo  [3/4] requirements.txt modificat â€” actualizez dependentele Python ...
+    echo  [3/4] requirements.txt modificat — actualizez dependentele Python ...
     py -m pip install -r "%ROOT%requirements.txt" --quiet 2>&1
 ) else (
-    echo  [3/4] requirements.txt neschimbat â€” skip pip install.
+    echo  [3/4] requirements.txt neschimbat — skip pip install.
 )
 
 :: Detecteaza daca package.json s-a schimbat
 git -C "%GITROOT%" diff "%OLD_HASH%" HEAD -- frontend/package.json 2>nul | find "+" >nul
 if not errorlevel 1 (
-    echo  [4/4] frontend/package.json modificat â€” actualizez dependentele Node.js ...
+    echo  [4/4] frontend/package.json modificat — actualizez dependentele Node.js ...
     pushd "%ROOT%frontend"
     npm install --silent 2>&1
     popd
 ) else (
-    echo  [4/4] frontend/package.json neschimbat â€” skip npm install.
+    echo  [4/4] frontend/package.json neschimbat — skip npm install.
 )
 
 :: Afiseaza ce commit-uri s-au adaugat

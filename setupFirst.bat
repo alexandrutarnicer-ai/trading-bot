@@ -2,11 +2,11 @@
 chcp 65001 >nul 2>&1
 setlocal enabledelayedexpansion
 set "ROOT=%~dp0"
-title Trading Bot — Setup initial
+title Trading Bot � Setup initial
 
 echo.
 echo ============================================================
-echo   Trading Bot — Setup initial
+echo   Trading Bot � Setup initial
 echo ============================================================
 echo.
 echo  Instaleaza toate dependentele necesare pentru a rula botul.
@@ -15,7 +15,7 @@ echo.
 
 set "INSTALLED_SOMETHING=0"
 
-:: ── Verifica winget (disponibil implicit pe Windows 11) ───────────────────
+:: -- Verifica winget (disponibil implicit pe Windows 11) -------------------
 winget --version >nul 2>&1
 if errorlevel 1 (
     echo  [!] winget nu este disponibil. Actualizeaza Windows sau instaleaza
@@ -25,13 +25,13 @@ if errorlevel 1 (
 )
 
 
-:: ── 1. Python ─────────────────────────────────────────────────────────────
-:: Folosim "py" (Python Launcher) — nu este afectat de Windows Store alias.
+:: -- 1. Python -------------------------------------------------------------
+:: Folosim "py" (Python Launcher) � nu este afectat de Windows Store alias.
 echo  [1/5] Verific Python...
 py --version >nul 2>&1
 if errorlevel 1 (
     echo  [~] Python nu este instalat. Instalez via winget ...
-    :: Incercam versiunile recente in ordine — Python.Python.3 (generic) a fost
+    :: Incercam versiunile recente in ordine � Python.Python.3 (generic) a fost
     :: eliminat din repo; folosim ID-uri explicite cu fallback.
     winget install --id Python.Python.3.13 --exact --silent --accept-package-agreements --accept-source-agreements >nul 2>&1
     if errorlevel 1 (
@@ -50,7 +50,7 @@ if errorlevel 1 (
 )
 
 
-:: ── 2. Node.js ────────────────────────────────────────────────────────────
+:: -- 2. Node.js ------------------------------------------------------------
 echo  [2/5] Verific Node.js...
 node --version >nul 2>&1
 if errorlevel 1 (
@@ -69,7 +69,7 @@ if errorlevel 1 (
 )
 
 
-:: ── 3. Git ────────────────────────────────────────────────────────────────
+:: -- 3. Git ----------------------------------------------------------------
 echo  [3/5] Verific Git...
 git --version >nul 2>&1
 if errorlevel 1 (
@@ -88,7 +88,7 @@ if errorlevel 1 (
 )
 
 
-:: ── Daca s-a instalat ceva nou, CMD nu actualizeaza PATH in sesiunea curenta.
+:: -- Daca s-a instalat ceva nou, CMD nu actualizeaza PATH in sesiunea curenta.
 :: Deschidem automat o fereastra noua cu PATH proaspat care va continua instalarea.
 if "%INSTALLED_SOMETHING%"=="1" (
     echo.
@@ -101,12 +101,12 @@ if "%INSTALLED_SOMETHING%"=="1" (
     echo  dependentele Python si frontend...
     echo.
     timeout /t 3 /nobreak >nul
-    start "Trading Bot — Finalizare Setup" cmd /k ""%~f0""
+    start "Trading Bot � Finalizare Setup" cmd /k ""%~f0""
     exit /b 0
 )
 
 
-:: ── 4. Dependente Python ──────────────────────────────────────────────────
+:: -- 4. Dependente Python --------------------------------------------------
 echo  [4/5] Instalez dependente Python ...
 py -m pip install --upgrade pip --quiet
 py -m pip install -r "%ROOT%requirements.txt"
@@ -119,7 +119,7 @@ echo  [+] Dependente Python OK.
 echo.
 
 
-:: ── 5. Dependente frontend ────────────────────────────────────────────────
+:: -- 5. Dependente frontend ------------------------------------------------
 echo  [5/5] Instalez dependente frontend (npm install) ...
 pushd "%ROOT%frontend"
 npm install

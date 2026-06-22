@@ -11,46 +11,60 @@ echo ============================================================
 echo.
 
 :: Verifica Python
-py --version >nul 2>&1
+echo  [CHECK] Verific Python...
+py --version
 if errorlevel 1 (
-    echo  [!] Python nu este instalat sau nu este in PATH.
-    echo      Ruleaza setup.bat sau instaleaza Python de la python.org
+    echo  [EROARE] Python nu este gasit!
     pause
     exit /b 1
 )
+echo  [OK] Python gasit.
+echo.
 
 :: Verifica Node.js
-node --version >nul 2>&1
+echo  [CHECK] Verific Node.js...
+node --version
 if errorlevel 1 (
-    echo  [!] Node.js nu este instalat sau nu este in PATH.
-    echo      Descarca de la: https://nodejs.org (versiunea LTS)
+    echo  [EROARE] Node.js nu este gasit!
     pause
     exit /b 1
 )
+echo  [OK] Node.js gasit.
+echo.
 
-echo  [0/3] Opresc instante vechi (daca exista) ...
-:: Inchide ferestrele CMD vechi dupa titlu (inchide si procesele din ele)
-taskkill /FI "WINDOWTITLE eq TradingBotAPI" /F >nul 2>&1
-taskkill /FI "WINDOWTITLE eq TradingBotUI" /F >nul 2>&1
-:: Fallback: ucide si procesele de pe porturi (in caz ca titlul s-a schimbat)
-for /f "tokens=5" %%a in ('netstat -ano 2^>nul ^| findstr ":8000 " ^| findstr LISTENING') do (
-    taskkill /PID %%a /F >nul 2>&1
-)
-for /f "tokens=5" %%a in ('netstat -ano 2^>nul ^| findstr ":5173 " ^| findstr LISTENING') do (
-    taskkill /PID %%a /F >nul 2>&1
-)
-timeout /t 1 /nobreak >nul
+:: Opreste procese vechi
+echo  [0/3] Opresc instante vechi...
+taskkill /FI "WINDOWTITLE eq TradingBotAPI" /F /T 2>nul
+taskkill /FI "WINDOWTITLE eq TradingBotUI"  /F /T 2>nul
+powershell -NoProfile -ExecutionPolicy Bypass -File "%ROOT%scripts\kill_ports.ps1" -Ports 8000,5173 2>nul
+timeout /t 2 /nobreak >nul
+echo  [0/3] Procese vechi oprite.
+echo.
 
-echo  [1/3] Pornesc API backend pe portul 8000 ...
+:: Porneste API
+echo  [1/3] Pornesc API backend pe portul 8000...
 start "TradingBotAPI" cmd /k "title TradingBotAPI && cd /d %ROOT% && py -m uvicorn api.main:app --port 8000"
+echo  [1/3] Fereastra TradingBotAPI deschisa.
+echo.
 
-echo  [2/3] Pornesc frontend pe portul 5173 ...
+:: Porneste Frontend
+echo  [2/3] Pornesc frontend pe portul 5173...
 start "TradingBotUI" cmd /k "title TradingBotUI && cd /d %ROOT%frontend && npm run dev"
+echo  [2/3] Fereastra TradingBotUI deschisa.
+echo.
 
-echo  [3/3] Astept sa porneasca serverele (7 secunde) ...
-timeout /t 7 /nobreak >nul
+:: Asteapta si verifica
+echo  [3/3] Astept 8 secunde sa porneasca serverele...
+timeout /t 8 /nobreak >nul
 
-echo  Deschid browser ...
+echo  [CHECK] Verific portul 8000 (API)...
+powershell -NoProfile -Command "if (Get-NetTCPConnection -LocalPort 8000 -State Listen -EA SilentlyContinue) { Write-Host '  [OK] API ruleaza pe portul 8000' } else { Write-Host '  [ATENTIE] API NU ruleaza inca pe portul 8000 - verifica fereastra TradingBotAPI' }"
+
+echo  [CHECK] Verific portul 5173 (Frontend)...
+powershell -NoProfile -Command "if (Get-NetTCPConnection -LocalPort 5173 -State Listen -EA SilentlyContinue) { Write-Host '  [OK] Frontend ruleaza pe portul 5173' } else { Write-Host '  [ATENTIE] Frontend NU ruleaza inca pe portul 5173 - verifica fereastra TradingBotUI' }"
+
+echo.
+echo  Deschid browser...
 start http://localhost:5173
 
 echo.
@@ -60,7 +74,7 @@ echo   API:        http://localhost:8000
 echo ============================================================
 echo.
 echo  Lasa ferestrele TradingBotAPI si TradingBotUI deschise.
-echo  Pentru a reporni: dublu-click din nou pe start_ui.bat
+echo  Aceasta fereastra (TradingBot-Start) se poate inchide.
 echo.
-pause >nul
+pause
 endlocal

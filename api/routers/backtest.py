@@ -210,6 +210,7 @@ def _run_backtest_job(
             "only_long":                  session_cfg["direction"] == "LONG",
             "be_cfg": {
                 "enabled":         session_cfg.get("break_even_enabled", False),
+                "phase2_enabled":  session_cfg.get("be_phase2_enabled",  True),
                 "trigger_pct":     session_cfg.get("be_trigger_pct",    80),
                 "lock1_pct":       session_cfg.get("be_lock1_pct",      30),
                 "lock2_pct":       session_cfg.get("be_lock2_pct",      50),

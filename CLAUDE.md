@@ -224,6 +224,12 @@ Ambele routere `bot.py` si `sessions.py` folosesc `GetExitCodeProcess(STILL_ACTI
 **Telegram:**
 `api/telegram.py` — helper shared folosit de `bot.py` pentru notificare la start/stop din UI. Citeste credentialele din `data/telegram_config.json` cu fallback pe env vars. `live/signal_generator.py` isi are propriul `_get_tg_creds()` care citeste acelasi fisier.
 
+**`api/watchdog.py` — daemon watchdog oprire neasteptata:**
+Pornit automat la startup API (`@app.on_event("startup")`). Ruleaza ca thread daemon, polleaza la fiecare 30s: daca exista profil activ (`data/active_profile.json`) dar PID-ul botului (`data/run_all.pid`) nu mai e viu → trimite notificare Telegram ("Bot Trading oprit neasteptat!") si curata fisierele de stare (profil activ, pid). Acopera scenariile de crash sau oprire fortata fara Ctrl+C.
+
+**`api/routers/mt5status.py` — `algo_trading_enabled`:**
+Campul `algo_trading_enabled: bool | null` returnat in `GET /mt5/status`. Citit din `mt5.terminal_info().trade_allowed`. Dashboard-ul afiseaza un banner de avertizare galben cand este `false` (botul detecteaza semnale dar ordinele MT5 nu pot fi plasate).
+
 ### Structura unui profil JSON (`data/profiles/*.json`)
 
 ```json
@@ -260,6 +266,8 @@ Ambele routere `bot.py` si `sessions.py` folosesc `GetExitCodeProcess(STILL_ACTI
 - `friday_close_enabled` (bool, default `true`) + `friday_close_hour` (int 0-23, default `20`) — S3/BTC are `friday_close_enabled: false`.
 - `account_fraction` (float 0-1) — fractia din equity MT5 alocata sesiunii. Vizibil si editabil in SessionEditor cu breakdown live ($capital × fractie, risc/trade în USD).
 - `news_protection_enabled` (bool, default `false`) + `news_impact_level` (1/2/3) + `news_pre_minutes` + `news_post_minutes` — protectie automata la stiri. Cand activa, sesiunea intra pe pauza automatic + ordine/pozitii inchise imediat.
+- `break_even_enabled` (bool, default `false`) + `be_trigger_pct` (default 80) + `be_lock1_pct` (default 30) + `be_lock2_pct` (default 50) + `be_phase2_zone_pct` (default 40) — mecanism break-even in 3 faze (vezi `engine/simulator.py`).
+- `be_phase2_enabled` (bool, default `true`) — dezactiveaza independent Faza 2 BE fara a dezactiva intregul mecanism. Cand `false`, tranzitia Faza1→Faza3 sare direct la SL blocat la 50%.
 
 **Nota:** `config/standard_profile.json` este config-ul legacy folosit de backtest si de sesiunile live cand nu exista profil activ runtime. NU modifica structura — este citit de `engine/portfolio.py` si `live/signal_generator.py`. `data/profiles/standard.json` este profilul UI (acelasi continut logic, format diferit).
 
@@ -319,11 +327,15 @@ Daca numerele se schimba semnificativ → bug introdus, nu progres.
 
 **`body_strength` criteriu optional:** dezactivat by default (`enabled: false`) pentru a nu schimba baselines. Verifica intotdeauna ca `body_strength_enabled: false` in profilul standard inainte de a rula backtests de validare.
 
+**Break-even — `engine/simulator.py`:** Mecanism in 3 faze controlat de `be_cfg` dict. Faza 1: cand pretul atinge `be_trigger_pct`% din distanta SL→TP, SL mutat la `be_lock1_pct`% din SL original. Faza 2 (optionala, `phase2_enabled`): cand pretul intra in zona `be_phase2_zone_pct`% din TP, SL blocat la `be_lock2_pct`%. Faza 3: reversal dupa Faza 2 → SL la 50%. Contorizate in `be_lock_count` (Faza1) si `be_lock2_count` (Faza2) in rezultatele backtest. Break-even este dezactivat by default (`break_even_enabled: false`) — nu afecteaza baselines.
+
+**`setupSecond.py` — `npm install` cu `shell=True`:** Pe Windows, `npm` este `npm.cmd` (nu `npm.exe`). `subprocess.run(["npm", ...])` fara `shell=True` esueaza cu FileNotFoundError. Solutie: `subprocess.run("npm install", shell=True, cwd=frontend)`. Regula generala: orice comanda `.cmd` Windows in subprocess necesita `shell=True`.
+
 ---
 
 ## Dashboard web — componente principale
 
-**Dashboard.tsx:** Pagina principala. Afiseaza cont/balance/equity MT5 in header (citit din `useMt5Status`), profil activ, grid sesiuni (SessionCard), SignalFeed cu sume USD calculate per trade, EquityChart.
+**Dashboard.tsx:** Pagina principala. Afiseaza cont/balance/equity MT5 in header (citit din `useMt5Status`), profil activ, grid sesiuni (SessionCard), SignalFeed cu sume USD calculate per trade, EquityChart. Banner de avertizare galben cand `mt5.algo_trading_enabled === false` — semnale detectate dar ordine blocate in MT5.
 
 **SignalFeed.tsx:** Primeste `balanceUsd` si `capitalPct` ca props. Calculeaza `riskUsd = balance × (capitalPct/100) × 0.01`. La TP afiseaza `+3.5R TP (+175 USD)`, la SL afiseaza `-1R SL (-50 USD)`. USD = null daca MT5 deconectat.
 
@@ -342,12 +354,17 @@ Daca numerele se schimba semnificativ → bug introdus, nu progres.
 - Sectiune Criterii Optionale cu 4 carduri R/R (Base/Mid/Top/Max) + praguri + risk% per nivel
 - Sectiune Inchidere Vineri (friday_close_enabled + friday_close_hour)
 - Sectiune Protectie Stiri (news_protection_enabled + impact_level 1/2/3 + pre/post minutes)
+- Sectiune Break-Even: toggle principal (`break_even_enabled`) + parametri faze + toggle Faza 2 independent (`be_phase2_enabled`) — cand dezactivat, campurile Faza 2 dispar
 - Buton Pause/Play langa delete — acelasi mecanism ca Dashboard-ul, fara restart
 - Tooltips (i) pentru expire_bars (exemplu: "4 bare = 1h") si pullback_window (exemplu: "8 = 2h M15")
 
 **AuditPage.tsx:** Tab Audit (fostul Istoric). Doua sectiuni: **Descarcari Date** si **Backteste**.
 - *Descarcari Date*: `DownloadJobRow` expandabil per simbol — arata alias MT5 folosit (ex: "MT5: DE40"), ✓/⚠/✗ per timeframe, warning scroll daca istoricul nu e incarcat. Joburile persista in `data/download_jobs.json`.
-- *Backteste*: Joburi grupate In rulare / Erori / Finalizate. Rezultate expandabile cu tooltips, snapshot parametri, `CapitalSummary`. Erori clasificate: no_data / no_data_range / no_trades / generic. Persista in `data/backtest_jobs.json`.
+- *Backteste*: Joburi grupate In rulare / Erori / Finalizate. Rezultate expandabile cu tooltips, snapshot parametri, `CapitalSummary`. Erori clasificate: no_data / no_data_range / no_trades / generic. Persista in `data/backtest_jobs.json`. Cand break-even a fost activ, `ResultsGrid` afiseaza si statistici BE: "Faza 1: N", "Faza 2: N", "Total BE: N din M trades" (din campurile `be_lock_count` / `be_lock2_count`).
+
+**App.tsx — persistenta stare taburi:** Taburile Dashboard / Profile / Audit sunt ascunse cu CSS `hidden` (nu cu conditional rendering). Componentele raman montate permanent — `useState`, acordeoanele deschise si editarile nesalvate din ProfilePage supravietuiesc navigarii intre taburi fara niciun prop drilling.
+
+**ProfilePage.tsx:** Pagina Profile. Buton Salveaza/Reset apare atat in header cat si **la finalul listei de sesiuni** (duplicat de jos pentru scroll lung). Starea editarilor (`dirty`) e pastrata cand userul navigheaza la alt tab si revine.
 
 **TradingStatsPanel.tsx:** Panel statistici in Dashboard. 4 carduri: Total Semnale, Total Trades, Castiguri, Pierderi. Fiecare arata numarul agregat + "X azi" + indicator trend ▲/▼ vs ieri. Click pe "Total Semnale" sau "Total Trades" expandeaza breakdown per sesiune (ascunde sesiunile cu 0 activitate).
 
@@ -375,4 +392,6 @@ Variabilele Telegram (`TELEGRAM_TOKEN`, `TELEGRAM_CHAT_ID`) se seteaza in User E
 
 **setup.bat** — Instalare Python/Node/Git via winget. Daca se instaleaza ceva nou, deschide automat o fereastra CMD noua cu PATH proaspat si continua instalarea pip/npm fara interventia utilizatorului (nu mai necesita rulare de doua ori). Foloseste `py` (Python Launcher) in loc de `python` pentru a evita Windows Store alias.
 
-**start_ui.bat** — Script dublu-click pentru pornire dashboard fara IDE. Deschide doua ferestre terminal (API pe 8000 + frontend dev pe 5173) si browserul la `http://localhost:5173`. Foloseste `py` in loc de `python`.
+**start_ui.bat** — Script dublu-click pentru pornire dashboard fara IDE. La fiecare rulare: opreste instante vechi (taskkill dupa titlu + `scripts/kill_ports.ps1` pe porturile 8000/5173), deschide fereastra `TradingBotAPI` (uvicorn) + `TradingBotUI` (npm dev), asteapta 8s, verifica porturile si deschide browserul. Afiseaza diagnostice complete la fiecare pas. Fisierele `.bat` din proiect folosesc CRLF obligatoriu — CMD.EXE pe Windows esueaza silentios cu LF-only dupa `chcp 65001`. Cand ruleaza in Windows Terminal, ferestrele noi se deschid ca taburi noi (nu ferestre separate).
+
+**`scripts/kill_ports.ps1`** — Opreste procesele care asculta pe porturile date (`Get-NetTCPConnection` → `Stop-Process`). Apelat din `start_ui.bat` ca fallback dupa taskkill-ul pe titlu. Separat intr-un `.ps1` deoarece CMD nu poate pune pipe-uri (`|`) in string-urile PowerShell inline din `start ...`.

@@ -27,13 +27,16 @@ function AppInner() {
   return (
     <div className="min-h-screen bg-surface text-white">
       <NavBar active={tab} onChange={setTab} />
-      {tab === "dashboard" ? (
+      {/* Toate paginile sunt montate odata — CSS display:none pastreaza starea React */}
+      <div className={tab === "dashboard" ? undefined : "hidden"}>
         <Dashboard />
-      ) : tab === "audit" ? (
-        <AuditPage />
-      ) : (
+      </div>
+      <div className={tab === "profile" ? undefined : "hidden"}>
         <ProfilePage onNavigateToAudit={() => setTab("audit")} />
-      )}
+      </div>
+      <div className={tab === "audit" ? undefined : "hidden"}>
+        <AuditPage />
+      </div>
     </div>
   );
 }

@@ -19,8 +19,14 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from api.routers import bot, sessions, profiles, backtest, markets, data_download, settings, mt5status
 from api.routers import backtest_history
+from api.watchdog import start_watchdog
 
 app = FastAPI(title="Trading Bot API", version="1.0.0")
+
+
+@app.on_event("startup")
+def _startup():
+    start_watchdog()
 
 app.add_middleware(
     CORSMiddleware,
