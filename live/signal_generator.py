@@ -85,24 +85,31 @@ def _send_telegram(text: str) -> None:
 
 
 def _calc_lots(symbol: str, entry: float, sl: float,
-               capital: float, risk_pct: float) -> float:
-    """Calculeaza lotajul bazat pe capitalul virtual si riscul per trade."""
+               capital: float, risk_pct: float) -> tuple[float, float | None]:
+    """Calculeaza lotajul si riscul real in USD pentru 1R.
+
+    Returns:
+        (lots, risk_usd) — risk_usd = lot × sl_pips × pip_val (USD efectiv per 1R)
+                           risk_usd = None daca MT5 nedisponibil
+    """
     if _mt5_exec is None:
-        return 0.01
+        return 0.01, None
     info = _mt5_exec.symbol_info(symbol)
     if info is None:
-        return 0.01
+        return 0.01, None
     pip     = pip_size(symbol)
     sl_pips = abs(entry - sl) / pip
     if sl_pips <= 0 or info.trade_tick_size <= 0:
-        return info.volume_min
+        return info.volume_min, None
     pip_val = info.trade_tick_value / info.trade_tick_size * pip
     if pip_val <= 0:
-        return info.volume_min
+        return info.volume_min, None
     raw  = (capital * risk_pct) / (sl_pips * pip_val)
     step = info.volume_step if info.volume_step > 0 else 0.01
     lot  = max(info.volume_min, (raw // step) * step)
-    return round(lot, 2)
+    lot  = round(lot, 2)
+    risk_usd = round(lot * sl_pips * pip_val, 4)
+    return lot, risk_usd
 
 
 def _place_order(sig: dict, lots: float, expire_bars: int,
@@ -600,9 +607,10 @@ def _check_mt5_position_closed(ticket: int, p: dict, log) -> dict | None:
         result_r = round((exit_price - p["entry"]) * d / risk_dist, 3)
         status   = "TP" if result_r > 0 else "SL"
 
+    pnl_usd = round(float(close_deal.profit), 4)
     log.info(
         f"  [MT5] Pozitie #{ticket} inchisa: "
-        f"exit={exit_price}  result={result_r:+.3f}R  [{status}]"
+        f"exit={exit_price}  result={result_r:+.3f}R  pnl={pnl_usd:+.2f}USD  [{status}]"
     )
     return {
         "status":       status,
@@ -610,6 +618,7 @@ def _check_mt5_position_closed(ticket: int, p: dict, log) -> dict | None:
         "exit_price":   exit_price,
         "exit_time":    exit_time,
         "triggered_at": p.get("triggered_at", exit_time),
+        "pnl_usd":      pnl_usd,
     }
 
 
@@ -625,8 +634,13 @@ _SIGNALS_COLS = [
 _OUTCOMES_COLS = [
     "signal_id", "time_check", "symbol", "direction", "status",
     "entry", "sl", "tp", "r_ratio", "triggered_at",
-    "exit_price", "exit_time", "result_r",
+    "exit_price", "exit_time", "result_r", "pnl_usd",
 ]
+
+
+def _pnl(result_r: float, risk_usd: float | None) -> float | None:
+    """Calculeaza pnl_usd din result_r si risk_usd stocat la plasare."""
+    return round(result_r * risk_usd, 4) if risk_usd is not None else None
 
 
 def _update_outcomes(df: pd.DataFrame, symbol: str,
@@ -685,7 +699,8 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                                              "symbol": symbol,
                                              "status": "expirat", "result_r": 0.0,
                                              "exit_time": current_bar_t,
-                                             "time_check": datetime.now()})
+                                             "time_check": datetime.now(),
+                                             "pnl_usd": 0.0})
                         _send_telegram(
                             f"<b>EXPIRAT: {symbol}</b>\n"
                             f"Ordinul nu a fost triggerat (>{expire_bars} bare)\n"
@@ -721,7 +736,8 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                         outcome_rows.append({**p, "signal_id": sig_id,
                                              "symbol": symbol,
                                              "status": "invalidat", "result_r": 0.0,
-                                             "time_check": datetime.now()})
+                                             "time_check": datetime.now(),
+                                             "pnl_usd": 0.0})
                     else:
                         # Fara ordin MT5 — pastram doar in signals.csv, nu in outcomes
                         log.info(f"  INVALIDAT (fara ordin MT5): {sig_id} {symbol} "
@@ -864,7 +880,8 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                         outcome_rows.append({**p, "signal_id": sig_id, "symbol": symbol,
                                              "status": _oc, "result_r": _rr,
                                              "exit_price": _be_csl, "exit_time": bar["time"],
-                                             "time_check": datetime.now()})
+                                             "time_check": datetime.now(),
+                                             "pnl_usd": _pnl(_rr, p.get("risk_usd"))})
                         rows_to_remove.append(sig_id)
                         if _oc == "SL":
                             log.info(f"  PIERDERE: {sig_id} SL -1.0R")
@@ -886,7 +903,8 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                         outcome_rows.append({**p, "signal_id": sig_id, "symbol": symbol,
                                              "status": "TP", "result_r": p["r_ratio"],
                                              "exit_price": p["tp"], "exit_time": bar["time"],
-                                             "time_check": datetime.now()})
+                                             "time_check": datetime.now(),
+                                             "pnl_usd": _pnl(p["r_ratio"], p.get("risk_usd"))})
                         rows_to_remove.append(sig_id)
                         log.info(f"  PROFIT: {sig_id} TP +{p['r_ratio']:.1f}R")
                         _send_telegram(
@@ -924,7 +942,8 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                                              "symbol": symbol, "status": "SL",
                                              "result_r": -1.0, "exit_price": p["sl"],
                                              "exit_time": bar["time"],
-                                             "time_check": datetime.now()})
+                                             "time_check": datetime.now(),
+                                             "pnl_usd": _pnl(-1.0, p.get("risk_usd"))})
                         rows_to_remove.append(sig_id)
                         log.info(f"  PIERDERE: {sig_id} SL -1.0R")
                         _send_telegram(
@@ -938,7 +957,8 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                                              "symbol": symbol, "status": "TP",
                                              "result_r": p["r_ratio"], "exit_price": p["tp"],
                                              "exit_time": bar["time"],
-                                             "time_check": datetime.now()})
+                                             "time_check": datetime.now(),
+                                             "pnl_usd": _pnl(p["r_ratio"], p.get("risk_usd"))})
                         rows_to_remove.append(sig_id)
                         log.info(f"  PROFIT: {sig_id} TP +{p['r_ratio']:.1f}R")
                         _send_telegram(
@@ -1113,6 +1133,7 @@ def _friday_close_check(
                         "exit_time":    now,
                         "triggered_at": None,
                         "time_check":   now,
+                        "pnl_usd":      0.0,
                     })
                     state.get("mt5_tickets", {}).pop(sig_id, None)
                     sigs_to_remove.append((symbol, sig_id))
@@ -1181,6 +1202,7 @@ def _friday_close_check(
                         "exit_time":    now,
                         "triggered_at": p.get("triggered_at", now),
                         "time_check":   now,
+                        "pnl_usd":      _pnl(result_r, p.get("risk_usd")),
                     })
                     state.get("mt5_tickets", {}).pop(sig_id, None)
                     sigs_to_remove.append((symbol, sig_id))
@@ -1302,6 +1324,7 @@ def _news_close_check(
                         "exit_time":    now,
                         "triggered_at": p.get("triggered_at", now),
                         "time_check":   now,
+                        "pnl_usd":      _pnl(result_r, p.get("risk_usd")),
                     })
                     state.get("mt5_tickets", {}).pop(sig_id, None)
                     sigs_to_remove.append((symbol, sig_id))
@@ -1341,6 +1364,7 @@ def _news_close_check(
                     "result_r":   0.0,
                     "exit_time":  now,
                     "time_check": now,
+                    "pnl_usd":    0.0,
                 })
                 sigs_to_remove.append((symbol, sig_id))
 
@@ -1548,11 +1572,7 @@ def run_generator(session_cfg: dict):
             "entry", "sl", "tp", "r_ratio", "atr_pips", "n_optional", "rsi",
         ]).to_csv(signals_file, index=False)
     if not os.path.exists(outcomes_file):
-        pd.DataFrame(columns=[
-            "signal_id", "time_check", "symbol", "direction", "status",
-            "entry", "sl", "tp", "r_ratio", "triggered_at",
-            "exit_price", "exit_time", "result_r",
-        ]).to_csv(outcomes_file, index=False)
+        pd.DataFrame(columns=_OUTCOMES_COLS).to_csv(outcomes_file, index=False)
 
     # Incarca stare (cu fallback la coruptie — ex: reboot in mijlocul scrierii)
     _empty_state = {"pending": {}, "signal_counter": 0, "flag_signal_counter": 0, "ib_signal_counter": 0, "last_checked": {}}
@@ -1777,14 +1797,16 @@ def run_generator(session_cfg: dict):
                             risk_pct = session_cfg.get("inside_bar_risk_pct", 0.01)
                         else:
                             risk_pct = _pick_risk_pct(sig.get("n_optional", 0), session_cfg)
-                        lots   = _calc_lots(sig["symbol"], sig["entry"], sig["sl"],
-                                            capital, risk_pct)
+                        lots, risk_usd = _calc_lots(sig["symbol"], sig["entry"], sig["sl"],
+                                                    capital, risk_pct)
                         ticket = _place_order(sig, lots,
                                               session_cfg.get("expire_bars", 4),
                                               session_cfg["bar_minutes"], log)
                         if ticket:
-                            # Ordin plasat cu succes
+                            # Ordin plasat cu succes — stocheaza lot si risk real in pending
                             state["mt5_tickets"][sig["signal_id"]] = ticket
+                            state["pending"][symbol][sig["signal_id"]]["lot_size"] = lots
+                            state["pending"][symbol][sig["signal_id"]]["risk_usd"] = risk_usd
                             fmt = ".2f" if sig["entry"] > 100 else ".5f"
                             _send_telegram(
                                 f"<b>Ordin plasat: {sig['dir_str']} {sig['symbol']}</b>\n"
@@ -1839,13 +1861,15 @@ def run_generator(session_cfg: dict):
                             "tp":        _p["tp"],
                         }
                         _risk_pct = _pick_risk_pct(_p.get("n_optional", 0), session_cfg)
-                        _lots = _calc_lots(symbol, _p["entry"], _p["sl"], capital, _risk_pct)
+                        _lots, _risk_usd = _calc_lots(symbol, _p["entry"], _p["sl"], capital, _risk_pct)
                         log.info(f"  [RETRY] {_sid}: incerc plasare ordin (bara precedenta → None)")
                         _ticket = _place_order(_sig_retry, _lots,
                                                session_cfg.get("expire_bars", 4),
                                                session_cfg["bar_minutes"], log)
                         if _ticket:
                             state["mt5_tickets"][_sid] = _ticket
+                            state["pending"][symbol][_sid]["lot_size"] = _lots
+                            state["pending"][symbol][_sid]["risk_usd"] = _risk_usd
                             dir_str = "LONG" if _p["direction"] == 1 else "SHORT"
                             fmt = ".2f" if _p["entry"] > 100 else ".5f"
                             _send_telegram(

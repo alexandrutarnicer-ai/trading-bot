@@ -54,6 +54,7 @@ class Outcome(BaseModel):
     exit_price: Optional[float]
     exit_time: Optional[str]
     result_r: float
+    pnl_usd: Optional[float] = None
 
 
 class BotStatus(BaseModel):

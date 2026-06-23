@@ -275,16 +275,32 @@ Campul `algo_trading_enabled: bool | null` returnat in `GET /mt5/status`. Citit 
 
 ## Sesiuni active
 
-| ID | Script | Piete | TF | Directie | Status | Execute |
-|----|--------|-------|----|----------|--------|---------|
-| S1 | session1_m15_long.py | EURUSD/GBPUSD/EURJPY | M15+M30 | LONG | validat | True |
-| S2 | session2_m5_both.py | USDJPY/AUDJPY/NZDJPY | M15+M30 | BOTH | validat | True |
-| S3 | session3_btc_both.py | BTCUSD | M15+M30 | BOTH | validat p=0.0075*** | True |
-| S4 | session4_obs.py | GER40+US30 | M15+M30 | LONG | DEMO — re-eval Dec 2026 | True |
-| S5 | session5_ger40_h1.py | GER40+USDCHF | H1+D1 | BOTH | DEMO activ (din 1ce6a8e) | True |
-| S6 | session6_us30_m15.py | US30 | M15+M30 | LONG | DEMO | True |
+20 sesiuni individuale — o singura piata per sesiune. Fiecare are propriul script live, `session_key`, `state.pkl`, `signals.csv`, `outcomes.csv`.
 
-Capital: S3=62.5% din equity, S1/S2/S4/S6=12.5% fiecare. S5: account_fraction=0 (Demo fara capital alocat). Sizing dinamic: botul citeste equity real MT5 la fiecare trade.
+| ID | Script | Piata | TF | Directie | Execute |
+|----|--------|-------|----|----------|---------|
+| session1  | session1_m15_long.py   | EURUSD  | M15+M30 | LONG | True  |
+| session2  | session2_m5_both.py    | AUDJPY  | M15+M30 | BOTH | True  |
+| session3  | session3_btc_both.py   | BTCUSD  | M15+M30 | BOTH | True  |
+| session4  | session4_obs.py        | GER40   | M15+M30 | LONG | True  |
+| session5  | session5_ger40_h1.py   | USDCHF  | H1+D1   | BOTH | True  |
+| session6  | session6_us30_m15.py   | US30    | M15+M30 | LONG | True  |
+| session7  | session7_xrp.py        | XRPUSD  | M15+M30 | BOTH | True  |
+| session8  | session8_eurcad_h1.py  | EURCAD  | H1+D1   | BOTH | True  |
+| session9  | session9_usdjpy.py     | USDJPY  | M15+M30 | BOTH | True  |
+| session10 | session10_gbpcad_h1.py | GBPCAD  | H1+D1   | BOTH | True  |
+| session11 | session11_usdcad.py    | USDCAD  | M15+M30 | BOTH | True  |
+| session12 | session12_euraud_h1.py | EURAUD  | H1+D1   | BOTH | True  |
+| session13 | session13_eurjpy.py    | EURJPY  | M15+M30 | BOTH | True  |
+| session14 | session14_chfjpy_h1.py | CHFJPY  | H1+D1   | BOTH | True  |
+| session15 | session15_gbpusd.py    | GBPUSD  | M15+M30 | BOTH | True  |
+| session16 | session16_gbpaud_h1.py | GBPAUD  | H1+D1   | BOTH | True  |
+| session17 | session17_audcad_h1.py | AUDCAD  | H1+D1   | BOTH | True  |
+| session18 | session18_nzdjpy_h1.py | NZDJPY  | H1+D1   | BOTH | True  |
+| session19 | session19_audnzd.py    | AUDNZD  | M15+M30 | BOTH | True  |
+| session20 | session20_xauusd.py    | XAUUSD  | M15+M30 | BOTH | False |
+
+`session20` (XAUUSD) are `execute_trades=False` — sesiune de observatie. Sizing dinamic: botul citeste equity real MT5 la fiecare trade. `account_fraction` per sesiune configurat in profil.
 
 ---
 
@@ -319,6 +335,12 @@ Daca numerele se schimba semnificativ → bug introdus, nu progres.
 
 **Swap BTC:** calculat ca procent anual din notional. Rate-ul variaza cu brokerul — verifica `data/crypto_specs.json`.
 
+**`pnl_usd` in `outcomes.csv`:** Coloana 14 din `_OUTCOMES_COLS`. Scrisa de `_pnl()` la inchiderea ordinelor MT5 reale (TP/SL/vineri_close/news_close). Valoarea vine din `deal.profit` returnat de `history_deals_get`. Ramane `NaN` pentru ordine expirate sau sesiunile cu `execute_trades=False`. Backfill retroactiv: `python scripts/backfill_pnl_usd.py` (necesita MT5 conectat).
+
+**`_CLOSED_STATUSES`:** `["TP", "SL", "vineri_close", "news_close"]` — toate statusurile care corespund pozitiilor reale inchise. Folosit in `_outcome_stats`, `weekly_stats._aggregate` si `equity_curve` din `api/routers/sessions.py`. Castigurile/pierderile sunt calculate din `result_r > 0` / `result_r < 0` (nu din status) pentru a acoperi si vineri_close cu R pozitiv.
+
+**`GET /sessions/frequency-estimate`:** Calculeaza frecventa estimata trades/saptamana + trades/luna din cele mai recente backtest-uri finalizate (din `data/backtest_jobs.json`). Filtreaza sesiunile pe pauza. Mapare: `job.session_id` ("S2") → `profile_session.id` ("S2"). Returneaza `{per_week, per_month}` sau `null` daca nu exista backtest-uri.
+
 **`_place_order` filling modes:** incearca RETURN → FOK → IOC → fara filling, in ordine. ICMarketsEU respinge `ORDER_TIME_SPECIFIED` (retcode 10022) — se foloseste `ORDER_TIME_GTC`.
 
 **AutoTrading dezactivat (retcode 10026/10027):** returneaza `None` (retry bara urm.), nu `False`.
@@ -336,6 +358,7 @@ Daca numerele se schimba semnificativ → bug introdus, nu progres.
 ## Dashboard web — componente principale
 
 **Dashboard.tsx:** Pagina principala. Afiseaza cont/balance/equity MT5 in header (citit din `useMt5Status`), profil activ, grid sesiuni (SessionCard), SignalFeed cu sume USD calculate per trade, EquityChart. Banner de avertizare galben cand `mt5.algo_trading_enabled === false` — semnale detectate dar ordine blocate in MT5.
+- **Widget frecventa estimata:** 2 carduri vizibile permanent deasupra grid-ului de sesiuni — "Estimat / săptămână" + "Estimat / lună". Calcul bazat pe `GET /sessions/frequency-estimate` (citeste backtest_jobs.json, exclude sesiunile pe pauza). Polleaza la 15s. Afiseaza "—" cand nu exista date backtest.
 
 **SignalFeed.tsx:** Primeste `balanceUsd` si `capitalPct` ca props. Calculeaza `riskUsd = balance × (capitalPct/100) × 0.01`. La TP afiseaza `+3.5R TP (+175 USD)`, la SL afiseaza `-1R SL (-50 USD)`. USD = null daca MT5 deconectat.
 
@@ -346,6 +369,8 @@ Daca numerele se schimba semnificativ → bug introdus, nu progres.
 **SessionCard.tsx:** Card per sesiune in Dashboard. Include buton Pause/Play (⏸/▶) in header. Cand pe pauza: dot galben, badge "PAUZA", stats dimmate. Butonul apeleaza `POST /sessions/{id}/pause` sau `/resume`. Nu necesita restart bot — efectul intra la bara urmatoare.
 
 **BacktestPanel.tsx:** Per sesiune profil. Capital + alocare per piata, range selector (1An/3Ani/Tot/Custom), verificare CSV → download daca lipsesc → trimite job in Audit tab (nu mai afiseaza inline). Dupa pornire descarcare: starea `dl_submitted` arata "Descarcarea rulează în Audit..." cu buton "Mergi la Audit" — identic cu flow-ul backtest. Prop `onDownloadStarted` pentru navigare la Audit.
+- **Capital default per piata:** `profileStartBalance × account_fraction / n_markets` (calculat din props `profileStartBalance` pasata din ProfilePage → SessionEditor → BacktestPanel).
+- **`minCapital` enforcement:** `frontend/src/marketSpecs.ts` defineste `minCapital` per piata (ex: EURUSD=150, US30=400, BTCUSD=150). Input-ul de alocare per piata are `min={minCap}` — border rosu + avertisment "⚠ min X" cand suma e sub minim. Calcul overshoot nu ruleaza sub minim.
 
 **SessionEditor.tsx (Profile):** Editor complet per sesiune. Include:
 - Toggle Non-stop (session_start=0/session_end=24) — ascunde campurile de ora
@@ -361,6 +386,7 @@ Daca numerele se schimba semnificativ → bug introdus, nu progres.
 **AuditPage.tsx:** Tab Audit (fostul Istoric). Doua sectiuni: **Descarcari Date** si **Backteste**.
 - *Descarcari Date*: `DownloadJobRow` expandabil per simbol — arata alias MT5 folosit (ex: "MT5: DE40"), ✓/⚠/✗ per timeframe, warning scroll daca istoricul nu e incarcat. Joburile persista in `data/download_jobs.json`.
 - *Backteste*: Joburi grupate In rulare / Erori / Finalizate. Rezultate expandabile cu tooltips, snapshot parametri, `CapitalSummary`. Erori clasificate: no_data / no_data_range / no_trades / generic. Persista in `data/backtest_jobs.json`. Cand break-even a fost activ, `ResultsGrid` afiseaza si statistici BE: "Faza 1: N", "Faza 2: N", "Total BE: N din M trades" (din campurile `be_lock_count` / `be_lock2_count`).
+- **Frecventa trades:** `ResultsGrid` afiseaza un rand "Frecvență: X.X trades/săpt · Y.Y trades/lună · Z zile testate" calculat din `total_trades / (days / 7)`. Identic si in `HistoryPage.tsx`.
 
 **App.tsx — persistenta stare taburi:** Taburile Dashboard / Profile / Audit sunt ascunse cu CSS `hidden` (nu cu conditional rendering). Componentele raman montate permanent — `useState`, acordeoanele deschise si editarile nesalvate din ProfilePage supravietuiesc navigarii intre taburi fara niciun prop drilling.
 

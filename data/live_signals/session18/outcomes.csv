@@ -1,1 +1,2 @@
 signal_id,time_check,symbol,direction,status,entry,sl,tp,r_ratio,triggered_at,exit_price,exit_time,result_r,pnl_usd
+S18-NZDJPY-H1-IB0001,2026-06-23 19:00:05.402445,NZDJPY,1,invalidat,91.783,91.577,92.195,2.0,,,,0.0,0.0

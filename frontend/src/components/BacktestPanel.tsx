@@ -12,6 +12,7 @@ interface Props {
   onJobStarted?: () => void;        // navighează la Audit fără să salveze (backtest)
   onSaveAndNavigate?: () => void;   // salvează profilul + navighează la Audit (backtest)
   onDownloadStarted?: () => void;   // navighează la Audit după pornire descărcare
+  profileStartBalance?: number;     // start_balance din profil — pentru default alocare sesiune
 }
 
 type Range = "1y" | "3y" | "5y" | "all" | "custom";
@@ -42,11 +43,18 @@ type Phase =
   | "error"
   | "submitted";
 
-export function BacktestPanel({ session, onJobStarted, onSaveAndNavigate, onDownloadStarted }: Props) {
+export function BacktestPanel({ session, onJobStarted, onSaveAndNavigate, onDownloadStarted, profileStartBalance }: Props) {
+  const portfolioBalance = profileStartBalance ?? 1000;
+  const defaultSessionCapital = Math.round(portfolioBalance * (session.account_fraction ?? 0.1));
+
   const [phase, setPhase]       = useState<Phase>("idle");
   const [range, setRange]       = useState<Range>("5y");
-  const [startBalance, setStartBalance] = useState(1000);
-  const [marketAllocations, setMarketAllocations] = useState<Record<string, number>>({});
+  const [startBalance, setStartBalance] = useState(portfolioBalance);
+  const [marketAllocations, setMarketAllocations] = useState<Record<string, number>>(() => {
+    if (!session.markets.length) return {};
+    const alloc = defaultSessionCapital / session.markets.length;
+    return Object.fromEntries(session.markets.map(m => [m, alloc]));
+  });
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo]     = useState("");
   const [checkResult, setCheckResult] = useState<DataCheckResult | null>(null);
@@ -65,12 +73,15 @@ export function BacktestPanel({ session, onJobStarted, onSaveAndNavigate, onDown
   const { data: btJob } = useBacktestJob(btJobId);
 
   // Sync market allocations when markets change (add/remove)
+  // Piețe noi primesc cota din capitalul sesiunii; piețele existente își păstrează valoarea
   const marketsKey = session.markets.join(",");
   useEffect(() => {
     const n = session.markets.length;
     if (n === 0) { setMarketAllocations({}); return; }
+    const portfolioB = profileStartBalance ?? 1000;
+    const sessionCap = Math.round(portfolioB * (session.account_fraction ?? 0.1));
+    const defaultAlloc = sessionCap / n;
     setMarketAllocations(prev => {
-      const defaultAlloc = startBalanceRef.current / n;
       const next: Record<string, number> = {};
       for (const m of session.markets) {
         next[m] = prev[m] ?? defaultAlloc;
@@ -131,10 +142,11 @@ export function BacktestPanel({ session, onJobStarted, onSaveAndNavigate, onDown
     setBtJobId(null);
     setPhase("running");
     try {
+      const effectiveBalance = totalAllocated > 0 ? totalAllocated : startBalance;
       const res = await runBt.mutateAsync({
         session,
         ...getDateRange(),
-        start_balance: startBalance,
+        start_balance: effectiveBalance,
         session_snapshot: {
           // Strategie
           pullback_window:            session.pullback_window,
@@ -176,7 +188,7 @@ export function BacktestPanel({ session, onJobStarted, onSaveAndNavigate, onDown
           inside_bar_risk_pct:        session.inside_bar_risk_pct,
           // Capital per piata
           market_allocations:         marketAllocations,
-          start_balance:              startBalance,
+          start_balance:              effectiveBalance,
         },
       }) as { job_id: string };
       setBtJobId(res.job_id);
@@ -246,7 +258,7 @@ export function BacktestPanel({ session, onJobStarted, onSaveAndNavigate, onDown
       {/* Capital + alocare per piata */}
       <div className="bg-surface-border/20 rounded-lg p-3 space-y-2">
         <div className="flex items-center justify-between">
-          <span className="text-xs text-slate-400">Capital simulat</span>
+          <span className="text-xs text-slate-400">Capital portofoliu</span>
           <div className="flex items-center gap-1.5">
             <input
               type="number" min={100} step={100}
@@ -270,25 +282,33 @@ export function BacktestPanel({ session, onJobStarted, onSaveAndNavigate, onDown
               </button>
             </div>
             {session.markets.map((m) => {
-              const alloc   = marketAllocations[m] ?? (startBalance / session.markets.length);
-              const pct     = startBalance > 0 ? (alloc / startBalance * 100).toFixed(0) : "0";
-              const spec    = MARKET_SPECS[m.toUpperCase()];
-              const riskPct = session.risk_base ?? session.risk_pct ?? 0.01;
-              const over    = spec ? calcOvershoot(alloc, riskPct, spec) : null;
+              const alloc      = marketAllocations[m] ?? (startBalance / session.markets.length);
+              const pct        = startBalance > 0 ? (alloc / startBalance * 100).toFixed(0) : "0";
+              const spec       = MARKET_SPECS[m.toUpperCase()];
+              const minCap     = spec?.minCapital ?? 100;
+              const belowMin   = alloc < minCap;
+              const riskPct    = session.risk_base ?? session.risk_pct ?? 0.01;
+              const over    = spec && !belowMin ? calcOvershoot(alloc, riskPct, spec) : null;
               return (
                 <div key={m}>
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-slate-400 w-20 flex-shrink-0 font-mono">{m}</span>
                     <input
-                      type="number" min={0} step={50}
+                      type="number" min={minCap} step={50}
                       value={Math.round(alloc)}
                       onChange={(e) => setMarketAllocations(prev => ({
                         ...prev, [m]: parseFloat(e.target.value) || 0,
                       }))}
-                      className="w-20 bg-surface border border-surface-border rounded px-2 py-1 text-xs text-right font-mono text-white focus:outline-none focus:border-blue-500"
+                      className={`w-20 bg-surface border rounded px-2 py-1 text-xs text-right font-mono text-white focus:outline-none ${belowMin ? "border-loss focus:border-loss" : "border-surface-border focus:border-blue-500"}`}
                     />
                     <span className="text-xs text-slate-500">USD</span>
                     <span className="text-xs text-slate-600 ml-auto">{pct}%</span>
+                    {belowMin && (
+                      <span className="text-[10px] text-loss font-mono ml-1 flex items-center gap-0.5">
+                        ⚠ min {minCap}
+                        <InfoTooltip position="above" align="right" text={`Capital minim pentru ${m}: $${minCap} USD.\nSub această valoare, marja necesară depășește capitalul disponibil și backtestul nu va genera trades.`} />
+                      </span>
+                    )}
                     {over && (
                       <span className={`text-[10px] font-mono font-medium ml-1 flex items-center ${over.factor >= 8 ? "text-loss" : "text-warn"}`}>
                         ⚠ {over.factor.toFixed(0)}×
@@ -320,12 +340,11 @@ export function BacktestPanel({ session, onJobStarted, onSaveAndNavigate, onDown
               );
             })}
             <div className="border-t border-surface-border/40 pt-1.5 flex justify-between text-xs">
-              <span className="text-slate-500">Total alocat</span>
-              <span className={`font-mono ${allocationOk ? "text-slate-400" : "text-warn"}`}>
+              <span className="text-slate-500">Capital backtest</span>
+              <span className="font-mono text-blue-400">
                 {totalAllocated.toLocaleString("ro-RO", { maximumFractionDigits: 0 })}
                 {" / "}
                 {startBalance.toLocaleString("ro-RO", { maximumFractionDigits: 0 })} USD
-                {!allocationOk && " ⚠"}
               </span>
             </div>
           </div>

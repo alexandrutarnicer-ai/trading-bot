@@ -1,2 +1,2 @@
-signal_id,time_check,symbol,direction,status,entry,sl,tp,r_ratio,triggered_at,exit_price,exit_time,result_r
+signal_id,time_check,symbol,direction,status,entry,sl,tp,r_ratio,triggered_at,exit_price,exit_time,result_r,pnl_usd
 S1-M15-LONG-SIG0001,2026-06-17 11:15:05.154199,EURJPY,1,SL,186.045,185.871,186.828,4.5,2026-06-16 17:30:00,185.871,2026-06-17 11:00:00,-1.0

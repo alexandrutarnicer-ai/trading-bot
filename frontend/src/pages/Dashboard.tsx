@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { RefreshCw, TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useSessions, useBotStatus, useMt5Status, useWeeklyStats } from "../api/hooks";
+import { useSessions, useBotStatus, useMt5Status, useWeeklyStats, useFrequencyEstimate } from "../api/hooks";
 import { BotStatusBar } from "../components/BotStatusBar";
 import { SessionCard } from "../components/SessionCard";
 import { SignalFeed } from "../components/SignalFeed";
@@ -102,9 +102,14 @@ export function Dashboard() {
   const { data: sessions, isLoading, dataUpdatedAt } = useSessions();
   const { data: botStatus } = useBotStatus();
   const { data: mt5 } = useMt5Status();
+  const { data: freqData } = useFrequencyEstimate(botStatus?.active_profile_id ?? undefined);
   const [selectedSession, setSelectedSession] = useState<string>("session3");
   const [now, setNow] = useState(Date.now());
   const qc = useQueryClient();
+
+  const estimatedFreq = (freqData?.per_week != null)
+    ? { perWeek: freqData.per_week, perMonth: freqData.per_month ?? 0 }
+    : null;
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 5_000);
@@ -191,11 +196,35 @@ export function Dashboard() {
         </div>
       )}
 
+      {/* Frecventa estimata trades */}
+      <div className="grid grid-cols-2 gap-3">
+        <div className="bg-surface-card rounded-xl border border-surface-border px-5 py-3 flex items-center gap-4">
+          <div className="flex-1">
+            <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Estimat / săptămână</p>
+            {estimatedFreq
+              ? <p className="text-2xl font-bold font-mono text-white">~{estimatedFreq.perWeek.toFixed(1)} <span className="text-sm font-normal text-slate-400">trades</span></p>
+              : <p className="text-2xl font-bold font-mono text-slate-600">—</p>
+            }
+          </div>
+        </div>
+        <div className="bg-surface-card rounded-xl border border-surface-border px-5 py-3 flex items-center gap-4">
+          <div className="flex-1">
+            <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Estimat / lună</p>
+            {estimatedFreq
+              ? <p className="text-2xl font-bold font-mono text-white">~{estimatedFreq.perMonth.toFixed(0)} <span className="text-sm font-normal text-slate-400">trades</span></p>
+              : <p className="text-2xl font-bold font-mono text-slate-600">—</p>
+            }
+          </div>
+        </div>
+      </div>
+
       {/* Sessions grid */}
       <div>
-        <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">
-          Sesiuni active
-        </h2>
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+            Sesiuni active
+          </h2>
+        </div>
         {isLoading ? (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
             {[...Array(6)].map((_, i) => (

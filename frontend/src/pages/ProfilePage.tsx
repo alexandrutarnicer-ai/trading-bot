@@ -365,6 +365,7 @@ export function ProfilePage({ onNavigateToAudit }: { onNavigateToAudit: () => vo
                     ? resumeS.mutate(session.session_key)
                     : pauseS.mutate(session.session_key)
                 }
+                profileStartBalance={draft.start_balance}
               />
             );
           })}

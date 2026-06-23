@@ -208,10 +208,22 @@ function ResultCell({ label, value, color }: { label: string; value: string; col
   );
 }
 
+function tradesFrequency(r: BacktestResult): { perWeek: number; perMonth: number; days: number } | null {
+  if (!r.date_from || !r.date_to || !r.total_trades) return null;
+  const days = (new Date(r.date_to).getTime() - new Date(r.date_from).getTime()) / 86_400_000;
+  if (days <= 0) return null;
+  return {
+    days:     Math.round(days),
+    perWeek:  r.total_trades / (days / 7),
+    perMonth: r.total_trades / (days / 30.44),
+  };
+}
+
 function ResultsGrid({ r }: { r: BacktestResult }) {
   const beLock  = r.be_lock_count  ?? 0;
   const beLock2 = r.be_lock2_count ?? 0;
   const beTotal = beLock + beLock2;
+  const freq    = tradesFrequency(r);
 
   const cells = [
     { label: "Trades",      value: String(r.total_trades) },
@@ -231,6 +243,16 @@ function ResultsGrid({ r }: { r: BacktestResult }) {
           <ResultCell key={c.label} label={c.label} value={c.value} color={c.color} />
         ))}
       </div>
+      {freq && (
+        <div className="flex items-center gap-3 text-[10px] text-slate-500 bg-surface/60 rounded-lg px-3 py-1.5 border border-surface-border/40">
+          <span className="text-slate-400 font-medium">Frecvență:</span>
+          <span><span className="text-slate-200 font-mono">{freq.perWeek.toFixed(1)}</span> trades/săpt</span>
+          <span className="text-slate-600">·</span>
+          <span><span className="text-slate-200 font-mono">{freq.perMonth.toFixed(1)}</span> trades/lună</span>
+          <span className="text-slate-600">·</span>
+          <span className="text-slate-500">{freq.days} zile testate</span>
+        </div>
+      )}
       {beTotal > 0 && (
         <div className="flex items-center gap-3 text-[10px] text-slate-500 bg-surface/60 rounded-lg px-3 py-1.5 border border-surface-border/40">
           <span className="text-slate-400 font-medium">Break-Even:</span>

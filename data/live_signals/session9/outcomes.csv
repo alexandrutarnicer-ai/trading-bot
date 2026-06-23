@@ -1,0 +1,3 @@
+signal_id,time_check,symbol,direction,status,entry,sl,tp,r_ratio,triggered_at,exit_price,exit_time,result_r,pnl_usd
+S9-USDJPY-SIG0001,2026-06-23 10:15:05.047886,USDJPY,1,SL,161.633,161.457,162.249,3.5,2026-06-23 01:15:00,161.407,2026-06-23 13:01:26,-1.284
+S9-USDJPY-SIG0002,2026-06-23 21:15:05.051721,USDJPY,1,expirat,161.62,161.484,162.232,4.5,,,2026-06-23 21:00:00,0.0,0.0

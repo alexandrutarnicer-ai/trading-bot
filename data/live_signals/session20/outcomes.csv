@@ -1,0 +1,2 @@
+signal_id,time_check,symbol,direction,status,entry,sl,tp,r_ratio,triggered_at,exit_price,exit_time,result_r,pnl_usd
+S20-XAUUSD-SIG0001,2026-06-23 17:00:05.926460,XAUUSD,-1,SL,4117.75,4135.45,4055.8,3.5,2026-06-23 14:00:00,4135.45,2026-06-23 16:45:00,-1.0,

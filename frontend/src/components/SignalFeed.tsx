@@ -7,24 +7,31 @@ interface Props {
   capitalPct?: number;
 }
 
-function statusBadge(o: Outcome, riskUsd: number | null) {
-  const usd = riskUsd !== null
-    ? (n: number) => ` (${n >= 0 ? "+" : ""}${n.toFixed(0)} USD)`
-    : () => "";
+function fmtUsd(n: number): string {
+  const abs = Math.abs(n);
+  const sign = n < 0 ? "-" : "+";
+  const str = abs < 10 ? abs.toFixed(2) : abs.toFixed(0);
+  return ` (${sign}${str} USD)`;
+}
 
+function statusBadge(o: Outcome, riskUsd: number | null) {
   if (o.status === "TP") {
-    const gain = riskUsd !== null ? o.result_r * riskUsd : null;
+    const usdStr = o.pnl_usd != null
+      ? fmtUsd(o.pnl_usd)
+      : riskUsd != null ? fmtUsd(o.result_r * riskUsd) : "";
     return (
       <span className="text-[10px] font-bold text-profit">
-        +{o.r_ratio}R TP{gain !== null ? <span className="font-normal opacity-75">{usd(gain)}</span> : null}
+        +{o.r_ratio}R TP{usdStr ? <span className="font-normal opacity-75">{usdStr}</span> : null}
       </span>
     );
   }
   if (o.status === "SL") {
-    const loss = riskUsd !== null ? -riskUsd : null;
+    const usdStr = o.pnl_usd != null
+      ? fmtUsd(o.pnl_usd)
+      : riskUsd != null ? fmtUsd(o.result_r * riskUsd) : "";
     return (
       <span className="text-[10px] font-bold text-loss">
-        -1R SL{loss !== null ? <span className="font-normal opacity-75">{usd(loss)}</span> : null}
+        {o.result_r.toFixed(2)}R SL{usdStr ? <span className="font-normal opacity-75">{usdStr}</span> : null}
       </span>
     );
   }

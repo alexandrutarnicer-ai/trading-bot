@@ -1,4 +1,4 @@
-signal_id,time_check,symbol,direction,status,entry,sl,tp,r_ratio,triggered_at,exit_price,exit_time,result_r
+signal_id,time_check,symbol,direction,status,entry,sl,tp,r_ratio,triggered_at,exit_price,exit_time,result_r,pnl_usd
 S3-BTC-BOTH-SIG0004,2026-06-16 05:00:05.054243,BTCUSD,1,expirat,66422.33,66055.3,67706.935,3.5,,,2026-06-16 04:45:00,0.0
 S3-BTC-BOTH-SIG0005,2026-06-16 05:15:05.059621,BTCUSD,1,SL,66348.67,66055.3,67375.465,3.5,2026-06-16 04:30:00,66055.3,2026-06-16 05:00:00,-1.0
 S3-BTC-BOTH-SIG0001,2026-06-17T15:25:49.220733,BTCUSD,1,expirat,63569.32,63174.67,64950.595,3.5,,,,0.0

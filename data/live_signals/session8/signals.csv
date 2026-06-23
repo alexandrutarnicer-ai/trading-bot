@@ -1,0 +1,2 @@
+signal_id,time,symbol,direction,dir_str,entry,sl,tp,r_ratio,atr_pips,n_optional,rsi
+S8-EURCAD-H1-IB0001,2026-06-23 18:00:00,EURCAD,1,LONG,1.61657,1.61457,1.62057,2.0,14.1,0,38.0

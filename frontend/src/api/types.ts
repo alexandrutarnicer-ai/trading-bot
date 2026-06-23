@@ -79,6 +79,7 @@ export interface Outcome {
   exit_price: number | null;
   exit_time: string | null;
   result_r: number;
+  pnl_usd: number | null;
 }
 
 export interface EquityCurvePoint {

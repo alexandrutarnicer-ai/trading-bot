@@ -48,7 +48,19 @@ function SnapshotBadge({ label, value }: { label: string; value: string }) {
   );
 }
 
+function tradesFrequency(r: BacktestResult): { perWeek: number; perMonth: number; days: number } | null {
+  if (!r.date_from || !r.date_to || !r.total_trades) return null;
+  const days = (new Date(r.date_to).getTime() - new Date(r.date_from).getTime()) / 86_400_000;
+  if (days <= 0) return null;
+  return {
+    days:     Math.round(days),
+    perWeek:  r.total_trades / (days / 7),
+    perMonth: r.total_trades / (days / 30.44),
+  };
+}
+
 function ResultsGrid({ r }: { r: BacktestResult }) {
+  const freq = tradesFrequency(r);
   const cells = [
     { label: "Trades total",  value: String(r.total_trades) },
     { label: "Win Rate",      value: fmtPct(r.win_rate) },
@@ -61,13 +73,25 @@ function ResultsGrid({ r }: { r: BacktestResult }) {
   ];
 
   return (
-    <div className="grid grid-cols-4 gap-2">
-      {cells.map(c => (
-        <div key={c.label} className="bg-surface rounded-lg border border-surface-border p-2 text-center">
-          <div className={`text-sm font-mono font-semibold ${c.color ?? "text-white"}`}>{c.value}</div>
-          <div className="text-[10px] text-slate-500 mt-0.5">{c.label}</div>
+    <div className="space-y-2">
+      <div className="grid grid-cols-4 gap-2">
+        {cells.map(c => (
+          <div key={c.label} className="bg-surface rounded-lg border border-surface-border p-2 text-center">
+            <div className={`text-sm font-mono font-semibold ${c.color ?? "text-white"}`}>{c.value}</div>
+            <div className="text-[10px] text-slate-500 mt-0.5">{c.label}</div>
+          </div>
+        ))}
+      </div>
+      {freq && (
+        <div className="flex items-center gap-3 text-[10px] text-slate-500 bg-surface/60 rounded-lg px-3 py-1.5 border border-surface-border/40">
+          <span className="text-slate-400 font-medium">Frecvență:</span>
+          <span><span className="text-slate-200 font-mono">{freq.perWeek.toFixed(1)}</span> trades/săpt</span>
+          <span className="text-slate-600">·</span>
+          <span><span className="text-slate-200 font-mono">{freq.perMonth.toFixed(1)}</span> trades/lună</span>
+          <span className="text-slate-600">·</span>
+          <span className="text-slate-500">{freq.days} zile testate</span>
         </div>
-      ))}
+      )}
     </div>
   );
 }

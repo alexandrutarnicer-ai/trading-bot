@@ -34,6 +34,14 @@ export const useWeeklyStats = () =>
     refetchIntervalInBackground: true,
   });
 
+export const useFrequencyEstimate = (profileId?: string) =>
+  useQuery<{ per_week: number | null; per_month: number | null }>({
+    queryKey: ["frequency-estimate", profileId ?? ""],
+    queryFn:  () => apiFetch(`/sessions/frequency-estimate${profileId ? `?profile_id=${profileId}` : ""}`),
+    refetchInterval: POLL,
+    refetchIntervalInBackground: true,
+  });
+
 export const useSignals = (sessionId: string) =>
   useQuery<Signal[]>({
     queryKey: ["signals", sessionId],

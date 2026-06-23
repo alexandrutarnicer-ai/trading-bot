@@ -240,10 +240,17 @@ def _run_backtest_job(
             run_portfolio(data, cfg, params)
 
         if not trades:
+            if skipped_margin and skipped_margin > 0:
+                err_msg = (
+                    f"Capital insuficient pentru marjă — {skipped_margin} trade-uri respinse. "
+                    f"Mărește capitalul sesiunii (cel puțin 100 USD per piață pentru lot minim 0.01)."
+                )
+            else:
+                err_msg = "Niciun trade generat"
             _update_job(
                 job_id,
                 status="error",
-                error="Niciun trade generat",
+                error=err_msg,
                 completed_at=datetime.now().isoformat(timespec="seconds"),
             )
             return

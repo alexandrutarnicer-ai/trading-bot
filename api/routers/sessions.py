@@ -101,7 +101,7 @@ def _read_outcomes(session_id: str) -> pd.DataFrame:
     if not os.path.exists(f):
         return pd.DataFrame()
     try:
-        return pd.read_csv(f)
+        return pd.read_csv(f, on_bad_lines="skip")
     except Exception:
         return pd.DataFrame()
 
@@ -125,11 +125,14 @@ def _sig_stats(session_id: str) -> dict:
     }
 
 
+_CLOSED_STATUSES = ["TP", "SL", "vineri_close", "news_close"]
+
+
 def _outcome_stats(session_id: str) -> dict:
     df = _read_outcomes(session_id)
     if df.empty:
         return {"total": 0, "wins": 0, "losses": 0, "today": 0, "yesterday": 0}
-    closed = df[df["status"].isin(["TP", "SL"])]
+    closed = df[df["status"].isin(_CLOSED_STATUSES)]
     today     = str(date.today())
     yesterday = str(date.today() - timedelta(days=1))
     if "exit_time" in closed.columns and len(closed):
@@ -164,7 +167,7 @@ def weekly_stats():
             df = _read_outcomes(s["id"])
             if df.empty or "exit_time" not in df.columns:
                 continue
-            closed = df[df["status"].isin(["TP", "SL"])].copy()
+            closed = df[df["status"].isin(_CLOSED_STATUSES)].copy()
             if closed.empty:
                 continue
             closed["_et"] = pd.to_datetime(closed["exit_time"], errors="coerce")
@@ -173,8 +176,8 @@ def weekly_stats():
             if sub.empty:
                 continue
             totals["trades"] += len(sub)
-            totals["wins"]   += int((sub["status"] == "TP").sum())
-            totals["losses"] += int((sub["status"] == "SL").sum())
+            totals["wins"]   += int((sub["result_r"] > 0).sum())
+            totals["losses"] += int((sub["result_r"] < 0).sum())
             totals["total_r"] += float(sub["result_r"].fillna(0).sum())
         n = totals["trades"]
         totals["total_r"]  = round(totals["total_r"], 3)
@@ -192,6 +195,97 @@ def weekly_stats():
             "end":   (week_start - timedelta(days=1)).date().isoformat(),
             **_aggregate(prev_start, week_start),
         },
+    }
+
+
+_BACKTEST_JOBS_FILE = os.path.join(DATA_DIR, "backtest_jobs.json")
+_ACTIVE_PROFILE_FILE = os.path.join(DATA_DIR, "active_profile.json")
+_PROFILES_DIR = os.path.join(DATA_DIR, "profiles")
+
+
+@router.get("/frequency-estimate")
+def frequency_estimate(profile_id: str = ""):
+    """
+    Calculeaza frecventa estimata trades/saptamana si trades/luna
+    din cele mai recente backtest-uri finalizate ale sesiunilor active.
+    Sesiunile pe pauza sunt excluse.
+    """
+    # Determina profile_id activ
+    if not profile_id:
+        try:
+            if os.path.exists(_ACTIVE_PROFILE_FILE):
+                profile_id = json.load(open(_ACTIVE_PROFILE_FILE, encoding="utf-8")).get("id", "")
+        except Exception:
+            pass
+    if not profile_id:
+        profile_id = "standard"
+
+    # Incarca profilul
+    pfile = os.path.join(_PROFILES_DIR, f"{profile_id}.json")
+    if not os.path.exists(pfile):
+        return {"per_week": None, "per_month": None}
+    try:
+        profile = json.load(open(pfile, encoding="utf-8"))
+    except Exception:
+        return {"per_week": None, "per_month": None}
+
+    paused = _load_paused()
+
+    # Incarca jobs finalizate, sortate descrescator (cele mai noi primele)
+    jobs_done: list[dict] = []
+    try:
+        all_jobs = json.load(open(_BACKTEST_JOBS_FILE, encoding="utf-8"))
+        jobs_done = [j for j in reversed(all_jobs) if j.get("status") == "done"]
+    except Exception:
+        pass
+
+    # Index: session_id (ex: "S2") -> cel mai recent job done
+    latest_job: dict[str, dict] = {}
+    for j in jobs_done:
+        sid = j.get("session_id", "")
+        if sid and sid not in latest_job:
+            latest_job[sid] = j
+
+    total_per_week = 0.0
+    has_any = False
+
+    for ps in profile.get("sessions", []):
+        sess_key = ps.get("session_key", "")
+        sess_id  = ps.get("id", "")           # ex: "S2"
+
+        # Sesiunile pe pauza nu contribuie
+        if sess_key in paused:
+            continue
+
+        job = latest_job.get(sess_id)
+        if not job:
+            continue
+
+        r = job.get("results") or {}
+        total_trades = r.get("total_trades")
+        date_from    = r.get("date_from")
+        date_to      = r.get("date_to")
+
+        if not total_trades or not date_from or not date_to:
+            continue
+
+        try:
+            d_from = datetime.strptime(date_from, "%Y-%m-%d")
+            d_to   = datetime.strptime(date_to,   "%Y-%m-%d")
+            days   = (d_to - d_from).days
+            if days <= 0:
+                continue
+            total_per_week += total_trades / (days / 7)
+            has_any = True
+        except Exception:
+            continue
+
+    if not has_any:
+        return {"per_week": None, "per_month": None}
+
+    return {
+        "per_week":  round(total_per_week, 1),
+        "per_month": round(total_per_week * (30.44 / 7), 0),
     }
 
 
@@ -312,6 +406,7 @@ def get_outcomes(session_id: str, limit: int = 100):
             exit_price=float(row["exit_price"]) if pd.notna(row.get("exit_price")) else None,
             exit_time=str(row["exit_time"]) if pd.notna(row.get("exit_time")) else None,
             result_r=float(row.get("result_r", 0)),
+            pnl_usd=float(row["pnl_usd"]) if pd.notna(row.get("pnl_usd")) else None,
         ))
     return result
 
@@ -324,7 +419,7 @@ def equity_curve():
         df = _read_outcomes(s["id"])
         if df.empty:
             continue
-        closed = df[df["status"].isin(["TP", "SL"])].copy()
+        closed = df[df["status"].isin(_CLOSED_STATUSES)].copy()
         if closed.empty:
             continue
         closed["exit_time"] = pd.to_datetime(closed["exit_time"], errors="coerce")
