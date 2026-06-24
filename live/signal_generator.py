@@ -743,6 +743,13 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                                              "status": "invalidat", "result_r": 0.0,
                                              "time_check": datetime.now(),
                                              "pnl_usd": 0.0})
+                        _dir_str = "LONG" if d == 1 else "SHORT"
+                        _send_telegram(
+                            f"<b>INVALIDAT #{_ticket}: {_dir_str} {symbol}</b>\n"
+                            f"Structura ruptă — ordinul anulat din MT5\n"
+                            f"Entry {p['entry']} | SL {p['sl']} | {p.get('r_ratio', '?')}R\n"
+                            f"<i>{session_id} | {sig_id}</i>"
+                        )
                     else:
                         # Fara ordin MT5 — pastram doar in signals.csv, nu in outcomes
                         log.info(f"  INVALIDAT (fara ordin MT5): {sig_id} {symbol} "
