@@ -148,6 +148,8 @@ export function BacktestPanel({ session, onJobStarted, onSaveAndNavigate, onDown
         ...getDateRange(),
         start_balance: effectiveBalance,
         session_snapshot: {
+          // Identitate
+          direction:                  session.direction,
           // Strategie
           pullback_window:            session.pullback_window,
           expire_bars:                session.expire_bars,

@@ -408,6 +408,8 @@ def _build_session_snapshot(cfg: dict, frontend_snap: dict | None = None) -> dic
     Parametrii de capital/alocare vin din frontend_snap daca exista."""
     snap: dict = {}
     for key in (
+        # Identitate sesiune (necesara pentru Apply Config)
+        "direction",
         # Strategie
         "pullback_window", "expire_bars", "circuit_breaker",
         # Ore

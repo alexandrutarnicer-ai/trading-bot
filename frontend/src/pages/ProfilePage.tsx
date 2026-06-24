@@ -116,6 +116,7 @@ export function ProfilePage({
       "flag_enabled","inside_bar_enabled",
     ] as const;
     const arrFields = ["skip_hours","skip_weekdays"] as const;
+    const strFields = ["direction"] as const;
     const updRec = updated as unknown as Record<string, unknown>;
     for (const f of numFields) {
       if (cfg[f] != null) updRec[f] = Number(cfg[f]);
@@ -125,6 +126,9 @@ export function ProfilePage({
     }
     for (const f of arrFields) {
       if (Array.isArray(cfg[f])) updRec[f] = cfg[f];
+    }
+    for (const f of strFields) {
+      if (cfg[f] != null) updRec[f] = String(cfg[f]);
     }
     const sessions = [...draft.sessions];
     sessions[idx] = updated;

@@ -74,21 +74,24 @@ function PnlCard({ todayUsd, yesterdayUsd }: { todayUsd: number; yesterdayUsd: n
 export function TradingStatsPanel({ sessions }: Props) {
   const [expanded, setExpanded] = useState<"signals" | "trades" | null>(null);
 
-  const totalSignals   = sessions.reduce((s, x) => s + x.signals_total,    0);
-  const totalTrades    = sessions.reduce((s, x) => s + x.outcomes_total,   0);
-  const signalsToday   = sessions.reduce((s, x) => s + x.signals_today,    0);
-  const signalsYest    = sessions.reduce((s, x) => s + x.signals_yesterday, 0);
-  const tradesToday    = sessions.reduce((s, x) => s + x.outcomes_today,    0);
-  const tradesYest     = sessions.reduce((s, x) => s + x.outcomes_yesterday, 0);
-  const totalWins      = sessions.reduce((s, x) => s + x.wins,              0);
-  const totalLosses    = sessions.reduce((s, x) => s + x.losses,            0);
+  // Statistici doar din sesiunile live (execute=true); sesiunile de observatie (S20 etc.) excluse
+  const liveSessions = sessions.filter(x => x.execute);
+
+  const totalSignals   = liveSessions.reduce((s, x) => s + x.signals_total,    0);
+  const totalTrades    = liveSessions.reduce((s, x) => s + x.outcomes_total,   0);
+  const signalsToday   = liveSessions.reduce((s, x) => s + x.signals_today,    0);
+  const signalsYest    = liveSessions.reduce((s, x) => s + x.signals_yesterday, 0);
+  const tradesToday    = liveSessions.reduce((s, x) => s + x.outcomes_today,    0);
+  const tradesYest     = liveSessions.reduce((s, x) => s + x.outcomes_yesterday, 0);
+  const totalWins      = liveSessions.reduce((s, x) => s + x.wins,              0);
+  const totalLosses    = liveSessions.reduce((s, x) => s + x.losses,            0);
   const winRate        = totalWins + totalLosses > 0
     ? Math.round(totalWins / (totalWins + totalLosses) * 100)
     : null;
 
-  const hasPnl       = sessions.some(x => x.pnl_usd_today != null || x.pnl_usd_yesterday != null);
-  const pnlToday     = sessions.reduce((s, x) => s + (x.pnl_usd_today    ?? 0), 0);
-  const pnlYesterday = sessions.reduce((s, x) => s + (x.pnl_usd_yesterday ?? 0), 0);
+  const hasPnl       = liveSessions.some(x => x.pnl_usd_today != null || x.pnl_usd_yesterday != null);
+  const pnlToday     = liveSessions.reduce((s, x) => s + (x.pnl_usd_today    ?? 0), 0);
+  const pnlYesterday = liveSessions.reduce((s, x) => s + (x.pnl_usd_yesterday ?? 0), 0);
 
   const toggle = (key: "signals" | "trades") =>
     setExpanded(prev => (prev === key ? null : key));
@@ -150,6 +153,7 @@ export function TradingStatsPanel({ sessions }: Props) {
                   <div className="flex items-center gap-2 min-w-0 flex-1">
                     <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${s.running ? "bg-profit" : "bg-slate-600"}`} />
                     <span className="text-xs text-slate-300 font-medium">{s.label}</span>
+                    {!s.execute && <span className="text-[9px] text-slate-500 border border-slate-700 rounded px-1">OBS</span>}
                     <span className="text-[10px] text-slate-600 truncate">{s.markets.join(" · ")}</span>
                   </div>
                   <div className="flex items-center gap-3 text-[10px] text-right flex-shrink-0">
