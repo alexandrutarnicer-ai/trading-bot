@@ -239,11 +239,22 @@ def _run_backtest_job(
         trades, equity, balance, max_concurrent, skipped_margin, halted_days, split_time = \
             run_portfolio(data, cfg, params)
 
+        _HIGH_PV_SYMBOLS = {"XAUUSD", "GER40", "US30", "UK100", "NAS100"}
         if not trades:
             if skipped_margin and skipped_margin > 0:
                 err_msg = (
                     f"Capital insuficient pentru marjă — {skipped_margin} trade-uri respinse. "
                     f"Mărește capitalul sesiunii (cel puțin 100 USD per piață pentru lot minim 0.01)."
+                )
+            elif any(s in _HIGH_PV_SYMBOLS for s in session_cfg.get("markets", [])):
+                min_needed = max(
+                    1000 if "XAUUSD" in session_cfg.get("markets", []) else 400,
+                    400,
+                )
+                err_msg = (
+                    f"Niciun trade generat. Probabil capitalul alocat este prea mic pentru lot minim "
+                    f"(0.01 loturi). {', '.join(session_cfg.get('markets', []))} necesită minim "
+                    f"~{min_needed} USD capital per piață. Mărește account_fraction în profil."
                 )
             else:
                 err_msg = "Niciun trade generat"

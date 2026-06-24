@@ -43,8 +43,8 @@ export const MARKET_SPECS: Record<string, MarketSpec> = {
   BTCUSD: { volMin: 0.01, pipVal: 0.01, typSl: 50000, minCapital: 150 },
   ETHUSD: { volMin: 0.01, pipVal: 0.01, typSl: 5000,  minCapital: 100 },
   XRPUSD: { volMin: 0.01, pipVal: 0.01, typSl: 2000,  minCapital: 100 },
-  // Metale
-  XAUUSD: { volMin: 0.01, pipVal: 1.0,  typSl: 500,   minCapital: 400 },
+  // Metale — pip=1pt ($1 price move), pip_value=$100/pip/lot standard (100 oz)
+  XAUUSD: { volMin: 0.01, pipVal: 100.0, typSl: 10,   minCapital: 1000 },
 };
 
 export interface OvershootInfo {
