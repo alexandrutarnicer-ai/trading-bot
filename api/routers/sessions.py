@@ -266,8 +266,10 @@ def frequency_estimate(profile_id: str = ""):
         sess_id  = ps.get("id", "")           # ex: "S2"
         markets  = ps.get("markets", [])
 
-        # Sesiunile pe pauza nu contribuie si nu apar ca "lipsa"
+        # Sesiunile pe pauza sau non-live (execute_trades=False) nu contribuie si nu apar ca "lipsa"
         if sess_key in paused:
+            continue
+        if not ps.get("execute_trades", True):
             continue
 
         job = latest_job.get(sess_id)
