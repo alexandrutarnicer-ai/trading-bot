@@ -1,2 +1,3 @@
 signal_id,time,symbol,direction,dir_str,entry,sl,tp,r_ratio,atr_pips,n_optional,rsi
 S20-XAUUSD-SIG0001,2026-06-23 13:45:00,XAUUSD,-1,SHORT,4117.75,4135.45,4055.8,3.5,9.7,1,47.0
+S20-XAUUSD-SIG0002,2026-06-23 22:45:00,XAUUSD,-1,SHORT,4109.58,4128.07,4026.375,4.5,8.0,2,37.5
