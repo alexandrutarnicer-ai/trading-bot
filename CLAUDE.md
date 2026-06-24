@@ -30,6 +30,7 @@ start_ui.bat   # Windows: deschide doua ferestre terminal + browser la localhost
 
 # API backend (dashboard web)
 python api/main.py   # sau: uvicorn api.main:app --reload --port 8000
+# IMPORTANT: fara --reload, modificarile Python nu sunt preluate fara restart manual.
 
 # Frontend dev server
 cd frontend && npm run dev
@@ -165,6 +166,8 @@ Cand botul e pornit din CLI (`python live/run_all.py`) fara profil activ, valori
 
 Starea persistenta per sesiune: `state.pkl` (pending dict + counter + tickets MT5 + friday_close_date), `signals.csv` (toate semnalele), `outcomes.csv` (rezultate finale), `generator.log`.
 
+**Coruptie `state.pkl`:** Daca o sesiune se opreste fortat in mijlocul scrierii, `state.pkl` poate ramane cu chei invalide in `pending` (ex: cheia e simbolul — `{"USDJPY": {}}` — in loc de un signal ID gen `SIG1`). Sesiunea continua sa ruleze dar nu proceseaza corect semnalele respective. Curatare: opreste sesiunea, sterge cheile goale cu `pickle.load` + `pop` + `pickle.dump`, reporneste. Sesiunile au fallback la `_empty_state` la coruptie totala a fisierului.
+
 **`_send_telegram(text)` — non-blocking, daemon thread:**
 Toate notificarile Telegram din `signal_generator.py` sunt trimise in `threading.Thread(target=_do_send, daemon=True).start()`. Botul nu asteapta niciodata raspunsul Telegram — timeout-ul de retea (8s) nu afecteaza performanta loop-ului principal.
 
@@ -209,7 +212,7 @@ Fiecare sesiune are si propriul `session.lock` (PID file per sesiune) care previ
 **Routere sessions — endpoints:**
 - `POST /sessions/{session_id}/pause` — adauga in `paused_sessions.json`, trimite Telegram
 - `POST /sessions/{session_id}/resume` — sterge din `paused_sessions.json`, trimite Telegram
-- `GET /sessions/frequency-estimate?profile_id=` — calculeaza trades/saptamana + trades/luna din `backtest_jobs.json`. Citeste profilul activ (sau cel specificat), exclude sesiunile pe pauza, returneaza `{per_week, per_month, missing: [{id, markets}]}`. `missing` = sesiuni fara backtest recent (nu contribuie la estimat). Endpoint read-only, zero dependente de bot/MT5. **Trebuie plasat INAINTE de `/{session_id}` routes** (altfel FastAPI il intercepteaza ca session_id).
+- `GET /sessions/frequency-estimate?profile_id=` — calculeaza trades/saptamana + trades/luna din `backtest_jobs.json`. Citeste profilul activ (sau cel specificat), exclude sesiunile pe pauza **si pe cele cu `execute_trades=False` (observatie)**; returneaza `{per_week, per_month, missing: [{id, markets}]}`. `missing` = sesiuni fara backtest recent (nu contribuie la estimat). Endpoint read-only, zero dependente de bot/MT5. **Trebuie plasat INAINTE de `/{session_id}` routes** (altfel FastAPI il intercepteaza ca session_id).
 - `SessionStatus` include campurile: `paused: bool`, `news_paused: bool`, `news_events: list`, `signals_yesterday: int`, `outcomes_today: int`, `outcomes_yesterday: int` (folosite de TradingStatsPanel pentru trend azi vs ieri)
 
 **Routere data_download — endpoints:**
@@ -349,7 +352,9 @@ Daca numerele se schimba semnificativ → bug introdus, nu progres.
 
 **`_CLOSED_STATUSES`:** `["TP", "SL", "vineri_close", "news_close"]` — toate statusurile care corespund pozitiilor reale inchise. Folosit in `_outcome_stats`, `weekly_stats._aggregate` si `equity_curve` din `api/routers/sessions.py`. Castigurile/pierderile sunt calculate din `result_r > 0` / `result_r < 0` (nu din status) pentru a acoperi si vineri_close cu R pozitiv.
 
-**`GET /sessions/frequency-estimate`:** Calculeaza frecventa estimata trades/saptamana + trades/luna din cele mai recente backtest-uri finalizate (din `data/backtest_jobs.json`). Filtreaza sesiunile pe pauza. Mapare: `job.session_id` ("S2") → `profile_session.id` ("S2"). Returneaza `{per_week, per_month}` sau `null` daca nu exista backtest-uri.
+**`GET /sessions/frequency-estimate`:** Calculeaza frecventa estimata trades/saptamana + trades/luna din cele mai recente backtest-uri finalizate (din `data/backtest_jobs.json`). Filtreaza sesiunile pe pauza **si cele cu `execute_trades=False`**. Mapare: `job.session_id` ("S2") → `profile_session.id` ("S2"). Returneaza `{per_week, per_month, missing}` sau `null` daca nu exista backtest-uri.
+
+**`POST /backtest/run-missing`:** Triggereza backteste automat pentru sesiunile cu `execute_trades=True` care nu au backtest recent. Citeste profilul activ (sau `profile_id` din body), construieste `session_cfg` din parametrii profilului, porneste joburi async cu range 5 ani (2021–azi). Returneaza `{job_ids, triggered}`. Apelat din Dashboard la click pe badge-ul "X fara date".
 
 **`_place_order` filling modes:** incearca RETURN → FOK → IOC → fara filling, in ordine. ICMarketsEU respinge `ORDER_TIME_SPECIFIED` (retcode 10022) — se foloseste `ORDER_TIME_GTC`.
 
@@ -368,8 +373,8 @@ Daca numerele se schimba semnificativ → bug introdus, nu progres.
 ## Dashboard web — componente principale
 
 **Dashboard.tsx:** Pagina principala. Afiseaza cont/balance/equity MT5 in header (citit din `useMt5Status`), profil activ, grid sesiuni (SessionCard), SignalFeed cu sume USD calculate per trade, EquityChart. Banner de avertizare galben cand `mt5.algo_trading_enabled === false` — semnale detectate dar ordine blocate in MT5.
-- **Widget frecventa estimata:** 2 carduri vizibile permanent deasupra grid-ului de sesiuni — "Estimat / săptămână" + "Estimat / lună". Calcul bazat pe `GET /sessions/frequency-estimate` (citeste backtest_jobs.json, exclude sesiunile pe pauza). Polleaza la 15s. Afiseaza "—" cand nu exista date backtest.
-- **Badge sesiuni fara date:** Cand unele sesiuni nu au backtest recent, cardul "Estimat / săptămână" afiseaza un badge portocaliu cu numarul lor (ex: "5 fara date") si hover tooltip cu lista exacta (`S12: EURAUD`, etc.).
+- **Widget frecventa estimata:** 2 carduri vizibile permanent deasupra grid-ului de sesiuni — "Estimat / săptămână" + "Estimat / lună". Calcul bazat pe `GET /sessions/frequency-estimate` (citeste backtest_jobs.json, exclude sesiunile pe pauza si cele cu `execute_trades=False`). Polleaza la 15s. Afiseaza "—" cand nu exista date backtest.
+- **Badge sesiuni fara date (buton):** Cand unele sesiuni nu au backtest recent, cardul "Estimat / săptămână" afiseaza un badge portocaliu clickabil cu numarul lor (ex: "▶ 2 fara date") si hover tooltip cu lista exacta (`S9: USDJPY`, etc.). **Click pe badge** → apeleaza `POST /backtest/run-missing` cu profilul activ → porneste automat backtestele lipsa (range 5 ani) → invalideaza cache-ul de frecventa. Stare "Se calculeaza..." in timp ce ruleaza.
 
 **SignalFeed.tsx:** Primeste `balanceUsd` si `capitalPct` ca props. Calculeaza `riskUsd = balance × (capitalPct/100) × 0.01`. La TP afiseaza `+3.5R TP (+175 USD)`, la SL afiseaza `-1R SL (-50 USD)`. USD = null daca MT5 deconectat.
 

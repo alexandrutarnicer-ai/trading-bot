@@ -519,18 +519,35 @@ export function GuidePage() {
             <div className="grid grid-cols-2 gap-3 text-xs">
               <div className="bg-surface rounded-lg border border-surface-border p-3 text-center">
                 <div className="text-[10px] text-slate-500 uppercase mb-1">Estimat / săptămână</div>
-                <div className="text-xl font-mono font-bold text-white">~8.4 <span className="text-sm text-slate-400">trades</span></div>
+                <div className="text-xl font-mono font-bold text-white">~11.5 <span className="text-sm text-slate-400">trades</span></div>
               </div>
               <div className="bg-surface rounded-lg border border-surface-border p-3 text-center">
                 <div className="text-[10px] text-slate-500 uppercase mb-1">Estimat / lună</div>
-                <div className="text-xl font-mono font-bold text-white">~36 <span className="text-sm text-slate-400">trades</span></div>
+                <div className="text-xl font-mono font-bold text-white">~50 <span className="text-sm text-slate-400">trades</span></div>
               </div>
             </div>
             <p className="text-xs text-slate-400 mt-2">
-              Calculul se bazează pe cele mai recente backteste finalizate din Audit.
-              Sesiunile fără backtest arată un badge portocaliu <Badge color="bg-warn/20 text-warn" label="5 fără date" />.
-              Sesiunile pe pauză sunt excluse din calcul.
+              Calculul se bazează pe cele mai recente backteste finalizate din Audit, pe sesiunile
+              cu <code className="bg-surface-border/40 px-1 rounded">execute_trades: true</code>.
+              Sesiunile pe pauză și cele de observație (OBS) sunt excluse automat.
             </p>
+            <div className="bg-warn/5 border border-warn/20 rounded-lg p-3 mt-2 text-xs space-y-1.5">
+              <p className="text-warn font-medium">Badge „X fără date" — buton de acțiune</p>
+              <p className="text-slate-400">
+                Când unele sesiuni nu au backtest recent, apare un badge portocaliu{" "}
+                <Badge color="bg-warn/20 text-warn" label="▶ 2 fără date" />{" "}
+                în cardul Estimat / săptămână.
+              </p>
+              <p className="text-slate-400">
+                <strong className="text-slate-300">Click pe badge</strong> → pornește automat backtestele lipsă
+                (range 5 ani, toți parametrii din profilul activ). Rezultatele apar în tab-ul Audit.
+                Badge-ul dispare după ce backtestele se finalizează și frecvența se actualizează.
+              </p>
+              <p className="text-slate-400">
+                Butonul Refresh <span className="font-mono text-slate-300">↻</span> din header invalidează
+                toate query-urile, inclusiv frecvența estimată — folosit pentru actualizare manuală imediată.
+              </p>
+            </div>
           </SubSection>
 
           <SubSection title="Grila Sesiuni">
