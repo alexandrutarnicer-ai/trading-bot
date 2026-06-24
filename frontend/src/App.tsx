@@ -4,6 +4,7 @@ import { NavBar } from "./components/NavBar";
 import { Dashboard } from "./pages/Dashboard";
 import { ProfilePage } from "./pages/ProfilePage";
 import { AuditPage } from "./pages/AuditPage";
+import { GuidePage } from "./pages/GuidePage";
 import { useBacktestJobs } from "./api/hooks";
 
 const qc = new QueryClient({
@@ -17,7 +18,7 @@ const qc = new QueryClient({
   },
 });
 
-type Tab = "dashboard" | "profile" | "audit";
+type Tab = "dashboard" | "profile" | "audit" | "guide";
 
 function AppInner() {
   const [tab, setTab] = useState<Tab>("dashboard");
@@ -37,6 +38,9 @@ function AppInner() {
       </div>
       <div className={tab === "audit" ? undefined : "hidden"}>
         <AuditPage />
+      </div>
+      <div className={tab === "guide" ? undefined : "hidden"}>
+        <GuidePage />
       </div>
     </div>
   );

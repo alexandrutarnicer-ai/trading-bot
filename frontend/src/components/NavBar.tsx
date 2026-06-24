@@ -1,7 +1,7 @@
 import { useBacktestJobs, useDownloadJobs } from "../api/hooks";
 import { AutostartToggle } from "./AutostartToggle";
 
-type Tab = "dashboard" | "profile" | "audit";
+type Tab = "dashboard" | "profile" | "audit" | "guide";
 
 interface Props {
   active: Tab;
@@ -12,6 +12,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "dashboard", label: "Dashboard" },
   { id: "profile",   label: "Profile" },
   { id: "audit",     label: "Audit" },
+  { id: "guide",     label: "Ghid" },
 ];
 
 export function NavBar({ active, onChange }: Props) {
