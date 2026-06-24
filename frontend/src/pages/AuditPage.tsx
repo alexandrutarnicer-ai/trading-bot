@@ -757,6 +757,53 @@ function JobRow({
             </div>
           )}
 
+          {/* Direction stats LONG/SHORT — doar pentru sesiuni BOTH */}
+          {r.direction_stats && Object.keys(r.direction_stats).length === 2 && (
+            <div>
+              <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-2">
+                Statistici per direcție (BOTH)
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                {(["LONG", "SHORT"] as const).map(dir => {
+                  const s = r.direction_stats![dir];
+                  if (!s) return null;
+                  const isLong = dir === "LONG";
+                  return (
+                    <div key={dir} className="bg-surface rounded-lg border border-surface-border p-3 space-y-2">
+                      <div className={`text-xs font-semibold ${isLong ? "text-profit" : "text-loss"}`}>
+                        {isLong ? "▲ LONG" : "▼ SHORT"}
+                      </div>
+                      <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-[11px]">
+                        <div className="flex justify-between">
+                          <span className="text-slate-500">Trades</span>
+                          <span className="font-mono text-white">{s.trades}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-500">Win Rate</span>
+                          <span className="font-mono text-white">{s.win_rate.toFixed(1)}%</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-500">Câștiguri</span>
+                          <span className="font-mono text-profit">{s.wins}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-slate-500">Pierderi</span>
+                          <span className="font-mono text-loss">{s.losses}</span>
+                        </div>
+                        <div className="col-span-2 flex justify-between border-t border-surface-border/40 pt-1.5">
+                          <span className="text-slate-500">Expectancy</span>
+                          <span className={`font-mono ${s.expectancy >= 0 ? "text-profit" : "text-loss"}`}>
+                            {s.expectancy >= 0 ? "+" : ""}{s.expectancy.toFixed(3)}R
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Task 4: Analiza pierderi per zi/ora */}
           {(r.weekday_stats || r.hour_stats) && (
             <LossAnalysis weekday={r.weekday_stats} hour={r.hour_stats} />

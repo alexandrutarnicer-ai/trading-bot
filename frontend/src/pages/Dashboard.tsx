@@ -91,6 +91,20 @@ function WeeklyStatsPanel() {
         </div>
       </div>
 
+      {/* -DD max % */}
+      <div className="grid grid-cols-3 items-center">
+        <div className="text-[11px] text-slate-400">-DD max</div>
+        <div className="text-center flex items-center justify-center gap-1">
+          <span className={`text-xs font-mono font-semibold ${(cur.max_dd_r ?? 0) < 0 ? "text-loss" : "text-slate-500"}`}>
+            {!(cur.max_dd_r) ? "—" : `${cur.max_dd_r.toFixed(1)}%`}
+          </span>
+          <Trend curr={-(cur.max_dd_r ?? 0)} pre={-(prev.max_dd_r ?? 0)} />
+        </div>
+        <div className={`text-center text-[11px] font-mono ${(prev.max_dd_r ?? 0) < 0 ? "text-loss/60" : "text-slate-600"}`}>
+          {!(prev.max_dd_r) ? "—" : `${prev.max_dd_r.toFixed(1)}%`}
+        </div>
+      </div>
+
       <div className="text-[10px] text-slate-600 pt-0.5">
         {cur.start} → {cur.end} · anterior: {prev.start} → {prev.end}
       </div>

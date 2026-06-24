@@ -204,6 +204,7 @@ export interface BacktestResult {
   train: { trades: number; expectancy: number };
   test: { trades: number; expectancy: number };
   per_symbol: Record<string, { trades: number; win_rate: number; expectancy: number }>;
+  direction_stats?: Record<string, { trades: number; wins: number; losses: number; win_rate: number; expectancy: number }>;
   be_lock_count?: number;
   be_lock2_count?: number;
   flag_stats?: { trades: number; win_rate: number; expectancy: number };
@@ -226,6 +227,7 @@ export interface WeeklyStats {
     losses: number;
     total_r: number;
     win_rate: number;
+    max_dd_r: number;
   };
   previous_week: {
     start: string;
@@ -235,6 +237,7 @@ export interface WeeklyStats {
     losses: number;
     total_r: number;
     win_rate: number;
+    max_dd_r: number;
   };
 }
 
