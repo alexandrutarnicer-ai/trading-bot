@@ -390,6 +390,49 @@ def _run_backtest_job(
         )
 
 
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _build_session_snapshot(cfg: dict, frontend_snap: dict | None = None) -> dict:
+    """Construieste snapshot complet al configuratiei sesiunii din session_cfg.
+    Parametrii de capital/alocare vin din frontend_snap daca exista."""
+    snap: dict = {}
+    for key in (
+        # Strategie
+        "pullback_window", "expire_bars", "circuit_breaker",
+        # Ore
+        "session_start", "session_end", "skip_hours", "skip_weekdays",
+        # R-ladder
+        "r_base", "r_mid", "r_top", "r_max",
+        "r_mid_threshold", "r_top_threshold", "r_max_threshold",
+        # Risk
+        "risk_base", "risk_mid", "risk_top", "risk_max",
+        # Criterii optionale
+        "rsi_enabled", "rsi_buy_min", "rsi_buy_max", "rsi_sell_min", "rsi_sell_max",
+        "ema_alignment_enabled",
+        "body_strength_enabled", "body_strength_min_atr_ratio",
+        # Break-even
+        "break_even_enabled", "be_trigger_pct", "be_lock1_pct", "be_lock2_pct",
+        "be_phase2_enabled", "be_phase2_zone_pct",
+        # Vineri
+        "friday_close_enabled", "friday_close_hour",
+        # Stiri
+        "news_protection_enabled", "news_impact_level", "news_pre_minutes", "news_post_minutes",
+        # Tranzactionare
+        "max_concurrent_per_market", "min_bars_between_trades",
+        # Strategii optionale (flag / inside bar)
+        "flag_enabled", "flag_r_ratio", "flag_risk_pct",
+        "inside_bar_enabled", "inside_bar_r_ratio", "inside_bar_risk_pct",
+    ):
+        if cfg.get(key) is not None:
+            snap[key] = cfg[key]
+    # Capital/alocare vine din frontend
+    fs = frontend_snap or {}
+    for key in ("market_allocations", "start_balance"):
+        if fs.get(key) is not None:
+            snap[key] = fs[key]
+    return snap
+
+
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @router.post("/run")
@@ -428,7 +471,7 @@ def run_backtest(body: dict):
         "start_balance":   start_balance,
         "error":           None,
         "results":         None,
-        "session_snapshot": body.get("session_snapshot"),
+        "session_snapshot": _build_session_snapshot(session_cfg, body.get("session_snapshot")),
     }
 
     with _jobs_lock:
@@ -559,6 +602,7 @@ def run_missing_backtests(body: dict = {}):
             "start_balance": start_balance,
             "error":        None,
             "results":      None,
+            "session_snapshot": _build_session_snapshot(session_cfg),
         }
         with _jobs_lock:
             _jobs_list.insert(0, new_job)

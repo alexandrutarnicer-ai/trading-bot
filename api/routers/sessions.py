@@ -131,39 +131,58 @@ _CLOSED_STATUSES = ["TP", "SL", "vineri_close", "news_close"]
 def _outcome_stats(session_id: str) -> dict:
     df = _read_outcomes(session_id)
     if df.empty:
-        return {"total": 0, "wins": 0, "losses": 0, "today": 0, "yesterday": 0}
+        return {"total": 0, "wins": 0, "losses": 0, "today": 0, "yesterday": 0,
+                "pnl_usd_today": None, "pnl_usd_yesterday": None}
     closed = df[df["status"].isin(_CLOSED_STATUSES)]
     today     = str(date.today())
     yesterday = str(date.today() - timedelta(days=1))
+    pnl_today = pnl_yest = None
     if "exit_time" in closed.columns and len(closed):
         et = closed["exit_time"].astype(str)
         today_out     = int(et.str.startswith(today).sum())
         yesterday_out = int(et.str.startswith(yesterday).sum())
+        if "pnl_usd" in closed.columns:
+            sub_today = closed[et.str.startswith(today)]
+            sub_yest  = closed[et.str.startswith(yesterday)]
+            _t = pd.to_numeric(sub_today["pnl_usd"], errors="coerce").dropna()
+            _y = pd.to_numeric(sub_yest["pnl_usd"],  errors="coerce").dropna()
+            if len(_t): pnl_today = round(float(_t.sum()), 2)
+            if len(_y): pnl_yest  = round(float(_y.sum()), 2)
     else:
         today_out = yesterday_out = 0
     wins   = int((closed["result_r"] > 0).sum()) if len(closed) else 0
     losses = int((closed["result_r"] < 0).sum()) if len(closed) else 0
     return {
-        "total":     len(closed),
-        "wins":      wins,
-        "losses":    losses,
-        "today":     today_out,
-        "yesterday": yesterday_out,
+        "total":            len(closed),
+        "wins":             wins,
+        "losses":           losses,
+        "today":            today_out,
+        "yesterday":        yesterday_out,
+        "pnl_usd_today":    pnl_today,
+        "pnl_usd_yesterday": pnl_yest,
     }
 
 
 @router.get("/weekly_stats")
 def weekly_stats():
-    """Statistici agregate pentru saptamana curenta vs precedenta (toate sesiunile)."""
-    now       = datetime.now()
-    # Inceputul saptamanii curente (luni la 00:00)
+    """Statistici agregate pentru saptamana / luna curenta vs precedenta (toate sesiunile)."""
+    now = datetime.now()
+    # Saptamana curenta (luni 00:00)
     week_start = (now - timedelta(days=now.weekday())).replace(
         hour=0, minute=0, second=0, microsecond=0)
-    prev_start = week_start - timedelta(weeks=1)
+    prev_week_start = week_start - timedelta(weeks=1)
+    # Luna curenta (prima zi 00:00)
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    if month_start.month == 1:
+        prev_month_start = month_start.replace(year=month_start.year - 1, month=12)
+    else:
+        prev_month_start = month_start.replace(month=month_start.month - 1)
 
     def _aggregate(start: datetime, end: datetime) -> dict:
-        totals = {"trades": 0, "wins": 0, "losses": 0, "total_r": 0.0}
+        totals = {"trades": 0, "wins": 0, "losses": 0, "total_r": 0.0, "pnl_usd": None}
         all_slices: list[pd.DataFrame] = []
+        pnl_sum = 0.0
+        pnl_any = False
         for s in SESSIONS:
             df = _read_outcomes(s["id"])
             if df.empty or "exit_time" not in df.columns:
@@ -180,11 +199,17 @@ def weekly_stats():
             totals["wins"]   += int((sub["result_r"] > 0).sum())
             totals["losses"] += int((sub["result_r"] < 0).sum())
             totals["total_r"] += float(sub["result_r"].fillna(0).sum())
+            if "pnl_usd" in sub.columns:
+                pnl_vals = pd.to_numeric(sub["pnl_usd"], errors="coerce").dropna()
+                if len(pnl_vals):
+                    pnl_sum += float(pnl_vals.sum())
+                    pnl_any = True
             all_slices.append(sub[["_et", "result_r"]].copy())
         n = totals["trades"]
         totals["total_r"]  = round(totals["total_r"], 3)
         totals["win_rate"] = round(totals["wins"] / n * 100, 1) if n else 0.0
-        # Drawdown maxim in R pentru perioada (cel mai adanc jgheab de la peak)
+        totals["pnl_usd"]  = round(pnl_sum, 2) if pnl_any else None
+        # Drawdown maxim in R
         max_dd_r = 0.0
         if all_slices:
             combined = pd.concat(all_slices).sort_values("_et")
@@ -202,9 +227,19 @@ def weekly_stats():
             **_aggregate(week_start, now + timedelta(days=1)),
         },
         "previous_week": {
-            "start": prev_start.date().isoformat(),
+            "start": prev_week_start.date().isoformat(),
             "end":   (week_start - timedelta(days=1)).date().isoformat(),
-            **_aggregate(prev_start, week_start),
+            **_aggregate(prev_week_start, week_start),
+        },
+        "current_month": {
+            "start": month_start.date().isoformat(),
+            "end":   now.date().isoformat(),
+            **_aggregate(month_start, now + timedelta(days=1)),
+        },
+        "previous_month": {
+            "start": prev_month_start.date().isoformat(),
+            "end":   (month_start - timedelta(days=1)).date().isoformat(),
+            **_aggregate(prev_month_start, month_start),
         },
     }
 
@@ -300,10 +335,33 @@ def frequency_estimate(profile_id: str = ""):
             missing.append({"id": sess_id, "markets": markets})
             continue
 
+    # DD mediu estimat din backteste (max_dd este deja un procent negativ)
+    dd_values: list[float] = []
+    for ps in profile.get("sessions", []):
+        sess_key = ps.get("session_key", "")
+        sess_id  = ps.get("id", "")
+        if sess_key in paused:
+            continue
+        if not ps.get("execute_trades", True):
+            continue
+        job = latest_job.get(sess_id)
+        if not job:
+            continue
+        r = job.get("results") or {}
+        max_dd = r.get("max_dd")
+        if max_dd is not None:
+            try:
+                dd_values.append(float(max_dd))
+            except (TypeError, ValueError):
+                pass
+
+    avg_max_dd = round(sum(dd_values) / len(dd_values), 1) if dd_values else None
+
     return {
-        "per_week":  round(total_per_week, 1) if has_any else None,
-        "per_month": round(total_per_week * (30.44 / 7), 0) if has_any else None,
-        "missing":   missing,
+        "per_week":     round(total_per_week, 1) if has_any else None,
+        "per_month":    round(total_per_week * (30.44 / 7), 0) if has_any else None,
+        "avg_max_dd":   avg_max_dd,
+        "missing":      missing,
     }
 
 
@@ -341,6 +399,8 @@ def list_sessions():
             paused=s["id"] in paused,
             news_paused=bool(np_entry),
             news_events=np_entry.get("events", []),
+            pnl_usd_today=out["pnl_usd_today"],
+            pnl_usd_yesterday=out["pnl_usd_yesterday"],
         ))
     return result
 

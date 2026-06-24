@@ -34,9 +34,10 @@ export const useWeeklyStats = () =>
   });
 
 export interface FrequencyEstimate {
-  per_week:  number | null;
-  per_month: number | null;
-  missing:   Array<{ id: string; markets: string[] }>;
+  per_week:    number | null;
+  per_month:   number | null;
+  avg_max_dd:  number | null;
+  missing:     Array<{ id: string; markets: string[] }>;
 }
 
 export const useFrequencyEstimate = (profileId?: string) =>

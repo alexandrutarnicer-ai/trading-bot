@@ -9,6 +9,7 @@ import { BotControl } from "../components/BotControl";
 import { TelegramSettings } from "../components/TelegramSettings";
 import { Mt5Status } from "../components/Mt5Status";
 import type { Profile, ProfileSession } from "../api/types";
+import type { PendingApply } from "../App";
 
 const DEFAULT_SESSION = (id: string): ProfileSession => ({
   id,
@@ -57,7 +58,15 @@ const PROFILE_TIP =
   "Fiecare sesiune are propriile piețe, timeframe, filtre și parametri. " +
   "Profilul Standard este cel validat și activ — modifică-l cu atenție.";
 
-export function ProfilePage({ onNavigateToAudit }: { onNavigateToAudit: () => void }) {
+export function ProfilePage({
+  onNavigateToAudit,
+  pendingApply,
+  onClearPendingApply,
+}: {
+  onNavigateToAudit: () => void;
+  pendingApply?: PendingApply | null;
+  onClearPendingApply?: () => void;
+}) {
   const { data: profiles, isLoading: loadingList } = useProfileList();
   const { data: meta } = useMeta();
   const { data: botStatus } = useBotStatus();
@@ -76,6 +85,55 @@ export function ProfilePage({ onNavigateToAudit }: { onNavigateToAudit: () => vo
       setDirty(false);
     }
   }, [serverProfile]);
+
+  // Aplica configuratia primita din Audit ("Aplica config")
+  const [applyNotice, setApplyNotice] = useState<string | null>(null);
+  useEffect(() => {
+    if (!pendingApply || !draft) return;
+    const idx = draft.sessions.findIndex(s => s.id === pendingApply.sessionId);
+    if (idx < 0) return;
+    const cfg = pendingApply.config;
+    const updated = { ...draft.sessions[idx] } as ProfileSession;
+    const numFields = [
+      "pullback_window","expire_bars","circuit_breaker",
+      "session_start","session_end",
+      "r_base","r_mid","r_top","r_max",
+      "r_mid_threshold","r_top_threshold","r_max_threshold",
+      "risk_base","risk_mid","risk_top","risk_max",
+      "rsi_buy_min","rsi_buy_max","rsi_sell_min","rsi_sell_max",
+      "body_strength_min_atr_ratio",
+      "be_trigger_pct","be_lock1_pct","be_lock2_pct","be_phase2_zone_pct",
+      "friday_close_hour",
+      "news_impact_level","news_pre_minutes","news_post_minutes",
+      "max_concurrent_per_market","min_bars_between_trades",
+      "flag_r_ratio","flag_risk_pct","inside_bar_r_ratio","inside_bar_risk_pct",
+    ] as const;
+    const boolFields = [
+      "rsi_enabled","ema_alignment_enabled","body_strength_enabled",
+      "break_even_enabled","be_phase2_enabled",
+      "friday_close_enabled","news_protection_enabled",
+      "flag_enabled","inside_bar_enabled",
+    ] as const;
+    const arrFields = ["skip_hours","skip_weekdays"] as const;
+    const updRec = updated as unknown as Record<string, unknown>;
+    for (const f of numFields) {
+      if (cfg[f] != null) updRec[f] = Number(cfg[f]);
+    }
+    for (const f of boolFields) {
+      if (cfg[f] != null) updRec[f] = Boolean(cfg[f]);
+    }
+    for (const f of arrFields) {
+      if (Array.isArray(cfg[f])) updRec[f] = cfg[f];
+    }
+    const sessions = [...draft.sessions];
+    sessions[idx] = updated;
+    setDraft({ ...draft, sessions });
+    setDirty(true);
+    setApplyNotice(`Configurația sesiunii ${pendingApply.sessionId} a fost aplicată. Salvează profilul pentru a păstra modificările.`);
+    onClearPendingApply?.();
+    setTimeout(() => setApplyNotice(null), 6000);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingApply]);
 
   const { data: liveSessions } = useSessions();
   const pauseS  = usePauseSession();
@@ -177,6 +235,14 @@ export function ProfilePage({ onNavigateToAudit }: { onNavigateToAudit: () => vo
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-6 space-y-5">
+      {/* Notificare "apply config" din Audit */}
+      {applyNotice && (
+        <div className="flex items-center gap-3 bg-profit/10 border border-profit/40 rounded-xl px-4 py-3">
+          <span className="text-profit text-lg leading-none">✓</span>
+          <p className="text-sm text-profit/90">{applyNotice}</p>
+        </div>
+      )}
+
       {/* MT5 + Bot control + Telegram */}
       <Mt5Status />
       <BotControl profileId={activeId} profileName={draft?.name} />

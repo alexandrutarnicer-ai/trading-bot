@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ClipboardList, Trash2, ChevronDown, ChevronRight, X, AlertTriangle, Download } from "lucide-react";
+import { ClipboardList, Trash2, ChevronDown, ChevronRight, X, AlertTriangle, Download, Copy } from "lucide-react";
 import { useBacktestJobs, useDeleteBacktestJob, useDownloadJobs, useDeleteDownloadJob } from "../api/hooks";
 import type { BacktestJob, BacktestResult, DownloadJob, DownloadFileResult, WeekdayStat, HourStat } from "../api/types";
 
@@ -466,10 +466,12 @@ function JobRow({
   job,
   onDelete,
   onShowError,
+  onApplyConfig,
 }: {
   job: BacktestJob;
   onDelete: (id: string) => void;
   onShowError: (job: BacktestJob) => void;
+  onApplyConfig?: (sessionId: string, config: Record<string, unknown>) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const r = job.results;
@@ -656,7 +658,58 @@ function JobRow({
                 </div>
               </div>
 
-              {/* Rând 5: Capital */}
+              {/* Rând 5: Break-Even */}
+              {snap.break_even_enabled != null && (
+                <div>
+                  <div className="text-[9px] text-slate-600 uppercase tracking-wider mb-1.5">Break-Even</div>
+                  <div className="flex flex-wrap gap-2">
+                    <SnapBadge label="Break-Even" value={snap.break_even_enabled ? "ON" : "OFF"} />
+                    {snap.break_even_enabled && <>
+                      {snap.be_trigger_pct  != null && <SnapBadge label="Trigger"  value={`${snap.be_trigger_pct}%`} />}
+                      {snap.be_lock1_pct    != null && <SnapBadge label="Lock 1"   value={`${snap.be_lock1_pct}%`} />}
+                      {snap.be_lock2_pct    != null && <SnapBadge label="Lock 2"   value={`${snap.be_lock2_pct}%`} />}
+                      {snap.be_phase2_zone_pct != null && <SnapBadge label="Faza 2 zonă" value={`${snap.be_phase2_zone_pct}%`} />}
+                      <SnapBadge label="Faza 2" value={snap.be_phase2_enabled ? "ON" : "OFF"} />
+                    </>}
+                  </div>
+                </div>
+              )}
+
+              {/* Rând 6: Vineri + Știri */}
+              {(snap.friday_close_enabled != null || snap.news_protection_enabled != null) && (
+                <div>
+                  <div className="text-[9px] text-slate-600 uppercase tracking-wider mb-1.5">Protecție</div>
+                  <div className="flex flex-wrap gap-2">
+                    {snap.friday_close_enabled != null && (
+                      <SnapBadge label="Înch. Vineri" value={snap.friday_close_enabled
+                        ? `ON ora ${snap.friday_close_hour ?? 20}`
+                        : "OFF"} />
+                    )}
+                    {snap.news_protection_enabled != null && (
+                      <SnapBadge label="Știri" value={snap.news_protection_enabled
+                        ? `Impact ≥${snap.news_impact_level ?? 2} · -${snap.news_pre_minutes ?? 15}min / +${snap.news_post_minutes ?? 15}min`
+                        : "OFF"} />
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Rând 7: Tranzacționare avansată */}
+              {(snap.max_concurrent_per_market != null || snap.min_bars_between_trades != null) && (
+                <div>
+                  <div className="text-[9px] text-slate-600 uppercase tracking-wider mb-1.5">Tranzacționare</div>
+                  <div className="flex flex-wrap gap-2">
+                    {snap.max_concurrent_per_market != null && (
+                      <SnapBadge label="Max concurent" value={String(snap.max_concurrent_per_market)} />
+                    )}
+                    {snap.min_bars_between_trades != null && snap.min_bars_between_trades as number > 0 && (
+                      <SnapBadge label="Min bare intre" value={String(snap.min_bars_between_trades)} />
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Rând 8: Capital */}
               <div>
                 <div className="text-[9px] text-slate-600 uppercase tracking-wider mb-1.5">Capital simulat</div>
                 <div className="flex flex-wrap gap-2">
@@ -666,6 +719,20 @@ function JobRow({
                   ))}
                 </div>
               </div>
+
+              {/* Buton Aplică config */}
+              {onApplyConfig && (
+                <div className="pt-1 border-t border-surface-border/40">
+                  <button
+                    onClick={() => onApplyConfig(job.session_id, snap)}
+                    className="flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg bg-blue-500/10 border border-blue-500/30 text-blue-400 hover:bg-blue-500/20 transition-colors"
+                    title="Aplică parametrii acestui backtest pe sesiunea din Profil (fără salvare automată)"
+                  >
+                    <Copy size={12} />
+                    Aplică config pe sesiunea {job.session_id}
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
@@ -961,7 +1028,7 @@ function DownloadJobRow({ job, onDelete }: { job: DownloadJob; onDelete: (id: st
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 
-export function AuditPage() {
+export function AuditPage({ onApplyConfig }: { onApplyConfig?: (sessionId: string, config: Record<string, unknown>) => void }) {
   const { data: jobs, isLoading } = useBacktestJobs();
   const deleteJob = useDeleteBacktestJob();
   const [errorJob, setErrorJob] = useState<BacktestJob | null>(null);
@@ -1059,7 +1126,7 @@ export function AuditPage() {
                     In rulare ({running.length})
                   </div>
                   {running.map(job => (
-                    <JobRow key={job.job_id} job={job} onDelete={handleDelete} onShowError={setErrorJob} />
+                    <JobRow key={job.job_id} job={job} onDelete={handleDelete} onShowError={setErrorJob} onApplyConfig={onApplyConfig} />
                   ))}
                 </div>
               )}
@@ -1069,7 +1136,7 @@ export function AuditPage() {
                     Erori ({error.length})
                   </div>
                   {error.map(job => (
-                    <JobRow key={job.job_id} job={job} onDelete={handleDelete} onShowError={setErrorJob} />
+                    <JobRow key={job.job_id} job={job} onDelete={handleDelete} onShowError={setErrorJob} onApplyConfig={onApplyConfig} />
                   ))}
                 </div>
               )}
@@ -1079,7 +1146,7 @@ export function AuditPage() {
                     Finalizate ({done.length})
                   </div>
                   {done.map(job => (
-                    <JobRow key={job.job_id} job={job} onDelete={handleDelete} onShowError={setErrorJob} />
+                    <JobRow key={job.job_id} job={job} onDelete={handleDelete} onShowError={setErrorJob} onApplyConfig={onApplyConfig} />
                   ))}
                 </div>
               )}

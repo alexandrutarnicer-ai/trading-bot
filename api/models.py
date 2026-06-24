@@ -26,6 +26,8 @@ class SessionStatus(BaseModel):
     paused: bool = False
     news_paused: bool = False
     news_events: list = []
+    pnl_usd_today: Optional[float] = None
+    pnl_usd_yesterday: Optional[float] = None
 
 
 class Signal(BaseModel):

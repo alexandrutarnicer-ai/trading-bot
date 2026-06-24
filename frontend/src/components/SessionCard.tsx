@@ -142,6 +142,22 @@ export function SessionCard({ session: s, onClick, selected }: Props) {
         </div>
       </div>
 
+      {/* P&L USD azi / ieri */}
+      {(s.pnl_usd_today != null || s.pnl_usd_yesterday != null) && (
+        <div className={`mt-2 flex gap-3 text-[10px] ${isPaused || isNewsPaused ? "opacity-60" : ""}`}>
+          {s.pnl_usd_today != null && (
+            <span className={s.pnl_usd_today >= 0 ? "text-profit" : "text-loss"}>
+              {s.pnl_usd_today >= 0 ? "+" : ""}{s.pnl_usd_today.toFixed(2)} USD azi
+            </span>
+          )}
+          {s.pnl_usd_yesterday != null && (
+            <span className={s.pnl_usd_yesterday >= 0 ? "text-profit/60" : "text-loss/60"}>
+              {s.pnl_usd_yesterday >= 0 ? "+" : ""}{s.pnl_usd_yesterday.toFixed(2)} ieri
+            </span>
+          )}
+        </div>
+      )}
+
       {/* Footer */}
       <div className="mt-3 pt-3 border-t border-surface-border flex items-center justify-between text-[10px] text-slate-500">
         <div className="flex items-center gap-1">

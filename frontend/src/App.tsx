@@ -20,11 +20,22 @@ const qc = new QueryClient({
 
 type Tab = "dashboard" | "profile" | "audit" | "guide";
 
+export interface PendingApply {
+  sessionId: string;
+  config: Record<string, unknown>;
+}
+
 function AppInner() {
   const [tab, setTab] = useState<Tab>("dashboard");
+  const [pendingApply, setPendingApply] = useState<PendingApply | null>(null);
 
   // Polling global pentru joburi active — activ indiferent de tab
   useBacktestJobs();
+
+  function handleApplyConfig(sessionId: string, config: Record<string, unknown>) {
+    setPendingApply({ sessionId, config });
+    setTab("profile");
+  }
 
   return (
     <div className="min-h-screen bg-surface text-white">
@@ -34,10 +45,14 @@ function AppInner() {
         <Dashboard />
       </div>
       <div className={tab === "profile" ? undefined : "hidden"}>
-        <ProfilePage onNavigateToAudit={() => setTab("audit")} />
+        <ProfilePage
+          onNavigateToAudit={() => setTab("audit")}
+          pendingApply={pendingApply}
+          onClearPendingApply={() => setPendingApply(null)}
+        />
       </div>
       <div className={tab === "audit" ? undefined : "hidden"}>
-        <AuditPage />
+        <AuditPage onApplyConfig={handleApplyConfig} />
       </div>
       <div className={tab === "guide" ? undefined : "hidden"}>
         <GuidePage />

@@ -11,14 +11,15 @@ import { TradingStatsPanel } from "../components/TradingStatsPanel";
 
 function WeeklyStatsPanel() {
   const { data, isLoading } = useWeeklyStats();
+  const [period, setPeriod] = useState<"week" | "month">("week");
 
   if (isLoading) {
     return <div className="h-24 rounded-xl bg-surface-card animate-pulse" />;
   }
   if (!data) return null;
 
-  const cur  = data.current_week;
-  const prev = data.previous_week;
+  const cur  = period === "week" ? data.current_week  : data.current_month;
+  const prev = period === "week" ? data.previous_week : data.previous_month;
 
   function Trend({ curr, pre }: { curr: number; pre: number }) {
     if (pre === 0 && curr === 0) return <Minus size={11} className="text-slate-600" />;
@@ -29,14 +30,36 @@ function WeeklyStatsPanel() {
 
   const rColor  = (r: number) => r > 0 ? "text-profit" : r < 0 ? "text-loss" : "text-slate-400";
   const fmtR    = (r: number) => `${r >= 0 ? "+" : ""}${r.toFixed(3)}R`;
+  const fmtUsd  = (v: number | null | undefined) =>
+    v == null ? null : `${v >= 0 ? "+" : ""}${v.toLocaleString("ro-RO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USD`;
+
+  const curLabel  = period === "week" ? "Săpt. curentă"   : "Luna curentă";
+  const prevLabel = period === "week" ? "Săpt. anterioară" : "Luna anterioară";
 
   return (
     <div className="space-y-2">
+      {/* Tab switcher */}
+      <div className="flex gap-1 mb-1">
+        {(["week", "month"] as const).map(p => (
+          <button
+            key={p}
+            onClick={() => setPeriod(p)}
+            className={`text-[10px] px-2.5 py-1 rounded-lg transition-colors ${
+              period === p
+                ? "bg-blue-500/20 text-blue-400 font-semibold"
+                : "text-slate-500 hover:text-slate-300"
+            }`}
+          >
+            {p === "week" ? "Săptămână" : "Lună"}
+          </button>
+        ))}
+      </div>
+
       {/* Header row */}
       <div className="grid grid-cols-3 text-[10px] text-slate-500 uppercase tracking-wider pb-1">
         <div />
-        <div className="text-center">Săpt. curentă</div>
-        <div className="text-center">Săpt. anterioară</div>
+        <div className="text-center">{curLabel}</div>
+        <div className="text-center">{prevLabel}</div>
       </div>
 
       {/* Trades */}
@@ -92,17 +115,34 @@ function WeeklyStatsPanel() {
         </div>
       </div>
 
-      {/* -DD max % */}
+      {/* P&L USD (doar daca exista date reale) */}
+      {(cur.pnl_usd != null || prev.pnl_usd != null) && (
+        <div className="grid grid-cols-3 items-center">
+          <div className="text-[11px] text-slate-400">P&L USD</div>
+          <div className="text-center flex items-center justify-center gap-1">
+            {cur.pnl_usd != null
+              ? <span className={`text-xs font-mono font-semibold ${rColor(cur.pnl_usd)}`}>{fmtUsd(cur.pnl_usd)}</span>
+              : <span className="text-xs font-mono text-slate-600">—</span>
+            }
+            {cur.pnl_usd != null && prev.pnl_usd != null && <Trend curr={cur.pnl_usd} pre={prev.pnl_usd} />}
+          </div>
+          <div className={`text-center text-[11px] font-mono ${prev.pnl_usd != null ? rColor(prev.pnl_usd) : "text-slate-600"}`}>
+            {fmtUsd(prev.pnl_usd) ?? "—"}
+          </div>
+        </div>
+      )}
+
+      {/* -DD max R */}
       <div className="grid grid-cols-3 items-center">
         <div className="text-[11px] text-slate-400">-DD max</div>
         <div className="text-center flex items-center justify-center gap-1">
           <span className={`text-xs font-mono font-semibold ${(cur.max_dd_r ?? 0) < 0 ? "text-loss" : "text-slate-500"}`}>
-            {!(cur.max_dd_r) ? "—" : `${cur.max_dd_r.toFixed(1)}%`}
+            {!(cur.max_dd_r) ? "—" : `${cur.max_dd_r.toFixed(1)}R`}
           </span>
           <Trend curr={-(cur.max_dd_r ?? 0)} pre={-(prev.max_dd_r ?? 0)} />
         </div>
         <div className={`text-center text-[11px] font-mono ${(prev.max_dd_r ?? 0) < 0 ? "text-loss/60" : "text-slate-600"}`}>
-          {!(prev.max_dd_r) ? "—" : `${prev.max_dd_r.toFixed(1)}%`}
+          {!(prev.max_dd_r) ? "—" : `${prev.max_dd_r.toFixed(1)}R`}
         </div>
       </div>
 
@@ -236,8 +276,9 @@ export function Dashboard() {
         const missingTooltip = missing.length > 0
           ? missing.map(m => `${m.id}: ${m.markets.join(", ")}`).join("\n")
           : "";
+        const avgDD = freqData?.avg_max_dd ?? null;
         return (
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             {/* Card săptămână */}
             <div className="bg-surface-card rounded-xl border border-surface-border px-5 py-3 flex items-center justify-between gap-4">
               <div>
@@ -279,6 +320,19 @@ export function Dashboard() {
                   {missing.map(m => m.markets[0]).join(", ")}
                 </div>
               )}
+            </div>
+            {/* Card -DD% estimat */}
+            <div className="bg-surface-card rounded-xl border border-surface-border px-5 py-3">
+              <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">-DD% mediu estimat</p>
+              {avgDD != null
+                ? <>
+                    <p className={`text-2xl font-bold font-mono ${avgDD < 0 ? "text-loss" : "text-slate-400"}`}>
+                      {avgDD.toFixed(1)}%
+                    </p>
+                    <p className="text-[10px] text-slate-600 mt-0.5">din backteste active</p>
+                  </>
+                : <p className="text-2xl font-bold font-mono text-slate-600">—</p>
+              }
             </div>
           </div>
         );

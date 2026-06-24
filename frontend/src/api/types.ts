@@ -51,6 +51,8 @@ export interface SessionStatus {
     event_time: string;
     minutes_to: number;
   }>;
+  pnl_usd_today: number | null;
+  pnl_usd_yesterday: number | null;
 }
 
 export interface Signal {
@@ -218,27 +220,23 @@ export interface BacktestResult {
   hour_stats?: Record<number, HourStat>;
 }
 
+interface PeriodStats {
+  start: string;
+  end: string;
+  trades: number;
+  wins: number;
+  losses: number;
+  total_r: number;
+  win_rate: number;
+  max_dd_r: number;
+  pnl_usd: number | null;
+}
+
 export interface WeeklyStats {
-  current_week: {
-    start: string;
-    end: string;
-    trades: number;
-    wins: number;
-    losses: number;
-    total_r: number;
-    win_rate: number;
-    max_dd_r: number;
-  };
-  previous_week: {
-    start: string;
-    end: string;
-    trades: number;
-    wins: number;
-    losses: number;
-    total_r: number;
-    win_rate: number;
-    max_dd_r: number;
-  };
+  current_week: PeriodStats;
+  previous_week: PeriodStats;
+  current_month: PeriodStats;
+  previous_month: PeriodStats;
 }
 
 export interface BacktestJob {
