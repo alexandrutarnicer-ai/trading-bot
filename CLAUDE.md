@@ -344,7 +344,12 @@ Daca numerele se schimba semnificativ → bug introdus, nu progres.
 
 **Timestamps MT5:** `Mt5DataSource` converteste explicit din ora serverului broker la `Europe/Bucharest` (naive, fara tzinfo). Tot codul intern lucreaza in ora Romaniei.
 
-**pip_value_usd pentru cross-uri:** `strategy/costs.py` calculeaza valoarea unui pip in USD pentru perechi cu quote non-USD (ex: EURGBP → 10 GBP × rate_GBPUSD). Nu folosi fallback-ul generic pentru perechi noi fara a verifica calculul.
+**pip_value_usd — arhitectura si intretinere:**
+- **Live** (`live/signal_generator.py` → `_calc_lots`): citeste `info.trade_tick_value` si `info.trade_tick_size` direct din MT5 la fiecare trade. Intotdeauna 100% corect, independent de valorile din `costs.py`.
+- **Backtest** (`strategy/costs.py` → `pip_value_usd`): foloseste valori statice — `_INDEX_TICK` (indici, XAUUSD), `_CRYPTO_TICK` (BTC/ETH/XRP), `BASE_USD_APROX` (ratele EUR/GBP/AUD→USD pentru cross-perechi). Formula cross-perechi: `val_in_quote × BASE_USD[baza] / cross_price` (ex: AUDCAD: 10 CAD × 0.64 / 0.88 = 7.27 USD).
+- **Intretinere `BASE_USD_APROX`**: actualizeaza la 6 luni daca ratele deriva >5% (EUR=1.08, AUD=0.64, GBP=1.27 — last update: 2026-06-24). Afecteaza doar cifrele $ absolute, nu R-ul (backtestul e R-based).
+- **Simboluri noi non-forex**: adauga obligatoriu in `_INDEX_TICK` sau `_CRYPTO_TICK` din `costs.py` SI in `_INDEX_PIP` din `signals.py`. Fara inregistrare explicita, formula forex (pip=0.0001, val=100000×pip) da pip_value gresit → lots=0 → 0 trades in backtest (ex: XRPUSD era 10.0 in loc de 0.01 USD/pip).
+- **Dupa modificari `costs.py`/`signals.py`**: API-ul trebuie repornit — fara `--reload`, codul vechi ramane in memorie.
 
 **Swap BTC:** calculat ca procent anual din notional. Rate-ul variaza cu brokerul — verifica `data/crypto_specs.json`.
 

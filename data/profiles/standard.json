@@ -347,7 +347,8 @@
         10,
         11,
         12,
-        14
+        14,
+        15
       ],
       "skip_weekdays": [
         0
@@ -616,7 +617,8 @@
       "session_end": 24,
       "skip_hours": [
         10,
-        12
+        12,
+        15
       ],
       "skip_weekdays": [
         0,
@@ -1272,7 +1274,7 @@
       "skip_hours": [],
       "skip_weekdays": [],
       "expire_bars": 4,
-      "account_fraction": 1.0,
+      "account_fraction": 1,
       "risk_pct": 0.01,
       "risk_base": 0.01,
       "risk_mid": 0.01,
@@ -1314,5 +1316,5 @@
       "backtest_results": null
     }
   ],
-  "updated_at": "2026-06-24T18:51:04"
+  "updated_at": "2026-06-24T22:09:34"
 }
