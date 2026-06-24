@@ -163,6 +163,7 @@ def weekly_stats():
 
     def _aggregate(start: datetime, end: datetime) -> dict:
         totals = {"trades": 0, "wins": 0, "losses": 0, "total_r": 0.0}
+        all_slices: list[pd.DataFrame] = []
         for s in SESSIONS:
             df = _read_outcomes(s["id"])
             if df.empty or "exit_time" not in df.columns:
@@ -179,9 +180,19 @@ def weekly_stats():
             totals["wins"]   += int((sub["result_r"] > 0).sum())
             totals["losses"] += int((sub["result_r"] < 0).sum())
             totals["total_r"] += float(sub["result_r"].fillna(0).sum())
+            all_slices.append(sub[["_et", "result_r"]].copy())
         n = totals["trades"]
         totals["total_r"]  = round(totals["total_r"], 3)
         totals["win_rate"] = round(totals["wins"] / n * 100, 1) if n else 0.0
+        # Drawdown maxim in R pentru perioada (cel mai adanc jgheab de la peak)
+        max_dd_r = 0.0
+        if all_slices:
+            combined = pd.concat(all_slices).sort_values("_et")
+            cum_r = combined["result_r"].fillna(0).cumsum()
+            peak  = cum_r.cummax()
+            dd    = cum_r - peak
+            max_dd_r = round(float(dd.min()), 3)
+        totals["max_dd_r"] = max_dd_r
         return totals
 
     return {

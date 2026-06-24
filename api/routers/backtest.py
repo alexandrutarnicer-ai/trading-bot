@@ -297,6 +297,21 @@ def _run_backtest_job(
                 "expectancy": round(float(sub["R"].mean()), 3),
             }
 
+        # Statistici per directie (LONG vs SHORT) — doar pentru sesiuni BOTH
+        direction_stats: dict = {}
+        if "dir" in df_t.columns and not params.get("only_long"):
+            for dir_val, dir_name in [(1, "LONG"), (-1, "SHORT")]:
+                sub = df_t[df_t["dir"] == dir_val]
+                if len(sub) > 0:
+                    w = int(sub["outcome"].isin(["win", "be_lock", "be_lock2"]).sum())
+                    direction_stats[dir_name] = {
+                        "trades":     len(sub),
+                        "wins":       w,
+                        "losses":     int((sub["outcome"] == "loss").sum()),
+                        "win_rate":   round(w / len(sub) * 100, 1),
+                        "expectancy": round(float(sub["R"].mean()), 3),
+                    }
+
         final_balance = float(eq_arr[-1]) if len(eq_arr) else start_balance
 
         # Task 4: Analiza pierderi per zi a saptamanii si per ora
@@ -354,13 +369,14 @@ def _run_backtest_job(
                     "trades":     len(test),
                     "expectancy": round(float(test["R"].mean()), 3) if len(test) else 0,
                 },
-                "per_symbol":      per_symbol,
-                "markets":         session_cfg["markets"],
-                "skipped_markets": skipped_markets,
-                "session_id":      session_cfg.get("id", ""),
+                "per_symbol":       per_symbol,
+                "direction_stats":  direction_stats,
+                "markets":          session_cfg["markets"],
+                "skipped_markets":  skipped_markets,
+                "session_id":       session_cfg.get("id", ""),
                 # Task 4: analiza pierderi per zi/ora
-                "weekday_stats":   weekday_stats,
-                "hour_stats":      hour_stats,
+                "weekday_stats":    weekday_stats,
+                "hour_stats":       hour_stats,
             },
         )
 
