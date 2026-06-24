@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Pause, Play } from "lucide-react";
 import type { ProfileSession, Meta } from "../api/types";
 import { useMt5Markets, useMt5Status, useMarketAtr } from "../api/hooks";
@@ -18,6 +18,7 @@ interface Props {
   paused?: boolean;
   onPauseToggle?: () => void;
   profileStartBalance?: number;
+  forceOpen?: boolean;
 }
 
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
@@ -286,8 +287,12 @@ function RRDiagram({ session, mt5Connected }: { session: ProfileSession; mt5Conn
 
 // ── SessionEditor ─────────────────────────────────────────────────────────
 
-export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted, onSaveAndNavigate, onDownloadStarted, paused, onPauseToggle, profileStartBalance }: Props) {
+export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted, onSaveAndNavigate, onDownloadStarted, paused, onPauseToggle, profileStartBalance, forceOpen }: Props) {
   const [open, setOpen]           = useState(false);
+
+  useEffect(() => {
+    if (forceOpen) setOpen(true);
+  }, [forceOpen]);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [showMt5Search, setShowMt5Search] = useState(false);
   const [mt5Query, setMt5Query]   = useState("");

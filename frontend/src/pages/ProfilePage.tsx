@@ -88,6 +88,7 @@ export function ProfilePage({
 
   // Aplica configuratia primita din Audit ("Aplica config")
   const [applyNotice, setApplyNotice] = useState<string | null>(null);
+  const [expandSessionId, setExpandSessionId] = useState<string | null>(null);
   useEffect(() => {
     if (!pendingApply || !draft) return;
     const idx = draft.sessions.findIndex(s => s.id === pendingApply.sessionId);
@@ -130,7 +131,12 @@ export function ProfilePage({
     setDraft({ ...draft, sessions });
     setDirty(true);
     setApplyNotice(`Configurația sesiunii ${pendingApply.sessionId} a fost aplicată. Salvează profilul pentru a păstra modificările.`);
+    setExpandSessionId(pendingApply.sessionId);
     onClearPendingApply?.();
+    setTimeout(() => {
+      const el = document.querySelector(`[data-session-id="${pendingApply.sessionId}"]`);
+      el?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 80);
     setTimeout(() => setApplyNotice(null), 6000);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingApply]);
@@ -416,23 +422,25 @@ export function ProfilePage({
             const liveS  = liveSessions?.find(s => s.id === session.session_key);
             const isPaused = liveS?.paused ?? false;
             return (
-              <SessionEditor
-                key={session.id + idx}
-                session={session}
-                meta={meta}
-                onJobStarted={onNavigateToAudit}
-                onSaveAndNavigate={async () => { await handleSave(); onNavigateToAudit(); }}
-                onDownloadStarted={onNavigateToAudit}
-                onChange={(updated) => handleSessionChange(idx, updated)}
-                onRemove={() => handleSessionRemove(idx)}
-                paused={isPaused}
-                onPauseToggle={() =>
-                  isPaused
-                    ? resumeS.mutate(session.session_key)
-                    : pauseS.mutate(session.session_key)
-                }
-                profileStartBalance={draft.start_balance}
-              />
+              <div key={session.id + idx} data-session-id={session.id}>
+                <SessionEditor
+                  session={session}
+                  meta={meta}
+                  onJobStarted={onNavigateToAudit}
+                  onSaveAndNavigate={async () => { await handleSave(); onNavigateToAudit(); }}
+                  onDownloadStarted={onNavigateToAudit}
+                  onChange={(updated) => handleSessionChange(idx, updated)}
+                  onRemove={() => handleSessionRemove(idx)}
+                  paused={isPaused}
+                  onPauseToggle={() =>
+                    isPaused
+                      ? resumeS.mutate(session.session_key)
+                      : pauseS.mutate(session.session_key)
+                  }
+                  profileStartBalance={draft.start_balance}
+                  forceOpen={session.id === expandSessionId}
+                />
+              </div>
             );
           })}
           <button

@@ -605,33 +605,68 @@ export function GuidePage() {
             </p>
           </SubSection>
 
-          <SubSection title="Indice Săptămânal">
+          <SubSection title="Indice Periodic (Săptămânal / Lunar)">
             <WeekStatsDiagram />
             <div className="mt-3 space-y-1.5 text-xs">
+              <KV k="Tab Săptămână / Lună" v="Comutare între intervalul curent și cel precedent" />
               <KV k="Trades" v="Tranzacții cu status final (TP/SL/vineri/news)" />
               <KV k="Câștiguri/Pierderi" v="Trades cu result_r > 0 / result_r < 0" />
-              <KV k="Total R" v="Suma tuturor result_r din săptămână" />
-              <KV k="-DD max %" v="Cel mai adânc jgheab de la peak-ul R al săptămânii, exprimat ca procent (1R ≈ 1%)" vColor="text-loss" />
+              <KV k="Total R" v="Suma tuturor result_r din interval" />
+              <KV k="P&L USD" v="Suma pnl_usd (profit real MT5) — apare doar când există date" />
+              <KV k="-DD max R" v="Cel mai adânc jgheab de la peak-ul R al perioadei" vColor="text-loss" />
             </div>
             <Tip>
-              -DD max = 0 înseamnă că nu a existat nicio secvență de pierderi care să coboare sub peak-ul atins în acea săptămână.
-              Valoarea se bazează pe unități R (1R = ~1% din riscul alocat per trade). Ex: -2.0% = drawdown de 2R de la peak.
-              Cu cât valoarea este mai negativă, cu atât ai trecut printr-o perioadă de drawdown mai mare.
+              Tab-ul Lună oferă o perspectivă mai stabilă decât săptămâna — fluctuațiile săptămânale
+              sunt normale. P&L USD apare doar pentru sesiunile cu execute_trades=True care au ordine
+              închise prin MT5 (câmpul pnl_usd din outcomes.csv).
             </Tip>
           </SubSection>
 
           <SubSection title="Statistici Totale (TradingStatsPanel)">
-            <p>4 carduri afișează agregatul tuturor sesiunilor:</p>
+            <p>Carduri care afișează agregatul tuturor sesiunilor:</p>
             <div className="grid grid-cols-2 gap-3 text-xs">
               <KV k="Total Semnale" v="Toate setup-urile detectate" />
               <KV k="Total Trades" v="Tranzacții cu outcome final" />
               <KV k="Câștiguri" v="Numărul TP-urilor" vColor="text-profit" />
               <KV k="Pierderi" v="Numărul SL-urilor" vColor="text-loss" />
+              <KV k="P&L USD" v="Suma P&L real azi + ieri (din MT5)" vColor="text-profit" />
             </div>
             <p className="text-xs text-slate-400 mt-2">
-              Fiecare card afișează și <em>X azi</em> față de <em>ieri</em> cu indicator trend ▲/▼.
+              Fiecare card numeric afișează și <em>X azi</em> față de <em>ieri</em> cu indicator trend ▲/▼.
+              Cardul P&L USD apare doar când există date reale MT5 (execute_trades=True + ordine închise).
               Click pe "Total Semnale" sau "Total Trades" expandează breakdownul per sesiune.
             </p>
+          </SubSection>
+
+          <SubSection title="Carduri frecvență estimată + -DD%">
+            <p>Deasupra grilei de sesiuni, 3 carduri rezumă performanța estimată:</p>
+            <div className="space-y-1.5 text-xs">
+              <KV k="Estimat / săptămână" v="Trades/săpt din backtestele active ale sesiunilor LIVE" />
+              <KV k="Estimat / lună" v="Trades/lună (× 30.44 / 7 din estimatul săptămânal)" />
+              <KV k="-DD% mediu estimat" v="Media max_dd din backtestele sesiunilor active" vColor="text-loss" />
+            </div>
+            <div className="mt-2 space-y-1 text-xs text-slate-400">
+              <p>Sesiunile excluse din calcul: pe pauză + execute_trades=False (observație).</p>
+              <p>Badge portocaliu → backtest lipsă pentru unele sesiuni. Click → lansează automat backtestele lipsă (5 ani).</p>
+            </div>
+            <Note>
+              -DD% mediu estimat reflectă scăderea maximă procentuală din backteste, nu din trading-ul live.
+              Poate fi diferit de experiența reală dacă condițiile de piață s-au schimbat față de perioada testată.
+            </Note>
+          </SubSection>
+
+          <SubSection title="P&L USD pe cardurile sesiunilor" defaultOpen={false}>
+            <p>
+              Fiecare card de sesiune din grila Dashboard afișează (când există date reale MT5):
+            </p>
+            <div className="space-y-1 text-xs">
+              <KV k="+150.25 USD azi" vColor="text-profit" v="Suma profit/pierdere azi (ordine MT5 închise)" />
+              <KV k="-50.00 ieri" vColor="text-loss" v="Suma profit/pierdere ieri" />
+            </div>
+            <Note>
+              Apare doar dacă sesiunea are execute_trades=True și cel puțin un ordin MT5 închis (TP/SL/vineri/știri)
+              cu câmpul pnl_usd populat. Sesiunile de observație (execute=false) nu afișează P&L.
+            </Note>
           </SubSection>
         </Section>
 
@@ -851,6 +886,56 @@ export function GuidePage() {
               Calculat ca <code className="text-blue-300">total_trades / (zile_testate / 7)</code>.
               Este baza pentru estimatul din cardurile de frecvență din Dashboard.
             </p>
+          </SubSection>
+
+          <SubSection title="Configurare sesiune în Audit (snapshot complet)" defaultOpen={false}>
+            <p>
+              Fiecare backtest finalizat salvează un <strong className="text-white">snapshot complet</strong> al
+              configurației sesiunii la momentul rulării. Poți verifica exact cu ce parametri a fost testat.
+            </p>
+            <div className="space-y-1.5 text-xs">
+              <div className="text-[10px] text-slate-500 uppercase tracking-wider">Secțiuni afișate la expandare</div>
+              <KV k="Strategie" v="Pullback window, Expire bare, Interval ore, Skip zile/ore" />
+              <KV k="R-Ladder" v="R base/mid/top/max cu riscul % și pragurile de criterii" />
+              <KV k="Criterii opționale" v="RSI (range buy/sell), EMA alignment, Body strength" />
+              <KV k="Break-Even" v="Trigger%, Lock1%, Lock2%, Faza2 zona%, toggle Faza2" />
+              <KV k="Protecție" v="Închidere Vineri (ora), Protecție Știri (impact + fereastră)" />
+              <KV k="Tranzacționare" v="Max concurent/piață, Min bare între trades" />
+              <KV k="Capital simulat" v="Total USD + alocare per piață" />
+            </div>
+            <Note>
+              Snapshot-ul este construit automat din configurația trimisă la backtest — nu mai necesită
+              completare manuală din frontend. Sesiunile rulate prin „backteste lipsă" includ și ele snapshot complet.
+            </Note>
+          </SubSection>
+
+          <SubSection title={'Butonul "Aplică config pe sesiune"'} defaultOpen={false}>
+            <p>
+              Pe orice backtest finalizat cu succes, în panoul expandat apare butonul:
+            </p>
+            <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg px-3 py-2 text-xs text-blue-300 font-mono inline-flex items-center gap-2">
+              ⎘ Aplică config pe sesiunea S9
+            </div>
+            <div className="mt-3 space-y-2 text-xs text-slate-400">
+              <p><strong className="text-slate-300">Ce face:</strong> preia parametrii din snapshot-ul backtest-ului
+                (pullback window, R-ladder, RSI, BE, vineri, știri etc.) și le aplică direct în editorul sesiunii
+                din Profile — fără salvare automată.</p>
+              <p><strong className="text-slate-300">Flux:</strong></p>
+              <ol className="list-decimal list-inside space-y-1 ml-2">
+                <li>Click pe buton → navighează automat la tab Profile</li>
+                <li>Sesiunea țintă se expandează automat și scroll se face la ea</li>
+                <li>Banner verde: „Configurația sesiunii SX a fost aplicată. Salvează profilul..."</li>
+                <li>Verifici parametrii vizual → click <strong className="text-white">Salvează</strong></li>
+              </ol>
+            </div>
+            <Warn>
+              Câmpurile de identitate <strong>(markets, direction, execute_trades, account_fraction)</strong> nu
+              sunt suprascrise — rămân cele din profil. Doar parametrii de strategie sunt aplicați.
+            </Warn>
+            <Tip>
+              Util pentru a testa variante de parametri în paralel (mai multe backteste cu settings diferite)
+              și a aplica rapid cel mai bun set găsit.
+            </Tip>
           </SubSection>
         </Section>
 
