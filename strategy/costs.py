@@ -27,6 +27,7 @@ _INDEX_TICK = {
 _CRYPTO_TICK = {
     "BTCUSD": 0.01,   # tick_value_usd (USD per tick per lot)
     "ETHUSD": 0.01,
+    "XRPUSD": 0.01,   # 1 lot = 1000 XRP, tick=0.00001, tick_val=0.01 USD
 }
 
 # Swap real din MT5 (swap_long, tratate ca USD per lot per noapte).

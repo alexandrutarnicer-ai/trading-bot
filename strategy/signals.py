@@ -3,7 +3,7 @@ _INDEX_PIP = {
     "GER40": 1.0, "UK100": 1.0, "JPN225": 1.0,
     "FRA40": 1.0, "AUS200": 1.0,
     "XAUUSD": 1.0,   # 1 punct = $1 price move, pip_val=$100/lot
-    "BTCUSD": 0.01, "ETHUSD": 0.01,  # tick_size real (nu 1.0 ca indicii)
+    "BTCUSD": 0.01, "ETHUSD": 0.01, "XRPUSD": 0.00001,  # tick_size real
 }
 
 
