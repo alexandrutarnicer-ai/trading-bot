@@ -6,7 +6,7 @@ from strategy.signals import pip_size
 CONTRACT = 100_000
 _costs_log = logging.getLogger("strategy.costs")
 _WARNED_UNKNOWN: set = set()   # evita spam in log la fiecare bara
-BASE_USD_APROX = {"GBP": 1.27, "EUR": 1.10, "AUD": 0.66, "USD": 1.0}
+BASE_USD_APROX = {"GBP": 1.27, "EUR": 1.08, "AUD": 0.64, "USD": 1.0}
 
 # Specificatii reale din MT5 (trade_tick_size, trade_tick_value_usd).
 # trade_tick_value este DEJA in USD (account currency) — MT5 converteste automat.
@@ -17,8 +17,8 @@ _INDEX_TICK = {
     "US30":   (0.01, 0.010000),   # $1.00/pt/lot
     "US2000": (0.01, 0.010000),   # $1.00/pt/lot
     "UK100":  (0.01, 0.013334),   # $1.33/pt/lot  (GBP profit, convertit de MT5)
-    "GER40":  (0.01, 0.011519),   # $1.15/pt/lot  (EUR profit, convertit de MT5)
-    "DE40":   (0.01, 0.011519),   # alias broker pt GER40
+    "GER40":  (0.01, 0.010800),   # $1.08/pt/lot  (EUR profit @ EUR/USD=1.08)
+    "DE40":   (0.01, 0.010800),   # alias broker pt GER40
     "XAUUSD": (0.01, 1.000000),   # $100.00/pt/lot  (100 oz, tick_val=$1/tick)
 }
 
@@ -89,7 +89,11 @@ def pip_value_usd(symbol, price, usdjpy_rate=None):
         return val_in_quote / usdjpy_rate
     if quote in BASE_USD_APROX:
         return val_in_quote * BASE_USD_APROX[quote]
-    return val_in_quote / price
+    # Cross pairs (ex: AUDCAD, AUDNZD, EURCAD, GBPCAD): convertim val_in_quote
+    # (in quote currency) la USD via rata bazei: val_quote × USD_base / cross_price
+    # = val_quote × USD_base / (base/quote) = val_quote × USD_base × (quote/base)
+    # = val_quote / (base/USD) = val_quote_in_USD. Formula corecta 1:1 cu MT5.
+    return val_in_quote * BASE_USD_APROX.get(symbol[:3], 1.0) / price
 
 
 def notional_usd(symbol, price, lots):
