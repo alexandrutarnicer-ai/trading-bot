@@ -897,6 +897,81 @@ export function GuidePage() {
             </Note>
           </SubSection>
 
+          <SubSection title="Când apare statusul 'invalidat'?" defaultOpen={false}>
+            <p>
+              <strong className="text-warn">Invalidat</strong> apare strict în fereastra{" "}
+              <span className="text-orange-400 font-mono">Plasat → Activat</span> — ordinul BUY_STOP/SELL_STOP
+              există deja în MT5 dar nu a fost încă triggerat de preț.
+            </p>
+            <p className="mt-2">
+              Condiția exactă: <code className="text-blue-300">_update_outcomes()</code> verifică la fiecare bară dacă
+              structura de swing care a justificat trade-ul mai este validă.
+            </p>
+
+            {/* Visual explanation */}
+            <div className="bg-surface rounded-lg border border-surface-border p-4 font-mono text-xs mt-3 space-y-2">
+              <div className="text-[10px] text-slate-500 uppercase mb-2">Exemplu LONG — structură ruptă</div>
+              <div className="flex flex-col gap-1 text-slate-400">
+                <span>         HH2</span>
+                <span>    HH1   │      BUY_STOP ← ordin pending în MT5</span>
+                <span>     │   ╱ ╲   ↑ Entry</span>
+                <span>     │  ╱   ╲  │</span>
+                <span>     │ ╱   <span className="text-warn">HL</span> ╲ │</span>
+                <span>     │╱        <span className="text-loss">↓ prețul coboară SUB HL</span></span>
+                <span className="text-warn mt-1">              → INVALIDAT: bot trimite TRADE_ACTION_REMOVE</span>
+              </div>
+              <div className="border-t border-surface-border/50 pt-2 mt-2 space-y-1 text-slate-500">
+                <div>LONG: prețul <span className="text-loss">sub minimul pullback-ului (HL)</span> = structură ruptă</div>
+                <div>SHORT: prețul <span className="text-loss">peste maximul pullback-ului (LH)</span> = structură ruptă</div>
+              </div>
+            </div>
+
+            {/* Comparison table */}
+            <div className="mt-3 space-y-1.5 text-xs">
+              <div className="text-[10px] text-slate-500 uppercase mb-2">Diferența față de alte statusuri</div>
+              <div className="grid grid-cols-3 gap-2">
+                <div className="bg-surface rounded-lg border border-warn/30 p-2.5 space-y-1">
+                  <div className="text-warn font-semibold text-[11px]">invalidat</div>
+                  <div className="text-slate-400 text-[10px] leading-relaxed">
+                    Prețul a spart structura de swing.<br />
+                    Botul anulează activ ordinul din MT5.<br />
+                    <span className="text-slate-500">result_r = 0</span>
+                  </div>
+                </div>
+                <div className="bg-surface rounded-lg border border-slate-700 p-2.5 space-y-1">
+                  <div className="text-slate-300 font-semibold text-[11px]">expirat</div>
+                  <div className="text-slate-400 text-[10px] leading-relaxed">
+                    Ordinul nu a fost triggerat în N bare (expire_bars).<br />
+                    Structura poate fi încă validă.<br />
+                    <span className="text-slate-500">result_r = 0</span>
+                  </div>
+                </div>
+                <div className="bg-surface rounded-lg border border-slate-700 p-2.5 space-y-1">
+                  <div className="text-slate-300 font-semibold text-[11px]">news_cancel</div>
+                  <div className="text-slate-400 text-[10px] leading-relaxed">
+                    Eveniment economic iminent.<br />
+                    Anulat preventiv de News Guard.<br />
+                    <span className="text-slate-500">result_r = 0</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-3 space-y-1 text-xs">
+              <KV k="Gestionat de" v="_update_outcomes() — rulează și când sesiunea e pe pauză" />
+              <KV k="MT5" v="TRADE_ACTION_REMOVE trimis → ordinul dispare din MT5" />
+              <KV k="Telegram" v="Nu se trimite notificare (eveniment normal de management)" />
+              <KV k="result_r" v="0 — nu este o pierdere, nu intră în statistici" />
+              <KV k="pnl_usd" v="NaN — nu a existat poziție reală deschisă" />
+            </div>
+
+            <Warn>
+              Dacă un ordin dispare din MT5 fără notificare Telegram, verifică outcomes.csv al sesiunii —
+              cel mai probabil statusul este <strong>invalidat</strong> sau <strong>expirat</strong>,
+              ambele comportamente normale și așteptate.
+            </Warn>
+          </SubSection>
+
           <SubSection title="Detectarea dublei intrări (offset 3/2)" defaultOpen={false}>
             <p>
               Botul caută semnale pe bare <strong>închise</strong> la offset 3 și 2 față de bara curentă.
