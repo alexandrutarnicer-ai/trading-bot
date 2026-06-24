@@ -1682,6 +1682,31 @@ def run_generator(session_cfg: dict):
             log.warning(f"  {m}: nu e disponibil — sarit")
 
     log.info(f"Simboluri active: {list(resolved.values())}")
+
+    # Auto-inregistreaza pip_size din MT5 pentru simboluri non-forex neinregistrate in _INDEX_PIP.
+    # Necesar cand se adauga o piata noua (ex: NAS100) care nu e in lista hardcodata.
+    # Nu afecteaza simbolurile existente (deja in _INDEX_PIP) — loop-ul le sare.
+    import strategy.signals as _sig_mod
+    _FX_CODES = {"USD","EUR","GBP","JPY","AUD","CAD","CHF","NZD",
+                 "SGD","HKD","NOK","SEK","DKK","TRY","ZAR","MXN"}
+    for _mkt, _sym_mt5 in resolved.items():
+        if _mkt in _sig_mod._INDEX_PIP:
+            continue  # deja inregistrat corect
+        if len(_mkt) == 6 and _mkt[:3] in _FX_CODES and _mkt[3:] in _FX_CODES:
+            continue  # forex standard — fallback pip_size() e corect (0.0001 / 0.01 JPY)
+        # Non-forex necunoscut (indice, crypto, marfa): citeste din MT5
+        if _mt5_exec is not None:
+            _sinfo = _mt5_exec.symbol_info(_sym_mt5)
+            if _sinfo is not None and _sinfo.point > 0:
+                # Indici (digits <= 2, ex: NAS100, DAX) → pip = 1.0 (conventional in engine)
+                # Crypto/marfa cu zecimale → pip = point (ex: ETHUSD point=0.01)
+                _pip_auto = 1.0 if _sinfo.digits <= 2 else _sinfo.point
+                _sig_mod._INDEX_PIP[_mkt] = _pip_auto
+                log.info(f"[PIP_AUTO] {_mkt}: pip_size={_pip_auto} inregistrat din MT5 "
+                         f"(digits={_sinfo.digits}, point={_sinfo.point})")
+            else:
+                log.warning(f"[PIP_AUTO] {_mkt}: simbol necunoscut in MT5 — "
+                            f"pip_size fallback forex (0.0001). Adauga manual in _INDEX_PIP.")
     log.info("Pornit. Ctrl+C pentru oprire.\n")
 
     bar_min = session_cfg["bar_minutes"]

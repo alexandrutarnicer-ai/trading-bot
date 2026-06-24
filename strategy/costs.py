@@ -1,8 +1,11 @@
+import logging
 import pandas as pd
 
 from strategy.signals import pip_size
 
 CONTRACT = 100_000
+_costs_log = logging.getLogger("strategy.costs")
+_WARNED_UNKNOWN: set = set()   # evita spam in log la fiecare bara
 BASE_USD_APROX = {"GBP": 1.27, "EUR": 1.10, "AUD": 0.66, "USD": 1.0}
 
 # Specificatii reale din MT5 (trade_tick_size, trade_tick_value_usd).
@@ -65,7 +68,16 @@ def pip_value_usd(symbol, price, usdjpy_rate=None):
         return tick_value_usd / tick_size      # USD per 1 punct per lot
     if symbol in _CRYPTO_TICK:
         return _CRYPTO_TICK[symbol]            # tick_value_usd direct (pip = tick_size)
-    # ---- forex (cod neschimbat) ----
+    # ---- forex sau simbol necunoscut ----
+    _FX_Q = {"USD","EUR","GBP","JPY","AUD","CAD","CHF","NZD"}
+    _looks_non_forex = not (len(symbol) == 6 and symbol[3:] in _FX_Q)
+    if _looks_non_forex and symbol not in _WARNED_UNKNOWN:
+        _costs_log.warning(
+            "pip_value_usd(%s): simbol neregistrat in _INDEX_TICK/_CRYPTO_TICK — "
+            "backtest foloseste formula forex (inexact). "
+            "Adauga in _INDEX_TICK din strategy/costs.py pentru acuratete.", symbol
+        )
+        _WARNED_UNKNOWN.add(symbol)
     pip = pip_size(symbol)
     val_in_quote = pip * CONTRACT
     quote = symbol[3:]
