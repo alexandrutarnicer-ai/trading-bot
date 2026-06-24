@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
-import { RefreshCw, TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { RefreshCw, TrendingUp, TrendingDown, Minus, Play } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
+import { apiFetch } from "../api/client";
 import { useSessions, useBotStatus, useMt5Status, useWeeklyStats, useFrequencyEstimate } from "../api/hooks";
 import { BotStatusBar } from "../components/BotStatusBar";
 import { SessionCard } from "../components/SessionCard";
@@ -119,6 +120,7 @@ export function Dashboard() {
   const { data: freqData } = useFrequencyEstimate(botStatus?.active_profile_id ?? undefined);
   const [selectedSession, setSelectedSession] = useState<string>("session3");
   const [now, setNow] = useState(Date.now());
+  const [runningMissing, setRunningMissing] = useState(false);
   const qc = useQueryClient();
 
   const estimatedFreq = (freqData?.per_week != null)
@@ -140,6 +142,24 @@ export function Dashboard() {
 
   function refresh() {
     qc.invalidateQueries();
+  }
+
+  async function runMissingBacktests(onDone?: () => void) {
+    if (runningMissing) return;
+    setRunningMissing(true);
+    try {
+      const profileId = botStatus?.active_profile_id ?? "standard";
+      await apiFetch(`/backtest/run-missing`, {
+        method: "POST",
+        body: { profile_id: profileId },
+      });
+      qc.invalidateQueries({ queryKey: ["frequency-estimate"] });
+      if (onDone) onDone();
+    } catch (e) {
+      console.error("run-missing failed", e);
+    } finally {
+      setRunningMissing(false);
+    }
   }
 
   const profileLabel = botStatus?.active_profile_name ?? "Standard";
@@ -228,13 +248,21 @@ export function Dashboard() {
                 }
               </div>
               {missing.length > 0 && (
-                <div
-                  title={`${missing.length} sesiuni fără backtest (nu contribuie la estimat):\n${missingTooltip}`}
-                  className="flex-shrink-0 flex items-center gap-1.5 bg-warn/10 border border-warn/30 rounded-lg px-2.5 py-1.5 cursor-default"
+                <button
+                  onClick={() => runMissingBacktests()}
+                  disabled={runningMissing}
+                  title={`${missing.length} sesiuni fără backtest:\n${missingTooltip}\n\nClick pentru a rula backtestele automat`}
+                  className="flex-shrink-0 flex items-center gap-1.5 bg-warn/10 border border-warn/30 rounded-lg px-2.5 py-1.5 hover:bg-warn/20 transition-colors disabled:opacity-50"
                 >
-                  <span className="text-warn text-xs font-bold">{missing.length}</span>
-                  <span className="text-warn/70 text-[10px]">fără date</span>
-                </div>
+                  {runningMissing
+                    ? <span className="text-warn text-[10px]">Se calculează...</span>
+                    : <>
+                        <Play size={10} className="text-warn fill-warn" />
+                        <span className="text-warn text-xs font-bold">{missing.length}</span>
+                        <span className="text-warn/70 text-[10px]">fără date</span>
+                      </>
+                  }
+                </button>
               )}
             </div>
             {/* Card lună */}

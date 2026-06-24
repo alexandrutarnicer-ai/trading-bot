@@ -445,6 +445,136 @@ def run_backtest(body: dict):
     return {"job_id": job_id}
 
 
+@router.post("/run-missing")
+def run_missing_backtests(body: dict = {}):
+    """Triggerează backteste pentru sesiunile fără backtest recent (execute_trades=True)."""
+    profile_id = body.get("profile_id", "")
+    _PROFILES_DIR = os.path.join(DATA_DIR, "profiles")
+    _ACTIVE_FILE  = os.path.join(DATA_DIR, "active_profile.json")
+    _PAUSED_FILE  = os.path.join(DATA_DIR, "paused_sessions.json")
+
+    if not profile_id:
+        try:
+            if os.path.exists(_ACTIVE_FILE):
+                profile_id = json.load(open(_ACTIVE_FILE, encoding="utf-8")).get("id", "")
+        except Exception:
+            pass
+    if not profile_id:
+        profile_id = "standard"
+
+    pfile = os.path.join(_PROFILES_DIR, f"{profile_id}.json")
+    if not os.path.exists(pfile):
+        return {"job_ids": [], "triggered": 0}
+    profile = json.load(open(pfile, encoding="utf-8"))
+    start_balance = float(profile.get("start_balance", 1000))
+
+    paused: list = []
+    try:
+        if os.path.exists(_PAUSED_FILE):
+            paused = json.load(open(_PAUSED_FILE, encoding="utf-8"))
+    except Exception:
+        pass
+
+    with _jobs_lock:
+        jobs_done = [j for j in reversed(_jobs_list) if j.get("status") == "done"]
+    latest_job: dict[str, dict] = {}
+    for j in jobs_done:
+        sid = j.get("session_id", "")
+        if sid and sid not in latest_job:
+            latest_job[sid] = j
+
+    job_ids = []
+    for ps in profile.get("sessions", []):
+        sess_id  = ps.get("id", "")
+        sess_key = ps.get("session_key", "")
+        if not ps.get("execute_trades", True):
+            continue
+        if sess_key in paused:
+            continue
+        if sess_id in latest_job:
+            continue
+
+        # Construieste session_cfg din profil
+        session_cfg = {
+            "id":              sess_id,
+            "session_key":     sess_key,
+            "label":           ps.get("label", sess_id),
+            "markets":         ps.get("markets", []),
+            "entry_tf":        ps.get("entry_tf", "M15"),
+            "trend_tf":        ps.get("trend_tf", "M30"),
+            "direction":       ps.get("direction", "LONG"),
+            "pullback_window": ps.get("pullback_window", 8),
+            "session_start":   ps.get("session_start", 8),
+            "session_end":     ps.get("session_end", 18),
+            "skip_hours":      ps.get("skip_hours", []),
+            "skip_weekdays":   ps.get("skip_weekdays", []),
+            "expire_bars":     ps.get("expire_bars", 4),
+            "execute_trades":  True,
+            "only_long":       ps.get("direction", "LONG") == "LONG",
+            "rsi_enabled":     ps.get("rsi_enabled", True),
+            "rsi_buy_min":     ps.get("rsi_buy_min", 40),
+            "rsi_buy_max":     ps.get("rsi_buy_max", 65),
+            "rsi_sell_min":    ps.get("rsi_sell_min", 35),
+            "rsi_sell_max":    ps.get("rsi_sell_max", 60),
+            "ema_alignment_enabled":    ps.get("ema_alignment_enabled", True),
+            "body_strength_enabled":    ps.get("body_strength_enabled", False),
+            "body_strength_min_atr_ratio": ps.get("body_strength_min_atr_ratio", 0.15),
+            "r_base": ps.get("r_base", 2.5), "r_mid": ps.get("r_mid", 3.5),
+            "r_top":  ps.get("r_top",  4.5), "r_max": ps.get("r_max", 5.5),
+            "r_mid_threshold": ps.get("r_mid_threshold", 1),
+            "r_top_threshold": ps.get("r_top_threshold", 2),
+            "r_max_threshold": ps.get("r_max_threshold", 3),
+            "account_fraction": ps.get("account_fraction", 0.1),
+            "risk_pct":  ps.get("risk_pct",  0.01),
+            "break_even_enabled":   ps.get("break_even_enabled", False),
+            "be_trigger_pct":       ps.get("be_trigger_pct",  80),
+            "be_lock1_pct":         ps.get("be_lock1_pct",    30),
+            "be_lock2_pct":         ps.get("be_lock2_pct",    50),
+            "be_phase2_zone_pct":   ps.get("be_phase2_zone_pct", 40),
+            "be_phase2_enabled":    ps.get("be_phase2_enabled", True),
+            "flag_enabled":         ps.get("flag_enabled", False),
+            "inside_bar_enabled":   ps.get("inside_bar_enabled", False),
+            "min_bars_between_trades":  ps.get("min_bars_between_trades", 0),
+            "max_concurrent_per_market": ps.get("max_concurrent_per_market", 1),
+        }
+
+        # Range implicit: 5 ani
+        date_from = "2021-01-01"
+        date_to   = datetime.now().strftime("%Y-%m-%d")
+
+        job_id = str(uuid.uuid4())[:8]
+        new_job = {
+            "job_id":       job_id,
+            "status":       "pending",
+            "session_id":   sess_id,
+            "session_label": session_cfg["label"],
+            "markets":      session_cfg["markets"],
+            "entry_tf":     session_cfg["entry_tf"],
+            "trend_tf":     session_cfg["trend_tf"],
+            "direction":    session_cfg["direction"],
+            "started_at":   datetime.now().isoformat(timespec="seconds"),
+            "completed_at": None,
+            "date_from":    date_from,
+            "date_to":      date_to,
+            "start_balance": start_balance,
+            "error":        None,
+            "results":      None,
+        }
+        with _jobs_lock:
+            _jobs_list.insert(0, new_job)
+            _save_to_file(_jobs_list)
+
+        t = threading.Thread(
+            target=_run_backtest_job,
+            args=(job_id, session_cfg, date_from, date_to, start_balance),
+            daemon=True,
+        )
+        t.start()
+        job_ids.append(job_id)
+
+    return {"job_ids": job_ids, "triggered": len(job_ids)}
+
+
 @router.get("/jobs")
 def list_jobs():
     with _jobs_lock:

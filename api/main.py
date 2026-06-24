@@ -8,6 +8,7 @@ Pornire:
     python api/main.py
     sau
     uvicorn api.main:app --reload --port 8000
+
 """
 
 import sys
