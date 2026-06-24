@@ -53,6 +53,24 @@ function StatCard({ label, value, sub, today, yesterday, accent = "text-white", 
   );
 }
 
+function PnlCard({ todayUsd, yesterdayUsd }: { todayUsd: number; yesterdayUsd: number }) {
+  const fmtUsd = (v: number) =>
+    `${v >= 0 ? "+" : ""}${v.toLocaleString("ro-RO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} $`;
+  const todayColor   = todayUsd   > 0 ? "text-profit" : todayUsd   < 0 ? "text-loss" : "text-slate-400";
+  const yesterdColor = yesterdayUsd > 0 ? "text-profit/70" : yesterdayUsd < 0 ? "text-loss/70" : "text-slate-500";
+  return (
+    <div className="flex-1 min-w-0 text-left px-4 py-3 rounded-xl border border-surface-border bg-surface-card cursor-default">
+      <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">P&L USD</div>
+      <div className={`text-2xl font-bold font-mono tabular-nums ${todayColor}`}>
+        {fmtUsd(todayUsd)}
+      </div>
+      <div className={`flex items-center gap-1 mt-1 text-[10px] ${yesterdColor}`}>
+        Ieri: <strong>{fmtUsd(yesterdayUsd)}</strong>
+      </div>
+    </div>
+  );
+}
+
 export function TradingStatsPanel({ sessions }: Props) {
   const [expanded, setExpanded] = useState<"signals" | "trades" | null>(null);
 
@@ -67,6 +85,10 @@ export function TradingStatsPanel({ sessions }: Props) {
   const winRate        = totalWins + totalLosses > 0
     ? Math.round(totalWins / (totalWins + totalLosses) * 100)
     : null;
+
+  const hasPnl       = sessions.some(x => x.pnl_usd_today != null || x.pnl_usd_yesterday != null);
+  const pnlToday     = sessions.reduce((s, x) => s + (x.pnl_usd_today    ?? 0), 0);
+  const pnlYesterday = sessions.reduce((s, x) => s + (x.pnl_usd_yesterday ?? 0), 0);
 
   const toggle = (key: "signals" | "trades") =>
     setExpanded(prev => (prev === key ? null : key));
@@ -103,6 +125,9 @@ export function TradingStatsPanel({ sessions }: Props) {
           value={totalLosses}
           accent="text-loss"
         />
+        {hasPnl && (
+          <PnlCard todayUsd={pnlToday} yesterdayUsd={pnlYesterday} />
+        )}
       </div>
 
       {/* Expandable breakdown */}
