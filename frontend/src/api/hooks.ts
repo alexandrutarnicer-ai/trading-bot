@@ -31,15 +31,19 @@ export const useWeeklyStats = () =>
     queryKey: ["weekly-stats"],
     queryFn:  () => apiFetch("/sessions/weekly_stats"),
     refetchInterval: POLL,
-    refetchIntervalInBackground: true,
   });
 
+export interface FrequencyEstimate {
+  per_week:  number | null;
+  per_month: number | null;
+  missing:   Array<{ id: string; markets: string[] }>;
+}
+
 export const useFrequencyEstimate = (profileId?: string) =>
-  useQuery<{ per_week: number | null; per_month: number | null }>({
+  useQuery<FrequencyEstimate>({
     queryKey: ["frequency-estimate", profileId ?? ""],
     queryFn:  () => apiFetch(`/sessions/frequency-estimate${profileId ? `?profile_id=${profileId}` : ""}`),
     refetchInterval: POLL,
-    refetchIntervalInBackground: true,
   });
 
 export const useSignals = (sessionId: string) =>
@@ -249,7 +253,6 @@ export const useMt5Status = () =>
     queryKey: ["mt5-status"],
     queryFn:  () => apiFetch("/mt5/status"),
     refetchInterval: POLL,
-    refetchIntervalInBackground: true,
     retry: false,
   });
 

@@ -248,17 +248,20 @@ def frequency_estimate(profile_id: str = ""):
 
     total_per_week = 0.0
     has_any = False
+    missing: list[dict] = []   # sesiuni fara backtest
 
     for ps in profile.get("sessions", []):
         sess_key = ps.get("session_key", "")
         sess_id  = ps.get("id", "")           # ex: "S2"
+        markets  = ps.get("markets", [])
 
-        # Sesiunile pe pauza nu contribuie
+        # Sesiunile pe pauza nu contribuie si nu apar ca "lipsa"
         if sess_key in paused:
             continue
 
         job = latest_job.get(sess_id)
         if not job:
+            missing.append({"id": sess_id, "markets": markets})
             continue
 
         r = job.get("results") or {}
@@ -267,6 +270,7 @@ def frequency_estimate(profile_id: str = ""):
         date_to      = r.get("date_to")
 
         if not total_trades or not date_from or not date_to:
+            missing.append({"id": sess_id, "markets": markets})
             continue
 
         try:
@@ -274,18 +278,18 @@ def frequency_estimate(profile_id: str = ""):
             d_to   = datetime.strptime(date_to,   "%Y-%m-%d")
             days   = (d_to - d_from).days
             if days <= 0:
+                missing.append({"id": sess_id, "markets": markets})
                 continue
             total_per_week += total_trades / (days / 7)
             has_any = True
         except Exception:
+            missing.append({"id": sess_id, "markets": markets})
             continue
 
-    if not has_any:
-        return {"per_week": None, "per_month": None}
-
     return {
-        "per_week":  round(total_per_week, 1),
-        "per_month": round(total_per_week * (30.44 / 7), 0),
+        "per_week":  round(total_per_week, 1) if has_any else None,
+        "per_month": round(total_per_week * (30.44 / 7), 0) if has_any else None,
+        "missing":   missing,
     }
 
 

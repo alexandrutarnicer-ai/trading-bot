@@ -165,13 +165,22 @@ Cand botul e pornit din CLI (`python live/run_all.py`) fara profil activ, valori
 
 Starea persistenta per sesiune: `state.pkl` (pending dict + counter + tickets MT5 + friday_close_date), `signals.csv` (toate semnalele), `outcomes.csv` (rezultate finale), `generator.log`.
 
+**`_send_telegram(text)` — non-blocking, daemon thread:**
+Toate notificarile Telegram din `signal_generator.py` sunt trimise in `threading.Thread(target=_do_send, daemon=True).start()`. Botul nu asteapta niciodata raspunsul Telegram — timeout-ul de retea (8s) nu afecteaza performanta loop-ului principal.
+
+**Notificare ACTIVAT ordin MT5:**
+La tranzitia `triggered=False → True` (ordinul BUY_STOP/SELL_STOP a fost atins de pret si activat), se trimite Telegram: `ACTIVAT #ticket: LONG/SHORT SYMBOL @ entry | SL ... | TP ... (R)`. Se trimite o singura data per semnal (persitat in `state.pkl` — `triggered=True` previne re-trimiterea). Activ doar cand `execute_trades=True`.
+
 ### `live/run_all.py` — lansator
 
 Porneste S1–S6 ca subprocese independente. La repornire: citeste `data/run_all.pid`, ucide instanta anterioara + toate sesiunile copil via `taskkill /F /T /PID <old>`, asteapta 3s, porneste sesiunile noi. La oprire (Ctrl+C / SIGTERM / SIGBREAK): trimite Telegram, termina toate procesele copil, sterge PID file, sterge `data/news_auto_paused.json`.
 
 Fiecare sesiune are si propriul `session.lock` (PID file per sesiune) care previne doua instante ale aceleiasi sesiuni.
 
-**Telegram start:** Cand botul e pornit din UI (`api/routers/bot.py`), `bot.py` seteaza `env["BOT_API_START"] = "1"` si trimite propriul mesaj Telegram cu profilul si sesiunile active. `run_all.py` verifica variabila si sarita propriul mesaj de start pentru a evita dublura.
+**Telegram start/stop din UI (`api/routers/bot.py`):**
+- Cand pornit din UI: `bot.py` seteaza `env["BOT_API_START"] = "1"` si trimite mesaj Telegram cu profilul si sesiunile active. `run_all.py` verifica variabila si sarita propriul mesaj de start pentru a evita dublura.
+- Cand oprit din UI: `taskkill /F /T` nu declanseaza signal handlers Python, deci `_stop_all()` din `run_all.py` nu ruleaza. `bot.py` trimite el insusi notificarea de stop.
+- **Ambele thread-uri (start + stop) sunt NON-DAEMON** — garantat ca se finalizeaza chiar daca uvicorn face reload intre timp. Stop-ul trimite Telegram **indiferent** de returncode-ul `taskkill` (starea e oricum curatata).
 
 ### `api/` — Dashboard web backend
 
@@ -197,9 +206,10 @@ Fiecare sesiune are si propriul `session.lock` (PID file per sesiune) care previ
 - `data/paused_sessions.json` — lista session_id-urilor pe pauza (ex: `["session1", "session3"]`), persistent peste restart bot
 - `data/news_auto_paused.json` — lista sesiunilor puse automat pe pauza de News Guard, sters la stop bot
 
-**Routere sessions — endpoints noi:**
+**Routere sessions — endpoints:**
 - `POST /sessions/{session_id}/pause` — adauga in `paused_sessions.json`, trimite Telegram
 - `POST /sessions/{session_id}/resume` — sterge din `paused_sessions.json`, trimite Telegram
+- `GET /sessions/frequency-estimate?profile_id=` — calculeaza trades/saptamana + trades/luna din `backtest_jobs.json`. Citeste profilul activ (sau cel specificat), exclude sesiunile pe pauza, returneaza `{per_week, per_month, missing: [{id, markets}]}`. `missing` = sesiuni fara backtest recent (nu contribuie la estimat). Endpoint read-only, zero dependente de bot/MT5. **Trebuie plasat INAINTE de `/{session_id}` routes** (altfel FastAPI il intercepteaza ca session_id).
 - `SessionStatus` include campurile: `paused: bool`, `news_paused: bool`, `news_events: list`, `signals_yesterday: int`, `outcomes_today: int`, `outcomes_yesterday: int` (folosite de TradingStatsPanel pentru trend azi vs ieri)
 
 **Routere data_download — endpoints:**
@@ -359,6 +369,7 @@ Daca numerele se schimba semnificativ → bug introdus, nu progres.
 
 **Dashboard.tsx:** Pagina principala. Afiseaza cont/balance/equity MT5 in header (citit din `useMt5Status`), profil activ, grid sesiuni (SessionCard), SignalFeed cu sume USD calculate per trade, EquityChart. Banner de avertizare galben cand `mt5.algo_trading_enabled === false` — semnale detectate dar ordine blocate in MT5.
 - **Widget frecventa estimata:** 2 carduri vizibile permanent deasupra grid-ului de sesiuni — "Estimat / săptămână" + "Estimat / lună". Calcul bazat pe `GET /sessions/frequency-estimate` (citeste backtest_jobs.json, exclude sesiunile pe pauza). Polleaza la 15s. Afiseaza "—" cand nu exista date backtest.
+- **Badge sesiuni fara date:** Cand unele sesiuni nu au backtest recent, cardul "Estimat / săptămână" afiseaza un badge portocaliu cu numarul lor (ex: "5 fara date") si hover tooltip cu lista exacta (`S12: EURAUD`, etc.).
 
 **SignalFeed.tsx:** Primeste `balanceUsd` si `capitalPct` ca props. Calculeaza `riskUsd = balance × (capitalPct/100) × 0.01`. La TP afiseaza `+3.5R TP (+175 USD)`, la SL afiseaza `-1R SL (-50 USD)`. USD = null daca MT5 deconectat.
 
@@ -389,6 +400,8 @@ Daca numerele se schimba semnificativ → bug introdus, nu progres.
 - **Frecventa trades:** `ResultsGrid` afiseaza un rand "Frecvență: X.X trades/săpt · Y.Y trades/lună · Z zile testate" calculat din `total_trades / (days / 7)`. Identic si in `HistoryPage.tsx`.
 
 **App.tsx — persistenta stare taburi:** Taburile Dashboard / Profile / Audit sunt ascunse cu CSS `hidden` (nu cu conditional rendering). Componentele raman montate permanent — `useState`, acordeoanele deschise si editarile nesalvate din ProfilePage supravietuiesc navigarii intre taburi fara niciun prop drilling.
+- **React Query `gcTime: 90_000`** — elibereaza cache dupa 90 secunde (vs 5 minute default). Reduce amprenta de memorie cand pagina e deschisa ore intregi cu polling constant.
+- **`refetchIntervalInBackground: true`** doar pe `useBotStatus` si `useSessions` (date critice). `useWeeklyStats`, `useFrequencyEstimate`, `useMt5Status` nu mai polleaza in background (tab minimizat/ascuns). Previne acumularea de memorie overnight.
 
 **ProfilePage.tsx:** Pagina Profile. Buton Salveaza/Reset apare atat in header cat si **la finalul listei de sesiuni** (duplicat de jos pentru scroll lung). Starea editarilor (`dirty`) e pastrata cand userul navigheaza la alt tab si revine.
 

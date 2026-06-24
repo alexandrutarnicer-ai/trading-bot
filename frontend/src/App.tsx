@@ -12,6 +12,7 @@ const qc = new QueryClient({
       retry: 1,
       staleTime: 0,
       refetchOnWindowFocus: true,
+      gcTime: 90_000, // curata cache dupa 90s (default 5min) — reduce memoria in timp
     },
   },
 });

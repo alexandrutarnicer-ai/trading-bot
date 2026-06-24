@@ -184,7 +184,7 @@ def start_bot(body: Optional[dict] = Body(default=None)):
         except Exception:
             pass
         tg.send_message("\n".join(lines))
-    threading.Thread(target=_notify_start, daemon=True).start()
+    threading.Thread(target=_notify_start).start()
 
     return {"started": True, "pid": proc.pid, "profile_id": profile_id}
 
@@ -227,17 +227,17 @@ def stop_bot():
     profile_name = ap.get("name") or "necunoscut"
     _clear_active_profile()
 
-    # Trimite notificare Telegram in background (run_all.py nu a apucat sa trimita)
     stopped_ok = result.returncode == 0
-    if stopped_ok:
-        now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
-        def _notify():
-            tg.send_message(
-                f"Bot Trading <b>oprit</b>  {now_str}\n"
-                f"Profil: {profile_name}\n"
-                f"Oprit manual din interfata web."
-            )
-        threading.Thread(target=_notify, daemon=True).start()
+    # Trimite Telegram intotdeauna — starea e deja curatata indiferent de returncode.
+    # Non-daemon: garantat sa se finalizeze chiar daca uvicorn face reload intre timp.
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+    def _notify():
+        tg.send_message(
+            f"Bot Trading <b>oprit</b>  {now_str}\n"
+            f"Profil: {profile_name}\n"
+            f"Oprit manual din interfata web."
+        )
+    threading.Thread(target=_notify).start()
 
     return {"stopped": stopped_ok, "pid": pid}
 

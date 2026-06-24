@@ -14,6 +14,7 @@ import json
 import time
 import pickle
 import logging
+import threading
 import subprocess
 import urllib.request
 from datetime import datetime, timedelta
@@ -64,24 +65,28 @@ def _get_tg_creds() -> tuple[str, str]:
 
 
 def _send_telegram(text: str) -> None:
-    """Trimite mesaj Telegram. Non-blocking, esecul e ignorat silentios."""
+    """Trimite mesaj Telegram in daemon thread — complet non-blocking pentru bot."""
     token, chat_id = _get_tg_creds()
     if not token or not chat_id:
         return
-    try:
-        payload = json.dumps({
-            "chat_id":    chat_id,
-            "text":       text,
-            "parse_mode": "HTML",
-        }).encode()
-        req = urllib.request.Request(
-            f"https://api.telegram.org/bot{token}/sendMessage",
-            data=payload,
-            headers={"Content-Type": "application/json"},
-        )
-        urllib.request.urlopen(req, timeout=5)
-    except Exception:
-        pass
+
+    def _do_send():
+        try:
+            payload = json.dumps({
+                "chat_id":    chat_id,
+                "text":       text,
+                "parse_mode": "HTML",
+            }).encode()
+            req = urllib.request.Request(
+                f"https://api.telegram.org/bot{token}/sendMessage",
+                data=payload,
+                headers={"Content-Type": "application/json"},
+            )
+            urllib.request.urlopen(req, timeout=8)
+        except Exception:
+            pass
+
+    threading.Thread(target=_do_send, daemon=True).start()
 
 
 def _calc_lots(symbol: str, entry: float, sl: float,
@@ -754,6 +759,19 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                     p["triggered_at"] = bar["time"]
                     log.info(f"  TRIGGERAT: {sig_id} {symbol} "
                              f"{'LONG' if d==1 else 'SHORT'} @ {p['entry']:.5f}")
+                    # Notificare Telegram: ordin activat in MT5 (doar execute_trades=True)
+                    if execute_trades:
+                        _ticket = state.get("mt5_tickets", {}).get(sig_id)
+                        _ticket_str = f" #{_ticket}" if _ticket else ""
+                        _fmt = ".2f" if p["entry"] > 100 else ".5f"
+                        _dir = "LONG" if d == 1 else "SHORT"
+                        _send_telegram(
+                            f"<b>ACTIVAT{_ticket_str}: {_dir} {symbol}</b>\n"
+                            f"Entry {format(p['entry'], _fmt)} | "
+                            f"SL {format(p['sl'], _fmt)} | "
+                            f"TP {format(p['tp'], _fmt)} ({p['r_ratio']:.1f}R)\n"
+                            f"<i>{session_id} | {sig_id}</i>"
+                        )
                     break
 
         if p.get("triggered") and sig_id not in rows_to_remove:

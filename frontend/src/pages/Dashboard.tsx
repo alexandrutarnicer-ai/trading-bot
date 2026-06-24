@@ -197,26 +197,50 @@ export function Dashboard() {
       )}
 
       {/* Frecventa estimata trades */}
-      <div className="grid grid-cols-2 gap-3">
-        <div className="bg-surface-card rounded-xl border border-surface-border px-5 py-3 flex items-center gap-4">
-          <div className="flex-1">
-            <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Estimat / săptămână</p>
-            {estimatedFreq
-              ? <p className="text-2xl font-bold font-mono text-white">~{estimatedFreq.perWeek.toFixed(1)} <span className="text-sm font-normal text-slate-400">trades</span></p>
-              : <p className="text-2xl font-bold font-mono text-slate-600">—</p>
-            }
+      {(() => {
+        const missing = freqData?.missing ?? [];
+        const missingTooltip = missing.length > 0
+          ? missing.map(m => `${m.id}: ${m.markets.join(", ")}`).join("\n")
+          : "";
+        return (
+          <div className="grid grid-cols-2 gap-3">
+            {/* Card săptămână */}
+            <div className="bg-surface-card rounded-xl border border-surface-border px-5 py-3 flex items-center justify-between gap-4">
+              <div>
+                <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Estimat / săptămână</p>
+                {estimatedFreq
+                  ? <p className="text-2xl font-bold font-mono text-white">~{estimatedFreq.perWeek.toFixed(1)} <span className="text-sm font-normal text-slate-400">trades</span></p>
+                  : <p className="text-2xl font-bold font-mono text-slate-600">—</p>
+                }
+              </div>
+              {missing.length > 0 && (
+                <div
+                  title={`${missing.length} sesiuni fără backtest (nu contribuie la estimat):\n${missingTooltip}`}
+                  className="flex-shrink-0 flex items-center gap-1.5 bg-warn/10 border border-warn/30 rounded-lg px-2.5 py-1.5 cursor-default"
+                >
+                  <span className="text-warn text-xs font-bold">{missing.length}</span>
+                  <span className="text-warn/70 text-[10px]">fără date</span>
+                </div>
+              )}
+            </div>
+            {/* Card lună */}
+            <div className="bg-surface-card rounded-xl border border-surface-border px-5 py-3 flex items-center justify-between gap-4">
+              <div>
+                <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Estimat / lună</p>
+                {estimatedFreq
+                  ? <p className="text-2xl font-bold font-mono text-white">~{estimatedFreq.perMonth.toFixed(0)} <span className="text-sm font-normal text-slate-400">trades</span></p>
+                  : <p className="text-2xl font-bold font-mono text-slate-600">—</p>
+                }
+              </div>
+              {missing.length > 0 && (
+                <div className="flex-shrink-0 text-[10px] text-slate-600 text-right leading-tight max-w-[120px]">
+                  {missing.map(m => m.markets[0]).join(", ")}
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-        <div className="bg-surface-card rounded-xl border border-surface-border px-5 py-3 flex items-center gap-4">
-          <div className="flex-1">
-            <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Estimat / lună</p>
-            {estimatedFreq
-              ? <p className="text-2xl font-bold font-mono text-white">~{estimatedFreq.perMonth.toFixed(0)} <span className="text-sm font-normal text-slate-400">trades</span></p>
-              : <p className="text-2xl font-bold font-mono text-slate-600">—</p>
-            }
-          </div>
-        </div>
-      </div>
+        );
+      })()}
 
       {/* Sessions grid */}
       <div>
