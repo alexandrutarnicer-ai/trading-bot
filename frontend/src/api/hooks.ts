@@ -79,6 +79,8 @@ export const useProfile = (id: string) =>
     queryKey: ["profile", id],
     queryFn:  () => apiFetch(`/profiles/${id}`),
     enabled:  !!id,
+    staleTime: Infinity,         // nu re-fetch automat — profilul e un editor, nu date live
+    refetchOnWindowFocus: false, // alt-tab nu suprascrie editarile nesalvate
   });
 
 export const useMeta = () =>

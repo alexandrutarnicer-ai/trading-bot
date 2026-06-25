@@ -51,6 +51,27 @@ const DEFAULT_SESSION = (id: string): ProfileSession => ({
   r_top_threshold: 2,
   r_max_threshold: 3,
   backtest_results: null,
+  // Campuri optionale — default explicit pentru a evita undefined in JSON
+  friday_close_enabled: true,
+  friday_close_hour:    20,
+  news_protection_enabled: false,
+  news_impact_level:    2,
+  news_pre_minutes:     15,
+  news_post_minutes:    15,
+  max_concurrent_per_market: 1,
+  min_bars_between_trades:   0,
+  break_even_enabled:   false,
+  be_phase2_enabled:    true,
+  be_trigger_pct:       80,
+  be_lock1_pct:         30,
+  be_lock2_pct:         50,
+  be_phase2_zone_pct:   40,
+  flag_enabled:         false,
+  flag_r_ratio:         2.5,
+  flag_risk_pct:        0.01,
+  inside_bar_enabled:   false,
+  inside_bar_r_ratio:   2.0,
+  inside_bar_risk_pct:  0.01,
 });
 
 const PROFILE_TIP =
@@ -80,10 +101,13 @@ export function ProfilePage({
   const [dirty, setDirty] = useState(false);
 
   useEffect(() => {
-    if (serverProfile) {
+    // Nu suprascriem draft-ul daca utilizatorul are modificari nesalvate (dirty).
+    // Profilul se re-incarca doar la load initial sau dupa un save explicit
+    // (invalidateQueries din useSaveProfile.onSuccess seteaza dirty=false inainte).
+    if (serverProfile && !dirty) {
       setDraft(serverProfile);
-      setDirty(false);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serverProfile]);
 
   // Aplica configuratia primita din Audit ("Aplica config")
@@ -198,11 +222,19 @@ export function ProfilePage({
     setDirty(true);
   };
 
+  // Asigura ca toate campurile optionale au valori explicite (nu undefined).
+  // undefined e omis din JSON.stringify → campul dispare din fisier la salvare.
+  const normalizeSession = (s: ProfileSession): ProfileSession => ({
+    ...DEFAULT_SESSION(s.id),  // defaults pentru orice camp lips
+    ...s,                       // valorile reale ale sesiunii le suprascriu
+  });
+
   const handleSave = async () => {
     if (!draft) return;
     setSaveError(null);
     try {
-      await save.mutateAsync({ id: draft.id, data: draft });
+      const normalized = { ...draft, sessions: draft.sessions.map(normalizeSession) };
+      await save.mutateAsync({ id: normalized.id, data: normalized });
       setDirty(false);
     } catch (e: unknown) {
       setSaveError(e instanceof Error ? e.message : "Eroare la salvare");
