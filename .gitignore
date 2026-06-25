@@ -3,6 +3,7 @@ data/*
 !data/profiles/
 data/profiles/*
 !data/profiles/standard.json
+!data/crypto_specs.json
 !data/live_signals/
 data/live_signals/**
 !data/live_signals/session*/
