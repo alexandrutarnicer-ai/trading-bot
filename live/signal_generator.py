@@ -66,6 +66,13 @@ def _get_tg_creds() -> tuple[str, str]:
 
 def _send_telegram(text: str) -> None:
     """Trimite mesaj Telegram in daemon thread — complet non-blocking pentru bot."""
+    # Logheaza in notification store (independent de Telegram)
+    try:
+        from api.notifications import log_notification
+        log_notification(text)
+    except Exception:
+        pass
+
     token, chat_id = _get_tg_creds()
     if not token or not chat_id:
         return

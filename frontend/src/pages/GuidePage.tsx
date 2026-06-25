@@ -366,14 +366,16 @@ function SignalLifecycleDiagram() {
 // ── Table of contents ─────────────────────────────────────────────────────────
 
 const TOC = [
-  { id: "overview",   label: "1. Prezentare generală" },
-  { id: "dashboard",  label: "2. Dashboard" },
-  { id: "profile",    label: "3. Profile & Sesiuni" },
-  { id: "audit",      label: "4. Audit & Backteste" },
-  { id: "strategy",   label: "5. Strategia" },
-  { id: "risk",       label: "6. Gestionare risc" },
-  { id: "config",     label: "7. Configurare avansată" },
-  { id: "signals",    label: "8. Semnale & Ordine" },
+  { id: "overview",      label: "1. Prezentare generală" },
+  { id: "dashboard",     label: "2. Dashboard" },
+  { id: "profile",       label: "3. Profile & Sesiuni" },
+  { id: "audit",         label: "4. Audit & Backteste" },
+  { id: "strategy",      label: "5. Strategia" },
+  { id: "risk",          label: "6. Gestionare risc" },
+  { id: "config",        label: "7. Configurare avansată" },
+  { id: "signals",       label: "8. Semnale & Ordine" },
+  { id: "notifications", label: "9. Notificări" },
+  { id: "reports",       label: "10. Rapoarte" },
 ];
 
 // ── Page ──────────────────────────────────────────────────────────────────────
@@ -572,8 +574,7 @@ export function GuidePage() {
 
           <SubSection title="Signal Feed">
             <p>
-              Panoul din stânga-jos listează ultimele 30 de semnale ale sesiunii selectate.
-              Fiecare rând arată:
+              Panoul din stânga-jos listează semnalele recente. Implicit afișează <strong className="text-white">toate sesiunile</strong> (butonul <Badge color="bg-blue-500/20 text-blue-300" label="ALL" /> activ). Poți selecta o sesiune individuală din rândul de butoane de mai jos.
             </p>
             <div className="space-y-1.5 text-xs">
               <div className="flex items-center gap-3">
@@ -589,8 +590,7 @@ export function GuidePage() {
               <KV k="+175 USD" v="Profit în USD (dacă MT5 conectat și execute=true)" vColor="text-profit" />
             </div>
             <Note>
-              Suma în USD se calculează din: <code className="text-blue-300">balance × capital% × 1% risc × R</code>.
-              Este doar o estimare — suma reală vine din MT5 via câmpul <code className="text-blue-300">pnl_usd</code>.
+              În modul ALL, suma USD nu se afișează (nu există un singur capital%). Suma în USD se calculează din: <code className="text-blue-300">balance × capital% × 1% risc × R</code> — disponibilă doar când e selectată o sesiune individuală.
             </Note>
           </SubSection>
 
@@ -627,12 +627,14 @@ export function GuidePage() {
             <div className="grid grid-cols-2 gap-3 text-xs">
               <KV k="Total Semnale" v="Toate setup-urile detectate" />
               <KV k="Total Trades" v="Tranzacții cu outcome final" />
-              <KV k="Câștiguri" v="Numărul TP-urilor" vColor="text-profit" />
-              <KV k="Pierderi" v="Numărul SL-urilor" vColor="text-loss" />
+              <KV k="Câștiguri" v="Numărul TP-urilor + ▲/▼ azi vs ieri" vColor="text-profit" />
+              <KV k="Pierderi" v="Numărul SL-urilor + ▲/▼ azi vs ieri" vColor="text-loss" />
               <KV k="P&L USD" v="Suma P&L real azi + ieri (din MT5)" vColor="text-profit" />
             </div>
             <p className="text-xs text-slate-400 mt-2">
               Fiecare card numeric afișează și <em>X azi</em> față de <em>ieri</em> cu indicator trend ▲/▼.
+              Câștigurile și Pierderile au acum trend separat (câștiguri azi vs ieri, pierderi azi vs ieri)
+              — câmpurile <code className="text-blue-300">wins_today</code>, <code className="text-blue-300">wins_yesterday</code>, <code className="text-blue-300">losses_today</code>, <code className="text-blue-300">losses_yesterday</code> din <code className="text-blue-300">SessionStatus</code>.
               Cardul P&L USD apare doar când există date reale MT5 (execute_trades=True + ordine închise).
               Click pe "Total Semnale" sau "Total Trades" expandează breakdownul per sesiune.
             </p>
@@ -801,6 +803,29 @@ export function GuidePage() {
                 </span>
               </div>
             </div>
+          </SubSection>
+
+          <SubSection title="Căutare și ștergere în masă (Backteste)">
+            <p>
+              Headerul secțiunii Backteste include un câmp de căutare și controale de selecție multiplă:
+            </p>
+            <div className="space-y-2 text-xs">
+              <div>
+                <div className="text-[10px] text-slate-500 uppercase mb-1.5">Search bar</div>
+                <KV k="Filtrare" v="Caută în sesiune, piețe, direcție, timeframe (case-insensitive)" />
+                <KV k="Counter" v="Afișează 'X / total' când filtrul e activ" />
+                <KV k="Reset" v="Golind câmpul revine la lista completă" />
+              </div>
+              <div>
+                <div className="text-[10px] text-slate-500 uppercase mb-1.5">Multi-select</div>
+                <KV k="Checkbox per job" v="Disponibil pe joburi Erori + Finalizate" />
+                <KV k="Selectează tot" v="Toggle global — selectează/deselectează toate din lista filtrată" />
+                <KV k="Șterge N selectate" v="Apelează DELETE per job selectat, cu confirmare" />
+              </div>
+            </div>
+            <Note>
+              Checkbox-urile apar doar pe joburile completate sau cu eroare — joburile în rulare nu pot fi șterse.
+            </Note>
           </SubSection>
 
           <SubSection title="Interpretarea rezultatelor backtest">
@@ -1275,6 +1300,177 @@ export function GuidePage() {
               <KV k="NaN pentru" v="expirat, invalidat, sesiuni cu execute_trades=False" />
               <KV k="Backfill" v="scripts/backfill_pnl_usd.py (necesita MT5 conectat)" />
             </div>
+          </SubSection>
+        </Section>
+
+        {/* ── 9. NOTIFICĂRI ── */}
+        <Section id="notifications" title="9. Notificări">
+          <SubSection title="Cum funcționează Notificările">
+            <p>
+              Tab-ul <strong className="text-white">Notificări</strong> prinde automat toate mesajele trimise prin
+              sistemul bot — același conținut ca notificările Telegram, stocat local în
+              <code className="text-blue-300 mx-1">data/notifications.json</code> (max 500 intrări).
+            </p>
+            <p className="text-xs text-slate-400 mt-1">
+              Capturat din două surse independente: <code className="text-blue-300">api/telegram.py</code> (start/stop bot,
+              pauze, watchdog) și <code className="text-blue-300">live/signal_generator.py</code> (semnale, ordine activate,
+              TP/SL, știri). Dacă Telegram nu e configurat, notificările apar totuși în UI.
+            </p>
+          </SubSection>
+
+          <SubSection title="Categorii de notificări">
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              {[
+                { cat: "Ordine",     dot: "bg-profit",    desc: "BUY_STOP / SELL_STOP plasat sau activat în MT5" },
+                { cat: "Tranzacții", dot: "bg-profit/70", desc: "TP, SL, vineri_close, news_close" },
+                { cat: "Semnale",    dot: "bg-blue-400",  desc: "Semnal nou detectat de strategy" },
+                { cat: "Știri",      dot: "bg-warn",      desc: "Pauză automată News Guard, eveniment economic" },
+                { cat: "Sesiuni",    dot: "bg-slate-400", desc: "Pauză / reluare sesiune manuală" },
+                { cat: "Bot",        dot: "bg-blue-300",  desc: "Start / Stop bot, crash watchdog" },
+                { cat: "Sistem",     dot: "bg-slate-500", desc: "Mesaje tehnice neîncadrate în alte categorii" },
+              ].map(({ cat, dot, desc }) => (
+                <div key={cat} className="flex items-start gap-2 bg-surface-card rounded-lg border border-surface-border p-2.5">
+                  <span className={`mt-1 w-2 h-2 rounded-full flex-shrink-0 ${dot}`} />
+                  <div>
+                    <div className="text-[11px] font-semibold text-slate-300">{cat}</div>
+                    <div className="text-[10px] text-slate-500 leading-relaxed">{desc}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </SubSection>
+
+          <SubSection title="Interfața" defaultOpen={false}>
+            <div className="space-y-1.5 text-xs">
+              <KV k="Filtre categorie" v="Apar doar categoriile cu cel puțin o intrare" />
+              <KV k="Grupare pe zile" v="Azi / Ieri / data completă" />
+              <KV k="Timp relativ" v="acum / 5m / 2h / 3z + ora exactă sub card" />
+              <KV k="Extinde / Ascunde" v="Mesajele multi-linie pot fi expandate" />
+              <KV k="Dot necitit" v="Punct colorat în colțul iconiței de categorie" />
+              <KV k="Badge NavBar" v="Numărul de necitite — dot albastru pulsant" />
+            </div>
+            <div className="mt-3 space-y-1.5 text-xs">
+              <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Acțiuni disponibile</div>
+              <KV k="Marchează citite" v="Setează read=true pe toate — badge dispare" />
+              <KV k="× (hover)" v="Șterge o singură notificare" />
+              <KV k="Șterge tot" v="Golește notifications.json (cu confirmare)" />
+            </div>
+            <Note>
+              Notificările persistă peste restart API. Sunt șterse automat când se depășesc 500 (se elimină cele mai vechi).
+            </Note>
+          </SubSection>
+        </Section>
+
+        {/* ── 10. RAPOARTE ── */}
+        <Section id="reports" title="10. Rapoarte">
+          <SubSection title="Prezentare generală">
+            <p>
+              Tab-ul <strong className="text-white">Rapoarte</strong> oferă analiză agregată a activității botului.
+              Nu afectează starea botului — toate cele 4 sub-taburi sunt read-only.
+            </p>
+            <div className="grid grid-cols-2 gap-2 text-xs mt-2">
+              {[
+                { tab: "Tranzacții",     desc: "Toate tranzacțiile live cu filtre" },
+                { tab: "Piețe",          desc: "Clasament simboluri după performanță" },
+                { tab: "Uptime Bot",     desc: "Istoric porniri/opriri cu durate" },
+                { tab: "Modificări",     desc: "Diff parametri la fiecare salvare profil" },
+              ].map(({ tab, desc }) => (
+                <div key={tab} className="bg-surface-card rounded-lg border border-surface-border p-2.5 space-y-0.5">
+                  <div className="text-[11px] font-semibold text-slate-300">{tab}</div>
+                  <div className="text-[10px] text-slate-500">{desc}</div>
+                </div>
+              ))}
+            </div>
+          </SubSection>
+
+          <SubSection title="Tranzacții">
+            <p>
+              Tabel paginat (50/pagină) cu <strong className="text-white">toate outcomes</strong> agregate din toate
+              sesiunile, sortate descrescător după <code className="text-blue-300">exit_time</code>.
+            </p>
+            <div className="space-y-1.5 text-xs mt-2">
+              <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Filtre disponibile</div>
+              <div className="flex flex-wrap gap-1.5">
+                {["TP", "SL", "Deschis", "Expirat", "Vineri", "Știri", "Toate"].map(s => (
+                  <Badge key={s} color="bg-surface-border text-slate-400" label={s} />
+                ))}
+              </div>
+              <div className="flex flex-wrap gap-1.5 mt-1">
+                {["LONG", "SHORT", "Ambele"].map(d => (
+                  <Badge key={d} color="bg-surface-border text-slate-400" label={d} />
+                ))}
+              </div>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-1.5 text-xs">
+              <KV k="Sesiune" v="ID-ul sesiunii (ex: session7)" />
+              <KV k="Simbol" v="Piața tranzacționată" />
+              <KV k="Direcție" v="LONG / SHORT" vColor="text-profit" />
+              <KV k="Entry / Exit" v="Prețurile de intrare și ieșire" />
+              <KV k="Result R" v="R realizat (ex: +3.5 sau -1.0)" />
+              <KV k="P&L USD" v="Profit real din MT5 (NaN = expirat/obs)" />
+            </div>
+          </SubSection>
+
+          <SubSection title="Piețe" defaultOpen={false}>
+            <p>
+              Clasament al simbolurilor după <strong className="text-white">Total R</strong> acumulat (descrescător).
+              Primele 3 locuri primesc pictograme trofeu.
+            </p>
+            <div className="space-y-1.5 text-xs mt-2">
+              <KV k="Trades" v="Total tranzacții cu outcome final" />
+              <KV k="Win Rate" v="(Câștiguri / Total) × 100" />
+              <KV k="Expectancy" v="Media result_r per trade" vColor="text-profit" />
+              <KV k="P&L USD" v="Suma profit real (ordine MT5 închise)" />
+              <KV k="Sesiuni active" v="Câte sesiuni tranzacționează simbolul" />
+            </div>
+            <Tip>
+              Simbolurile cu expectancy negativ constant sunt candidați pentru dezactivare sau schimbare parametri —
+              rulează un backtest cu noii parametri înainte de orice modificare.
+            </Tip>
+          </SubSection>
+
+          <SubSection title="Uptime Bot" defaultOpen={false}>
+            <p>
+              Tabel cu toate evenimentele de start/stop ale botului din <code className="text-blue-300">data/bot_uptime_log.json</code>.
+            </p>
+            <div className="space-y-1.5 text-xs mt-2">
+              <KV k="Data Start" v="Momentul pornirii botului din UI" />
+              <KV k="Data Stop" v="Momentul opririi (null dacă botul rulează)" />
+              <KV k="Durată" v="Ex: 14h 32m — calculat din duration_sec" />
+              <KV k="Profil" v="Profilul activ la momentul pornirii" />
+            </div>
+            <div className="mt-3 space-y-1 text-xs">
+              <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Summary</div>
+              <KV k="Total sesiuni" v="Numărul de porniri înregistrate" />
+              <KV k="Uptime total" v="Suma tuturor duration_sec în ore/zile" />
+              <KV k="Ultima pornire" v="Data celei mai recente sesiuni active" />
+            </div>
+            <Note>
+              Logul se actualizează automat la start/stop din UI. Opriri prin crash (fără click Stop) sunt detectate de watchdog și marcate ca necompletate.
+            </Note>
+          </SubSection>
+
+          <SubSection title="Modificări Sesiuni" defaultOpen={false}>
+            <p>
+              Istoric al tuturor modificărilor de parametri la fiecare salvare profil.
+              Scris în <code className="text-blue-300">data/session_changes_log.json</code> la <code className="text-blue-300">PUT /profiles/{"{profile_id}"}</code>.
+            </p>
+            <div className="bg-surface rounded-lg border border-surface-border p-3 font-mono text-xs space-y-1.5 text-slate-400">
+              <div className="text-[10px] text-slate-500 uppercase mb-2">Exemplu intrare</div>
+              <div><span className="text-slate-500">profil:</span> Standard Profile · <span className="text-slate-500">data:</span> 2026-06-25 14:30</div>
+              <div className="pl-2 space-y-0.5">
+                <div><span className="text-blue-300">S5 — USDCHF:</span></div>
+                <div className="pl-2"><span className="text-loss">pullback_window:</span> <span className="text-slate-500">6</span> → <span className="text-profit">8</span></div>
+                <div className="pl-2"><span className="text-loss">r_base:</span> <span className="text-slate-500">2.5</span> → <span className="text-profit">3.0</span></div>
+              </div>
+            </div>
+            <p className="text-xs text-slate-400 mt-2">
+              Câmpurile nemodificate nu apar în diff. Fiecare acordeon afișează profilul, data
+              și numărul total de câmpuri schimbate per sesiune.
+            </p>
+            <Tip>
+              Util pentru a urmări evoluția configurației și pentru a reveni la parametrii anteriori dacă performanța se degradează după o modificare.
+            </Tip>
           </SubSection>
         </Section>
 

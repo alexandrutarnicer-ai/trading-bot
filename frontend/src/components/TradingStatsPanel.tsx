@@ -85,6 +85,10 @@ export function TradingStatsPanel({ sessions }: Props) {
   const tradesYest     = liveSessions.reduce((s, x) => s + x.outcomes_yesterday, 0);
   const totalWins      = liveSessions.reduce((s, x) => s + x.wins,              0);
   const totalLosses    = liveSessions.reduce((s, x) => s + x.losses,            0);
+  const winsToday      = liveSessions.reduce((s, x) => s + (x.wins_today    ?? 0), 0);
+  const winsYest       = liveSessions.reduce((s, x) => s + (x.wins_yesterday ?? 0), 0);
+  const lossesToday    = liveSessions.reduce((s, x) => s + (x.losses_today    ?? 0), 0);
+  const lossesYest     = liveSessions.reduce((s, x) => s + (x.losses_yesterday ?? 0), 0);
   const winRate        = totalWins + totalLosses > 0
     ? Math.round(totalWins / (totalWins + totalLosses) * 100)
     : null;
@@ -121,11 +125,15 @@ export function TradingStatsPanel({ sessions }: Props) {
         <StatCard
           label="Câștiguri"
           value={totalWins}
+          today={winsToday}
+          yesterday={winsYest}
           accent="text-profit"
         />
         <StatCard
           label="Pierderi"
           value={totalLosses}
+          today={lossesToday}
+          yesterday={lossesYest}
           accent="text-loss"
         />
         {hasPnl && (

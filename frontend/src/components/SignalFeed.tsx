@@ -42,7 +42,7 @@ function statusBadge(o: Outcome, riskUsd: number | null) {
 
 export function SignalFeed({ sessionId, balanceUsd, capitalPct }: Props) {
   const { data: signals, isLoading: loadSig } = useSignals(sessionId);
-  const { data: outcomes } = useOutcomes(sessionId);
+  const { data: outcomes } = useOutcomes(sessionId === "all" ? "" : sessionId);
 
   const outcomeMap = new Map((outcomes ?? []).map(o => [o.signal_id, o]));
 

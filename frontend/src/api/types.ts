@@ -42,6 +42,10 @@ export interface SessionStatus {
   outcomes_yesterday: number;
   wins: number;
   losses: number;
+  wins_today: number;
+  wins_yesterday: number;
+  losses_today: number;
+  losses_yesterday: number;
   paused: boolean;
   news_paused: boolean;
   news_events: Array<{
@@ -317,4 +321,92 @@ export interface DownloadJob {
   results: DownloadFileResult[];
   any_needs_scroll: boolean;
   error: string | null;
+}
+
+// ── Notifications ─────────────────────────────────────────────────────────────
+
+export interface NotificationItem {
+  id: string;
+  time: string;
+  text: string;
+  text_plain: string;
+  category: "order" | "signal" | "news" | "session" | "bot" | "trade" | "system";
+  read: boolean;
+}
+
+export interface NotificationsResponse {
+  items: NotificationItem[];
+  unread: number;
+}
+
+// ── Reports ───────────────────────────────────────────────────────────────────
+
+export interface Transaction {
+  signal_id: string;
+  session_id: string;
+  session_label: string;
+  time_check: string;
+  symbol: string;
+  direction: number;
+  dir_str: string;
+  status: string;
+  entry: number;
+  sl: number;
+  tp: number;
+  r_ratio: number;
+  triggered_at: string | null;
+  exit_price: number | null;
+  exit_time: string | null;
+  result_r: number;
+  pnl_usd: number | null;
+}
+
+export interface TransactionsResponse {
+  items: Transaction[];
+  total: number;
+}
+
+export interface MarketStat {
+  symbol: string;
+  trades: number;
+  wins: number;
+  losses: number;
+  total_r: number;
+  win_rate: number;
+  expectancy: number;
+  pnl_usd: number | null;
+  sessions: string[];
+}
+
+export interface MarketStatsResponse {
+  items: MarketStat[];
+}
+
+export interface UptimeEntry {
+  event: "start" | "stop";
+  time: string;
+  profile: string;
+  stopped_at: string | null;
+  duration_sec: number | null;
+}
+
+export interface UptimeResponse {
+  items: UptimeEntry[];
+}
+
+export interface SessionChangeEntry {
+  id: string;
+  time: string;
+  profile_id: string;
+  profile_name: string;
+  sessions_changed: Array<{
+    session_id: string;
+    session_label: string;
+    markets: string[];
+    changes: Record<string, { from: unknown; to: unknown }>;
+  }>;
+}
+
+export interface SessionChangesResponse {
+  items: SessionChangeEntry[];
 }

@@ -19,7 +19,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.routers import bot, sessions, profiles, backtest, markets, data_download, settings, mt5status
-from api.routers import backtest_history
+from api.routers import backtest_history, notifications, reports
 from api.watchdog import start_watchdog
 
 app = FastAPI(title="Trading Bot API", version="1.0.0")
@@ -46,6 +46,8 @@ app.include_router(data_download.router, prefix="/api")
 app.include_router(settings.router,      prefix="/api")
 app.include_router(mt5status.router,          prefix="/api")
 app.include_router(backtest_history.router,   prefix="/api")
+app.include_router(notifications.router,      prefix="/api")
+app.include_router(reports.router,            prefix="/api")
 
 
 @app.get("/api/health")

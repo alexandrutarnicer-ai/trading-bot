@@ -5,6 +5,8 @@ import { Dashboard } from "./pages/Dashboard";
 import { ProfilePage } from "./pages/ProfilePage";
 import { AuditPage } from "./pages/AuditPage";
 import { GuidePage } from "./pages/GuidePage";
+import { NotificationsPage } from "./pages/NotificationsPage";
+import { ReportsPage } from "./pages/ReportsPage";
 import { useBacktestJobs } from "./api/hooks";
 
 const qc = new QueryClient({
@@ -18,7 +20,7 @@ const qc = new QueryClient({
   },
 });
 
-type Tab = "dashboard" | "profile" | "audit" | "guide";
+type Tab = "dashboard" | "profile" | "notifications" | "audit" | "reports" | "guide";
 
 export interface PendingApply {
   sessionId: string;
@@ -51,8 +53,14 @@ function AppInner() {
           onClearPendingApply={() => setPendingApply(null)}
         />
       </div>
+      <div className={tab === "notifications" ? undefined : "hidden"}>
+        <NotificationsPage />
+      </div>
       <div className={tab === "audit" ? undefined : "hidden"}>
         <AuditPage onApplyConfig={handleApplyConfig} />
+      </div>
+      <div className={tab === "reports" ? undefined : "hidden"}>
+        <ReportsPage />
       </div>
       <div className={tab === "guide" ? undefined : "hidden"}>
         <GuidePage />

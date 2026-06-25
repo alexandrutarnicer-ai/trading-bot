@@ -5,6 +5,8 @@ import type {
   Profile, ProfileSummary, Meta,
   DataCheckResult, DownloadJob, TelegramConfig, Mt5Status,
   BacktestHistoryEntry, BacktestJob, WeeklyStats,
+  NotificationsResponse, TransactionsResponse, MarketStatsResponse,
+  UptimeResponse, SessionChangesResponse,
 } from "./types";
 
 
@@ -50,7 +52,10 @@ export const useFrequencyEstimate = (profileId?: string) =>
 export const useSignals = (sessionId: string) =>
   useQuery<Signal[]>({
     queryKey: ["signals", sessionId],
-    queryFn:  () => apiFetch(`/sessions/${sessionId}/signals?limit=30`),
+    queryFn:  () =>
+      sessionId === "all"
+        ? apiFetch("/sessions/all/signals?limit=50")
+        : apiFetch(`/sessions/${sessionId}/signals?limit=30`),
     refetchInterval: POLL,
   });
 
@@ -59,6 +64,7 @@ export const useOutcomes = (sessionId: string) =>
     queryKey: ["outcomes", sessionId],
     queryFn:  () => apiFetch(`/sessions/${sessionId}/outcomes`),
     refetchInterval: POLL,
+    enabled:  !!sessionId,
   });
 
 export const useEquityCurve = () =>
@@ -338,6 +344,89 @@ export const useDeleteDownloadJob = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["download-jobs"] }),
   });
 };
+
+// ── Notifications ────────────────────────────────────────────────────────────
+
+export const useNotifications = (limit = 100) =>
+  useQuery<NotificationsResponse>({
+    queryKey: ["notifications", limit],
+    queryFn:  () => apiFetch(`/notifications?limit=${limit}`),
+    refetchInterval: 10_000,
+  });
+
+export const useMarkNotificationsRead = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiFetch("/notifications/mark-read", { method: "POST" }),
+    onSuccess:  () => qc.invalidateQueries({ queryKey: ["notifications"] }),
+  });
+};
+
+export const useDeleteNotification = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (nid: string) => apiFetch(`/notifications/${nid}`, { method: "DELETE" }),
+    onSuccess:  () => qc.invalidateQueries({ queryKey: ["notifications"] }),
+  });
+};
+
+export const useClearNotifications = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiFetch("/notifications", { method: "DELETE" }),
+    onSuccess:  () => qc.invalidateQueries({ queryKey: ["notifications"] }),
+  });
+};
+
+// ── Reports ──────────────────────────────────────────────────────────────────
+
+export const useTransactions = (params: {
+  status?: string;
+  symbol?: string;
+  direction?: string;
+  date_from?: string;
+  date_to?: string;
+  session_id?: string;
+  limit?: number;
+  offset?: number;
+}) =>
+  useQuery<TransactionsResponse>({
+    queryKey: ["transactions", params],
+    queryFn:  () => {
+      const qs = new URLSearchParams();
+      if (params.status)     qs.set("status",     params.status);
+      if (params.symbol)     qs.set("symbol",     params.symbol);
+      if (params.direction)  qs.set("direction",  params.direction);
+      if (params.date_from)  qs.set("date_from",  params.date_from);
+      if (params.date_to)    qs.set("date_to",    params.date_to);
+      if (params.session_id) qs.set("session_id", params.session_id);
+      qs.set("limit",  String(params.limit  ?? 200));
+      qs.set("offset", String(params.offset ?? 0));
+      return apiFetch(`/reports/transactions?${qs.toString()}`);
+    },
+    refetchInterval: 30_000,
+  });
+
+export const useMarketStats = () =>
+  useQuery<MarketStatsResponse>({
+    queryKey: ["market-stats"],
+    queryFn:  () => apiFetch("/reports/market-stats"),
+    refetchInterval: 30_000,
+  });
+
+export const useBotUptime = () =>
+  useQuery<UptimeResponse>({
+    queryKey: ["bot-uptime"],
+    queryFn:  () => apiFetch("/reports/uptime"),
+    refetchInterval: 30_000,
+  });
+
+export const useSessionChanges = () =>
+  useQuery<SessionChangesResponse>({
+    queryKey: ["session-changes"],
+    queryFn:  () => apiFetch("/reports/session-changes"),
+    refetchInterval: 30_000,
+  });
 
 // ── Backtest history (legacy) ─────────────────────────────────────────────────
 

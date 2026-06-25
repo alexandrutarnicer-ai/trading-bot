@@ -158,7 +158,7 @@ export function Dashboard() {
   const { data: botStatus } = useBotStatus();
   const { data: mt5 } = useMt5Status();
   const { data: freqData } = useFrequencyEstimate(botStatus?.active_profile_id ?? undefined);
-  const [selectedSession, setSelectedSession] = useState<string>("session3");
+  const [selectedSession, setSelectedSession] = useState<string>("all");
   const [now, setNow] = useState(Date.now());
   const [runningMissing, setRunningMissing] = useState(false);
   const qc = useQueryClient();
@@ -371,9 +371,19 @@ export function Dashboard() {
         <div className="bg-surface-card rounded-xl border border-surface-border p-4">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-semibold text-white">
-              Semnale — {selected?.label ?? "—"}
+              {selectedSession === "all" ? "Semnale — Toate sesiunile" : `Semnale — ${selected?.label ?? "—"}`}
             </h2>
-            <div className="flex gap-1">
+            <div className="flex gap-1 flex-wrap justify-end">
+              <button
+                onClick={() => setSelectedSession("all")}
+                className={`text-[10px] px-2 py-0.5 rounded transition-colors font-medium ${
+                  selectedSession === "all"
+                    ? "bg-blue-500/20 text-blue-400"
+                    : "text-slate-500 hover:text-slate-300"
+                }`}
+              >
+                ALL
+              </button>
               {sessions?.map(s => (
                 <button
                   key={s.id}
@@ -392,7 +402,7 @@ export function Dashboard() {
           <SignalFeed
             sessionId={selectedSession}
             balanceUsd={mt5?.connected ? mt5.balance : null}
-            capitalPct={selected?.capital_pct}
+            capitalPct={selectedSession === "all" ? undefined : selected?.capital_pct}
           />
         </div>
 

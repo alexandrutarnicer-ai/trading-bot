@@ -31,6 +31,13 @@ def _load_credentials() -> tuple[str, str]:
 
 
 def send_message(text: str, parse_mode: str = "HTML") -> bool:
+    # Logheaza in notification store (independent de Telegram)
+    try:
+        from api.notifications import log_notification
+        log_notification(text)
+    except Exception:
+        pass
+
     token, chat_id = _load_credentials()
     if not token or not chat_id:
         return False

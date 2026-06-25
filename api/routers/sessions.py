@@ -131,19 +131,28 @@ _CLOSED_STATUSES = ["TP", "SL", "vineri_close", "news_close"]
 def _outcome_stats(session_id: str) -> dict:
     df = _read_outcomes(session_id)
     if df.empty:
-        return {"total": 0, "wins": 0, "losses": 0, "today": 0, "yesterday": 0,
+        return {"total": 0, "wins": 0, "losses": 0,
+                "wins_today": 0, "wins_yesterday": 0, "losses_today": 0, "losses_yesterday": 0,
+                "today": 0, "yesterday": 0,
                 "pnl_usd_today": None, "pnl_usd_yesterday": None}
     closed = df[df["status"].isin(_CLOSED_STATUSES)]
     today     = str(date.today())
     yesterday = str(date.today() - timedelta(days=1))
     pnl_today = pnl_yest = None
+    wins_today = wins_yest = losses_today = losses_yest = 0
     if "exit_time" in closed.columns and len(closed):
         et = closed["exit_time"].astype(str)
         today_out     = int(et.str.startswith(today).sum())
         yesterday_out = int(et.str.startswith(yesterday).sum())
+        sub_today = closed[et.str.startswith(today)]
+        sub_yest  = closed[et.str.startswith(yesterday)]
+        if len(sub_today):
+            wins_today   = int((sub_today["result_r"] > 0).sum())
+            losses_today = int((sub_today["result_r"] < 0).sum())
+        if len(sub_yest):
+            wins_yest   = int((sub_yest["result_r"] > 0).sum())
+            losses_yest = int((sub_yest["result_r"] < 0).sum())
         if "pnl_usd" in closed.columns:
-            sub_today = closed[et.str.startswith(today)]
-            sub_yest  = closed[et.str.startswith(yesterday)]
             _t = pd.to_numeric(sub_today["pnl_usd"], errors="coerce").dropna()
             _y = pd.to_numeric(sub_yest["pnl_usd"],  errors="coerce").dropna()
             if len(_t): pnl_today = round(float(_t.sum()), 2)
@@ -156,6 +165,10 @@ def _outcome_stats(session_id: str) -> dict:
         "total":            len(closed),
         "wins":             wins,
         "losses":           losses,
+        "wins_today":       wins_today,
+        "wins_yesterday":   wins_yest,
+        "losses_today":     losses_today,
+        "losses_yesterday": losses_yest,
         "today":            today_out,
         "yesterday":        yesterday_out,
         "pnl_usd_today":    pnl_today,
@@ -365,6 +378,36 @@ def frequency_estimate(profile_id: str = ""):
     }
 
 
+@router.get("/all/signals", response_model=list[Signal])
+def get_all_signals(limit: int = 50):
+    """Semnale agregate din toate sesiunile, sortate cronologic (cele mai noi primele)."""
+    all_rows = []
+    for s in SESSIONS:
+        df = _read_signals(s["id"])
+        if df.empty:
+            continue
+        df = df.tail(limit)
+        all_rows.append(df)
+    if not all_rows:
+        return []
+    combined = pd.concat(all_rows, ignore_index=True)
+    combined = combined.sort_values("time", ascending=False).head(limit)
+    result = []
+    for _, row in combined.iterrows():
+        result.append(Signal(
+            signal_id=str(row.get("signal_id", "")),
+            time=str(row.get("time", "")),
+            symbol=str(row.get("symbol", "")),
+            direction=int(row.get("direction", 0)),
+            dir_str=str(row.get("dir_str", "")),
+            entry=float(row.get("entry", 0)),
+            sl=float(row.get("sl", 0)),
+            tp=float(row.get("tp", 0)),
+            r_ratio=float(row.get("r_ratio", 0)),
+        ))
+    return result
+
+
 @router.get("", response_model=list[SessionStatus])
 def list_sessions():
     paused      = _load_paused()
@@ -396,6 +439,10 @@ def list_sessions():
             outcomes_yesterday=out["yesterday"],
             wins=out["wins"],
             losses=out["losses"],
+            wins_today=out["wins_today"],
+            wins_yesterday=out["wins_yesterday"],
+            losses_today=out["losses_today"],
+            losses_yesterday=out["losses_yesterday"],
             paused=s["id"] in paused,
             news_paused=bool(np_entry),
             news_events=np_entry.get("events", []),

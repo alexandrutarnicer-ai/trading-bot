@@ -62,13 +62,14 @@ engine/            — simulare backtest (single.py = un simbol, portfolio.py = 
 live/              — generatoare de semnale live + executor ordine MT5
 api/               — FastAPI backend pentru dashboard web
   routers/         — bot, sessions, profiles, backtest, backtest_history, markets,
-                     data_download, settings, mt5status
+                     data_download, settings, mt5status, notifications, reports
   models.py        — Pydantic models (BotStatus, SessionStatus, etc.)
+  notifications.py — store notificari (thread-safe, max 500, data/notifications.json)
   telegram.py      — helper Telegram (citeste token/chat_id din data/telegram_config.json)
 frontend/          — React + Vite + TypeScript + Tailwind CSS (dark theme)
   src/api/         — types.ts, hooks.ts, client.ts
   src/components/  — BotControl, SessionEditor, BacktestPanel, SignalFeed, etc.
-  src/pages/       — Dashboard, ProfilePage, HistoryPage
+  src/pages/       — Dashboard, ProfilePage, NotificationsPage, ReportsPage, AuditPage, GuidePage
 config/            — standard_profile.json (config backtest legacy — nu modifica)
 data/              — CSV-uri OHLC + output sesiuni live + profiles/ + backtest_history.json
 scripts/           — descarca date, analiza, research, teste (nu pentru productie)
@@ -190,13 +191,15 @@ Fiecare sesiune are si propriul `session.lock` (PID file per sesiune) care previ
 **Routere:**
 - `bot` — `GET /bot/status` (running, pid, sessions_active, active_profile, last_started_at, last_stopped_at), `POST /bot/start`, `POST /bot/stop`
 - `sessions` — status sesiuni live, semnale, outcomes, equity curve
-- `profiles` — CRUD profile JSON din `data/profiles/`. `standard` este protejat (403 la stergere)
+- `profiles` — CRUD profile JSON din `data/profiles/`. `standard` este protejat (403 la stergere). La `PUT /{profile_id}` apeleaza `_log_profile_change()` care difuiaza sesiunile si scrie in `data/session_changes_log.json`.
 - `backtest` — `POST /backtest/run` (async job), `GET /backtest/{job_id}` (poll)
 - `backtest_history` — `GET/POST/DELETE /backtest/history` — stocheaza rezultate in `data/backtest_history.json`
 - `mt5status` — `GET /mt5/status` — conectare directa la MT5, returneaza cont/balance/equity/currency
 - `data_download` — descarca CSV-uri din MT5 via `Mt5DataSource`. Rezolva automat alias-uri de simboluri per broker (ex: GER40→DE40). Joburi persistate in `data/download_jobs.json`.
 - `markets` — lista simboluri disponibile in MT5
 - `settings` — configurare Telegram (token/chat_id in `data/telegram_config.json`). `POST /settings/telegram/test` trimite mesaj de test direct via Telegram API.
+- `notifications` — CRUD notificari din `data/notifications.json`. `GET /notifications?limit=N`, `POST /notifications/mark-read`, `DELETE /notifications/{id}`, `DELETE /notifications` (clear all).
+- `reports` — 4 endpointuri read-only: `GET /reports/transactions` (toate outcomes agregate, filtre status/symbol/direction/date), `GET /reports/market-stats` (clasament piete dupa R), `GET /reports/uptime` (istoric start/stop bot), `GET /reports/session-changes` (diff parametri la fiecare salvare profil).
 
 **Date persistente create de API:**
 - `data/profiles/*.json` — profile utilizator
@@ -208,12 +211,16 @@ Fiecare sesiune are si propriul `session.lock` (PID file per sesiune) care previ
 - `data/download_jobs.json` — joburi descarcare date MT5 async (max 50, supravietuiesc restart API)
 - `data/paused_sessions.json` — lista session_id-urilor pe pauza (ex: `["session1", "session3"]`), persistent peste restart bot
 - `data/news_auto_paused.json` — lista sesiunilor puse automat pe pauza de News Guard, sters la stop bot
+- `data/notifications.json` — toate notificarile (max 500, FIFO). Campuri per intrare: `id` (8 char uuid), `time` (ISO), `text` (HTML original), `text_plain` (HTML stripped), `category` (order/trade/signal/news/session/bot/system), `read` (bool). Scriere thread-safe via `threading.Lock()`.
+- `data/bot_uptime_log.json` — istoric porniri/opriri bot (max 200). La `start_bot()`: append entry cu `stopped_at=None`. La `stop_bot()`: gaseste ultima intrare deschisa si completeaza `stopped_at` + `duration_sec`. Scris de `api/routers/bot.py`.
+- `data/session_changes_log.json` — diff parametri profil la fiecare salvare (max 500). Per intrare: `profile_id`, `profile_name`, `time`, `sessions` (lista de `{id, changes: [{field, from, to}]}`). Scris de `api/routers/profiles.py` la `PUT /{profile_id}`.
 
 **Routere sessions — endpoints:**
 - `POST /sessions/{session_id}/pause` — adauga in `paused_sessions.json`, trimite Telegram
 - `POST /sessions/{session_id}/resume` — sterge din `paused_sessions.json`, trimite Telegram
 - `GET /sessions/frequency-estimate?profile_id=` — calculeaza trades/saptamana + trades/luna din `backtest_jobs.json`. Citeste profilul activ (sau cel specificat), exclude sesiunile pe pauza **si pe cele cu `execute_trades=False` (observatie)**; returneaza `{per_week, per_month, missing: [{id, markets}]}`. `missing` = sesiuni fara backtest recent (nu contribuie la estimat). Endpoint read-only, zero dependente de bot/MT5. **Trebuie plasat INAINTE de `/{session_id}` routes** (altfel FastAPI il intercepteaza ca session_id).
-- `SessionStatus` include campurile: `paused: bool`, `news_paused: bool`, `news_events: list`, `signals_yesterday: int`, `outcomes_today: int`, `outcomes_yesterday: int` (folosite de TradingStatsPanel pentru trend azi vs ieri)
+- `GET /sessions/all/signals` — agregate semnalele din toate sesiunile, sortate descrescator dupa `time`, limit=50. **Trebuie plasat INAINTE de `/{session_id}` routes** (altfel FastAPI il intercepteaza ca session_id). Folosit de SignalFeed in modul "ALL".
+- `SessionStatus` include campurile: `paused: bool`, `news_paused: bool`, `news_events: list`, `signals_yesterday: int`, `outcomes_today: int`, `outcomes_yesterday: int`, `wins_today: int`, `wins_yesterday: int`, `losses_today: int`, `losses_yesterday: int` (folosite de TradingStatsPanel pentru trend azi vs ieri per categorie)
 
 **Routere data_download — endpoints:**
 - `GET /data/jobs` — lista tuturor joburilor de descarcare (din `download_jobs.json`)
@@ -234,8 +241,9 @@ Fiecare sesiune are si propriul `session.lock` (PID file per sesiune) care previ
 **`_pid_alive()` Windows:**
 Ambele routere `bot.py` si `sessions.py` folosesc `GetExitCodeProcess(STILL_ACTIVE=259)` in loc de doar `OpenProcess`. `OpenProcess` singur returneaza True pentru procese moarte recent (kernel object lifecycle).
 
-**Telegram:**
+**Telegram + Notificari:**
 `api/telegram.py` — helper shared folosit de `bot.py` pentru notificare la start/stop din UI. Citeste credentialele din `data/telegram_config.json` cu fallback pe env vars. `live/signal_generator.py` isi are propriul `_get_tg_creds()` care citeste acelasi fisier.
+- **Captura notificari:** Ambele `api/telegram.py:send_message()` si `live/signal_generator.py:_send_telegram()` apeleaza `from api.notifications import log_notification(text)` la inceputul functiei (lazy import in `try/except`). Asigura ca 100% din notificarile Telegram apar si in tab-ul Notificari din UI, indiferent de sursa. Esecul `log_notification` nu afecteaza niciodata trimiterea Telegram sau botul.
 
 **`api/watchdog.py` — daemon watchdog oprire neasteptata:**
 Pornit automat la startup API (`@app.on_event("startup")`). Ruleaza ca thread daemon, polleaza la fiecare 30s: daca exista profil activ (`data/active_profile.json`) dar PID-ul botului (`data/run_all.pid`) nu mai e viu → trimite notificare Telegram ("Bot Trading oprit neasteptat!") si curata fisierele de stare (profil activ, pid). Acopera scenariile de crash sau oprire fortata fara Ctrl+C.
@@ -381,7 +389,7 @@ Daca numerele se schimba semnificativ → bug introdus, nu progres.
 - **Widget frecventa estimata:** 2 carduri vizibile permanent deasupra grid-ului de sesiuni — "Estimat / săptămână" + "Estimat / lună". Calcul bazat pe `GET /sessions/frequency-estimate` (citeste backtest_jobs.json, exclude sesiunile pe pauza si cele cu `execute_trades=False`). Polleaza la 15s. Afiseaza "—" cand nu exista date backtest.
 - **Badge sesiuni fara date (buton):** Cand unele sesiuni nu au backtest recent, cardul "Estimat / săptămână" afiseaza un badge portocaliu clickabil cu numarul lor (ex: "▶ 2 fara date") si hover tooltip cu lista exacta (`S9: USDJPY`, etc.). **Click pe badge** → apeleaza `POST /backtest/run-missing` cu profilul activ → porneste automat backtestele lipsa (range 5 ani) → invalideaza cache-ul de frecventa. Stare "Se calculeaza..." in timp ce ruleaza.
 
-**SignalFeed.tsx:** Primeste `balanceUsd` si `capitalPct` ca props. Calculeaza `riskUsd = balance × (capitalPct/100) × 0.01`. La TP afiseaza `+3.5R TP (+175 USD)`, la SL afiseaza `-1R SL (-50 USD)`. USD = null daca MT5 deconectat.
+**SignalFeed.tsx:** Primeste `sessionId`, `balanceUsd` si `capitalPct` ca props. Calculeaza `riskUsd = balance × (capitalPct/100) × 0.01`. La TP afiseaza `+3.5R TP (+175 USD)`, la SL afiseaza `-1R SL (-50 USD)`. USD = null daca MT5 deconectat. Cand `sessionId === "all"` apeleaza `/sessions/all/signals` (50 semnale agregate) si dezactiveaza `useOutcomes` (USD nedisponibil fara sesiune specifica).
 
 **BotStatusBar.tsx:** Indicator running/stopped. Cand running: puls verde + "Bot activ — N sesiuni + PID". Cand stopped: ultima ora de oprire relativa ("azi 10:30", "ieri 14:45").
 
@@ -404,20 +412,37 @@ Daca numerele se schimba semnificativ → bug introdus, nu progres.
 - Buton Pause/Play langa delete — acelasi mecanism ca Dashboard-ul, fara restart
 - Tooltips (i) pentru expire_bars (exemplu: "4 bare = 1h") si pullback_window (exemplu: "8 = 2h M15")
 
-**AuditPage.tsx:** Tab Audit (fostul Istoric). Doua sectiuni: **Descarcari Date** si **Backteste**.
-- *Descarcari Date*: `DownloadJobRow` expandabil per simbol — arata alias MT5 folosit (ex: "MT5: DE40"), ✓/⚠/✗ per timeframe, warning scroll daca istoricul nu e incarcat. Joburile persista in `data/download_jobs.json`.
-- *Backteste*: Joburi grupate In rulare / Erori / Finalizate. Rezultate expandabile cu tooltips, snapshot parametri, `CapitalSummary`. Erori clasificate: no_data / no_data_range / no_trades / generic. Persista in `data/backtest_jobs.json`. Cand break-even a fost activ, `ResultsGrid` afiseaza si statistici BE: "Faza 1: N", "Faza 2: N", "Total BE: N din M trades" (din campurile `be_lock_count` / `be_lock2_count`).
-- **Frecventa trades:** `ResultsGrid` afiseaza un rand "Frecvență: X.X trades/săpt · Y.Y trades/lună · Z zile testate" calculat din `total_trades / (days / 7)`. Identic si in `HistoryPage.tsx`.
-
-**App.tsx — persistenta stare taburi:** Taburile Dashboard / Profile / Audit sunt ascunse cu CSS `hidden` (nu cu conditional rendering). Componentele raman montate permanent — `useState`, acordeoanele deschise si editarile nesalvate din ProfilePage supravietuiesc navigarii intre taburi fara niciun prop drilling.
+**App.tsx — persistenta stare taburi:** Taburile Dashboard / Profile / Notificari / Audit / Rapoarte / Ghid sunt ascunse cu CSS `hidden` (nu cu conditional rendering). Componentele raman montate permanent — `useState`, acordeoanele deschise si editarile nesalvate din ProfilePage supravietuiesc navigarii intre taburi fara niciun prop drilling.
 - **React Query `gcTime: 90_000`** — elibereaza cache dupa 90 secunde (vs 5 minute default). Reduce amprenta de memorie cand pagina e deschisa ore intregi cu polling constant.
 - **`refetchIntervalInBackground: true`** doar pe `useBotStatus` si `useSessions` (date critice). `useWeeklyStats`, `useFrequencyEstimate`, `useMt5Status` nu mai polleaza in background (tab minimizat/ascuns). Previne acumularea de memorie overnight.
 
 **ProfilePage.tsx:** Pagina Profile. Buton Salveaza/Reset apare atat in header cat si **la finalul listei de sesiuni** (duplicat de jos pentru scroll lung). Starea editarilor (`dirty`) e pastrata cand userul navigheaza la alt tab si revine.
 
-**TradingStatsPanel.tsx:** Panel statistici in Dashboard. 4 carduri: Total Semnale, Total Trades, Castiguri, Pierderi. Fiecare arata numarul agregat + "X azi" + indicator trend ▲/▼ vs ieri. Click pe "Total Semnale" sau "Total Trades" expandeaza breakdown per sesiune (ascunde sesiunile cu 0 activitate).
+**TradingStatsPanel.tsx:** Panel statistici in Dashboard. 4 carduri: Total Semnale, Total Trades, Castiguri, Pierderi. Fiecare arata numarul agregat + "X azi" + indicator trend ▲/▼ vs ieri. Castiguri si Pierderi arata acum si breakdownul azi/ieri (`wins_today`, `wins_yesterday`, `losses_today`, `losses_yesterday` din `SessionStatus`). Click pe "Total Semnale" sau "Total Trades" expandeaza breakdown per sesiune (ascunde sesiunile cu 0 activitate).
 
-**NavBar.tsx:** 3 tab-uri: Dashboard / Profile / Audit. Badge pe Audit: include atat joburi backtest cat si descarcari date in curs. Dot albastru pulsant + count cand in rulare, count gri cand finalizate. Contine si toggle Autostart Windows.
+**AuditPage.tsx:** Tab Audit (fostul Istoric). Doua sectiuni: **Descarcari Date** si **Backteste**.
+- *Descarcari Date*: `DownloadJobRow` expandabil per simbol — arata alias MT5 folosit (ex: "MT5: DE40"), ✓/⚠/✗ per timeframe, warning scroll daca istoricul nu e incarcat. Joburile persista in `data/download_jobs.json`.
+- *Backteste*: Joburi grupate In rulare / Erori / Finalizate. Rezultate expandabile cu tooltips, snapshot parametri, `CapitalSummary`. Erori clasificate: no_data / no_data_range / no_trades / generic. Persista in `data/backtest_jobs.json`. Cand break-even a fost activ, `ResultsGrid` afiseaza si statistici BE: "Faza 1: N", "Faza 2: N", "Total BE: N din M trades" (din campurile `be_lock_count` / `be_lock2_count`).
+- **Frecventa trades:** `ResultsGrid` afiseaza un rand "Frecvență: X.X trades/săpt · Y.Y trades/lună · Z zile testate" calculat din `total_trades / (days / 7)`. Identic si in `HistoryPage.tsx`.
+- **Search bar:** Input de cautare in headerul sectiunii Backteste. Filtreaza `filteredJobs` cu `useMemo` dupa `session_label`, `markets[]`, `direction`, `entry_tf` (case-insensitive). Afiseaza counter "X / total" cand search e activ.
+- **Multi-select delete:** Checkbox per job (erori + finalizate). "Selecteaza tot" (toggle global). Buton "Sterge N selectate" cu `confirm()` dialog. Apeleaza `DELETE /backtest/jobs/{job_id}` per job selectat. Selectia se reseteaza automat dupa stergere.
+
+**NotificationsPage.tsx:** Tab nou intre Profile si Audit. Afiseaza toate notificarile din `data/notifications.json` (max 200 la un apel). Functionalitati:
+- Filtre categorie: Toate / Ordine / Tranzactii / Semnale / Stiri / Sesiuni / Bot / Sistem (apar doar categoriile cu intrari)
+- Grupare pe zile: Azi / Ieri / data completa (luni, 12 iunie etc.)
+- Card per notificare: icon categorie colorat, dot necitit, titlu (prima linie), preview corp (truncat), buton "Extinde/Ascunde", timp relativ (acum/5m/2h/3z) + timp absolut
+- Actiuni: Marcheaza citite (header), Sterge tot (cu confirmare), Sterge individual (X la hover)
+- Badge in NavBar cu numarul necitite — dot albastru pulsant
+
+**ReportsPage.tsx:** Tab nou dupa Audit. 4 sub-taburi:
+- **Tranzactii**: Tabel paginat (50/pagina) cu toate outcomes din toate sesiunile. Filtre: status (TP/SL/Deschis/Expirat/Vineri/Stiri/Toate), directie (LONG/SHORT/Ambele). Coloane: timp, sesiune, simbol, directie, entry, exit, result_r, pnl_usd, status.
+- **Piete**: Clasament piete dupa Total R (descrescator). Trofee pentru top 3. Coloane: simbol, sesiuni active, trades, win rate, expectancy, P&L USD. Summary cards: cel mai bun simbol, cel mai slab, total P&L.
+- **Uptime Bot**: Tabel start/stop din `data/bot_uptime_log.json`. Coloane: data start, data stop, durata formatata (Xh Ym). Summary: total sesiuni, uptime acumulat, ultima pornire. Durata calculata din `duration_sec`.
+- **Modificari**: Accordion per eveniment din `data/session_changes_log.json`. Expandabil: lista sesiunilor modificate cu campuri `{field: from → to}`. Arata profilul, data si numarul de campuri schimbate.
+
+**NavBar.tsx:** 6 tab-uri: Dashboard / Profile / Notificari / Audit / Rapoarte / Ghid. Badge notificari necitite pe "Notificari" (dot albastru pulsant + count). Badge joburi in curs pe "Audit" (dot pulsant + count activ, count gri finalizate). Contine si toggle Autostart Windows.
+
+**App.tsx — persistenta stare taburi:** 6 taburi montate odata cu CSS `hidden`. `type Tab = "dashboard" | "profile" | "notifications" | "audit" | "reports" | "guide"`. Componentele `NotificationsPage` si `ReportsPage` sunt incluse ca div-uri `hidden` — starea lor (filtru activ, tab activ) supravietuieste navigarii.
 
 ---
 

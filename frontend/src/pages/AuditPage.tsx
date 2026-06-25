@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { ClipboardList, Trash2, ChevronDown, ChevronRight, X, AlertTriangle, Download, Copy } from "lucide-react";
+import { useState, useMemo } from "react";
+import { ClipboardList, Trash2, ChevronDown, ChevronRight, X, AlertTriangle, Download, Copy, Search, CheckSquare, Square } from "lucide-react";
 import { useBacktestJobs, useDeleteBacktestJob, useDownloadJobs, useDeleteDownloadJob } from "../api/hooks";
 import type { BacktestJob, BacktestResult, DownloadJob, DownloadFileResult, WeekdayStat, HourStat } from "../api/types";
 
@@ -1032,20 +1032,66 @@ export function AuditPage({ onApplyConfig }: { onApplyConfig?: (sessionId: strin
   const { data: jobs, isLoading } = useBacktestJobs();
   const deleteJob = useDeleteBacktestJob();
   const [errorJob, setErrorJob] = useState<BacktestJob | null>(null);
+  const [search, setSearch]     = useState("");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const { data: dlJobs } = useDownloadJobs();
   const deleteDlJob = useDeleteDownloadJob();
 
-  const running = jobs?.filter(j => j.status === "pending" || j.status === "running") ?? [];
-  const done    = jobs?.filter(j => j.status === "done") ?? [];
-  const error   = jobs?.filter(j => j.status === "error") ?? [];
-
   const dlRunning = dlJobs?.filter(j => j.status === "pending" || j.status === "running") ?? [];
   const dlDone    = dlJobs?.filter(j => j.status !== "pending" && j.status !== "running") ?? [];
+
+  // Filtrare backtest jobs dupa search
+  const filteredJobs = useMemo(() => {
+    if (!jobs) return [];
+    if (!search.trim()) return jobs;
+    const q = search.toLowerCase();
+    return jobs.filter(j =>
+      j.session_label.toLowerCase().includes(q) ||
+      j.markets.some(m => m.toLowerCase().includes(q)) ||
+      j.direction.toLowerCase().includes(q) ||
+      j.entry_tf.toLowerCase().includes(q)
+    );
+  }, [jobs, search]);
+
+  const running = filteredJobs.filter(j => j.status === "pending" || j.status === "running");
+  const done    = filteredJobs.filter(j => j.status === "done");
+  const error   = filteredJobs.filter(j => j.status === "error");
+
+  // Multi-select helpers
+  const donePlusError = [...done, ...error];
+  const allDoneIds    = donePlusError.map(j => j.job_id);
+  const allSelected   = allDoneIds.length > 0 && allDoneIds.every(id => selected.has(id));
+
+  function toggleSelect(id: string) {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    if (allSelected) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(allDoneIds));
+    }
+  }
+
+  async function deleteSelected() {
+    if (selected.size === 0) return;
+    if (!confirm(`Șterge ${selected.size} joburi selectate din audit?`)) return;
+    for (const id of Array.from(selected)) {
+      await deleteJob.mutateAsync(id).catch(() => {});
+    }
+    setSelected(new Set());
+  }
 
   const handleDelete = (id: string) => {
     if (confirm("Șterge acest job din audit?")) {
       deleteJob.mutate(id);
+      setSelected(prev => { const n = new Set(prev); n.delete(id); return n; });
     }
   };
 
@@ -1087,12 +1133,13 @@ export function AuditPage({ onApplyConfig }: { onApplyConfig?: (sessionId: strin
 
         {/* ── Backteste ── */}
         <section className="space-y-3">
-          <div className="flex items-center gap-3">
-            <ClipboardList size={16} className="text-blue-400" />
+          {/* Header + search + bulk actions */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <ClipboardList size={16} className="text-blue-400 flex-shrink-0" />
             <h2 className="text-sm font-semibold text-white">Backteste</h2>
             {jobs && jobs.length > 0 && (
               <span className="text-xs text-slate-500 bg-surface-card border border-surface-border rounded-full px-2 py-0.5">
-                {jobs.length} total
+                {filteredJobs.length}{search ? ` / ${jobs.length}` : ""} total
               </span>
             )}
             {running.length > 0 && (
@@ -1101,7 +1148,60 @@ export function AuditPage({ onApplyConfig }: { onApplyConfig?: (sessionId: strin
                 {running.length} în rulare
               </span>
             )}
+
+            {/* Search */}
+            <div className="relative ml-auto flex-shrink-0 min-w-[160px]">
+              <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none" />
+              <input
+                type="text"
+                placeholder="Caută sesiune, piață..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="w-full pl-7 pr-2 py-1.5 text-xs bg-surface-card border border-surface-border rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-blue-500/50"
+              />
+              {search && (
+                <button
+                  onClick={() => setSearch("")}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+                >
+                  <X size={11} />
+                </button>
+              )}
+            </div>
           </div>
+
+          {/* Bulk select controls */}
+          {donePlusError.length > 0 && (
+            <div className="flex items-center gap-3 px-1">
+              <button
+                onClick={toggleSelectAll}
+                className="flex items-center gap-1.5 text-[10px] text-slate-400 hover:text-white transition-colors"
+              >
+                {allSelected
+                  ? <CheckSquare size={13} className="text-blue-400" />
+                  : <Square size={13} />
+                }
+                {allSelected ? "Deselectează tot" : "Selectează tot"}
+              </button>
+              {selected.size > 0 && (
+                <button
+                  onClick={deleteSelected}
+                  className="flex items-center gap-1.5 text-[10px] text-loss hover:text-loss/80 bg-loss/10 border border-loss/30 rounded-lg px-2.5 py-1 transition-colors"
+                >
+                  <Trash2 size={11} />
+                  Șterge {selected.size} selectate
+                </button>
+              )}
+              {selected.size > 0 && (
+                <button
+                  onClick={() => setSelected(new Set())}
+                  className="text-[10px] text-slate-500 hover:text-slate-300 transition-colors"
+                >
+                  Anulează selecția
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Loading */}
           {isLoading ? (
@@ -1110,13 +1210,18 @@ export function AuditPage({ onApplyConfig }: { onApplyConfig?: (sessionId: strin
                 <div key={i} className="h-14 rounded-xl bg-surface-card animate-pulse" />
               ))}
             </div>
-          ) : jobs?.length === 0 ? (
+          ) : (jobs ?? []).length === 0 ? (
             <div className="text-center py-10 text-slate-500">
               <ClipboardList size={28} className="mx-auto mb-3 opacity-30" />
               <p className="text-sm">Niciun backtest în audit</p>
               <p className="text-xs mt-1 text-slate-600">
                 Rulează un backtest din tab-ul Profile → sesiune → Rulează Backtest
               </p>
+            </div>
+          ) : filteredJobs.length === 0 ? (
+            <div className="text-center py-8 text-slate-500">
+              <Search size={24} className="mx-auto mb-2 opacity-30" />
+              <p className="text-sm">Niciun rezultat pentru „{search}"</p>
             </div>
           ) : (
             <div className="space-y-6">
@@ -1132,21 +1237,51 @@ export function AuditPage({ onApplyConfig }: { onApplyConfig?: (sessionId: strin
               )}
               {error.length > 0 && (
                 <div className="space-y-2">
-                  <div className="text-[10px] text-slate-500 uppercase tracking-wider font-medium">
-                    Erori ({error.length})
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-slate-500 uppercase tracking-wider font-medium">
+                      Erori ({error.length})
+                    </span>
                   </div>
                   {error.map(job => (
-                    <JobRow key={job.job_id} job={job} onDelete={handleDelete} onShowError={setErrorJob} onApplyConfig={onApplyConfig} />
+                    <div key={job.job_id} className="flex items-start gap-2">
+                      <button
+                        onClick={() => toggleSelect(job.job_id)}
+                        className="mt-3.5 flex-shrink-0 text-slate-500 hover:text-blue-400 transition-colors"
+                      >
+                        {selected.has(job.job_id)
+                          ? <CheckSquare size={14} className="text-blue-400" />
+                          : <Square size={14} />
+                        }
+                      </button>
+                      <div className="flex-1 min-w-0">
+                        <JobRow job={job} onDelete={handleDelete} onShowError={setErrorJob} onApplyConfig={onApplyConfig} />
+                      </div>
+                    </div>
                   ))}
                 </div>
               )}
               {done.length > 0 && (
                 <div className="space-y-2">
-                  <div className="text-[10px] text-slate-500 uppercase tracking-wider font-medium">
-                    Finalizate ({done.length})
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-slate-500 uppercase tracking-wider font-medium">
+                      Finalizate ({done.length})
+                    </span>
                   </div>
                   {done.map(job => (
-                    <JobRow key={job.job_id} job={job} onDelete={handleDelete} onShowError={setErrorJob} onApplyConfig={onApplyConfig} />
+                    <div key={job.job_id} className="flex items-start gap-2">
+                      <button
+                        onClick={() => toggleSelect(job.job_id)}
+                        className="mt-3.5 flex-shrink-0 text-slate-500 hover:text-blue-400 transition-colors"
+                      >
+                        {selected.has(job.job_id)
+                          ? <CheckSquare size={14} className="text-blue-400" />
+                          : <Square size={14} />
+                        }
+                      </button>
+                      <div className="flex-1 min-w-0">
+                        <JobRow job={job} onDelete={handleDelete} onShowError={setErrorJob} onApplyConfig={onApplyConfig} />
+                      </div>
+                    </div>
                   ))}
                 </div>
               )}

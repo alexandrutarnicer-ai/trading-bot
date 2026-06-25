@@ -23,6 +23,10 @@ class SessionStatus(BaseModel):
     outcomes_yesterday: int = 0
     wins: int
     losses: int
+    wins_today: int = 0
+    wins_yesterday: int = 0
+    losses_today: int = 0
+    losses_yesterday: int = 0
     paused: bool = False
     news_paused: bool = False
     news_events: list = []

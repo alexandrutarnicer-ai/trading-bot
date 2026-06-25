@@ -16,7 +16,43 @@ router = APIRouter(prefix="/bot", tags=["bot"])
 ACTIVE_PROFILE_FILE   = os.path.join(DATA_DIR, "active_profile.json")
 RUNTIME_PROFILE_FILE  = os.path.join(DATA_DIR, "active_profile_runtime.json")
 RUN_LOG_FILE          = os.path.join(DATA_DIR, "bot_run_log.json")
+UPTIME_LOG_FILE       = os.path.join(DATA_DIR, "bot_uptime_log.json")
 PROFILES_DIR          = os.path.join(ROOT, "data", "profiles")
+
+
+def _log_uptime_event(event: str, profile_name: str = "") -> None:
+    """Adauga un eveniment start/stop in istoricul de uptime."""
+    try:
+        os.makedirs(DATA_DIR, exist_ok=True)
+        entries = []
+        if os.path.exists(UPTIME_LOG_FILE):
+            try:
+                with open(UPTIME_LOG_FILE, encoding="utf-8") as f:
+                    entries = json.load(f)
+            except Exception:
+                entries = []
+        now = datetime.now().isoformat(timespec="seconds")
+        if event == "start":
+            entries.append({"event": "start", "time": now, "profile": profile_name, "stopped_at": None})
+        elif event == "stop":
+            # Actualizeaza ultimul entry de start fara stop
+            for e in reversed(entries):
+                if e.get("event") == "start" and e.get("stopped_at") is None:
+                    e["stopped_at"] = now
+                    start_t = datetime.fromisoformat(e["time"])
+                    stop_t  = datetime.fromisoformat(now)
+                    diff    = int((stop_t - start_t).total_seconds())
+                    e["duration_sec"] = diff
+                    break
+            else:
+                entries.append({"event": "stop", "time": now, "profile": profile_name})
+        # Pastreaza ultimele 200 intrari
+        if len(entries) > 200:
+            entries = entries[-200:]
+        with open(UPTIME_LOG_FILE, "w", encoding="utf-8") as f:
+            json.dump(entries, f, ensure_ascii=False, separators=(",", ":"))
+    except Exception:
+        pass
 
 
 def _pid_alive(pid: int) -> bool:
@@ -162,6 +198,7 @@ def start_bot(body: Optional[dict] = Body(default=None)):
     profile_id   = body.get("profile_id")   or "standard"
     profile_name = body.get("profile_name") or "Standard"
     _save_active_profile(profile_id, profile_name)
+    _log_uptime_event("start", profile_name)
 
     # Trimite notificare Telegram cu profilul si sesiunile active
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -226,6 +263,7 @@ def stop_bot():
     ap = _read_active_profile()
     profile_name = ap.get("name") or "necunoscut"
     _clear_active_profile()
+    _log_uptime_event("stop", profile_name)
 
     stopped_ok = result.returncode == 0
     # Trimite Telegram intotdeauna — starea e deja curatata indiferent de returncode.
