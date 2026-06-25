@@ -1,0 +1,37 @@
+
+====================================================================================================
+  AUDJPY  M15+M30  -- sweep pw/dir/RSI/strat
+====================================================================================================
+  Bare M15: 35855
+   #        part       strat   pw   dir      RSI     TRAIN      TEST    Tt      DD    score    pb/fl/ib  TARGET
+   1. [  pullback]     pb+flag    8  BOTH  rsi_off   -0.1829R   +0.4000R    26t  -23.8%    2.039  88/7/0  >>TARGET
+   2. [  pullback]     pb+flag   10  BOTH  rsi_off   -0.1829R   +0.4000R    26t  -23.8%    2.039  88/7/0  >>TARGET
+   3. [standalone]   flag_only    0  BOTH  rsi_off   -0.1829R   +0.4000R    26t  -23.8%    2.039  88/7/0  >>TARGET
+   4. [  pullback]     pb+flag   12  BOTH  rsi_off   -0.1885R   +0.3611R    27t  -24.7%    1.876  90/7/0  
+   5. [  pullback]     pb_only    8  BOTH  rsi_off   -0.1938R   +0.3472R    25t  -23.5%    1.736  88/0/0  
+   6. [  pullback]     pb_only   10  BOTH  rsi_off   -0.1938R   +0.3472R    25t  -23.5%    1.736  88/0/0  
+   7. [  pullback]     pb+flag   14  BOTH  rsi_off   -0.1885R   +0.3010R    28t  -24.7%    1.593  91/7/0  
+   8. [  pullback]     pb+flag    8  BOTH   rsi_on   -0.4812R   +0.3011R    26t  -35.8%    1.524  88/7/0  
+   9. [  pullback]     pb+flag   10  BOTH   rsi_on   -0.4812R   +0.3011R    26t  -35.8%    1.524  88/7/0  
+  10. [standalone]   flag_only    0  BOTH   rsi_on   -0.4812R   +0.3011R    26t  -35.8%    1.524  88/7/0  
+
+  BEST: test=+0.4000R  strat=pb+flag  pw=8  dir=BOTH  RSI=rsi_off
+  Split: 2026-01-06  |  88 pullback + 7 flag + 0 IB trades
+
+====================================================================================================
+  USDCHF  M15+M30  -- sweep pw/dir/RSI/strat
+====================================================================================================
+  Bare M15: 100000
+   #        part       strat   pw   dir      RSI     TRAIN      TEST    Tt      DD    score    pb/fl/ib  TARGET
+   1. [  pullback]     pb_only    6  BOTH   rsi_on   -0.1631R   +0.1082R    58t  -33.5%    0.824  187/0/0  
+   2. [  pullback]     pb+flag    6  BOTH   rsi_on   -0.1534R   +0.0983R    64t  -37.5%    0.749  187/29/0  
+   3. [  pullback]     pb_only    8  BOTH   rsi_on   -0.0996R   +0.0303R    61t  -31.4%    0.236  198/0/0  
+   4. [  pullback]     pb+flag    8  BOTH   rsi_on   -0.0982R   +0.0201R    67t  -35.4%    0.160  198/29/0  
+   5. [  pullback]     pb+flag   10  BOTH   rsi_on   -0.0907R   +0.0054R    68t  -34.4%    0.044  201/29/0  
+   6. [  pullback]     pb+flag   12  BOTH   rsi_on   -0.0907R   +0.0054R    68t  -34.4%    0.044  201/29/0  
+   7. [standalone]   flag_only    0  BOTH   rsi_on   -0.0907R   +0.0054R    68t  -34.4%    0.044  201/29/0  
+   8. [  pullback]     pb_only   10  BOTH   rsi_on   -0.0878R   +0.0052R    62t  -30.8%    0.041  201/0/0  
+   9. [  pullback]     pb_only   12  BOTH   rsi_on   -0.0878R   +0.0052R    62t  -30.8%    0.041  201/0/0  
+
+  BEST: test=+0.1082R  strat=pb_only  pw=6  dir=BOTH  RSI=rsi_on
+  Split: 2025-03-28  |  187 pullback + 0 flag + 0 IB trades

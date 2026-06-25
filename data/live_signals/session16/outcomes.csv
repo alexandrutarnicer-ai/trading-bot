@@ -1,1 +1,2 @@
 signal_id,time_check,symbol,direction,status,entry,sl,tp,r_ratio,triggered_at,exit_price,exit_time,result_r,pnl_usd
+S16-GBPAUD-H1-IB0001,2026-06-25 17:00:05.315048,GBPAUD,-1,SL,1.90963,1.91241,1.90407,2.0,2026-06-25 08:00:00,1.9124400000000001,2026-06-25 19:48:29,-1.011,-1.95

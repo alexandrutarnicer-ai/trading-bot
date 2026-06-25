@@ -1,1 +1,3 @@
 signal_id,time_check,symbol,direction,status,entry,sl,tp,r_ratio,triggered_at,exit_price,exit_time,result_r,pnl_usd
+S17-AUDCAD-H1-SIG0001,2026-06-25 17:00:05.292285,AUDCAD,1,SL,0.98197,0.98,0.98887,3.5,2026-06-25 11:00:00,0.98042,2026-06-25 19:50:02,-0.787,-1.09
+S17-AUDCAD-H1-SIG0002,2026-06-25 17:07:02.370056,AUDCAD,1,invalidat,0.98361,0.98052,0.99442,3.5,,,,0.0,0.0

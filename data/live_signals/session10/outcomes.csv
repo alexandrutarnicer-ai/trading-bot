@@ -1,1 +1,2 @@
 signal_id,time_check,symbol,direction,status,entry,sl,tp,r_ratio,triggered_at,exit_price,exit_time,result_r,pnl_usd
+S10-GBPCAD-H1-IB0001,2026-06-25 15:00:05.785523,GBPCAD,1,SL,1.87599,1.87441,1.87915,2.0,2026-06-25 08:00:00,1.87443,2026-06-25 17:21:47,-0.987,-3.14

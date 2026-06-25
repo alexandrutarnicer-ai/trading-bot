@@ -1,0 +1,11 @@
+
+============================================================
+DEEP IMPROVEMENT SCAN  --  2026-06-22 23:50
+Piete: 16 | Workeri: 4
+Estimare: ~5120 teste | ~6.6 ore
+Output: C:\trading-bot\scripts\research\deep_scan_report.txt
+============================================================
+
+  [ 1/16]   AUDJPY   583 rezultate  8798s elapsed
+  [ 2/16]   XRPUSD   205 rezultate  9094s elapsed
+  [ 3/16]   USDCHF   736 rezultate  26305s elapsed

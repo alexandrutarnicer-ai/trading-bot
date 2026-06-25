@@ -1,0 +1,12 @@
+
+============================================================
+FAST SCAN  --  2026-06-23 09:23
+Piete: 16 | Workeri: 4
+TF: M15+M30
+Combos/piata: 136 (pullback=120, standalone=16)
+Total: 2176 | Estimat: ~5.3 ore
+Output: C:\trading-bot\scripts\research\fast_scan_report.txt
+============================================================
+
+Rezultate per piata scrise la: scripts/research/fast_scan_SYMBOL.csv
+

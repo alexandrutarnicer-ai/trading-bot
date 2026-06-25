@@ -1,0 +1,11 @@
+
+==============================================================================================================
+QUICK SCAN  --  2026-06-23 09:47
+Piete: 16 | Single-threaded (rezultate imediate per piata)
+Combos/piata: 88
+==============================================================================================================
+
+QUICK SCAN  --  2026-06-23 09:47
+pw=[6,8,10,12,14]  expire=4  dir=[LONG,BOTH]  RSI=[on,off]  strat=[pb/pb+f/pb+IB/all] + standalone[flag/f+IB]
+
+  Procesez EURUSD... 88 rezultate (4780s)

@@ -1,0 +1,54 @@
+TASK 3: PULLBACK OPTIONAL — Analiza si Implementare
+=====================================================
+Data: 2026-06-22
+
+CONCLUZIE CHEIE:
+  Flag si Inside Bar sunt DEJA STANDALONE in engine/portfolio.py.
+  Nu depind de detect_setup() — ruleaza pe slot propriu independent.
+  "Pullback optional" inseamna DOAR sa skipezi detect_setup() cand pullback_enabled=False.
+
+MODIFICARE NECESARA (minima, 2 fisiere productive):
+
+1. engine/portfolio.py (linia ~230):
+   INAINTE:
+     if active_pb[s] + pb_pending < max_pos_per_symbol:
+         found = detect_setup(df, j, direction, window=params["pullback_window"], ...)
+
+   DUPA:
+     pullback_enabled = params.get("pullback_enabled", True)
+     if pullback_enabled and active_pb[s] + pb_pending < max_pos_per_symbol:
+         found = detect_setup(df, j, direction, window=params["pullback_window"], ...)
+     elif not pullback_enabled:
+         found = None
+
+2. live/signal_generator.py — in _apply_profile_overrides() sau direct in _check_signals():
+   pullback_enabled = session_cfg.get("pullback_enabled", True)
+   # transmis catre params["pullback_enabled"]
+
+3. data/profiles/standard.json — adauga in fiecare sesiune:
+   "pullback_enabled": true   (default true = comportament actual, backward compat)
+
+4. frontend/src/api/types.ts — ProfileSession interface:
+   pullback_enabled?: boolean;
+
+5. SessionEditor.tsx — in sectiunea "Criterii Obligatorii":
+   Toggle "Pullback" — cand disabled, ascunde campurile pullback_window
+
+IMPACT BASELINE: ZERO (pullback_enabled=True implicit = baselines neschimbate)
+
+TEST INCLUS IN SCAN OVERNIGHT:
+  scripts/research/scan_deep_improvement.py Parte 2 = STANDALONE
+  Testeaza flag_only / IB_only / flag+IB fara pullback pe toate 16 piete.
+  Rezultatele vor arata daca standalone-ul produce >= +0.4R pe vreo piata.
+
+DECIZIE RECOMANDATA (dupa revizuire scan):
+  - Daca standalone >= +0.4R pe 3+ piete: implementeaza feature (minimal)
+  - Daca standalone sub target pe toate pietele: pullback ramane obligatoriu
+  - In orice caz, implementarea este simpla si backward-compatible
+
+FISIERE DE MODIFICAT LA IMPLEMENTARE:
+  engine/portfolio.py     (2 linii)
+  live/signal_generator.py  (1 linie in params dict)
+  data/profiles/standard.json (adauga pullback_enabled: true in fiecare sesiune)
+  frontend/src/api/types.ts  (1 linie)
+  frontend/src/components/SessionEditor.tsx  (~20 linii toggle UI)
