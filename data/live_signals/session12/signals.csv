@@ -1,1 +1,2 @@
 signal_id,time,symbol,direction,dir_str,entry,sl,tp,r_ratio,atr_pips,n_optional,rsi
+S12-EURAUD-H1-IB0001,2026-06-26 09:00:00,EURAUD,-1,SHORT,1.64849,1.65249,1.64049,2.0,20.2,0,55.9

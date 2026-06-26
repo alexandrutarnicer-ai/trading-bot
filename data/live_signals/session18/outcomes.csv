@@ -1,3 +1,4 @@
 signal_id,time_check,symbol,direction,status,entry,sl,tp,r_ratio,triggered_at,exit_price,exit_time,result_r,pnl_usd
 S18-NZDJPY-H1-IB0001,2026-06-23 19:00:05.402445,NZDJPY,1,invalidat,91.783,91.577,92.195,2.0,,,,0.0,0.0
 S18-NZDJPY-H1-IB0002,2026-06-25 08:35:01.428029,NZDJPY,-1,SL,91.185,91.372,90.811,2.0,2026-06-25 04:00:00,91.37,2026-06-25 11:00:30,-0.989,-1.34
+S18-NZDJPY-H1-IB0003,2026-06-26 05:00:05.978914,NZDJPY,-1,expirat,91.145,91.431,90.573,2.0,,,2026-06-26 03:00:00,0.0,0.0
