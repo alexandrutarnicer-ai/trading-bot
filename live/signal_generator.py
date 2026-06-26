@@ -1797,6 +1797,13 @@ def run_generator(session_cfg: dict):
                 if session_paused:
                     continue  # skip signal detection si plasare ordine noi
 
+                # Vineri dupa ora de inchidere — nu mai plasam semnale noi
+                # (bot repornit dupa friday_close_hour; _friday_close_check le-ar anula oricum)
+                if session_cfg.get("friday_close_enabled", True):
+                    _now_fc = datetime.now()
+                    if _now_fc.weekday() == 4 and _now_fc.hour >= session_cfg.get("friday_close_hour", 20):
+                        continue
+
                 sigs = _check_signals(df, symbol, cfg, state, session_cfg)
                 for sig in sigs:
                     # Evita duplicate in signals.csv (doua instante simultane)
