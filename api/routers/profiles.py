@@ -147,6 +147,8 @@ def update_profile(profile_id: str, body: dict):
     existing["description"]   = body.get("description", existing.get("description", ""))
     existing["sessions"]      = body.get("sessions", existing["sessions"])
     existing["start_balance"] = body.get("start_balance", existing.get("start_balance", 1000))
+    existing["capital_protection_enabled"]       = body.get("capital_protection_enabled", existing.get("capital_protection_enabled", False))
+    existing["capital_protection_threshold_pct"] = body.get("capital_protection_threshold_pct", existing.get("capital_protection_threshold_pct", 70.0))
     _log_profile_change(profile_id, existing["name"], old_copy, existing)
     _save_profile(existing)
     return existing
