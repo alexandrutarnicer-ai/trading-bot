@@ -437,7 +437,7 @@ export const useSetTimezone = () => {
   const qc = useQueryClient();
   return useMutation<TimezoneConfig, Error, string>({
     mutationFn: (tz: string) =>
-      apiFetch("/settings/timezone", { method: "PUT", body: JSON.stringify({ timezone: tz }) }),
+      apiFetch("/settings/timezone", { method: "PUT", body: { timezone: tz } }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["timezone"] }),
   });
 };
