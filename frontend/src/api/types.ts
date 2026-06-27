@@ -6,6 +6,7 @@ export interface BotStatus {
   sessions_total: number;
   active_profile_id: string | null;
   active_profile_name: string | null;
+  active_profile_start_balance: number | null;
   last_started_at: string | null;
   last_stopped_at: string | null;
 }
@@ -57,6 +58,7 @@ export interface SessionStatus {
   }>;
   pnl_usd_today: number | null;
   pnl_usd_yesterday: number | null;
+  pnl_usd_total: number | null;
 }
 
 export interface Signal {
@@ -140,6 +142,7 @@ export interface ProfileSession {
   news_impact_level?: number;
   news_pre_minutes?: number;
   news_post_minutes?: number;
+  smart_news_enabled?: boolean;
   max_concurrent_per_market?: number;
   min_bars_between_trades?: number;
   break_even_enabled?: boolean;
@@ -164,6 +167,17 @@ export interface TelegramConfig {
   configured: boolean;
 }
 
+export interface TimezoneOption {
+  tz: string;
+  label: string;
+}
+
+export interface TimezoneConfig {
+  timezone: string;
+  label: string;
+  supported: TimezoneOption[];
+}
+
 export interface Profile {
   id: string;
   name: string;
@@ -171,6 +185,8 @@ export interface Profile {
   updated_at: string | null;
   sessions: ProfileSession[];
   start_balance: number;
+  capital_protection_enabled?: boolean;
+  capital_protection_threshold_pct?: number;
 }
 
 export interface ProfileSummary {
@@ -380,6 +396,18 @@ export interface MarketStat {
 
 export interface MarketStatsResponse {
   items: MarketStat[];
+}
+
+export interface TopMarketEntry {
+  symbol: string;
+  trades: number;
+  wins: number;
+  losses: number;
+  total_r: number;
+  win_rate: number;
+  expectancy: number;
+  pnl_usd: number | null;
+  sessions: string[];
 }
 
 export interface UptimeEntry {

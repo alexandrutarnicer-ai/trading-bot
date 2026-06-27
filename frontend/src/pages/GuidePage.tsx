@@ -670,6 +670,24 @@ export function GuidePage() {
               cu câmpul pnl_usd populat. Sesiunile de observație (execute=false) nu afișează P&L.
             </Note>
           </SubSection>
+
+          <SubSection title="Widget Top 5 Piețe" defaultOpen={false}>
+            <p>
+              Card în josul panoului Dashboard care afișează cele mai profitabile 5 piețe după R cumulat,
+              cu filtre de perioadă.
+            </p>
+            <div className="grid grid-cols-2 gap-1.5 text-xs">
+              <KV k="Azi" v="Tranzacții închise în ziua curentă" />
+              <KV k="Săpt" v="Tranzacții din săptămâna curentă (luni → azi)" />
+              <KV k="Lună" v="Tranzacții din luna curentă (1 → azi)" />
+              <KV k="Tot" v="Toate tranzacțiile istorice" />
+            </div>
+            <p className="text-xs text-slate-400 mt-1">
+              Per piață: simbolul, număr trades, win rate%, R cumulat, P&L USD.
+              Sortat descrescător după Total R. P&L USD apare doar pentru sesiunile cu execute_trades=True.
+              Se actualizează la 30 secunde.
+            </p>
+          </SubSection>
         </Section>
 
         {/* ── 3. PROFILE & SESIUNI ── */}
@@ -765,6 +783,66 @@ export function GuidePage() {
             </div>
             <Note>
               News Guard polleaza ForexFactory la fiecare 5 minute. Nu necesită API key.
+            </Note>
+          </SubSection>
+
+          <SubSection title="Mod Inteligent (Smart News Protection)" defaultOpen={false}>
+            <p>
+              Extensie a protecției la știri — disponibil doar când „Pauză automată la știri" este activat.
+              În loc să închidă toate pozițiile, botul analizează sentimentul știrii și decide direcția.
+            </p>
+            <div className="space-y-2 text-xs">
+              <div>
+                <p className="font-medium text-white mb-1">Logică sentiment:</p>
+                <div className="grid grid-cols-2 gap-1 text-slate-300">
+                  <span>actual &gt; forecast</span><span className="text-profit">→ bullish pentru valuta raportoare</span>
+                  <span>actual &lt; forecast</span><span className="text-loss">→ bearish pentru valuta raportoare</span>
+                  <span>actual = null</span><span className="text-slate-500">→ eveniment nelansat, skip</span>
+                </div>
+              </div>
+              <div>
+                <p className="font-medium text-white mb-1">Acțiuni la știre negativă (ex: USD bearish):</p>
+                <div className="grid grid-cols-1 gap-0.5">
+                  <KV k="LONG EURUSD deschis" v="Menținut (USD slab → EURUSD sus)" vColor="text-profit" />
+                  <KV k="SHORT EURUSD deschis" v="Închis imediat (contra sentimentului)" vColor="text-loss" />
+                  <KV k="Nicio poziție" v="Plasează BUY_STOP pe EURUSD (risc 1.5× base)" />
+                </div>
+              </div>
+              <div>
+                <p className="font-medium text-white mb-1">Trailing SL pentru ordinele din știri:</p>
+                <div className="grid grid-cols-2 gap-1">
+                  <KV k="La 3R profit" v="SL → 1R față de TP (blochează profit)" />
+                  <KV k="La 4R profit" v="SL → 2R față de TP (mai mult room)" />
+                </div>
+              </div>
+            </div>
+            <Note>
+              Parsarea sentimentului este simplificată. Nu funcționează corect pentru indicatori inversați
+              (șomaj, CPI în context dovish/hawkish). Testează întotdeauna pe cont DEMO înainte de live.
+              Ordinele de știri sunt marcate „SN" și urmărite separat față de semnalele pullback normale.
+            </Note>
+          </SubSection>
+
+          <SubSection title="Protecție Capital (la nivel de profil)" defaultOpen={false}>
+            <p>
+              Funcție de protecție automată a contului, configurată la nivel de profil (nu per sesiune).
+              Watchdog-ul API o verifică la fiecare 30 secunde cât botul rulează.
+            </p>
+            <div className="grid grid-cols-2 gap-1.5 text-xs">
+              <KV k="Implicit" v="Dezactivat — nu afectează funcționarea normală" />
+              <KV k="Prag implicit" v="70% din capitalul de start al profilului" />
+              <KV k="Interval verificare" v="La fiecare 30 secunde (watchdog API)" />
+              <KV k="Acțiune" v="Pauză automată toate sesiunile cu execute_trades=True" />
+            </div>
+            <p className="text-xs mt-1">
+              Când equity MT5 scade sub prag → watchdog pune pe pauză toate sesiunile live active
+              (cele cu execute_trades activat, care nu erau deja pe pauză). Sesiunile de observație
+              și cele deja pe pauză nu sunt afectate.
+            </p>
+            <Note>
+              Trimite notificare Telegram + UI la activare. Se dezactivează automat (flag resetat)
+              dacă equity revine peste prag. Salvare individuală prin butonul „Salvează protecție"
+              din secțiunea dedicată de deasupra listei de sesiuni.
             </Note>
           </SubSection>
 
@@ -1224,6 +1302,31 @@ export function GuidePage() {
               Dacă descărcarea returnează puține bare: deschide graficul simbolului în MT5 pe timeframe-ul
               dorit și <strong>derulează complet spre stânga</strong> pentru a forța cache-ul istoricului,
               apoi reîncearcă.
+            </Tip>
+          </SubSection>
+
+          <SubSection title="Fus Orar (România / Germania)" defaultOpen={false}>
+            <p>
+              Botul poate rula în fusul orar al României (default) sau al Germaniei. Setarea se face
+              din Profile → secțiunea <strong>Fus Orar</strong> (sub configurarea Telegram).
+            </p>
+            <div className="space-y-1 text-xs">
+              <KV k="România (default)" v="Europe/Bucharest — UTC+2 iarnă / UTC+3 vară" />
+              <KV k="Germania" v="Europe/Berlin — UTC+1 iarnă / UTC+2 vară" />
+              <KV k="Diferență" v="Mereu exact 1 oră (DST simultan în ambele țări)" />
+            </div>
+            <p>
+              Schimbarea afectează <strong>exclusiv sesiunile live</strong>: ora barelor MT5, filtrele
+              session_start/session_end, friday_close_hour și ora curentă în log-uri.
+              Backtestul pe CSV nu este afectat (datele sunt deja în ora României).
+            </p>
+            <Warn>
+              Schimbarea fusului orar necesită confirmare în UI. Efectul intră la bara următoare
+              (max 15 min pentru M15 / 1 oră pentru H1) — fără restart bot.
+            </Warn>
+            <Tip>
+              Dacă rulezi botul pe o mașină configurată în Germania, setează fusul orar pe Germania
+              astfel încât session_start=10 să însemne 10:00 ora Germaniei (nu 10:00 ora României).
             </Tip>
           </SubSection>
         </Section>

@@ -6,7 +6,7 @@ import type {
   DataCheckResult, DownloadJob, TelegramConfig, Mt5Status,
   BacktestHistoryEntry, BacktestJob, WeeklyStats,
   NotificationsResponse, TransactionsResponse, MarketStatsResponse,
-  UptimeResponse, SessionChangesResponse,
+  UptimeResponse, SessionChangesResponse, TopMarketEntry, TimezoneConfig,
 } from "./types";
 
 
@@ -62,7 +62,10 @@ export const useSignals = (sessionId: string) =>
 export const useOutcomes = (sessionId: string) =>
   useQuery<Outcome[]>({
     queryKey: ["outcomes", sessionId],
-    queryFn:  () => apiFetch(`/sessions/${sessionId}/outcomes`),
+    queryFn:  () =>
+      sessionId === "all"
+        ? apiFetch("/sessions/all/outcomes?limit=200")
+        : apiFetch(`/sessions/${sessionId}/outcomes`),
     refetchInterval: POLL,
     enabled:  !!sessionId,
   });
@@ -413,6 +416,31 @@ export const useMarketStats = () =>
     queryFn:  () => apiFetch("/reports/market-stats"),
     refetchInterval: 30_000,
   });
+
+export const useTopMarkets = (period: string) =>
+  useQuery<TopMarketEntry[]>({
+    queryKey: ["top-markets", period],
+    queryFn:  () => apiFetch(`/sessions/top-markets?period=${period}&limit=5`),
+    refetchInterval: 30_000,
+  });
+
+// ── Timezone ─────────────────────────────────────────────────────────────────
+
+export const useTimezone = () =>
+  useQuery<TimezoneConfig>({
+    queryKey: ["timezone"],
+    queryFn:  () => apiFetch("/settings/timezone"),
+    staleTime: 60_000,
+  });
+
+export const useSetTimezone = () => {
+  const qc = useQueryClient();
+  return useMutation<TimezoneConfig, Error, string>({
+    mutationFn: (tz: string) =>
+      apiFetch("/settings/timezone", { method: "PUT", body: JSON.stringify({ timezone: tz }) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["timezone"] }),
+  });
+};
 
 export const useBotUptime = () =>
   useQuery<UptimeResponse>({

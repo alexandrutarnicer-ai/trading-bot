@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import {
   useProfileList, useProfile, useMeta, useSaveProfile, useCreateProfile, useDeleteProfile,
   useBotStatus, useSessions, usePauseSession, useResumeSession,
+  useTimezone, useSetTimezone,
 } from "../api/hooks";
 import { SessionEditor } from "../components/SessionEditor";
 import { InfoTooltip } from "../components/InfoTooltip";
@@ -58,6 +59,7 @@ const DEFAULT_SESSION = (id: string): ProfileSession => ({
   news_impact_level:    2,
   news_pre_minutes:     15,
   news_post_minutes:    15,
+  smart_news_enabled:   false,
   max_concurrent_per_market: 1,
   min_bars_between_trades:   0,
   break_even_enabled:   false,
@@ -78,6 +80,102 @@ const PROFILE_TIP =
   "Un profil conține una sau mai multe sesiuni de tranzacționare. " +
   "Fiecare sesiune are propriile piețe, timeframe, filtre și parametri. " +
   "Profilul Standard este cel validat și activ — modifică-l cu atenție.";
+
+// ---------------------------------------------------------------------------
+// Timezone Selector
+// ---------------------------------------------------------------------------
+
+function TimezoneSelector() {
+  const { data: tzData } = useTimezone();
+  const setTz = useSetTimezone();
+  const [pending, setPending] = useState<string | null>(null); // TZ care asteapta confirmare
+
+  if (!tzData) return null;
+
+  const current = tzData.timezone;
+  const options = tzData.supported;
+
+  function handleSelect(tz: string) {
+    if (tz === current) return;
+    setPending(tz);
+  }
+
+  function handleConfirm() {
+    if (!pending) return;
+    setTz.mutate(pending, { onSettled: () => setPending(null) });
+  }
+
+  const pendingLabel = options.find(o => o.tz === pending)?.label ?? pending ?? "";
+  const currentLabel = options.find(o => o.tz === current)?.label ?? current;
+
+  return (
+    <div className="bg-surface-card border border-surface-border rounded-xl p-4 space-y-3">
+      <div className="flex items-center gap-2">
+        <span className="text-sm font-semibold text-white">Fus Orar Bot</span>
+        <InfoTooltip text={
+          "Fusul orar folosit de bot pentru: timestamp-uri bare MT5, filtre sesiune (session_start/end, skip_hours), " +
+          "inchidere vineri (friday_close_hour) și time_check în CSV. " +
+          "Schimbarea are efect la bara următoare (max 15 min) fără restart. " +
+          "Default: România. CSV-urile istorice rămân în ora în care au fost descărcate."
+        } />
+      </div>
+
+      <div className="flex gap-2 flex-wrap">
+        {options.map(opt => (
+          <button
+            key={opt.tz}
+            onClick={() => handleSelect(opt.tz)}
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm transition-all ${
+              opt.tz === current
+                ? "bg-blue-600/15 border-blue-500/50 text-blue-300 font-medium"
+                : "border-surface-border text-slate-400 hover:border-slate-500 hover:text-slate-300"
+            }`}
+          >
+            <span className="text-base">{opt.tz === "Europe/Bucharest" ? "🇷🇴" : "🇩🇪"}</span>
+            <span>{opt.label}</span>
+            {opt.tz === current && <span className="text-[10px] text-blue-400 ml-1">● activ</span>}
+          </button>
+        ))}
+      </div>
+
+      {/* Confirmare schimbare */}
+      {pending && (
+        <div className="border border-amber-500/30 bg-amber-500/5 rounded-lg p-3 space-y-2">
+          <p className="text-xs text-amber-300">
+            Confirmi schimbarea fusului orar la <strong>{pendingLabel}</strong>?
+          </p>
+          <p className="text-[11px] text-slate-500">
+            Efectul intră la bara următoare (max 15 min). Sesiunile nu trebuie repornite.
+            Filtrele de sesiune (ore start/end, skip_hours, friday_close_hour) vor fi interpretate
+            în noul fus orar.
+          </p>
+          <div className="flex gap-2">
+            <button
+              onClick={handleConfirm}
+              disabled={setTz.isPending}
+              className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white text-xs rounded-lg font-medium transition-colors disabled:opacity-50"
+            >
+              {setTz.isPending ? "Se salvează..." : "Confirmă"}
+            </button>
+            <button
+              onClick={() => setPending(null)}
+              className="px-3 py-1.5 border border-surface-border text-slate-400 hover:text-slate-300 text-xs rounded-lg transition-colors"
+            >
+              Anulează
+            </button>
+          </div>
+        </div>
+      )}
+
+      {setTz.isSuccess && !pending && (
+        <p className="text-[11px] text-profit">
+          Fus orar schimbat la <strong>{currentLabel}</strong>. Efectiv la bara următoare.
+        </p>
+      )}
+    </div>
+  );
+}
+
 
 export function ProfilePage({
   onNavigateToAudit,
@@ -136,7 +234,7 @@ export function ProfilePage({
     const boolFields = [
       "rsi_enabled","ema_alignment_enabled","body_strength_enabled",
       "break_even_enabled","be_phase2_enabled",
-      "friday_close_enabled","news_protection_enabled",
+      "friday_close_enabled","news_protection_enabled","smart_news_enabled",
       "flag_enabled","inside_bar_enabled",
     ] as const;
     const arrFields = ["skip_hours","skip_weekdays"] as const;
@@ -289,6 +387,7 @@ export function ProfilePage({
       <Mt5Status />
       <BotControl profileId={activeId} profileName={draft?.name} />
       <TelegramSettings />
+      <TimezoneSelector />
 
       {/* Profile selector */}
       <div className="flex items-center gap-3 flex-wrap">
@@ -439,6 +538,83 @@ export function ProfilePage({
         </div>
       )}
 
+
+      {/* Capital Protection */}
+      {draft && (
+        <div className="bg-surface-card border border-surface-border rounded-xl p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold text-white">Protecție Capital</span>
+            <InfoTooltip text={
+              "Când activat, watchdog-ul API verifică equity-ul MT5 la fiecare 30s. " +
+              "Dacă equity scade sub pragul configurat, toate sesiunile cu tranzacționare live activată " +
+              "sunt puse automat pe pauză. Trimite notificare Telegram + UI. " +
+              "Dezactivează protecția sau ridică pragul după ce ai evaluat situația și vrei să reiei tranzacționarea."
+            } />
+          </div>
+
+          <div className="flex items-center gap-3 flex-wrap">
+            {/* Toggle ON/OFF */}
+            <button
+              onClick={() => {
+                setDraft({ ...draft, capital_protection_enabled: !draft.capital_protection_enabled });
+                setDirty(true);
+              }}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
+                draft.capital_protection_enabled
+                  ? "bg-amber-500/15 border-amber-500/50 text-amber-400 hover:bg-amber-500/20"
+                  : "bg-surface border-surface-border text-slate-400 hover:border-slate-500 hover:text-slate-300"
+              }`}
+            >
+              <span className={`w-2 h-2 rounded-full ${draft.capital_protection_enabled ? "bg-amber-400" : "bg-slate-600"}`} />
+              {draft.capital_protection_enabled ? "Activ" : "Inactiv"}
+            </button>
+
+            {/* Threshold input */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-500">Prag:</span>
+              <div className="flex items-center gap-1">
+                <input
+                  type="number"
+                  min={10}
+                  max={99}
+                  step={1}
+                  value={draft.capital_protection_threshold_pct ?? 70}
+                  onChange={(e) => {
+                    const v = Math.min(99, Math.max(10, Number(e.target.value)));
+                    setDraft({ ...draft, capital_protection_threshold_pct: v });
+                    setDirty(true);
+                  }}
+                  className="w-16 bg-surface border border-surface-border rounded px-2 py-1 text-sm text-white text-right focus:outline-none focus:border-blue-500"
+                />
+                <span className="text-xs text-slate-400">%</span>
+              </div>
+              <span className="text-xs text-slate-500">
+                = {((draft.capital_protection_threshold_pct ?? 70) / 100 * draft.start_balance).toFixed(0)} $
+                din {draft.start_balance} $
+              </span>
+            </div>
+          </div>
+
+          {draft.capital_protection_enabled && (
+            <p className="text-[11px] text-amber-400/70 leading-relaxed">
+              Daca equity MT5 scade sub <strong>{((draft.capital_protection_threshold_pct ?? 70) / 100 * draft.start_balance).toFixed(2)} $</strong>,
+              toate sesiunile live active vor fi puse automat pe pauza.
+            </p>
+          )}
+
+          {dirty && (
+            <div className="flex justify-end pt-1">
+              <button
+                onClick={handleSave}
+                disabled={save.isPending}
+                className="text-xs px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 transition-colors font-medium"
+              >
+                {save.isPending ? "Se salvează..." : "Salvează protecție"}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Sessions */}
       {loadingProfile ? (
