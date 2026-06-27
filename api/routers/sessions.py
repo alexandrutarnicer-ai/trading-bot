@@ -134,7 +134,7 @@ def _outcome_stats(session_id: str) -> dict:
         return {"total": 0, "wins": 0, "losses": 0,
                 "wins_today": 0, "wins_yesterday": 0, "losses_today": 0, "losses_yesterday": 0,
                 "today": 0, "yesterday": 0,
-                "pnl_usd_today": None, "pnl_usd_yesterday": None}
+                "pnl_usd_today": None, "pnl_usd_yesterday": None, "pnl_usd_total": None}
     closed = df[df["status"].isin(_CLOSED_STATUSES)]
     today     = str(date.today())
     yesterday = str(date.today() - timedelta(days=1))
@@ -161,6 +161,11 @@ def _outcome_stats(session_id: str) -> dict:
         today_out = yesterday_out = 0
     wins   = int((closed["result_r"] > 0).sum()) if len(closed) else 0
     losses = int((closed["result_r"] < 0).sum()) if len(closed) else 0
+    pnl_total = None
+    if "pnl_usd" in closed.columns:
+        all_pnl = pd.to_numeric(closed["pnl_usd"], errors="coerce").dropna()
+        if len(all_pnl):
+            pnl_total = round(float(all_pnl.sum()), 2)
     return {
         "total":            len(closed),
         "wins":             wins,
@@ -173,6 +178,7 @@ def _outcome_stats(session_id: str) -> dict:
         "yesterday":        yesterday_out,
         "pnl_usd_today":    pnl_today,
         "pnl_usd_yesterday": pnl_yest,
+        "pnl_usd_total":    pnl_total,
     }
 
 
@@ -378,6 +384,39 @@ def frequency_estimate(profile_id: str = ""):
     }
 
 
+@router.get("/all/outcomes", response_model=list[Outcome])
+def get_all_outcomes(limit: int = 200):
+    """Outcomes agregate din toate sesiunile — pentru SignalFeed in modul ALL."""
+    all_rows = []
+    for s in SESSIONS:
+        df = _read_outcomes(s["id"])
+        if df.empty:
+            continue
+        all_rows.append(df.tail(limit))
+    if not all_rows:
+        return []
+    combined = pd.concat(all_rows, ignore_index=True)
+    result = []
+    for _, row in combined.iterrows():
+        result.append(Outcome(
+            signal_id=str(row.get("signal_id", "")),
+            time_check=str(row.get("time_check", "")),
+            symbol=str(row.get("symbol", "")),
+            direction=int(row.get("direction", 0)),
+            status=str(row.get("status", "")),
+            entry=float(row.get("entry", 0)),
+            sl=float(row.get("sl", 0)),
+            tp=float(row.get("tp", 0)),
+            r_ratio=float(row.get("r_ratio", 0)),
+            triggered_at=str(row["triggered_at"]) if pd.notna(row.get("triggered_at")) else None,
+            exit_price=float(row["exit_price"]) if pd.notna(row.get("exit_price")) else None,
+            exit_time=str(row["exit_time"]) if pd.notna(row.get("exit_time")) else None,
+            result_r=float(row.get("result_r", 0)),
+            pnl_usd=float(row["pnl_usd"]) if pd.notna(row.get("pnl_usd")) else None,
+        ))
+    return result
+
+
 @router.get("/all/signals", response_model=list[Signal])
 def get_all_signals(limit: int = 50):
     """Semnale agregate din toate sesiunile, sortate cronologic (cele mai noi primele)."""
@@ -406,6 +445,76 @@ def get_all_signals(limit: int = 50):
             r_ratio=float(row.get("r_ratio", 0)),
         ))
     return result
+
+
+@router.get("/top-markets")
+def get_top_markets(period: str = "week", limit: int = 5):
+    """Top piete dupa R cumulat, filtrate dupa perioada (day/week/month/all)."""
+    today = date.today()
+    if period == "day":
+        cutoff = datetime.combine(today, datetime.min.time())
+    elif period == "week":
+        cutoff = datetime.combine(today - timedelta(days=today.weekday()), datetime.min.time())
+    elif period == "month":
+        cutoff = datetime.combine(today.replace(day=1), datetime.min.time())
+    else:
+        cutoff = None
+
+    symbol_stats: dict = {}
+
+    for s in SESSIONS:
+        df = _read_outcomes(s["id"])
+        if df.empty:
+            continue
+        closed = df[df["status"].isin(_CLOSED_STATUSES)].copy()
+        if closed.empty:
+            continue
+
+        if cutoff is not None:
+            closed["_et"] = pd.to_datetime(closed["exit_time"], errors="coerce")
+            closed = closed[closed["_et"] >= cutoff]
+
+        if closed.empty:
+            continue
+
+        for _, row in closed.iterrows():
+            sym = str(row.get("symbol", ""))
+            if not sym:
+                continue
+            if sym not in symbol_stats:
+                symbol_stats[sym] = {
+                    "trades": 0, "wins": 0, "total_r": 0.0,
+                    "pnl_usd": 0.0, "pnl_has": False, "sessions": set(),
+                }
+            r = float(row.get("result_r", 0) or 0)
+            symbol_stats[sym]["trades"] += 1
+            if r > 0:
+                symbol_stats[sym]["wins"] += 1
+            symbol_stats[sym]["total_r"] += r
+            symbol_stats[sym]["sessions"].add(s["id"])
+            p = row.get("pnl_usd")
+            if p is not None and not pd.isna(p):
+                symbol_stats[sym]["pnl_usd"] += float(p)
+                symbol_stats[sym]["pnl_has"] = True
+
+    result = []
+    for sym, st in symbol_stats.items():
+        t = st["trades"]
+        w = st["wins"]
+        result.append({
+            "symbol":      sym,
+            "trades":      t,
+            "wins":        w,
+            "losses":      t - w,
+            "total_r":     round(st["total_r"], 2),
+            "win_rate":    round(w / t * 100, 1) if t > 0 else 0.0,
+            "expectancy":  round(st["total_r"] / t, 3) if t > 0 else 0.0,
+            "pnl_usd":     round(st["pnl_usd"], 2) if st["pnl_has"] else None,
+            "sessions":    sorted(st["sessions"]),
+        })
+
+    result.sort(key=lambda x: x["total_r"], reverse=True)
+    return result[:limit]
 
 
 @router.get("", response_model=list[SessionStatus])
@@ -448,6 +557,7 @@ def list_sessions():
             news_events=np_entry.get("events", []),
             pnl_usd_today=out["pnl_usd_today"],
             pnl_usd_yesterday=out["pnl_usd_yesterday"],
+            pnl_usd_total=out["pnl_usd_total"],
         ))
     return result
 

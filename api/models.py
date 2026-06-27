@@ -32,6 +32,7 @@ class SessionStatus(BaseModel):
     news_events: list = []
     pnl_usd_today: Optional[float] = None
     pnl_usd_yesterday: Optional[float] = None
+    pnl_usd_total: Optional[float] = None
 
 
 class Signal(BaseModel):
@@ -71,6 +72,7 @@ class BotStatus(BaseModel):
     sessions_total: int = 0
     active_profile_id: Optional[str] = None
     active_profile_name: Optional[str] = None
+    active_profile_start_balance: Optional[float] = None
     last_started_at: Optional[str] = None
     last_stopped_at: Optional[str] = None
 

@@ -159,6 +159,18 @@ def bot_status():
     ap      = _read_active_profile() if running else {"id": None, "name": None}
     run_log = _read_run_log()
 
+    # Citeste start_balance din profilul activ
+    start_balance = None
+    profile_id = ap.get("id")
+    if profile_id:
+        try:
+            pfile = os.path.join(PROFILES_DIR, f"{profile_id}.json")
+            if os.path.exists(pfile):
+                with open(pfile, encoding="utf-8") as pf:
+                    start_balance = float(json.load(pf).get("start_balance", 1000))
+        except Exception:
+            pass
+
     return BotStatus(
         running=running,
         pid=pid if running else None,
@@ -167,6 +179,7 @@ def bot_status():
         sessions_total=len(SESSIONS),
         active_profile_id=ap.get("id"),
         active_profile_name=ap.get("name"),
+        active_profile_start_balance=start_balance,
         last_started_at=run_log.get("last_started_at"),
         last_stopped_at=run_log.get("last_stopped_at"),
     )
