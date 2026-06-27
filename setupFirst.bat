@@ -21,25 +21,47 @@ winget --version >nul 2>&1
 if not errorlevel 1 set "WINGET_OK=1"
 
 if "%WINGET_OK%"=="0" (
-    echo  [!] winget nu este disponibil pe acest calculator.
+    echo  [~] winget nu este disponibil. Instalez automat...
     echo.
-    echo  Optiunea 1 - Instaleaza "App Installer" din Microsoft Store:
-    echo    https://apps.microsoft.com/store/detail/9NBLGGH4NNS1
-    echo    Apoi reporneste acest setup.
-    echo.
-    echo  Optiunea 2 - Instaleaza manual si continua fara winget:
-    echo    Python 3.12+  ^>  https://www.python.org/downloads/
-    echo    Node.js LTS   ^>  https://nodejs.org/
-    echo    Git           ^>  https://git-scm.com/
-    echo    Bifeaza "Add to PATH" la fiecare instalator.
-    echo    Dupa instalare: reporneste CMD si ruleaza acest setup din nou.
-    echo.
-    echo  Optiunea 3 - Daca ai deja Python + Node.js instalate, ruleaza:
-    echo    PowerShell ^> Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-    echo    PowerShell ^> .\scripts\setup_instance.ps1
-    echo.
-    pause
-    exit /b 1
+    powershell -ExecutionPolicy Bypass -File "%ROOT%scripts\install_winget.ps1"
+    set "PS_EXIT=%errorlevel%"
+
+    if "!PS_EXIT!"=="2" (
+        echo.
+        echo  [i] winget a fost instalat dar necesita o repornire a ferestrei CMD.
+        echo      Inchide aceasta fereastra si ruleaza setupFirst.bat din nou.
+        echo.
+        pause
+        exit /b 0
+    )
+    if not "!PS_EXIT!"=="0" (
+        echo.
+        echo  [!] Instalarea automata winget a esuat.
+        echo.
+        echo  Solutii manuale:
+        echo    1. Instaleaza "App Installer" din Microsoft Store si reporneste setup-ul.
+        echo    2. Instaleaza Python/Node/Git manual de la python.org / nodejs.org / git-scm.com
+        echo       Bifeaza "Add to PATH" la fiecare, apoi ruleaza:
+        echo       powershell -File scripts\setup_instance.ps1
+        echo.
+        pause
+        exit /b 1
+    )
+
+    :: Verifica din nou dupa instalare
+    winget --version >nul 2>&1
+    if not errorlevel 1 (
+        set "WINGET_OK=1"
+        echo  [+] winget disponibil. Continui instalarea...
+        echo.
+    ) else (
+        echo.
+        echo  [i] winget instalat dar activ abia dupa repornire CMD.
+        echo      Inchide aceasta fereastra si ruleaza setupFirst.bat din nou.
+        echo.
+        pause
+        exit /b 0
+    )
 )
 
 
