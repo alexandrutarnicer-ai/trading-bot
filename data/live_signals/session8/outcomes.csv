@@ -1,0 +1,3 @@
+signal_id,time_check,symbol,direction,status,entry,sl,tp,r_ratio,triggered_at,exit_price,exit_time,result_r,pnl_usd
+S8-EURCAD-H1-IB0002,2026-06-25 01:00:05.575974,EURCAD,1,invalidat,1.61717,1.61464,1.62223,2.0,,,,0.0,0.0
+S8-EURCAD-H1-IB0001,2026-06-25T19:23:03,EURCAD,1,expirat,1.61657,1.61457,1.62057,2.0,,,,0.0,

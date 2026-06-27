@@ -1,0 +1,4 @@
+signal_id,time_check,symbol,direction,status,entry,sl,tp,r_ratio,triggered_at,exit_price,exit_time,result_r,pnl_usd
+S6-US30-M15-SIG0002,2026-06-16 16:45:05.038006,US30,1,expirat,51752.6,51700.6,51986.6,4.5,,,2026-06-16 15:45:00,0.0
+S6-US30-M15-SIG0001,2026-06-17T15:25:49.233783,US30,1,expirat,51200.3,51062.3,51821.3,4.5,,,,0.0
+S6-US30-M15-SIG0003,2026-06-17 20:00:05.084657,US30,1,expirat,52273.5,52017.5,53169.5,3.5,,,2026-06-17 19:45:00,0.0

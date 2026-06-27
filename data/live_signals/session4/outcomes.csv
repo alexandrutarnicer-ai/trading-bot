@@ -1,0 +1,2 @@
+signal_id,time_check,symbol,direction,status,entry,sl,tp,r_ratio,triggered_at,exit_price,exit_time,result_r,pnl_usd
+S4-GER40-IB0001,2026-06-26 14:15:05.334092,DE40,-1,be_lock,24766.6998,24821.2002,24657.699,2.0,2026-06-26 11:45:00,24712.199399999998,2026-06-26 14:00:00,1.0,
