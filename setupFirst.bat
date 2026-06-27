@@ -20,6 +20,15 @@ set "WINGET_OK=0"
 winget --version >nul 2>&1
 if not errorlevel 1 set "WINGET_OK=1"
 
+:: Fallback: pe Win11 rulat ca Admin, winget.exe exista dar nu e in PATH sesiunii elevate
+if "%WINGET_OK%"=="0" (
+    if exist "%LOCALAPPDATA%\Microsoft\WindowsApps\winget.exe" (
+        set "PATH=%LOCALAPPDATA%\Microsoft\WindowsApps;%PATH%"
+        winget --version >nul 2>&1
+        if not errorlevel 1 set "WINGET_OK=1"
+    )
+)
+
 if "%WINGET_OK%"=="0" (
     echo  [~] winget nu este disponibil. Instalez automat...
     echo.
