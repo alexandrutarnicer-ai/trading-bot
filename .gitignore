@@ -15,6 +15,6 @@ config/secrets*
 .venv/session2_optimize_output.txt
 .env
 
-# Override *.csv pentru inregistrarile live ale sesiunilor (semnale + outcome-uri)
-!data/live_signals/session*/signals.csv
-!data/live_signals/session*/outcomes.csv
+# Semnalele si outcome-urile live raman locale — nu se comit pe main.
+# Fiecare user/instanta are datele lor proprii.
+# Sync selectiv pe branch separat cand e necesar.

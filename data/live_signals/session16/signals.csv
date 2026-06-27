@@ -1,2 +1,0 @@
-signal_id,time,symbol,direction,dir_str,entry,sl,tp,r_ratio,atr_pips,n_optional,rsi
-S16-GBPAUD-H1-IB0001,2026-06-25 07:00:00,GBPAUD,-1,SHORT,1.90963,1.91241,1.90407,2.0,21.9,0,53.9

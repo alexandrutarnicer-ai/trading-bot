@@ -1,2 +1,0 @@
-signal_id,time_check,symbol,direction,status,entry,sl,tp,r_ratio,triggered_at,exit_price,exit_time,result_r,pnl_usd
-S12-EURAUD-H1-IB0001,2026-06-26 11:00:47.304140,EURAUD,-1,invalidat,1.64849,1.65249,1.64049,2.0,,,,0.0,0.0
