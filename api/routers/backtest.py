@@ -87,11 +87,23 @@ def _update_job(job_id: str, **kwargs) -> None:
 
 
 SPREAD_DEFAULTS = {
+    # Forex major — pips standard
     "EURUSD": 0.5, "GBPUSD": 0.8, "EURJPY": 1.5,
     "USDJPY": 0.6, "AUDJPY": 1.2, "NZDJPY": 1.5,
     "USDCHF": 1.0, "USDCAD": 1.2, "AUDUSD": 0.7,
-    "BTCUSD": 12.0,
+    # Forex crosses (estimate ICMarketsEU)
+    "EURCAD": 1.5, "GBPCAD": 1.8, "EURAUD": 1.5,
+    "GBPAUD": 2.0, "AUDCAD": 1.5, "AUDNZD": 1.5,
+    "CHFJPY": 1.5, "GBPJPY": 1.5,
+    # Indici
     "GER40": 1.0, "US30": 2.0, "US500": 0.5, "XAUUSD": 0.3,
+    # Crypto — spreads in TICKS (pip_size mic, trebuie mai multi ticks)
+    # BTCUSD: pip=0.01, spread real ~$12 = 1200 ticks → 12.0 in pips (pip=1.0 pt BTC dupa PIP_SIZE?)
+    "BTCUSD": 12.0,
+    # XRPUSD: pip=0.00001, spread real ~0.0003 price = 30 ticks (era 1.0 = practic 0 → backteste optimiste!)
+    "XRPUSD": 30.0,
+    # ETHUSD: similar cu BTC
+    "ETHUSD": 5.0,
 }
 
 
@@ -448,6 +460,44 @@ def _build_session_snapshot(cfg: dict, frontend_snap: dict | None = None) -> dic
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
+def _create_and_start_backtest_job(config: dict) -> str:
+    """Creează și pornește un job de backtest. Returnează job_id. Apelabil din cod."""
+    session_cfg  = config["session_cfg"]
+    date_from    = config.get("date_from")
+    date_to      = config.get("date_to")
+    start_balance = float(config.get("start_balance", 1000))
+    job_id = str(uuid.uuid4())[:8]
+    new_job = {
+        "job_id":          job_id,
+        "status":          "pending",
+        "session_id":      session_cfg.get("id", ""),
+        "session_label":   session_cfg.get("label", session_cfg.get("id", "")),
+        "markets":         session_cfg.get("markets", []),
+        "entry_tf":        session_cfg.get("entry_tf", "M15"),
+        "trend_tf":        session_cfg.get("trend_tf", "M30"),
+        "direction":       session_cfg.get("direction", "LONG"),
+        "started_at":      datetime.now().isoformat(timespec="seconds"),
+        "completed_at":    None,
+        "date_from":       date_from,
+        "date_to":         date_to,
+        "start_balance":   start_balance,
+        "error":           None,
+        "results":         None,
+        "session_snapshot": _build_session_snapshot(session_cfg),
+        "auto_triggered":  True,
+    }
+    with _jobs_lock:
+        _jobs_list.insert(0, new_job)
+        _save_to_file(_jobs_list)
+    t = threading.Thread(
+        target=_run_backtest_job,
+        args=(job_id, session_cfg, date_from, date_to, start_balance),
+        daemon=True,
+    )
+    t.start()
+    return job_id
+
+
 @router.post("/run")
 def run_backtest(body: dict):
     session_cfg = body.get("session")
@@ -503,7 +553,12 @@ def run_backtest(body: dict):
 
 @router.post("/run-missing")
 def run_missing_backtests(body: dict = {}):
-    """Triggerează backteste pentru sesiunile fără backtest recent (execute_trades=True)."""
+    """Triggerează backteste pentru sesiunile fără backtest recent.
+    Verifică dacă datele CSV există; dacă nu, pornește descărcarea întâi."""
+    from api.routers.data_download import (
+        csv_exists_for_session, start_download_job, register_pending_backtest
+    )
+
     profile_id = body.get("profile_id", "")
     _PROFILES_DIR = os.path.join(DATA_DIR, "profiles")
     _ACTIVE_FILE  = os.path.join(DATA_DIR, "active_profile.json")
@@ -520,7 +575,7 @@ def run_missing_backtests(body: dict = {}):
 
     pfile = os.path.join(_PROFILES_DIR, f"{profile_id}.json")
     if not os.path.exists(pfile):
-        return {"job_ids": [], "triggered": 0}
+        return {"job_ids": [], "triggered": 0, "downloads_triggered": 0}
     profile = json.load(open(pfile, encoding="utf-8"))
     start_balance = float(profile.get("start_balance", 1000))
 
@@ -540,6 +595,8 @@ def run_missing_backtests(body: dict = {}):
             latest_job[sid] = j
 
     job_ids = []
+    downloads_triggered = 0
+
     for ps in profile.get("sessions", []):
         sess_id  = ps.get("id", "")
         sess_key = ps.get("session_key", "")
@@ -594,42 +651,36 @@ def run_missing_backtests(body: dict = {}):
             "max_concurrent_per_market": ps.get("max_concurrent_per_market", 1),
         }
 
-        # Range implicit: 5 ani
         date_from = "2021-01-01"
         date_to   = datetime.now().strftime("%Y-%m-%d")
+        markets   = session_cfg["markets"]
+        entry_tf  = session_cfg["entry_tf"]
+        trend_tf  = session_cfg["trend_tf"]
 
-        job_id = str(uuid.uuid4())[:8]
-        new_job = {
-            "job_id":       job_id,
-            "status":       "pending",
-            "session_id":   sess_id,
-            "session_label": session_cfg["label"],
-            "markets":      session_cfg["markets"],
-            "entry_tf":     session_cfg["entry_tf"],
-            "trend_tf":     session_cfg["trend_tf"],
-            "direction":    session_cfg["direction"],
-            "started_at":   datetime.now().isoformat(timespec="seconds"),
-            "completed_at": None,
-            "date_from":    date_from,
-            "date_to":      date_to,
+        bt_config = {
+            "session_cfg":   session_cfg,
+            "date_from":     date_from,
+            "date_to":       date_to,
             "start_balance": start_balance,
-            "error":        None,
-            "results":      None,
-            "session_snapshot": _build_session_snapshot(session_cfg),
         }
-        with _jobs_lock:
-            _jobs_list.insert(0, new_job)
-            _save_to_file(_jobs_list)
 
-        t = threading.Thread(
-            target=_run_backtest_job,
-            args=(job_id, session_cfg, date_from, date_to, start_balance),
-            daemon=True,
-        )
-        t.start()
-        job_ids.append(job_id)
+        if csv_exists_for_session(markets, entry_tf, trend_tf):
+            # Date CSV există → pornește backtest direct
+            jid = _create_and_start_backtest_job(bt_config)
+            job_ids.append(jid)
+        else:
+            # Date CSV lipsesc → pornește descărcarea, înregistrează backtest pending
+            tfs = list(dict.fromkeys([entry_tf, trend_tf]))
+            label = f"Auto: {sess_id} — {'+'.join(markets)}"
+            dl_job_id = start_download_job(markets, tfs, label)
+            register_pending_backtest(dl_job_id, bt_config)
+            downloads_triggered += 1
 
-    return {"job_ids": job_ids, "triggered": len(job_ids)}
+    return {
+        "job_ids": job_ids,
+        "triggered": len(job_ids),
+        "downloads_triggered": downloads_triggered,
+    }
 
 
 @router.get("/jobs")

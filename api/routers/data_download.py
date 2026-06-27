@@ -87,6 +87,54 @@ for _j in _jobs_list:
         _j["completed_at"] = datetime.now().isoformat(timespec="seconds")
 _save_jobs(_jobs_list)
 
+# Backteste în așteptare după descărcare: dl_job_id → [backtest_config, ...]
+_pending_backtests: dict[str, list[dict]] = {}
+_pending_lock = threading.Lock()
+
+
+def register_pending_backtest(dl_job_id: str, backtest_config: dict) -> None:
+    """Înregistrează un backtest care trebuie pornit după finalizarea descărcării."""
+    with _pending_lock:
+        if dl_job_id not in _pending_backtests:
+            _pending_backtests[dl_job_id] = []
+        _pending_backtests[dl_job_id].append(backtest_config)
+
+
+def start_download_job(symbols: list[str], timeframes: list[str], label: str = "") -> str:
+    """Pornește un job de descărcare și returnează job_id-ul. Apelabil din cod."""
+    job_id = str(uuid.uuid4())[:8]
+    now    = datetime.now().isoformat(timespec="seconds")
+    if not label:
+        label = f"{' · '.join(symbols)} — {'+'.join(timeframes)}"
+    job: dict = {
+        "job_id":          job_id,
+        "status":          "pending",
+        "label":           label,
+        "markets":         symbols,
+        "timeframes":      timeframes,
+        "started_at":      now,
+        "completed_at":    None,
+        "results":         [],
+        "any_needs_scroll": False,
+        "error":           None,
+    }
+    with _jobs_lock:
+        _jobs_list.append(job)
+        _save_jobs(_jobs_list)
+    t = threading.Thread(target=_download_job, args=(job_id, symbols, timeframes), daemon=True)
+    t.start()
+    return job_id
+
+
+def csv_exists_for_session(markets: list[str], entry_tf: str, trend_tf: str) -> bool:
+    """Returnează True dacă toate fișierele CSV necesare există."""
+    tfs = list(dict.fromkeys([entry_tf, trend_tf]))
+    return all(
+        os.path.exists(os.path.join(DATA_DIR, f"{sym}_{tf}.csv"))
+        for sym in markets
+        for tf in tfs
+    )
+
 
 def _find_job(job_id: str) -> dict | None:
     return next((j for j in _jobs_list if j["job_id"] == job_id), None)
@@ -233,12 +281,24 @@ def _download_job(job_id: str, symbols: list[str], timeframes: list[str]) -> Non
                     })
 
             any_scroll = any(r["needs_scroll"] for r in results)
+            dl_success = any(r.get("success") for r in results)
             _update_job(job_id,
                 status="done",
                 results=results,
                 any_needs_scroll=any_scroll,
                 error=None,
                 completed_at=datetime.now().isoformat(timespec="seconds"))
+
+            # Porneste backtestele pending pentru acest job de descarcare
+            if dl_success:
+                with _pending_lock:
+                    pending = _pending_backtests.pop(job_id, [])
+                for bt_config in pending:
+                    try:
+                        from api.routers.backtest import _create_and_start_backtest_job
+                        _create_and_start_backtest_job(bt_config)
+                    except Exception:
+                        pass
 
         except Exception as e:
             _update_job(job_id,
