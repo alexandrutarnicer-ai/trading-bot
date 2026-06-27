@@ -2,11 +2,11 @@
 chcp 65001 >nul 2>&1
 setlocal enabledelayedexpansion
 set "ROOT=%~dp0"
-title Trading Bot — Setup initial
+title Trading Bot ï¿½ Setup initial
 
 echo.
 echo ============================================================
-echo   Trading Bot — Setup initial
+echo   Trading Bot ï¿½ Setup initial
 echo ============================================================
 echo.
 echo  Instaleaza toate dependentele necesare pentru a rula botul.
@@ -16,22 +16,40 @@ echo.
 set "INSTALLED_SOMETHING=0"
 
 :: -- Verifica winget (disponibil implicit pe Windows 11) -------------------
+set "WINGET_OK=0"
 winget --version >nul 2>&1
-if errorlevel 1 (
-    echo  [!] winget nu este disponibil. Actualizeaza Windows sau instaleaza
-    echo      "App Installer" din Microsoft Store si reporneste setup-ul.
+if not errorlevel 1 set "WINGET_OK=1"
+
+if "%WINGET_OK%"=="0" (
+    echo  [!] winget nu este disponibil pe acest calculator.
+    echo.
+    echo  Optiunea 1 - Instaleaza "App Installer" din Microsoft Store:
+    echo    https://apps.microsoft.com/store/detail/9NBLGGH4NNS1
+    echo    Apoi reporneste acest setup.
+    echo.
+    echo  Optiunea 2 - Instaleaza manual si continua fara winget:
+    echo    Python 3.12+  ^>  https://www.python.org/downloads/
+    echo    Node.js LTS   ^>  https://nodejs.org/
+    echo    Git           ^>  https://git-scm.com/
+    echo    Bifeaza "Add to PATH" la fiecare instalator.
+    echo    Dupa instalare: reporneste CMD si ruleaza acest setup din nou.
+    echo.
+    echo  Optiunea 3 - Daca ai deja Python + Node.js instalate, ruleaza:
+    echo    PowerShell ^> Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+    echo    PowerShell ^> .\scripts\setup_instance.ps1
+    echo.
     pause
     exit /b 1
 )
 
 
 :: -- 1. Python -------------------------------------------------------------
-:: Folosim "py" (Python Launcher) — nu este afectat de Windows Store alias.
+:: Folosim "py" (Python Launcher) ï¿½ nu este afectat de Windows Store alias.
 echo  [1/5] Verific Python...
 py --version >nul 2>&1
 if errorlevel 1 (
     echo  [~] Python nu este instalat. Instalez via winget ...
-    :: Incercam versiunile recente in ordine — Python.Python.3 (generic) a fost
+    :: Incercam versiunile recente in ordine ï¿½ Python.Python.3 (generic) a fost
     :: eliminat din repo; folosim ID-uri explicite cu fallback.
     winget install --id Python.Python.3.13 --exact --silent --accept-package-agreements --accept-source-agreements >nul 2>&1
     if errorlevel 1 (
@@ -101,7 +119,7 @@ if "%INSTALLED_SOMETHING%"=="1" (
     echo  dependentele Python si frontend...
     echo.
     timeout /t 3 /nobreak >nul
-    start "Trading Bot — Finalizare Setup" cmd /k ""%~f0""
+    start "Trading Bot ï¿½ Finalizare Setup" cmd /k ""%~f0""
     exit /b 0
 )
 

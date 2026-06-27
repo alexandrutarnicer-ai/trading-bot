@@ -93,14 +93,9 @@ Write-Host "[5/5] Creez directoare necesare..." -ForegroundColor Yellow
 
 $dirs = @(
     "data",
-    "data\profiles",
-    "data\live_signals\session1",
-    "data\live_signals\session2",
-    "data\live_signals\session3",
-    "data\live_signals\session4",
-    "data\live_signals\session5",
-    "data\live_signals\session6"
+    "data\profiles"
 )
+1..20 | ForEach-Object { $dirs += "data\live_signals\session$_" }
 
 foreach ($d in $dirs) {
     $path = Join-Path $ROOT $d
