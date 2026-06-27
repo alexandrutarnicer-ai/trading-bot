@@ -37,12 +37,7 @@ SEP  = "=" * 60
 sep2 = "-" * 60
 
 DATA_DIRS = [
-    DATA / "live_signals" / "session1",
-    DATA / "live_signals" / "session2",
-    DATA / "live_signals" / "session3",
-    DATA / "live_signals" / "session4",
-    DATA / "live_signals" / "session5",
-    DATA / "live_signals" / "session6",
+    *[DATA / "live_signals" / f"session{i}" for i in range(1, 21)],
     PROFILES,
 ]
 
@@ -310,13 +305,9 @@ def main():
         print("  Setup partial. Verifica erorile de mai sus. Pasi urmatori:")
     print()
     print("  1. Deschide MetaTrader 5 si conecteaza-te pe cont demo")
-    print("  2. Porneste aplicatia web:")
-    print()
-    print("     Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass")
-    print("     .\\start_app.ps1")
-    print()
+    print("  2. Porneste dashboard-ul: dublu-click pe start_ui.bat")
     print("  3. Deschide http://localhost:5173")
-    print("  4. In Profile → Telegram Settings configureaza token + chat ID")
+    print("  4. In Profile -> Telegram Settings configureaza token + chat ID")
     print("  5. Porneste botul din Dashboard (butonul Start)")
     print(SEP)
 

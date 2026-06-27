@@ -73,20 +73,28 @@ if ($mt5Exe) {
 Write-Host ""
 
 # --- Creeaza live\start_bot.bat ---
-# Folosim array de linii in loc de here-string pentru compatibilitate encoding
+# Linii Telegram folosesc single-quoted PS strings: '' devine ' in output (batch syntax corecta)
+$tgLine1 = 'for /f "delims=" %%i in (''powershell -NoProfile -Command "[Environment]::GetEnvironmentVariable(\"TELEGRAM_TOKEN\",\"User\")"'') do set "TELEGRAM_TOKEN=%%i"'
+$tgLine2 = 'for /f "delims=" %%i in (''powershell -NoProfile -Command "[Environment]::GetEnvironmentVariable(\"TELEGRAM_CHAT_ID\",\"User\")"'') do set "TELEGRAM_CHAT_ID=%%i"'
+
 $batLines = @(
     '@echo off',
     'title Trading Bot -- Sesiuni Live',
     'echo ==================================================',
     'echo  Trading Bot -- pornire automata',
-    'echo  Astept 45 secunde pentru conectare MT5...',
+    'echo  Astept 90 secunde pentru conectare MT5...',
     'echo ==================================================',
-    'timeout /t 45 /nobreak',
+    '',
+    'rem Incarca variabilele Telegram din registry (User scope)',
+    $tgLine1,
+    $tgLine2,
+    '',
+    'timeout /t 90 /nobreak',
     "cd /d `"$BotDir`"",
     "`"$PythonExe`" live\run_all.py",
     'pause'
 )
-[System.IO.File]::WriteAllText($BatPath, ($batLines -join "`r`n"), [System.Text.Encoding]::UTF8)
+[System.IO.File]::WriteAllText($BatPath, ($batLines -join "`r`n") + "`r`n", [System.Text.Encoding]::UTF8)
 Write-Host "[OK] Creat: live\start_bot.bat" -ForegroundColor Green
 
 # --- Task Scheduler ---
