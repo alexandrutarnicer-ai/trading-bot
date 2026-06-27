@@ -9,8 +9,9 @@ de cont adaptorul refuza sa functioneze.
 
 Timezone: MT5 returneaza timestamps in ora serverului broker (e.g., UTC+2
 iarna sau UTC+3 vara pentru ICMarketsEU). Adaptorul detecteaza automat
-offset-ul serverului si converteste explicit la Europe/Bucharest cu zoneinfo.
-Rezultat: coloana 'time' e intotdeauna in ora Romaniei (naive, fara tzinfo),
+offset-ul serverului si converteste explicit la fusul orar configurat
+(implicit Europe/Bucharest, configurabil via data/timezone_config.json).
+Rezultat: coloana 'time' e intotdeauna in ora configurata (naive, fara tzinfo),
 indiferent de sezon sau schimbarile DST ale serverului.
 
 Utilizare:
@@ -20,10 +21,11 @@ Utilizare:
 """
 
 from datetime import datetime, timezone, timedelta
-from zoneinfo import ZoneInfo
 
 import MetaTrader5 as mt5
 import pandas as pd
+
+from tz_helper import get_configured_tz_name
 
 _TF_MAP: dict[str, int] = {
     "M1":  mt5.TIMEFRAME_M1,
@@ -36,7 +38,6 @@ _TF_MAP: dict[str, int] = {
 }
 
 _COLUMNS = ["time", "open", "high", "low", "close", "tick_volume", "spread", "real_volume"]
-_BUCHAREST = ZoneInfo("Europe/Bucharest")
 
 
 class Mt5DataSource:
@@ -200,13 +201,13 @@ class Mt5DataSource:
         if self._server_offset_h is None:
             self._server_offset_h = self._detect_server_offset_h(symbol)
 
-        # Pasul 3: server time → UTC → Europe/Bucharest (naive)
+        # Pasul 3: server time → UTC → fusul orar configurat (naive)
         # Daca offset=0 (nedetectat sau server real UTC), sarim conversia.
         if self._server_offset_h != 0:
             df["time"] = (
                 (df["time"] - pd.Timedelta(hours=self._server_offset_h))
                 .dt.tz_localize("UTC")
-                .dt.tz_convert("Europe/Bucharest")
+                .dt.tz_convert(get_configured_tz_name())
                 .dt.tz_localize(None)
             )
 

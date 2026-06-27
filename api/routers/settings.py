@@ -3,6 +3,8 @@ GET    /api/settings/telegram       — citeste config Telegram (token mascat)
 PUT    /api/settings/telegram       — salveaza token + chat_id
 DELETE /api/settings/telegram       — sterge configuratia
 POST   /api/settings/telegram/test  — trimite mesaj de test
+GET    /api/settings/timezone       — citeste fusul orar activ
+PUT    /api/settings/timezone       — schimba fusul orar (Romania / Germania)
 """
 import os
 import json
@@ -15,6 +17,12 @@ from api.config import DATA_DIR
 router = APIRouter(prefix="/settings", tags=["settings"])
 
 TG_FILE = os.path.join(DATA_DIR, "telegram_config.json")
+TZ_FILE = os.path.join(DATA_DIR, "timezone_config.json")
+
+_SUPPORTED_TZ: dict[str, str] = {
+    "Europe/Bucharest": "România (EET/EEST, UTC+2/UTC+3)",
+    "Europe/Berlin":    "Germania (CET/CEST, UTC+1/UTC+2)",
+}
 
 
 def _load() -> dict:
@@ -92,3 +100,36 @@ def test_telegram():
         raise HTTPException(502, f"Telegram API error: {detail}")
     except urllib.error.URLError as e:
         raise HTTPException(502, f"Conexiune eșuată: {e.reason}")
+
+
+# ---------------------------------------------------------------------------
+# Timezone
+# ---------------------------------------------------------------------------
+
+@router.get("/timezone")
+def get_timezone():
+    """Returneaza fusul orar activ si lista de fusuri suportate."""
+    try:
+        with open(TZ_FILE, encoding="utf-8") as f:
+            tz = json.load(f).get("timezone", "Europe/Bucharest")
+    except Exception:
+        tz = "Europe/Bucharest"
+    if tz not in _SUPPORTED_TZ:
+        tz = "Europe/Bucharest"
+    return {
+        "timezone": tz,
+        "label":    _SUPPORTED_TZ[tz],
+        "supported": [{"tz": k, "label": v} for k, v in _SUPPORTED_TZ.items()],
+    }
+
+
+@router.put("/timezone")
+def set_timezone(body: dict):
+    """Schimba fusul orar activ. Efectul intra la bara urmatoare (max 15 min)."""
+    tz = (body.get("timezone") or "").strip()
+    if tz not in _SUPPORTED_TZ:
+        raise HTTPException(400, f"Fus orar nesuportat: '{tz}'. Valori valide: {list(_SUPPORTED_TZ)}")
+    os.makedirs(DATA_DIR, exist_ok=True)
+    with open(TZ_FILE, "w", encoding="utf-8") as f:
+        json.dump({"timezone": tz}, f, ensure_ascii=False, indent=2)
+    return {"ok": True, "timezone": tz, "label": _SUPPORTED_TZ[tz]}
