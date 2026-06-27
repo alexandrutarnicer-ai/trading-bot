@@ -8,6 +8,7 @@ import { SessionCard } from "../components/SessionCard";
 import { SignalFeed } from "../components/SignalFeed";
 import { EquityChart } from "../components/EquityChart";
 import { TradingStatsPanel } from "../components/TradingStatsPanel";
+import { TopMarketsWidget } from "../components/TopMarketsWidget";
 
 function WeeklyStatsPanel() {
   const { data, isLoading } = useWeeklyStats();
@@ -194,6 +195,8 @@ export function Dashboard() {
         body: { profile_id: profileId },
       });
       qc.invalidateQueries({ queryKey: ["frequency-estimate"] });
+      qc.invalidateQueries({ queryKey: ["backtest-jobs"] });
+      qc.invalidateQueries({ queryKey: ["download-jobs"] });
       if (onDone) onDone();
     } catch (e) {
       console.error("run-missing failed", e);
@@ -417,7 +420,7 @@ export function Dashboard() {
           <div className="bg-surface-card rounded-xl border border-surface-border p-4">
             <h2 className="text-sm font-semibold text-white mb-3">Statistici</h2>
             {sessions && sessions.length > 0
-              ? <TradingStatsPanel sessions={sessions} />
+              ? <TradingStatsPanel sessions={sessions} mt5={mt5} botStatus={botStatus} />
               : <div className="text-xs text-slate-500 text-center py-4">Nicio sesiune activă</div>
             }
           </div>
@@ -427,6 +430,9 @@ export function Dashboard() {
             <h2 className="text-sm font-semibold text-white mb-3">Indice Săptămânal</h2>
             <WeeklyStatsPanel />
           </div>
+
+          {/* Top 5 piete */}
+          <TopMarketsWidget />
         </div>
       </div>
     </div>
