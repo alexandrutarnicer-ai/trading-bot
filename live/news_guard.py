@@ -104,6 +104,93 @@ IMPACT_RANK = {"High": 3, "Medium": 2, "Low": 1, "Non-Economic": 0, "Holiday": 0
 log = logging.getLogger("news_guard")
 
 
+# ─── Sentimentul stirilor ─────────────────────────────────────────────────────
+
+def _parse_number(s: str) -> float | None:
+    """Parses strings like '216K', '-0.3%', '2.5B', '1.23' → float."""
+    if not s:
+        return None
+    s = s.strip().replace(",", "").lstrip("+")
+    try:
+        if s.endswith("K"):
+            return float(s[:-1]) * 1e3
+        if s.endswith("M"):
+            return float(s[:-1]) * 1e6
+        if s.endswith("B"):
+            return float(s[:-1]) * 1e9
+        if s.endswith("%"):
+            return float(s[:-1])
+        return float(s)
+    except (ValueError, TypeError):
+        return None
+
+
+def _calc_sentiment(actual_str: str, forecast_str: str) -> int:
+    """
+    +1 daca actual > forecast (valuta reportoare intarita),
+    -1 daca actual < forecast, 0 daca necunoscut sau egal.
+    Simplificat — nu tine cont de indicatori inversati (ex: somaj).
+    """
+    actual   = _parse_number(actual_str or "")
+    forecast = _parse_number(forecast_str or "")
+    if actual is None or forecast is None:
+        return 0
+    if actual > forecast:
+        return 1
+    if actual < forecast:
+        return -1
+    return 0
+
+
+def news_direction_for_symbol(symbol: str, events: list[dict]) -> int:
+    """
+    Calculeaza directia neta a tranzactionarii pentru un simbol pe baza
+    evenimentelor de stiri cu sentiment. Returneaza +1 (LONG), -1 (SHORT), 0 (neclar).
+
+    Reguli forex:
+      valuta_baza bullish (+1) → LONG perechea
+      valuta_cotatie bullish (+1) → SHORT perechea
+    Reguli indici/crypto (o singura valuta):
+      valuta bullish (+1) → LONG indexul
+    """
+    sym = symbol.upper()
+    currencies = SYMBOL_CURRENCIES.get(sym, [])
+    if not currencies:
+        return 0
+
+    # Acumuleaza sentiment per valuta din evenimentele active
+    currency_sentiment: dict[str, int] = {}
+    for ev in events:
+        ccy  = ev.get("currency", "")
+        sent = ev.get("sentiment", 0)
+        if ccy and sent != 0:
+            # Daca exista conflicte (mai multi indicatori): anuleaza
+            if ccy in currency_sentiment and currency_sentiment[ccy] != sent:
+                currency_sentiment[ccy] = 0  # conflict → neclar
+            else:
+                currency_sentiment[ccy] = sent
+
+    if len(currencies) == 1:
+        # Index sau crypto (o singura valuta asociata)
+        return currency_sentiment.get(currencies[0], 0)
+
+    # Pereche forex: base = sym[:3], quote = sym[3:]
+    base  = sym[:3]
+    quote = sym[3:]
+    s_base  = currency_sentiment.get(base,  0)
+    s_quote = currency_sentiment.get(quote, 0)
+
+    if s_base != 0 and s_quote == 0:
+        return s_base        # baza intarita → LONG perechea
+    if s_quote != 0 and s_base == 0:
+        return -s_quote      # cotatie intarita → SHORT perechea
+    if s_base != 0 and s_quote != 0 and s_base != -s_quote:
+        return 0             # semnale contradictorii
+    if s_base != 0:
+        return s_base        # ambele confirma (ex: EUR+1 si USD-1 → LONG EURUSD)
+    return 0
+
+
 # ─── Cache ────────────────────────────────────────────────────────────────────
 
 _lock:          threading.Lock = threading.Lock()
@@ -157,11 +244,16 @@ def _fetch_forexfactory() -> list[dict]:
                 currency = FF_COUNTRY_FIX.get(ev.get("country", "").upper(), "")
                 if ev_time is None or not currency:
                     continue
+                actual_s   = str(ev.get("actual",   "") or "").strip()
+                forecast_s = str(ev.get("forecast", "") or "").strip()
                 events.append({
                     "title":      ev.get("title", "Unknown"),
                     "currency":   currency,
                     "impact":     ev.get("impact", "Low"),
                     "event_time": ev_time,
+                    "actual":     actual_s,
+                    "forecast":   forecast_s,
+                    "sentiment":  _calc_sentiment(actual_s, forecast_s),
                     "_source":    "ff",
                 })
         except Exception as exc:
@@ -360,6 +452,9 @@ def active_events_for(
                 "impact":     ev["impact"],
                 "event_time": ev_time.strftime("%Y-%m-%dT%H:%M:%S"),
                 "minutes_to": mins_to,
+                "actual":     ev.get("actual",   ""),
+                "forecast":   ev.get("forecast", ""),
+                "sentiment":  ev.get("sentiment", 0),
             })
 
     return active

@@ -940,6 +940,28 @@ export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted,
                       />
                     </div>
                   </div>
+                  <div className="border-t border-surface-border/40 pt-3 space-y-1.5">
+                    <Toggle
+                      label="Mod Inteligent"
+                      value={session.smart_news_enabled ?? false}
+                      onChange={(v) => upd({ smart_news_enabled: v })}
+                    />
+                    {(session.smart_news_enabled ?? false) && (
+                      <p className="text-[10px] text-amber-400/70 leading-relaxed">
+                        Analizează sentimentul știrii (actual vs forecast) și menține pozițiile aliniate cu direcția știrii.
+                        Plasează un ordin STOP în direcția știrii dacă nu există poziție deschisă. SL trailing la 3R și 4R.
+                        <InfoTooltip text={
+                          "Mod Inteligent: în loc să închidă toate pozițiile, bot-ul determină sentimentul știrii " +
+                          "(actual > forecast = bullish pentru valuta raportoare). " +
+                          "Pozițiile CONTRA sentimentului sunt închise; pozițiile CU sentimentul sunt menținute. " +
+                          "Dacă nu există poziție: plasează ordin STOP în direcția știrii cu risc 1.5× base. " +
+                          "SL trailing: la 3R → SL mutat la 1R față de TP; la 4R → SL la 2R față de TP. " +
+                          "AVERTISMENT: parsarea sentimentului este simplificată (actual > forecast = bullish). " +
+                          "Nu se aplică corect la indicatori inversați (ex: șomaj, inflație). Testează pe DEMO."
+                        } />
+                      </p>
+                    )}
+                  </div>
                   <p className="text-[10px] text-slate-600">
                     Sursa principală: ForexFactory (fără cheie API). Backup: MT5 calendar built-in. Verificare la fiecare 5 min.
                   </p>

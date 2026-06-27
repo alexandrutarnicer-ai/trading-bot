@@ -18,6 +18,7 @@ import threading
 import subprocess
 import urllib.request
 from datetime import datetime, timedelta
+from tz_helper import now_local
 
 import pandas as pd
 import numpy as np
@@ -299,7 +300,7 @@ def _notify_signal(sig: dict, session_id: str) -> None:
 # ---------------------------------------------------------------------------
 
 def _next_bar_close(bar_minutes: int) -> datetime:
-    now = datetime.now()
+    now = now_local()
     mod = now.minute % bar_minutes
     mins_to_next = bar_minutes - mod
     nxt = now + timedelta(minutes=mins_to_next)
@@ -308,7 +309,7 @@ def _next_bar_close(bar_minutes: int) -> datetime:
 
 def _sleep_to_next_bar(bar_minutes: int, log):
     nxt = _next_bar_close(bar_minutes)
-    wait = (nxt - datetime.now()).total_seconds()
+    wait = (nxt - now_local()).total_seconds()
     if wait > 0:
         log.info(f"  Urmatoarea bara {bar_minutes}min @ {nxt.strftime('%H:%M:%S')} — {wait:.0f}s")
         time.sleep(wait)
@@ -711,7 +712,7 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                                              "symbol": symbol,
                                              "status": "expirat", "result_r": 0.0,
                                              "exit_time": current_bar_t,
-                                             "time_check": datetime.now(),
+                                             "time_check": now_local(),
                                              "pnl_usd": 0.0})
                         _send_telegram(
                             f"<b>EXPIRAT: {symbol}</b>\n"
@@ -748,7 +749,7 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                         outcome_rows.append({**p, "signal_id": sig_id,
                                              "symbol": symbol,
                                              "status": "invalidat", "result_r": 0.0,
-                                             "time_check": datetime.now(),
+                                             "time_check": now_local(),
                                              "pnl_usd": 0.0})
                         _dir_str = "LONG" if d == 1 else "SHORT"
                         _send_telegram(
@@ -804,7 +805,7 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                         log.info(f"  [MT5] {sig_id} scos din tracking (anulat/respins fara executie)")
                         continue
                     outcome_rows.append({**p, "signal_id": sig_id, "symbol": symbol,
-                                         **mt5_res, "time_check": datetime.now()})
+                                         **mt5_res, "time_check": now_local()})
                     if mt5_res["status"] == "TP":
                         log.info(f"  PROFIT (MT5): {sig_id} TP +{mt5_res['result_r']:.3f}R")
                         _send_telegram(
@@ -912,7 +913,7 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                         outcome_rows.append({**p, "signal_id": sig_id, "symbol": symbol,
                                              "status": _oc, "result_r": _rr,
                                              "exit_price": _be_csl, "exit_time": bar["time"],
-                                             "time_check": datetime.now(),
+                                             "time_check": now_local(),
                                              "pnl_usd": _pnl(_rr, p.get("risk_usd"))})
                         rows_to_remove.append(sig_id)
                         if _oc == "SL":
@@ -935,7 +936,7 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                         outcome_rows.append({**p, "signal_id": sig_id, "symbol": symbol,
                                              "status": "TP", "result_r": p["r_ratio"],
                                              "exit_price": p["tp"], "exit_time": bar["time"],
-                                             "time_check": datetime.now(),
+                                             "time_check": now_local(),
                                              "pnl_usd": _pnl(p["r_ratio"], p.get("risk_usd"))})
                         rows_to_remove.append(sig_id)
                         log.info(f"  PROFIT: {sig_id} TP +{p['r_ratio']:.1f}R")
@@ -974,7 +975,7 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                                              "symbol": symbol, "status": "SL",
                                              "result_r": -1.0, "exit_price": p["sl"],
                                              "exit_time": bar["time"],
-                                             "time_check": datetime.now(),
+                                             "time_check": now_local(),
                                              "pnl_usd": _pnl(-1.0, p.get("risk_usd"))})
                         rows_to_remove.append(sig_id)
                         log.info(f"  PIERDERE: {sig_id} SL -1.0R")
@@ -989,7 +990,7 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                                              "symbol": symbol, "status": "TP",
                                              "result_r": p["r_ratio"], "exit_price": p["tp"],
                                              "exit_time": bar["time"],
-                                             "time_check": datetime.now(),
+                                             "time_check": now_local(),
                                              "pnl_usd": _pnl(p["r_ratio"], p.get("risk_usd"))})
                         rows_to_remove.append(sig_id)
                         log.info(f"  PROFIT: {sig_id} TP +{p['r_ratio']:.1f}R")
@@ -1123,7 +1124,7 @@ def _friday_close_check(
     if not friday_close_enabled:
         return
 
-    now = datetime.now()
+    now = now_local()
     if now.weekday() != 4:   # 4 = Friday
         return
     if now.hour < friday_close_hour:
@@ -1275,27 +1276,245 @@ def _friday_close_check(
         state["pending"].get(symbol, {}).pop(sig_id, None)
 
 
+def _smart_news_place_order(
+    symbol: str,
+    direction: int,
+    news_events: list,
+    state: dict,
+    session_cfg: dict,
+    log,
+) -> None:
+    """
+    Mod Inteligent: plaseaza un ordin STOP in directia stirii.
+    direction: +1 = LONG (BUY_STOP), -1 = SHORT (SELL_STOP)
+    Risk: 1.5 × risk_base din session_cfg.
+    """
+    if _mt5_exec is None:
+        return
+    if direction == 0:
+        return
+
+    tick = _mt5_exec.symbol_info_tick(symbol)
+    info = _mt5_exec.symbol_info(symbol)
+    if tick is None or info is None:
+        return
+
+    # Entry: la piata (usor dincolo de BID/ASK pentru STOP imediat)
+    spread_pts = info.spread * info.point if info.point > 0 else 0
+    if direction == 1:
+        entry = round(tick.ask + info.point, info.digits)   # BUY_STOP deasupra ask
+    else:
+        entry = round(tick.bid - info.point, info.digits)   # SELL_STOP sub bid
+
+    # SL: standard pip × atr sau fallback la 30 × point
+    from strategy.signals import pip_size as _pip_size
+    pip = _pip_size(symbol)
+    sl_pips = 30.0  # fallback
+    sl = entry - direction * sl_pips * pip
+
+    # TP: r_max × SL distance
+    r_max = session_cfg.get("r_max", session_cfg.get("risk_pct", 0.01) and 4.5)
+    if not isinstance(r_max, (int, float)):
+        r_max = 4.5
+    tp = entry + direction * sl_pips * pip * r_max
+
+    # Sizing cu risc 1.5 × risk_base
+    frac      = session_cfg.get("account_fraction")
+    risk_base = session_cfg.get("risk_base", session_cfg.get("risk_pct", 0.01))
+    risk_pct  = risk_base * 1.5
+    capital   = 1000.0
+    if frac and _mt5_exec is not None:
+        _ai = _mt5_exec.account_info()
+        if _ai:
+            capital = float(_ai.equity) * float(frac)
+    lots, risk_usd = _calc_lots(symbol, entry, sl, capital, risk_pct)
+
+    sn_id = f"SN{state.get('sn_counter', 0) + 1}"
+    state["sn_counter"] = state.get("sn_counter", 0) + 1
+
+    order_type = (_mt5_exec.ORDER_TYPE_BUY_STOP if direction == 1
+                  else _mt5_exec.ORDER_TYPE_SELL_STOP)
+    request = {
+        "action":       _mt5_exec.TRADE_ACTION_PENDING,
+        "symbol":       symbol,
+        "volume":       lots,
+        "type":         order_type,
+        "price":        entry,
+        "sl":           round(sl, info.digits),
+        "tp":           round(tp, info.digits),
+        "type_time":    _mt5_exec.ORDER_TIME_GTC,
+        "type_filling": _mt5_exec.ORDER_FILLING_RETURN,
+        "comment":      sn_id[:31],
+    }
+    result = _mt5_exec.order_send(request)
+    if result and result.retcode == _mt5_exec.TRADE_RETCODE_DONE:
+        dir_str = "LONG" if direction == 1 else "SHORT"
+        top = news_events[0] if news_events else {}
+        log.info(f"  [SN] {sn_id} {symbol} {dir_str} @ {entry:.5f} SL={sl:.5f} TP={tp:.5f} #{result.order}")
+        state.setdefault("smart_news_tickets", {})[sn_id] = {
+            "ticket":    result.order,
+            "symbol":    symbol,
+            "direction": direction,
+            "entry":     entry,
+            "sl":        round(sl, info.digits),
+            "tp":        round(tp, info.digits),
+            "risk_usd":  risk_usd,
+            "phase":     0,  # 0=watching, 1=3R SL moved, 2=4R SL moved
+        }
+        _send_telegram(
+            f"📰 <b>Ordin Stire [{dir_str}] {symbol}</b>\n"
+            f"Eveniment: <b>{top.get('title','?')}</b> ({top.get('currency','?')})\n"
+            f"Actual: {top.get('actual','?')} vs Forecast: {top.get('forecast','?')}\n"
+            f"Entry: {entry:.5f} | SL: {sl:.5f} | TP: {tp:.5f} ({r_max:.1f}R)\n"
+            f"Risk: {risk_pct*100:.2f}% — {risk_usd:.2f} USD\n"
+            f"<i>{session_cfg.get('session_id', '')}</i>"
+        )
+    else:
+        rc = result.retcode if result else "None"
+        log.warning(f"  [SN] {sn_id} {symbol} ordin esuat retcode={rc}")
+
+
+def _smart_news_trailing_check(
+    state: dict,
+    session_id: str = "",
+    log=None,
+) -> None:
+    """
+    Verifica pozitiile din smart news si ajusteaza SL la 3R (→ 1R fata de TP)
+    si la 4R (→ 2R fata de TP). Apelat la fiecare iteratie principala.
+    """
+    if _mt5_exec is None:
+        return
+    sn_tickets = state.get("smart_news_tickets", {})
+    if not sn_tickets:
+        return
+
+    done_keys = []
+    for sn_id, sn in list(sn_tickets.items()):
+        ticket    = sn.get("ticket")
+        symbol    = sn.get("symbol", "")
+        direction = sn.get("direction", 0)
+        entry     = sn.get("entry", 0.0)
+        sl        = sn.get("sl", 0.0)
+        tp        = sn.get("tp", 0.0)
+        phase     = sn.get("phase", 0)
+        risk_usd  = sn.get("risk_usd")
+
+        if not ticket or not symbol or direction == 0:
+            done_keys.append(sn_id)
+            continue
+
+        positions = _mt5_exec.positions_get(ticket=ticket)
+        if not positions:
+            # Pozitia nu mai exista — inchisa de TP/SL, remove
+            if log:
+                log.info(f"  [SN] {sn_id} {symbol} inchis (TP/SL sau manual)")
+            done_keys.append(sn_id)
+            continue
+
+        pos  = positions[0]
+        risk = abs(entry - sl)
+        if risk <= 0:
+            continue
+
+        current_price = pos.price_current
+        profit_r = (current_price - entry) * direction / risk
+
+        if profit_r >= 4.0 and phase < 2:
+            # Faza 2: SL la 2R fata de TP
+            new_sl = tp - direction * risk * 2.0
+            info = _mt5_exec.symbol_info(symbol)
+            new_sl_r = round(new_sl, info.digits if info else 5)
+            res = _mt5_exec.order_send({
+                "action":   _mt5_exec.TRADE_ACTION_SLTP,
+                "symbol":   symbol,
+                "position": ticket,
+                "sl":       new_sl_r,
+                "tp":       tp,
+            })
+            if res and res.retcode == _mt5_exec.TRADE_RETCODE_DONE:
+                sn["sl"]    = new_sl_r
+                sn["phase"] = 2
+                if log:
+                    log.info(f"  [SN] {sn_id} {symbol} SL→{new_sl_r:.5f} (4R, faza2)")
+                _send_telegram(
+                    f"📊 <b>SL ajustat 4R — {symbol}</b>\n"
+                    f"SL mutat la 2R fata de TP: {new_sl_r:.5f}\n"
+                    f"<i>{session_id}</i>"
+                )
+
+        elif profit_r >= 3.0 and phase < 1:
+            # Faza 1: SL la 1R fata de TP
+            new_sl = tp - direction * risk * 1.0
+            info = _mt5_exec.symbol_info(symbol)
+            new_sl_r = round(new_sl, info.digits if info else 5)
+            res = _mt5_exec.order_send({
+                "action":   _mt5_exec.TRADE_ACTION_SLTP,
+                "symbol":   symbol,
+                "position": ticket,
+                "sl":       new_sl_r,
+                "tp":       tp,
+            })
+            if res and res.retcode == _mt5_exec.TRADE_RETCODE_DONE:
+                sn["sl"]    = new_sl_r
+                sn["phase"] = 1
+                if log:
+                    log.info(f"  [SN] {sn_id} {symbol} SL→{new_sl_r:.5f} (3R, faza1)")
+                _send_telegram(
+                    f"📊 <b>SL ajustat 3R — {symbol}</b>\n"
+                    f"SL mutat la 1R fata de TP: {new_sl_r:.5f}\n"
+                    f"<i>{session_id}</i>"
+                )
+
+    for k in done_keys:
+        sn_tickets.pop(k, None)
+
+
 def _news_close_check(
     state: dict,
     outcomes_file: str,
     log,
     session_id: str = "",
     execute_trades: bool = False,
+    smart_news_enabled: bool = False,
+    news_events: list | None = None,
+    session_cfg: dict | None = None,
 ) -> None:
     """
     La prima iteratie de pauza de stiri (tranzitia False → True):
     - anuleaza ordinele pending neactivate (TRADE_ACTION_REMOVE)
     - inchide la piata pozitiile triggerate deschise (TRADE_ACTION_DEAL)
+    Daca smart_news_enabled=True: inchide doar pozitiile contra sentimentului stirii.
     Apelat o singura data per tranzitie, din bucla principala.
     """
     total = sum(len(v) for v in state["pending"].values())
     if total == 0:
         log.info("  [STIRI] Nicio pozitie/ordin activ — nimic de inchis.")
+        # Smart news: daca nu avem pozitii, incearca ordin in directia stirii
+        if smart_news_enabled and execute_trades and news_events and session_cfg:
+            try:
+                from live.news_guard import news_direction_for_symbol
+                for market in session_cfg.get("markets", []):
+                    nd = news_direction_for_symbol(market, news_events)
+                    if nd != 0:
+                        _smart_news_place_order(market, nd, news_events, state, session_cfg, log)
+            except Exception as _e:
+                log.warning(f"  [SN] Eroare ordin stire: {_e}")
         return
 
     outcome_rows   = []
     sigs_to_remove = []
-    now = datetime.now()
+    now = now_local()
+
+    # Smart news: precalculeaza directia neta pentru fiecare simbol
+    _sn_dir: dict[str, int] = {}
+    if smart_news_enabled and news_events:
+        try:
+            from live.news_guard import news_direction_for_symbol
+            for sym in list(state["pending"].keys()):
+                _sn_dir[sym] = news_direction_for_symbol(sym, news_events)
+        except Exception:
+            pass
 
     for symbol, pending in list(state["pending"].items()):
         for sig_id, p in list(pending.items()):
@@ -1304,6 +1523,11 @@ def _news_close_check(
             dir_str   = "LONG" if d == 1 else "SHORT"
             ticket    = state.get("mt5_tickets", {}).get(sig_id)
             triggered = p.get("triggered", False)
+
+            # Smart news: daca pozitia e IN directia stirii, las-o deschisa
+            if smart_news_enabled and triggered and _sn_dir.get(symbol, 0) == d:
+                log.info(f"  [SN] {sig_id} {symbol} {dir_str} mentinuta — aliniata cu stirea")
+                continue
 
             if not execute_trades:
                 sigs_to_remove.append((symbol, sig_id))
@@ -1417,6 +1641,24 @@ def _news_close_check(
     for symbol, sig_id in sigs_to_remove:
         state["pending"].get(symbol, {}).pop(sig_id, None)
 
+    # Smart news: dupa ce am inchis/anulat, plaseaza ordine in directia stirii
+    if smart_news_enabled and execute_trades and news_events and session_cfg:
+        try:
+            from live.news_guard import news_direction_for_symbol
+            for market in session_cfg.get("markets", []):
+                nd = news_direction_for_symbol(market, news_events)
+                if nd != 0:
+                    # Verifica daca mai avem pozitie deschisa in aceasta directie
+                    existing = state["pending"].get(market, {})
+                    has_open_in_dir = any(
+                        p.get("triggered") and p.get("direction") == nd
+                        for p in existing.values()
+                    )
+                    if not has_open_in_dir:
+                        _smart_news_place_order(market, nd, news_events, state, session_cfg, log)
+        except Exception as _e:
+            log.warning(f"  [SN] Eroare ordin stire post-close: {_e}")
+
 
 # ---------------------------------------------------------------------------
 # Aplicare parametri profil activ
@@ -1483,7 +1725,7 @@ def _apply_profile_overrides(session_cfg: dict, cfg: dict, log) -> None:
         session_cfg["friday_close_hour"] = ps["friday_close_hour"]
 
     for news_field in ("news_protection_enabled", "news_impact_level",
-                       "news_pre_minutes", "news_post_minutes"):
+                       "news_pre_minutes", "news_post_minutes", "smart_news_enabled"):
         if news_field in ps:
             session_cfg[news_field] = ps[news_field]
 
@@ -1616,6 +1858,8 @@ def run_generator(session_cfg: dict):
     state.setdefault("mt5_tickets", {})
     state.setdefault("flag_signal_counter", 0)
     state.setdefault("ib_signal_counter", 0)
+    state.setdefault("smart_news_tickets", {})
+    state.setdefault("sn_counter", 0)
 
     # Sincronizeaza signal_counter cu ce e deja in signals.csv
     # (previne reutilizarea ID-urilor dupa restart cu state.pkl fresh)
@@ -1739,7 +1983,7 @@ def run_generator(session_cfg: dict):
         _send_telegram(
             f"{icon} <b>Bot oprit: {session_cfg['session_id']}</b>\n"
             f"Motiv: {reason}\n"
-            f"<i>{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</i>"
+            f"<i>{now_local().strftime('%Y-%m-%d %H:%M:%S')}</i>"
         )
 
     try:
@@ -1747,7 +1991,7 @@ def run_generator(session_cfg: dict):
         try:
             iteration += 1
             log.info(f"--- {session_cfg['session_id']} iter {iteration} "
-                     f"@ {datetime.now().strftime('%H:%M:%S')} ---")
+                     f"@ {now_local().strftime('%H:%M:%S')} ---")
 
             session_key    = session_cfg.get("session_key", "")
             manual_paused  = _is_paused(session_key)
@@ -1772,10 +2016,21 @@ def run_generator(session_cfg: dict):
                     log=log,
                     session_id=session_cfg.get("session_id", ""),
                     execute_trades=session_cfg.get("execute_trades", False),
+                    smart_news_enabled=session_cfg.get("smart_news_enabled", False),
+                    news_events=news_events,
+                    session_cfg=session_cfg,
                 )
                 with open(state_file, "wb") as f:
                     pickle.dump(state, f)
             _was_news_paused = news_paused
+
+            # Smart news trailing SL check (la fiecare iteratie)
+            if state.get("smart_news_tickets"):
+                _smart_news_trailing_check(
+                    state=state,
+                    session_id=session_cfg.get("session_id", ""),
+                    log=log,
+                )
 
             new_sigs = 0
             for market, symbol in resolved.items():
@@ -1800,7 +2055,7 @@ def run_generator(session_cfg: dict):
                 # Vineri dupa ora de inchidere — nu mai plasam semnale noi
                 # (bot repornit dupa friday_close_hour; _friday_close_check le-ar anula oricum)
                 if session_cfg.get("friday_close_enabled", True):
-                    _now_fc = datetime.now()
+                    _now_fc = now_local()
                     if _now_fc.weekday() == 4 and _now_fc.hour >= session_cfg.get("friday_close_hour", 20):
                         continue
 
