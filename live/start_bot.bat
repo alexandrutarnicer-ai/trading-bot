@@ -11,5 +11,5 @@ for /f "delims=" %%i in ('powershell -NoProfile -Command "[Environment]::GetEnvi
 
 timeout /t 90 /nobreak
 cd /d "c:\trading-bot"
-"C:\Users\alext\AppData\Local\Programs\Python\Python314\python.exe" live\run_all.py
+py live\run_all.py
 pause
