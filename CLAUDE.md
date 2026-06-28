@@ -45,6 +45,11 @@ python scripts/analiza_observe.py --session session1
 
 # Test aplicare parametri profil in sesiuni live (77 teste)
 python scripts/test_profile_params.py
+
+# Test logica filling modes + plasare ordine demo pe toate pietele (MT5 deschis)
+python scripts/test_filling_logic.py              # unit tests + MT5 real
+python scripts/test_filling_logic.py --unit-only  # doar unit tests (fara MT5)
+python scripts/test_filling_logic.py XRPUSD       # un singur simbol
 ```
 
 Nu există test suite sau linter configurat. Validarea corectitudinii se face prin reproducerea numerelor baseline (vezi mai jos).
@@ -369,7 +374,14 @@ Daca numerele se schimba semnificativ → bug introdus, nu progres.
 
 **`POST /backtest/run-missing`:** Triggereza backteste automat pentru sesiunile cu `execute_trades=True` care nu au backtest recent. Citeste profilul activ (sau `profile_id` din body), construieste `session_cfg` din parametrii profilului, porneste joburi async cu range 5 ani (2021–azi). Returneaza `{job_ids, triggered}`. Apelat din Dashboard la click pe badge-ul "X fara date".
 
-**`_place_order` filling modes:** incearca RETURN → FOK → IOC → fara filling, in ordine. ICMarketsEU respinge `ORDER_TIME_SPECIFIED` (retcode 10022) — se foloseste `ORDER_TIME_GTC`.
+**`_place_order` filling modes — logica completa:**
+- **Ordinea modurilor**: determinata din `symbol_info().filling_mode` bitmask. Bit 0 (1) = FOK suportat, bit 1 (2) = IOC suportat. Daca `fm=0` (Forex standard): RETURN → FOK → IOC. Daca `fm!=0` (crypto/indici): modurile cu bit setat primele, RETURN ca fallback. Ultima sansa: fara `type_filling`.
+- **Retry pe retcode**: continua cu alt filling la `10030` (TRADE_RETCODE_INVALID_FILL) SI `10006` (TRADE_RETCODE_REJECT — ICMarketsEU returneaza asta in loc de 10030 pentru crypto/indici cu filling mode incompatibil). Orice alt retcode = eroare reala, iesire imediata cu `False`.
+- **all_10006**: daca TOATE incercarile (inclusiv fara filling) returneaza `10006`, se returneaza `None` (retry bara urm.) in loc de `False`. ICMarketsEU returneaza `10006` si pentru piata temporar inchisa (crypto weekend/maintenance), nu `10018` ca standard. Semnalul expira natural dupa `expire_bars`.
+- **Min stops distance**: inainte de `order_send`, verifica `trade_stops_level * point`. Daca distanta entry-pret_curent < min_dist, returneaza `None` cu log clar. Evita reject-ul garantat fara request MT5 inutil.
+- ICMarketsEU respinge `ORDER_TIME_SPECIFIED` (retcode 10022) — se foloseste `ORDER_TIME_GTC`.
+
+**`_close_position_robust(symbol, volume, order_type, position, price, comment, log)`**: helper pentru inchidere pozitii (TRADE_ACTION_DEAL) cu retry pe filling modes. Incearca IOC → FOK → RETURN → fara filling. Continua cu alt filling la 10006/10030; orice alta eroare returneaza imediat result-ul. Folosit in `_friday_close_check` si `_news_close_check` — inlocuieste `order_send` cu IOC-only care esua silentios pe crypto cu filling incompatibil.
 
 **AutoTrading dezactivat (retcode 10026/10027):** returneaza `None` (retry bara urm.), nu `False`.
 

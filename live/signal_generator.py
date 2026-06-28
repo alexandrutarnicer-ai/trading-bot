@@ -147,6 +147,8 @@ def _place_order(sig: dict, lots: float, expire_bars: int,
     # Returnam None (nu False) — semnalul ramane in pending si va fi incercat
     # la bara urmatoare sau va expira normal dupa expire_bars.
     tick = _mt5_exec.symbol_info_tick(symbol)
+    sym_info = _mt5_exec.symbol_info(symbol)
+
     if tick is not None:
         if direction == 1 and tick.ask >= sig["entry"]:
             log.info(f"  [EXEC] {sig['signal_id']}: BUY_STOP amanat "
@@ -157,18 +159,37 @@ def _place_order(sig: dict, lots: float, expire_bars: int,
                      f"(Bid {tick.bid:.5f} <= entry {sig['entry']:.5f}) — retry bara urm.")
             return None
 
+        # Verifica distanta minima fata de pret (trade_stops_level).
+        # Daca entry e prea aproape de pret curent, brokerul respinge ordinul (10006/10014).
+        # Retry la bara urmatoare — pretul se va distanta natural de entry.
+        if sym_info is not None and sym_info.trade_stops_level > 0:
+            min_dist = sym_info.trade_stops_level * sym_info.point
+            cur_price = tick.ask if direction == 1 else tick.bid
+            dist = abs(cur_price - sig["entry"])
+            if dist < min_dist:
+                log.info(f"  [EXEC] {sig['signal_id']}: entry prea aproape de pret curent "
+                         f"(dist={dist:.{sym_info.digits}f} < min={min_dist:.{sym_info.digits}f}) "
+                         f"— retry bara urm.")
+                return None
+
     order_type = (_mt5_exec.ORDER_TYPE_BUY_STOP
                   if direction == 1 else _mt5_exec.ORDER_TYPE_SELL_STOP)
-
-    # Incearca toate modurile de umplere in ordine (bitmask-ul brokerului poate fi incorect).
-    # RETURN primul — cel mai permisiv pentru ordine pending.
-    sym_info = _mt5_exec.symbol_info(symbol)
     fm       = sym_info.filling_mode if sym_info else 0
-    fill_modes = [
-        _mt5_exec.ORDER_FILLING_RETURN,   # 2 — partial fill ok
-        _mt5_exec.ORDER_FILLING_FOK,      # 0 — fill or kill
-        _mt5_exec.ORDER_FILLING_IOC,      # 1 — immediate or cancel
-    ]
+    # MT5 filling_mode bitmask: bit 0 (1) = FOK suportat, bit 1 (2) = IOC suportat.
+    # RETURN nu are bit propriu — e default pt Forex (fm=0).
+    # Crypto/indici au de obicei fm!=0 → prioritizam modurile declarate de broker,
+    # cu RETURN ca fallback (evitam retcode 10006/10030 din prima incercare).
+    if fm == 0:
+        fill_modes = [_mt5_exec.ORDER_FILLING_RETURN,
+                      _mt5_exec.ORDER_FILLING_FOK,
+                      _mt5_exec.ORDER_FILLING_IOC]
+    else:
+        bitmask_modes = []
+        if fm & 1: bitmask_modes.append(_mt5_exec.ORDER_FILLING_FOK)
+        if fm & 2: bitmask_modes.append(_mt5_exec.ORDER_FILLING_IOC)
+        leftover = [m for m in [_mt5_exec.ORDER_FILLING_FOK, _mt5_exec.ORDER_FILLING_IOC]
+                    if m not in bitmask_modes]
+        fill_modes = bitmask_modes + [_mt5_exec.ORDER_FILLING_RETURN] + leftover
 
     request = {
         "action":    _mt5_exec.TRADE_ACTION_PENDING,
@@ -182,7 +203,8 @@ def _place_order(sig: dict, lots: float, expire_bars: int,
         "comment":   sig["signal_id"][:31],
     }
 
-    all_none = True  # True daca niciun order_send nu a returnat macar un retcode
+    all_none    = True   # True daca niciun order_send nu a returnat macar un retcode
+    all_10006   = True   # True daca toate retcode-urile non-None au fost 10006
     for filling in fill_modes:
         request["type_filling"] = filling
         result = _mt5_exec.order_send(request)
@@ -201,11 +223,16 @@ def _place_order(sig: dict, lots: float, expire_bars: int,
             return result.order
         log.warning(f"  [EXEC] {sig['signal_id']}: filling={filling} → "
                     f"retcode={result.retcode} ({result.comment})")
+        if result.retcode != 10006:
+            all_10006 = False
         if result.retcode in (10026, 10027):
             # AutoTrading dezactivat (server sau client) — setare temporara, retry bara urm.
             log.warning(f"  [EXEC] {sig['signal_id']}: AutoTrading dezactivat — retry bara urm.")
             return None
-        if result.retcode != 10030:   # alta eroare (pret, volum, etc) — nu are sens sa incercam alt fill
+        if result.retcode not in (10030, 10006):
+            # 10030 = invalid fill type, 10006 = reject generic (ICMarketsEU crypto returneaza
+            # 10006 in loc de 10030 cand filling mode e incompatibil) — incercam alt filling.
+            # Orice alt retcode (pret gresit, volum, etc) = eroare reala, iesim imediat.
             return False
 
     # Ultima sansa: fara type_filling (lasa MT5 sa aleaga implicit)
@@ -215,6 +242,8 @@ def _place_order(sig: dict, lots: float, expire_bars: int,
         all_none = False
         log.warning(f"  [EXEC] {sig['signal_id']}: fara filling → "
                     f"retcode={result.retcode} ({result.comment})")
+        if result.retcode != 10006:
+            all_10006 = False
         if result.retcode == _mt5_exec.TRADE_RETCODE_DONE:
             dir_str = "LONG" if direction == 1 else "SHORT"
             log.info(f"  [EXEC] *** ORDIN (no-fill): {sig['signal_id']} {symbol} {dir_str} "
@@ -227,14 +256,63 @@ def _place_order(sig: dict, lots: float, expire_bars: int,
 
     if all_none:
         # Toate order_send au returnat None — probabil eroare tranzitorie de conexiune MT5.
-        # Pastram semnalul in pending si reincercam la bara urmatoare.
         log.warning(f"  [EXEC] {sig['signal_id']}: toate order_send → None "
                     f"(conexiune MT5?) — retry bara urm.")
+        return None
+
+    if all_10006:
+        # Toate incercarile au returnat 10006 — ICMarketsEU returneaza 10006 si pentru
+        # piata temporar inchisa (crypto weekend/maintenance), nu doar 10018 ca standard.
+        # Retinem semnalul si reincercam; va expira natural dupa expire_bars.
+        log.warning(f"  [EXEC] {sig['signal_id']}: toate incercarile → 10006 "
+                    f"(piata probabil inchisa temporar) — retry bara urm.")
         return None
 
     log.warning(f"  [EXEC] {sig['signal_id']}: niciun mod de umplere acceptat "
                 f"(filling_mode={fm}, incercate={fill_modes} + fara filling).")
     return False
+
+
+def _close_position_robust(symbol: str, volume: float, order_type,
+                           position: int, price: float, comment: str, log):
+    """
+    Inchide o pozitie deschisa (TRADE_ACTION_DEAL) incercand mai multe moduri
+    de filling: IOC → FOK → RETURN → fara filling.
+
+    Returneaza result-ul MT5 (retcode verificat de apelant) sau None (conexiune pierduta).
+    Continua cu alt filling doar la 10006/10030; orice alta eroare e returnata imediat.
+    """
+    if _mt5_exec is None:
+        return None
+
+    base_req = {
+        "action":    _mt5_exec.TRADE_ACTION_DEAL,
+        "symbol":    symbol,
+        "volume":    volume,
+        "type":      order_type,
+        "position":  position,
+        "price":     price,
+        "comment":   comment,
+        "type_time": _mt5_exec.ORDER_TIME_GTC,
+    }
+    for filling in [_mt5_exec.ORDER_FILLING_IOC,
+                    _mt5_exec.ORDER_FILLING_FOK,
+                    _mt5_exec.ORDER_FILLING_RETURN]:
+        result = _mt5_exec.order_send({**base_req, "type_filling": filling})
+        if result is None:
+            continue
+        if result.retcode == _mt5_exec.TRADE_RETCODE_DONE:
+            return result
+        if result.retcode not in (10030, 10006):
+            if log:
+                log.warning(f"  [CLOSE] {comment} {symbol}: filling={filling} "
+                            f"retcode={result.retcode} — eroare reala, nu mai incercam")
+            return result
+        if log:
+            log.warning(f"  [CLOSE] {comment} {symbol}: filling={filling} "
+                        f"retcode={result.retcode} — incercam alt filling")
+    # Ultima sansa: fara type_filling
+    return _mt5_exec.order_send(base_req)
 
 
 def _notify_signal(sig: dict, session_id: str) -> None:
@@ -1208,18 +1286,10 @@ def _friday_close_check(
                 close_type  = (_mt5_exec.ORDER_TYPE_SELL
                                if d == 1 else _mt5_exec.ORDER_TYPE_BUY)
 
-                close_req = {
-                    "action":       _mt5_exec.TRADE_ACTION_DEAL,
-                    "symbol":       symbol,
-                    "volume":       pos.volume,
-                    "type":         close_type,
-                    "position":     ticket,
-                    "price":        close_price,
-                    "comment":      "vineri_close",
-                    "type_time":    _mt5_exec.ORDER_TIME_GTC,
-                    "type_filling": _mt5_exec.ORDER_FILLING_IOC,
-                }
-                result = _mt5_exec.order_send(close_req)
+                result = _close_position_robust(
+                    symbol, pos.volume, close_type, ticket,
+                    close_price, "vineri_close", log
+                )
                 if result and result.retcode == _mt5_exec.TRADE_RETCODE_DONE:
                     exit_price = result.price
                     risk_dist  = abs(p["entry"] - p["sl"])
@@ -1554,17 +1624,10 @@ def _news_close_check(
 
                 close_price = tick.bid if d == 1 else tick.ask
                 close_type  = (_mt5_exec.ORDER_TYPE_SELL if d == 1 else _mt5_exec.ORDER_TYPE_BUY)
-                result = _mt5_exec.order_send({
-                    "action":       _mt5_exec.TRADE_ACTION_DEAL,
-                    "symbol":       symbol,
-                    "volume":       pos.volume,
-                    "type":         close_type,
-                    "position":     ticket,
-                    "price":        close_price,
-                    "comment":      "news_close",
-                    "type_time":    _mt5_exec.ORDER_TIME_GTC,
-                    "type_filling": _mt5_exec.ORDER_FILLING_IOC,
-                })
+                result = _close_position_robust(
+                    symbol, pos.volume, close_type, ticket,
+                    close_price, "news_close", log
+                )
                 if result and result.retcode == _mt5_exec.TRADE_RETCODE_DONE:
                     exit_price = result.price
                     risk_dist  = abs(p["entry"] - p["sl"])
