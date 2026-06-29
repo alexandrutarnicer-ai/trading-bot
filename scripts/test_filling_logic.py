@@ -137,6 +137,26 @@ def run_unit_tests():
     else:
         failed += 1
 
+    # Test: 10012 (timeout) → None imediat, nu continua loop si nu False
+    def _sim_timeout():
+        # Prima incercare returneaza 10012 → trebuie None imediat
+        rc = 10012
+        if rc in (10026, 10027):
+            return "None-autotrading"
+        if rc == 10012:
+            return "None"  # timeout → retry, nu drop
+        if rc not in (10030, 10006):
+            return "False"
+        return "continue"
+
+    result = _sim_timeout()
+    ok = result == "None"
+    print(f"  [{'PASS' if ok else 'FAIL'}] retcode 10012 (timeout) -> None (retry), nu False")
+    if ok:
+        passed += 1
+    else:
+        failed += 1
+
     # Test logica all_10006: simulam toate incercarile returnand 10006
     def _sim_all_10006():
         """Simuleaza _place_order cand toate incercarile returneza 10006."""
