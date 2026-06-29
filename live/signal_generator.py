@@ -98,91 +98,94 @@ def _send_telegram(text: str) -> None:
 
 
 _MT5_HEALTH_ALERT_FILE = os.path.join("data", "mt5_health_alert.json")
-_MT5_HEALTH_COOLDOWN   = 300   # secunde — cooldown per tip alerta (previne flood de la 20 sesiuni)
+_MT5_HEALTH_COOLDOWN   = 1800  # 30 minute intre notificari de acelasi tip
+_MT5_HEALTH_NOTIFIER   = "session1"  # singura sesiune care trimite Telegram
 
 
 def _check_mt5_health(log, session_key: str, expected_login: int) -> None:
     """
     Verifica sanatatea conexiunii MT5 la fiecare iteratie.
-    Trimite notificare Telegram + notification store la:
-      - deconectare de la server broker
-      - AutoTrading dezactivat (cont schimbat, restart MT5)
-      - cont schimbat
-    Previne notificari duplicate de la sesiunile paralele prin fisier shared
-    cu timestamp per tip alerta (cooldown 5 minute).
+
+    Toate sesiunile detecteaza si logeaza problemele.
+    DOAR session1 trimite notificari Telegram — elimina race condition-ul
+    in care toate 20 sesiunile trimiteau simultan (veneau toate odata).
+    Cooldown 30 minute per tip alerta — maxim 1 notificare la 30 min.
     """
     if _mt5_exec is None:
         return
 
+    _can_notify = (session_key == _MT5_HEALTH_NOTIFIER)
     now = time.time()
 
     try:
-        raw = open(_MT5_HEALTH_ALERT_FILE, encoding="utf-8").read()
-        alerts = json.loads(raw)
+        alerts = json.loads(open(_MT5_HEALTH_ALERT_FILE, encoding="utf-8").read())
     except Exception:
         alerts = {}
 
     changed = False
 
     def _should_alert(key: str) -> bool:
-        return now - alerts.get(key, 0) > _MT5_HEALTH_COOLDOWN
+        return _can_notify and now - alerts.get(key, 0) > _MT5_HEALTH_COOLDOWN
 
     def _fire(key: str, text: str):
         nonlocal changed
         alerts[key] = now
         changed = True
-        log.warning(f"[MT5-HEALTH] {key}: {text.replace(chr(10), ' ')}")
+        log.warning(f"[MT5-HEALTH] {key}")
         _send_telegram(text)
 
     def _clear(key: str):
         nonlocal changed
-        if key in alerts:
+        if key in alerts and _can_notify:
             del alerts[key]
             changed = True
 
     ti = _mt5_exec.terminal_info()
     if ti is None:
+        log.warning("[MT5-HEALTH] terminal_info() = None — IPC pierdut")
         if _should_alert("init_failed"):
             _fire("init_failed",
-                  "🔴 <b>MT5: terminal_info() = None</b>\n"
-                  "Conexiunea IPC cu MT5 complet pierduta.\n"
-                  "Verifica ca MT5 terminal este deschis.")
+                  "🔴 <b>MT5: Conexiune IPC pierduta</b>\n"
+                  "terminal_info() = None. Verifica ca MT5 terminal este deschis.")
         if changed:
             _write_health_alerts(alerts)
         return
 
     # 1. Conexiune broker
     if not ti.connected:
+        log.warning("[MT5-HEALTH] deconectat de la server broker")
         if _should_alert("disconnected"):
             _fire("disconnected",
                   "🔴 <b>MT5: Deconectat de la server broker</b>\n"
                   "MT5 nu mai are conexiune cu ICMarketsEU.\n"
                   "Verifica internetul sau statusul serverului broker.\n"
-                  "<i>Botul va continua sa incerce — semnalele noi sunt suspendate.</i>")
+                  "<i>Botul continua sa incerce — semnalele noi sunt suspendate.</i>")
     else:
         _clear("disconnected")
         _clear("init_failed")
 
     # 2. AutoTrading
     if not ti.trade_allowed:
+        log.warning("[MT5-HEALTH] AutoTrading dezactivat")
         if _should_alert("autotrading_off"):
             _fire("autotrading_off",
                   "⚠️ <b>MT5: AutoTrading DEZACTIVAT</b>\n"
-                  "Ordinele nu pot fi plasate in MT5.\n"
-                  "Solutie: activeaza AutoTrading din toolbar MT5 (buton sau <code>Alt+A</code>).\n"
-                  "Cauza frecventa: cont schimbat sau restart MT5 terminal.")
+                  "Ordinele nu pot fi plasate. Activeaza din toolbar MT5 (<code>Alt+A</code>).\n"
+                  "Cauza frecventa: cont schimbat sau restart MT5.")
     else:
         _clear("autotrading_off")
 
     # 3. Cont schimbat
     acc = _mt5_exec.account_info()
     if acc is None:
+        log.warning("[MT5-HEALTH] account_info() = None")
         if _should_alert("account_null"):
             _fire("account_null",
                   "🔴 <b>MT5: account_info() = None</b>\n"
                   "Contul nu raspunde — posibil deautorizat sau schimbat.\n"
-                  "Verifica si relogheaza-te in MT5 terminal.")
+                  "Relogheaza-te in MT5 terminal.")
     elif expected_login > 0 and acc.login != expected_login:
+        log.warning(f"[MT5-HEALTH] cont schimbat: {expected_login} → {acc.login}")
         if _should_alert("account_changed"):
             _fire("account_changed",
                   f"🔴 <b>MT5: Cont schimbat!</b>\n"
