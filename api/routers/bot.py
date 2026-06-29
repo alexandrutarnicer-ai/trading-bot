@@ -279,8 +279,8 @@ def stop_bot():
     _log_uptime_event("stop", profile_name)
 
     stopped_ok = result.returncode == 0
-    # Trimite Telegram intotdeauna — starea e deja curatata indiferent de returncode.
-    # Non-daemon: garantat sa se finalizeze chiar daca uvicorn face reload intre timp.
+    # Trimite Telegram si asteptam max 4s — garanteaza ca "Bot oprit" ajunge
+    # la Telegram inainte ca utilizatorul sa apese Start si sa primeasca "Bot pornit".
     now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
     def _notify():
         tg.send_message(
@@ -288,7 +288,9 @@ def stop_bot():
             f"Profil: {profile_name}\n"
             f"Oprit manual din interfata web."
         )
-    threading.Thread(target=_notify).start()
+    t = threading.Thread(target=_notify)
+    t.start()
+    t.join(timeout=4)   # garanteaza ordinea: "oprit" inainte de "pornit"
 
     return {"stopped": stopped_ok, "pid": pid}
 
