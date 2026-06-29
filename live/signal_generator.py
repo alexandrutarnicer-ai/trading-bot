@@ -98,18 +98,26 @@ def _send_telegram(text: str) -> None:
 
 
 _MT5_HEALTH_ALERT_FILE = os.path.join("data", "mt5_health_alert.json")
-_MT5_HEALTH_COOLDOWN   = 1800  # 30 minute intre notificari de acelasi tip
 _MT5_HEALTH_NOTIFIER   = "session1"  # singura sesiune care trimite Telegram
+_MT5_HEALTH_MAX        = 2           # max 2 notificari per incident
+_MT5_HEALTH_REPEAT_S   = 1800        # a 2-a notificare dupa 30 min daca persista
 
 
 def _check_mt5_health(log, session_key: str, expected_login: int) -> None:
     """
-    Verifica sanatatea conexiunii MT5 la fiecare iteratie.
+    Verifica sanatatea conexiunii MT5.
 
-    Toate sesiunile detecteaza si logeaza problemele.
-    DOAR session1 trimite notificari Telegram — elimina race condition-ul
-    in care toate 20 sesiunile trimiteau simultan (veneau toate odata).
-    Cooldown 30 minute per tip alerta — maxim 1 notificare la 30 min.
+    DOAR session1 trimite Telegram — elimina race condition in care toate
+    20 sesiunile trimiteau simultan (toate notificarile veneau odata).
+
+    Per incident: max 2 notificari
+      - prima: imediat la detectare
+      - a doua: dupa 30 min daca problema persista (reminder)
+      - nimic dupa aceea pana la rezolvare + re-aparitie
+
+    La rezolvare (reconnect, AutoTrading reactivat): trimite notificare
+    de confirmare si reseteaza contorul, asa ca urmatorul incident
+    primeste din nou 2 notificari.
     """
     if _mt5_exec is None:
         return
@@ -124,32 +132,56 @@ def _check_mt5_health(log, session_key: str, expected_login: int) -> None:
 
     changed = False
 
+    def _entry(key: str) -> dict:
+        e = alerts.get(key)
+        return e if isinstance(e, dict) else {}
+
     def _should_alert(key: str) -> bool:
-        return _can_notify and now - alerts.get(key, 0) > _MT5_HEALTH_COOLDOWN
+        if not _can_notify:
+            return False
+        e = _entry(key)
+        count = e.get("count", 0)
+        if count >= _MT5_HEALTH_MAX:
+            return False                              # limita atinsa pentru acest incident
+        if count == 0:
+            return True                              # prima detectare — trimite imediat
+        return now - e.get("last_sent", 0) > _MT5_HEALTH_REPEAT_S  # reminder dupa 30 min
 
     def _fire(key: str, text: str):
         nonlocal changed
-        alerts[key] = now
+        e     = _entry(key)
+        count = e.get("count", 0) + 1
+        alerts[key] = {"count": count, "last_sent": now}
         changed = True
-        log.warning(f"[MT5-HEALTH] {key}")
-        _send_telegram(text)
+        suffix = "\n<i>(reminder — problema persista)</i>" if count > 1 else ""
+        log.warning(f"[MT5-HEALTH] {key} (#{count})")
+        _send_telegram(text + suffix)
 
-    def _clear(key: str):
+    def _resolve(key: str, text: str):
+        """Trimite notificare de rezolvare si reseteaza contorul."""
         nonlocal changed
-        if key in alerts and _can_notify:
-            del alerts[key]
-            changed = True
+        if key not in alerts:
+            return
+        log.info(f"[MT5-HEALTH] {key} rezolvat")
+        if _can_notify and _entry(key).get("count", 0) > 0:
+            _send_telegram(text)
+        del alerts[key]
+        changed = True
 
     ti = _mt5_exec.terminal_info()
     if ti is None:
         log.warning("[MT5-HEALTH] terminal_info() = None — IPC pierdut")
-        if _should_alert("init_failed"):
-            _fire("init_failed",
+        if _should_alert("ipc_lost"):
+            _fire("ipc_lost",
                   "🔴 <b>MT5: Conexiune IPC pierduta</b>\n"
                   "terminal_info() = None. Verifica ca MT5 terminal este deschis.")
         if changed:
             _write_health_alerts(alerts)
         return
+
+    # IPC recuperat — curata alerta IPC daca exista
+    _resolve("ipc_lost",
+             "✅ <b>MT5: Conexiune IPC restabilita</b>\nBotul reia monitorizarea normala.")
 
     # 1. Conexiune broker
     if not ti.connected:
@@ -157,12 +189,11 @@ def _check_mt5_health(log, session_key: str, expected_login: int) -> None:
         if _should_alert("disconnected"):
             _fire("disconnected",
                   "🔴 <b>MT5: Deconectat de la server broker</b>\n"
-                  "MT5 nu mai are conexiune cu ICMarketsEU.\n"
-                  "Verifica internetul sau statusul serverului broker.\n"
-                  "<i>Botul continua sa incerce — semnalele noi sunt suspendate.</i>")
+                  "MT5 nu are conexiune cu ICMarketsEU.\n"
+                  "Verifica internetul sau statusul serverului broker.")
     else:
-        _clear("disconnected")
-        _clear("init_failed")
+        _resolve("disconnected",
+                 "✅ <b>MT5: Reconectat la server broker</b>\nBotul reia plasarea ordinelor.")
 
     # 2. AutoTrading
     if not ti.trade_allowed:
@@ -173,7 +204,8 @@ def _check_mt5_health(log, session_key: str, expected_login: int) -> None:
                   "Ordinele nu pot fi plasate. Activeaza din toolbar MT5 (<code>Alt+A</code>).\n"
                   "Cauza frecventa: cont schimbat sau restart MT5.")
     else:
-        _clear("autotrading_off")
+        _resolve("autotrading_off",
+                 "✅ <b>MT5: AutoTrading reactivat</b>\nOrdinele pot fi plasate din nou.")
 
     # 3. Cont schimbat
     acc = _mt5_exec.account_info()
@@ -185,7 +217,7 @@ def _check_mt5_health(log, session_key: str, expected_login: int) -> None:
                   "Contul nu raspunde — posibil deautorizat sau schimbat.\n"
                   "Relogheaza-te in MT5 terminal.")
     elif expected_login > 0 and acc.login != expected_login:
-        log.warning(f"[MT5-HEALTH] cont schimbat: {expected_login} → {acc.login}")
+        log.warning(f"[MT5-HEALTH] cont schimbat: {expected_login} -> {acc.login}")
         if _should_alert("account_changed"):
             _fire("account_changed",
                   f"🔴 <b>MT5: Cont schimbat!</b>\n"
@@ -193,8 +225,10 @@ def _check_mt5_health(log, session_key: str, expected_login: int) -> None:
                   f"Activ acum: <code>{acc.login}</code> @ {acc.server}\n"
                   "Relogheza-te in contul demo corect si reactiveza AutoTrading.")
     else:
-        _clear("account_null")
-        _clear("account_changed")
+        _resolve("account_null",
+                 "✅ <b>MT5: Cont restaurat</b>\nAccount info disponibil din nou.")
+        _resolve("account_changed",
+                 f"✅ <b>MT5: Cont corect activ</b> (<code>{expected_login}</code>)")
 
     if changed:
         _write_health_alerts(alerts)
