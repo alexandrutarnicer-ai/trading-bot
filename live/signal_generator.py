@@ -229,12 +229,11 @@ def _place_order(sig: dict, lots: float, expire_bars: int,
             # AutoTrading dezactivat (server sau client) — setare temporara, retry bara urm.
             log.warning(f"  [EXEC] {sig['signal_id']}: AutoTrading dezactivat — retry bara urm.")
             return None
-        if result.retcode == 10012:
-            # Timeout server MT5 — cererea a fost trimisa dar nu a primit raspuns in timp util.
-            # Nu stim daca ordinul a ajuns pe server; nu incercam alt filling (nu e problema de fill).
-            # Retry la bara urmatoare — daca ordinul a ajuns, la urmatoarea incercare va fi
-            # respins cu 10006/10014 sau va fi deja in lista de ordine pending.
-            log.warning(f"  [EXEC] {sig['signal_id']}: timeout server MT5 — retry bara urm.")
+        if result.retcode in (10012, 10031):
+            # 10012 = timeout (cerere trimisa, fara raspuns) — nu stim daca a ajuns pe server
+            # 10031 = no connection with trade server — MT5 terminal deconectat temporar de la broker
+            # Ambele sunt tranzitorii, nu probleme de filling — retry bara urm.
+            log.warning(f"  [EXEC] {sig['signal_id']}: retcode={result.retcode} conexiune/timeout — retry bara urm.")
             return None
         if result.retcode not in (10030, 10006):
             # 10030 = invalid fill type, 10006 = reject generic (ICMarketsEU crypto returneaza
@@ -310,10 +309,10 @@ def _close_position_robust(symbol: str, volume: float, order_type,
             continue
         if result.retcode == _mt5_exec.TRADE_RETCODE_DONE:
             return result
-        if result.retcode == 10012:
+        if result.retcode in (10012, 10031):
             if log:
                 log.warning(f"  [CLOSE] {comment} {symbol}: filling={filling} "
-                            f"retcode=10012 timeout — incercam alt filling")
+                            f"retcode={result.retcode} timeout/no-conn — incercam alt filling")
             continue
         if result.retcode not in (10030, 10006):
             if log:
