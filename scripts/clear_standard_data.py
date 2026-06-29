@@ -7,7 +7,7 @@ istoricul de tranzactii al altcuiva.
 
 Ce face:
   - Reseteaza signals.csv si outcomes.csv la header gol (pastreaza coloanele)
-  - Sterge state.pkl (stare pendinga, tickete MT5, friday_close_date)
+  - Sterge state.pkl + state.pkl.bak (stare pendinga, tickete MT5, friday_close_date)
   - Sterge generator.log
   - Reseteaza paused_sessions.json la []
 
@@ -15,6 +15,8 @@ Cu --all reseteaza si:
   - backtest_history.json
   - backtest_jobs.json
   - download_jobs.json
+  - notifications.json
+  - bot_uptime_log.json
 
 Usage:
     python scripts/clear_standard_data.py
@@ -22,17 +24,21 @@ Usage:
     python scripts/clear_standard_data.py --yes        # fara confirmare interactiva
 """
 import argparse
+import ctypes
 import json
 import os
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-LIVE_DIR     = os.path.join(ROOT, "data", "live_signals")
-PAUSED_FILE  = os.path.join(ROOT, "data", "paused_sessions.json")
-BT_HISTORY   = os.path.join(ROOT, "data", "backtest_history.json")
-BT_JOBS      = os.path.join(ROOT, "data", "backtest_jobs.json")
-DL_JOBS      = os.path.join(ROOT, "data", "download_jobs.json")
+LIVE_DIR       = os.path.join(ROOT, "data", "live_signals")
+PAUSED_FILE    = os.path.join(ROOT, "data", "paused_sessions.json")
+PID_FILE       = os.path.join(ROOT, "data", "run_all.pid")
+BT_HISTORY     = os.path.join(ROOT, "data", "backtest_history.json")
+BT_JOBS        = os.path.join(ROOT, "data", "backtest_jobs.json")
+DL_JOBS        = os.path.join(ROOT, "data", "download_jobs.json")
+NOTIF_FILE     = os.path.join(ROOT, "data", "notifications.json")
+UPTIME_FILE    = os.path.join(ROOT, "data", "bot_uptime_log.json")
 
 SIGNALS_HEADER  = (
     "signal_id,time,symbol,direction,dir_str,"
@@ -40,8 +46,28 @@ SIGNALS_HEADER  = (
 )
 OUTCOMES_HEADER = (
     "signal_id,time_check,symbol,direction,status,"
-    "entry,sl,tp,r_ratio,triggered_at,exit_price,exit_time,result_r\n"
+    "entry,sl,tp,r_ratio,triggered_at,exit_price,exit_time,result_r,pnl_usd\n"
 )
+
+
+def _bot_is_running() -> bool:
+    if not os.path.exists(PID_FILE):
+        return False
+    try:
+        with open(PID_FILE) as f:
+            pid = int(f.read().strip())
+    except Exception:
+        return False
+    try:
+        handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)
+        if not handle:
+            return False
+        code = ctypes.c_ulong(0)
+        ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
+        ctypes.windll.kernel32.CloseHandle(handle)
+        return code.value == 259  # STILL_ACTIVE
+    except Exception:
+        return False
 
 
 def _reset_csv(path: str, header: str) -> str:
@@ -67,10 +93,11 @@ def _write_json(path: str, value) -> str:
 
 def clear_session(session_dir: str, name: str):
     ops = [
-        ("signals.csv",   _reset_csv(os.path.join(session_dir, "signals.csv"),  SIGNALS_HEADER)),
-        ("outcomes.csv",  _reset_csv(os.path.join(session_dir, "outcomes.csv"), OUTCOMES_HEADER)),
-        ("state.pkl",     _delete(os.path.join(session_dir, "state.pkl"))),
-        ("generator.log", _delete(os.path.join(session_dir, "generator.log"))),
+        ("signals.csv",    _reset_csv(os.path.join(session_dir, "signals.csv"),  SIGNALS_HEADER)),
+        ("outcomes.csv",   _reset_csv(os.path.join(session_dir, "outcomes.csv"), OUTCOMES_HEADER)),
+        ("state.pkl",      _delete(os.path.join(session_dir, "state.pkl"))),
+        ("state.pkl.bak",  _delete(os.path.join(session_dir, "state.pkl.bak"))),
+        ("generator.log",  _delete(os.path.join(session_dir, "generator.log"))),
     ]
     parts = [f"{f}:{s}" for f, s in ops if s != "absent"]
     status = ", ".join(parts) if parts else "nimic de resetat"
@@ -90,6 +117,11 @@ def main():
     print("=" * 60)
     print("  CLEAR STANDARD PROFILE DATA")
     print("=" * 60)
+
+    if _bot_is_running():
+        print("\n[EROARE] Botul este pornit (run_all.pid activ).")
+        print("Opreste botul inainte de reset: python live/run_all.py stop  sau  taskkill /F /PID <pid>")
+        sys.exit(1)
 
     if not os.path.isdir(LIVE_DIR):
         print(f"\n[EROARE] {LIVE_DIR} nu exista.")
@@ -124,9 +156,11 @@ def main():
     if args.all:
         print("\nResetare date optionale:")
         for path, label in [
-            (BT_HISTORY, "backtest_history.json"),
-            (BT_JOBS,    "backtest_jobs.json"),
-            (DL_JOBS,    "download_jobs.json"),
+            (BT_HISTORY,  "backtest_history.json"),
+            (BT_JOBS,     "backtest_jobs.json"),
+            (DL_JOBS,     "download_jobs.json"),
+            (NOTIF_FILE,  "notifications.json"),
+            (UPTIME_FILE, "bot_uptime_log.json"),
         ]:
             print(f"  {label}: {_write_json(path, [])}")
 
