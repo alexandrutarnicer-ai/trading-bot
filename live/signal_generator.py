@@ -2100,6 +2100,12 @@ def run_generator(session_cfg: dict):
         _expected_mt5_login = acc.login   # stocat pentru detectia schimbarii de cont
     except Exception as e:
         log.error(f"MT5 nu e disponibil: {e}")
+        # Curatam lock file-ul — altfel UI vede PID mort si afiseaza 0/20 sesiuni
+        try:
+            if os.path.exists(lock_file):
+                os.remove(lock_file)
+        except OSError:
+            pass
         return
 
     # Reconciliere tickets la pornire — curata orfanele din state
