@@ -100,7 +100,7 @@ def _send_telegram(text: str) -> None:
 _MT5_HEALTH_ALERT_FILE = os.path.join("data", "mt5_health_alert.json")
 _MT5_HEALTH_NOTIFIER   = "session1"  # singura sesiune care trimite Telegram
 _MT5_HEALTH_MAX        = 2           # max 2 notificari per incident
-_MT5_HEALTH_REPEAT_S   = 1800        # a 2-a notificare dupa 30 min daca persista
+_MT5_HEALTH_REPEAT_S   = 600         # a 2-a notificare dupa 10 min daca persista
 
 
 def _check_mt5_health(log, session_key: str, expected_login: int) -> None:
@@ -112,12 +112,11 @@ def _check_mt5_health(log, session_key: str, expected_login: int) -> None:
 
     Per incident: max 2 notificari
       - prima: imediat la detectare
-      - a doua: dupa 30 min daca problema persista (reminder)
+      - a doua: dupa 10 min daca problema persista (reminder final)
       - nimic dupa aceea pana la rezolvare + re-aparitie
 
-    La rezolvare (reconnect, AutoTrading reactivat): trimite notificare
-    de confirmare si reseteaza contorul, asa ca urmatorul incident
-    primeste din nou 2 notificari.
+    La rezolvare (reconnect, AutoTrading reactivat): 1 notificare de confirmare
+    si resetare contor — urmatorul incident primeste din nou 2 notificari.
     """
     if _mt5_exec is None:
         return
@@ -145,7 +144,7 @@ def _check_mt5_health(log, session_key: str, expected_login: int) -> None:
             return False                              # limita atinsa pentru acest incident
         if count == 0:
             return True                              # prima detectare — trimite imediat
-        return now - e.get("last_sent", 0) > _MT5_HEALTH_REPEAT_S  # reminder dupa 30 min
+        return now - e.get("last_sent", 0) > _MT5_HEALTH_REPEAT_S  # reminder dupa 10 min
 
     def _fire(key: str, text: str):
         nonlocal changed

@@ -192,10 +192,14 @@ def _kill_old_instance() -> None:
     )
     if result.returncode == 0:
         print(f"  [+] PID={old_pid} oprit cu succes. Astept 3s curatare...")
-        _send_telegram(
-            f"⚠️ <b>Trading Bot repornit</b>  {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
-            f"Instanta anterioara (PID={old_pid}) a fost inchisa automat."
-        )
+        # Cand botul e pornit din UI (BOT_API_START=1), API-ul a trimis deja
+        # "Bot oprit" — nu mai trimitem al doilea mesaj "repornit" care ar aparea
+        # dupa "Bot pornit" si ar deruta utilizatorul.
+        if not os.environ.get("BOT_API_START"):
+            _send_telegram(
+                f"⚠️ <b>Trading Bot repornit</b>  {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
+                f"Instanta anterioara (PID={old_pid}) a fost inchisa automat."
+            )
         time.sleep(3)
     else:
         # Procesul nu mai era activ — PID file ramas din sesiune anterioara
