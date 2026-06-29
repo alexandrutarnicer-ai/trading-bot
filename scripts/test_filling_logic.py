@@ -48,13 +48,16 @@ ALL_SYMBOLS = [
 RETCODES = {
     10004: "Requote",          10006: "Cerere respinsa",
     10008: "Ordin plasat",     10009: "DONE",
-    10013: "Pret invalid",     10014: "Stop-uri invalide",
-    10015: "Volum invalid",    10017: "Trade dezactivat",
-    10018: "Piata inchisa",    10019: "Fonduri insuficiente",
-    10022: "Ordin invalid",    10025: "Operatie nepermisa",
-    10026: "AutoTrade SERVER", 10027: "AutoTrade CLIENT",
-    10030: "Filling nepermis", 10031: "Fara conexiune",
+    10012: "Timeout server",   10013: "Pret invalid",
+    10014: "Stop-uri invalide",10015: "Volum invalid",
+    10017: "Trade dezactivat", 10018: "Piata inchisa",
+    10019: "Fonduri insuf",    10022: "Ordin invalid",
+    10025: "Operatie nepermisa",10026: "AutoTrade SERVER",
+    10027: "AutoTrade CLIENT", 10030: "Filling nepermis",
+    10031: "Fara conexiune",
 }
+# Retcode-uri care inseamna retry bara urm (nu eroare fatala)
+RETRY_NONE_RETCODES = {10012, 10031, 10026, 10027}
 
 
 # ===========================================================================
@@ -282,7 +285,10 @@ def try_place_order_new_logic(mt5, request, sym_info, log_lines):
         log_lines.append(f"    filling={fill_names[filling]:<6} -> retcode={result.retcode} "
                          f"({result.comment}) [{desc}]")
         if result.retcode in (10026, 10027):
-            return {"ok": False, "retcode": result.retcode, "reason": "AutoTrading dezactivat"}
+            return {"ok": False, "retcode": result.retcode, "reason": "AutoTrading dezactivat (retry)"}
+        if result.retcode in (10012, 10031):
+            # Timeout sau fara conexiune — eroare tranzitorie, bot face retry bara urm
+            return {"ok": False, "retcode": result.retcode, "reason": "conexiune/timeout (retry bara urm)"}
         if result.retcode not in (10030, 10006):
             return {"ok": False, "retcode": result.retcode,
                     "comment": result.comment, "reason": "eroare reala"}
@@ -316,6 +322,8 @@ def run_mt5_tests(filter_symbol=None):
 
     print("\n" + "=" * 68)
     print("  FAZA 2 — Test plasare ordine cu logica noua (MT5 DEMO)")
+    print("  NOTA: Rulati cand botul (run_all.py) NU este activ.")
+    print("        Botul activ ocupa conexiunea MT5 -> 10031 pe toate simbolurile.")
     print("=" * 68)
 
     if not mt5.initialize():
@@ -444,22 +452,39 @@ def run_mt5_tests(filter_symbol=None):
             rc = result.get("retcode")
             reason = result.get("reason", "")
             desc = RETCODES.get(rc, "necunoscut") if rc else ""
-            print(f"  [X] ESEC: {reason}  retcode={rc} [{desc}]")
-            fail_count += 1
-            results.append((name, session, "FAIL", f"retcode={rc} {desc}"))
+            is_retry = rc in RETRY_NONE_RETCODES if rc else False
+            if is_retry:
+                print(f"  [~] RETRY bara urm: {reason}  retcode={rc} [{desc}]")
+                skip_count += 1
+                results.append((name, session, "RETRY", f"retcode={rc} {desc}"))
+            else:
+                print(f"  [X] ESEC: {reason}  retcode={rc} [{desc}]")
+                fail_count += 1
+                results.append((name, session, "FAIL", f"retcode={rc} {desc}"))
 
     # Sumar
     print("\n" + "=" * 68)
     print("  SUMAR FAZA 2:")
-    print(f"  {'Simbol':<10} {'Ses':<5} {'Status':<6}  Detalii")
+    print(f"  {'Simbol':<10} {'Ses':<5} {'Status':<8}  Detalii")
     print(f"  {'-'*55}")
     for name, ses, status, detail in results:
-        icon = "[OK]" if status == "OK" else ("[X]" if status == "FAIL" else "[~]")
-        print(f"  {name:<10} {ses:<5} {icon:<6}  {detail}")
-    print(f"\n  OK: {ok_count}  |  ESEC: {fail_count}  |  SARIT: {skip_count}")
+        if status == "OK":
+            icon = "[OK]"
+        elif status == "FAIL":
+            icon = "[X]"
+        elif status == "RETRY":
+            icon = "[~]"
+        else:
+            icon = "[~]"
+        print(f"  {name:<10} {ses:<5} {icon:<8}  {detail}")
+    retry_count = sum(1 for _, _, s, _ in results if s == "RETRY")
+    print(f"\n  OK: {ok_count}  |  ESEC: {fail_count}  |  RETRY/SARIT: {skip_count}")
 
     if fail_count == 0 and ok_count > 0:
         print("\n  -> Logica noua de filling functioneaza corect pe toate pietele testate.")
+    elif fail_count == 0 and ok_count == 0 and retry_count > 0:
+        print("\n  -> NOTA: Toate erorile sunt tranzitorii (timeout/no-conn) — bot face retry bara urm.")
+        print("     Rulati testul cand botul NU este activ pentru rezultate curate.")
     elif fail_count == 0 and ok_count == 0:
         print("\n  -> Niciun ordin testat (pietele inchise sau AutoTrading dezactivat).")
     else:
