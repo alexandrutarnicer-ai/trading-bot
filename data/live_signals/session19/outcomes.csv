@@ -1,1 +1,2 @@
 signal_id,time_check,symbol,direction,status,entry,sl,tp,r_ratio,triggered_at,exit_price,exit_time,result_r,pnl_usd
+S19-AUDNZD-IB0002,2026-06-29 20:15:56.445158,AUDNZD,-1,expirat,1.21836,1.2194,1.21628,2.0,,,2026-06-29 20:00:00,0.0,0.0

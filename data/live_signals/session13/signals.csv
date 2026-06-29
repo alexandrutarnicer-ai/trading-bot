@@ -1,1 +1,2 @@
 signal_id,time,symbol,direction,dir_str,entry,sl,tp,r_ratio,atr_pips,n_optional,rsi
+S13-EURJPY-IB0001,2026-06-29 18:15:00,EURJPY,1,LONG,185.013,184.85,185.339,2.0,10.2,0,72.5
