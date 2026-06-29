@@ -470,10 +470,14 @@ def _close_position_robust(symbol: str, volume: float, order_type,
     return _mt5_exec.order_send(base_req)
 
 
-def _notify_signal(sig: dict, session_id: str) -> None:
+def _notify_signal(sig: dict, session_id: str, telegram: bool = True) -> None:
     """
     Notificare Windows Toast + Telegram + terminal bell la detectarea unui semnal nou.
     Non-blocking. Esecul notificarii nu opreste sesiunea.
+
+    telegram=False cand execute_trades=True — Telegram-ul este trimis separat in
+    "Ordin plasat" (cu ticket + lots), evitand doua notificari identice la distanta
+    de secunde pentru acelasi eveniment.
     """
     # Bell in terminal
     sys.stdout.write("\a")
@@ -496,15 +500,17 @@ def _notify_signal(sig: dict, session_id: str) -> None:
     title = f"[{type_label}] {sig['dir_str']} {sym}"
     body  = f"{session_id} | entry {entry}  SL {sl}  TP {tp}  ({sig['r_ratio']:.1f}R)"
 
-    # Telegram
-    _send_telegram(
-        f"<b>[{type_label}] {sig['dir_str']} {sym}</b>\n"
-        f"Entry: <code>{entry}</code>\n"
-        f"SL:    <code>{sl}</code>\n"
-        f"TP:    <code>{tp}</code>\n"
-        f"R/R:   {sig['r_ratio']:.1f}R\n"
-        f"<i>{session_id}</i>"
-    )
+    # Telegram — trimis doar pentru sesiuni obs (execute_trades=False).
+    # Cand execute_trades=True, notificarea Telegram vine din "Ordin plasat" (cu ticket).
+    if telegram:
+        _send_telegram(
+            f"<b>[{type_label}] {sig['dir_str']} {sym}</b>\n"
+            f"Entry: <code>{entry}</code>\n"
+            f"SL:    <code>{sl}</code>\n"
+            f"TP:    <code>{tp}</code>\n"
+            f"R/R:   {sig['r_ratio']:.1f}R\n"
+            f"<i>{session_id}</i>"
+        )
 
     # Windows Toast
     try:
@@ -2318,7 +2324,9 @@ def run_generator(session_cfg: dict):
                         f"entry={sig['entry']:.5f} sl={sig['sl']:.5f} tp={sig['tp']:.5f} "
                         f"({sig['r_ratio']:.1f}R) RSI={sig['rsi']:.0f}"
                     )
-                    _notify_signal(sig, session_cfg["session_id"])
+                    # execute_trades=True → Telegram vine din "Ordin plasat" (cu ticket+lots)
+                    _notify_signal(sig, session_cfg["session_id"],
+                                   telegram=not session_cfg.get("execute_trades", False))
 
                     # Executie demo/live
                     if session_cfg.get("execute_trades", False):
