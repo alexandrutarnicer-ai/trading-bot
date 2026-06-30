@@ -1102,6 +1102,76 @@ export function GuidePage() {
             </Note>
           </SubSection>
 
+          <SubSection title="Recuperare automată la crash / restart" defaultOpen={false}>
+            <p>
+              Dacă botul se oprește neașteptat (crash, curent, restart manual) în timp ce o
+              poziție este activă în MT5, <strong className="text-white">mecanismul de reconciliere</strong>{" "}
+              corectează automat datele la repornire — fără intervenție manuală.
+            </p>
+
+            <div className="mt-3 font-mono text-xs bg-surface rounded-lg border border-surface-border p-4 space-y-3">
+              <div className="text-[10px] text-slate-500 uppercase mb-2">Flux recuperare la startup</div>
+              <div className="space-y-2 text-slate-300">
+                <div className="flex items-start gap-2">
+                  <span className="text-profit shrink-0">1.</span>
+                  <span><code className="text-blue-300">_migrate_pending_format</code> — migrare format vechi state.pkl</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="text-profit shrink-0">2.</span>
+                  <span><code className="text-blue-300">_reconcile_mt5_tickets</code> — curăță orfanele din state</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="text-warn font-semibold shrink-0">3.</span>
+                  <span>
+                    <code className="text-blue-300">_recover_lost_outcomes</code> — caută în MT5 history
+                    (10 zile) după <code className="text-blue-300">comment = signal_id</code>:
+                    <ul className="mt-1 ml-4 space-y-0.5 text-slate-400">
+                      <li>· Ordin pending → actualizează mt5_tickets</li>
+                      <li>· Poziție deschisă → marked triggered=True</li>
+                      <li>· Poziție închisă → scrie TP/SL real în outcomes.csv + Telegram <span className="text-warn">[RECOVER]</span></li>
+                    </ul>
+                  </span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="text-profit shrink-0">4.</span>
+                  <span><code className="text-blue-300">_detect_orphan_mt5_orders</code> — alertează pentru ordine netrackuite</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+              <div className="bg-surface rounded-lg border border-loss/30 p-3 space-y-1">
+                <div className="text-loss text-[10px] uppercase font-semibold mb-1">Fără mecanism (înainte)</div>
+                <div className="text-slate-400 leading-relaxed">
+                  Bot restartuit → semnal fără ticket → barul expiră →
+                  scris <span className="text-loss">expirat 0R</span> în outcomes.csv<br/>
+                  <span className="text-slate-500 text-[10px]">Dashboard ≠ MT5</span>
+                </div>
+              </div>
+              <div className="bg-surface rounded-lg border border-profit/30 p-3 space-y-1">
+                <div className="text-profit text-[10px] uppercase font-semibold mb-1">Cu mecanism (acum)</div>
+                <div className="text-slate-400 leading-relaxed">
+                  Bot restartuit → <code className="text-blue-300">_recover_lost_outcomes</code> →
+                  găsit în MT5 history → scris <span className="text-profit">SL -1.1R</span> corect<br/>
+                  <span className="text-slate-500 text-[10px]">Dashboard = MT5 ✓</span>
+                </div>
+              </div>
+            </div>
+
+            <Note>
+              Orice corecție automată trimite notificare Telegram cu prefix{" "}
+              <code className="text-warn">[RECOVER]</code> și apare în tab-ul Notificări.
+              MT5 are întotdeauna prioritate față de starea locală a botului.
+            </Note>
+
+            <p className="text-xs text-slate-400 mt-2">
+              <strong className="text-slate-300">Fix la expirare/invalidare:</strong> Dacă un semnal cu
+              ticket MT5 ajunge la expirare sau invalidare din bare, botul verifică întâi MT5 înainte de
+              a scrie <code className="text-blue-300">expirat</code>. Dacă pozitia era deja închisă în MT5
+              (TP/SL real), scrie outcome-ul real în loc de <code className="text-loss">expirat 0R</code>.
+            </p>
+          </SubSection>
+
           <SubSection title="Când apare statusul 'invalidat'?" defaultOpen={false}>
             <p>
               <strong className="text-warn">Invalidat</strong> apare strict în fereastra{" "}

@@ -438,3 +438,15 @@ export interface SessionChangeEntry {
 export interface SessionChangesResponse {
   items: SessionChangeEntry[];
 }
+
+export interface SystemLogEntry {
+  time:    string;
+  session: string;
+  level:   "INFO" | "WARNING" | "ERROR";
+  message: string;
+}
+
+export interface SystemLogsResponse {
+  items: SystemLogEntry[];
+  total: number;
+}

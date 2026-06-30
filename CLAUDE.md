@@ -177,6 +177,25 @@ Starea persistenta per sesiune: `state.pkl` (pending dict + counter + tickets MT
 **`_send_telegram(text)` — non-blocking, daemon thread:**
 Toate notificarile Telegram din `signal_generator.py` sunt trimise in `threading.Thread(target=_do_send, daemon=True).start()`. Botul nu asteapta niciodata raspunsul Telegram — timeout-ul de retea (8s) nu afecteaza performanta loop-ului principal.
 
+**`_NotificationHandler` — rate-limiting notificari:**
+Handler de logging care captureaza WARNING/ERROR din sesiunile live si le scrie in `data/notifications.json` (tab Notificari din UI). Implementeaza rate-limit: acelasi mesaj (primele 80 caractere) nu e retrimis mai devreme de 600s. Mesajele de rutina (`iter `, `Urmatoarea bara`, `Niciun semnal nou`, `[DEDUP]`, `[ORPHAN] Niciun`) sunt ignorate complet. Cache intern max 200 chei (LRU trim la 50 cand depasit). Previne flood de notificari repetitive (ex: 96+ WARNING/zi pentru aceeasi eroare).
+
+**Reconciliere MT5 la startup — 3 straturi:**
+
+1. **`_recover_lost_outcomes(state, session_cfg, outcomes_file, log)`** — apelata la fiecare pornire sesiune, dupa `_reconcile_mt5_tickets`. Pentru semnale pending FARA ticket MT5 (state sters la crash), cauta in MT5 `history_orders_get()` (10 zile lookback) dupa `o.comment == sig_id`. Daca gaseste:
+   - Ordin inca pending → actualizeaza `mt5_tickets[sig_id] = ticket`
+   - Pozitie deschisa → actualizeaza `mt5_tickets` + `triggered=True`
+   - Pozitie inchisa → scrie outcome real (TP/SL/R/pnl_usd) in `outcomes.csv`, sterge din `pending`, trimite Telegram `[RECOVER]`
+   - Daca sig_id deja in outcomes.csv → sare (nu duplica)
+
+2. **Fix expirare in `_update_outcomes`** — inainte de a scrie `status=expirat, result_r=0.0`, verifica daca pozitia MT5 era de fapt INCHISA (`_check_mt5_position_closed`). Daca da, scrie TP/SL real + trimite Telegram `[RECOVER]`. Acopera scenariul: bot restartuit dupa ce pozitia fusese triggerata si inchisa in lipsa lui.
+
+3. **Fix invalidare in `_update_outcomes`** — acelasi mecanism: bara invalideaza structura DAR MT5 poate fi deja inchis cu TP/SL real → prioritate MT5.
+
+**Principiu: MT5 are intotdeauna prioritate.** Bot-ul nu poate marca niciodata `expirat/invalidat` daca MT5 confirma ca pozitia a fost executata real. Orice corectie trimite notificare Telegram cu prefix `[RECOVER]` si apare in tab-ul Notificari.
+
+**`_CLOSED_STATUSES`:** `["TP", "SL", "vineri_close", "news_close", "be_lock", "be_lock2"]` — include acum `be_lock` si `be_lock2` pentru statisticile corecte in `sessions.py` si `reports.py`.
+
 **Notificare ACTIVAT ordin MT5:**
 La tranzitia `triggered=False → True` (ordinul BUY_STOP/SELL_STOP a fost atins de pret si activat), se trimite Telegram: `ACTIVAT #ticket: LONG/SHORT SYMBOL @ entry | SL ... | TP ... (R)`. Se trimite o singura data per semnal (persitat in `state.pkl` — `triggered=True` previne re-trimiterea). Activ doar cand `execute_trades=True`.
 
@@ -368,7 +387,7 @@ Daca numerele se schimba semnificativ → bug introdus, nu progres.
 
 **`pnl_usd` in `outcomes.csv`:** Coloana 14 din `_OUTCOMES_COLS`. Scrisa de `_pnl()` la inchiderea ordinelor MT5 reale (TP/SL/vineri_close/news_close). Valoarea vine din `deal.profit` returnat de `history_deals_get`. Ramane `NaN` pentru ordine expirate sau sesiunile cu `execute_trades=False`. Backfill retroactiv: `python scripts/backfill_pnl_usd.py` (necesita MT5 conectat).
 
-**`_CLOSED_STATUSES`:** `["TP", "SL", "vineri_close", "news_close"]` — toate statusurile care corespund pozitiilor reale inchise. Folosit in `_outcome_stats`, `weekly_stats._aggregate` si `equity_curve` din `api/routers/sessions.py`. Castigurile/pierderile sunt calculate din `result_r > 0` / `result_r < 0` (nu din status) pentru a acoperi si vineri_close cu R pozitiv.
+**`_CLOSED_STATUSES`:** `["TP", "SL", "vineri_close", "news_close", "be_lock", "be_lock2"]` — toate statusurile care corespund pozitiilor reale inchise. Folosit in `_outcome_stats`, `weekly_stats._aggregate` si `equity_curve` din `api/routers/sessions.py`. Castigurile/pierderile sunt calculate din `result_r > 0` / `result_r < 0` (nu din status) pentru a acoperi si vineri_close cu R pozitiv. `be_lock`/`be_lock2` corespund exiturilor break-even — trebuie incluse explicit.
 
 **`GET /sessions/frequency-estimate`:** Calculeaza frecventa estimata trades/saptamana + trades/luna din cele mai recente backtest-uri finalizate (din `data/backtest_jobs.json`). Filtreaza sesiunile pe pauza **si cele cu `execute_trades=False`**. Mapare: `job.session_id` ("S2") → `profile_session.id` ("S2"). Returneaza `{per_week, per_month, missing}` sau `null` daca nu exista backtest-uri.
 

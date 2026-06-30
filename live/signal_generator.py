@@ -65,6 +65,49 @@ def _get_tg_creds() -> tuple[str, str]:
     return token, chat_id
 
 
+class _NotificationHandler(logging.Handler):
+    """
+    Handler de logging care trimite automat mesajele WARNING/ERROR
+    catre notification store din UI (api/notifications.py).
+    Non-blocking — esecul nu afecteaza niciodata botul.
+
+    Rate-limiting: acelasi mesaj (primele 80 caractere) se trimite max o data
+    la 10 minute, prevenind flood-ul din WARNING-uri repetate la fiecare bara.
+    """
+    # Mesaje de ignora (spam frecvent, nu erori reale)
+    _IGNORE = ("Niciun semnal nou", "Urmatoarea bara", "iter ", "Pornit.",
+               "[DEDUP]", "[ORPHAN] Niciun")
+    _COOLDOWN_SEC = 600   # 10 minute intre doua notificari cu acelasi prefix
+
+    def __init__(self, session_id: str):
+        super().__init__()
+        self._session_id = session_id
+        self._seen: dict[str, float] = {}   # prefix80 → timestamp ultima notificare
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            raw_msg = record.getMessage()
+            if any(skip in raw_msg for skip in self._IGNORE):
+                return
+            # Rate-limiting pe primele 80 de caractere (ignora detalii variabile)
+            key = raw_msg[:80]
+            now = datetime.now().timestamp()
+            last = self._seen.get(key, 0.0)
+            if now - last < self._COOLDOWN_SEC:
+                return
+            self._seen[key] = now
+            # Curata cache-ul periodic (max 200 intrari)
+            if len(self._seen) > 200:
+                oldest = sorted(self._seen.items(), key=lambda x: x[1])
+                for k, _ in oldest[:50]:
+                    self._seen.pop(k, None)
+            from api.notifications import log_notification
+            level_tag = "ERROR" if record.levelno >= logging.ERROR else "WARNING"
+            log_notification(f"[{level_tag}][{self._session_id}] {raw_msg}")
+        except Exception:
+            pass
+
+
 def _send_telegram(text: str) -> None:
     """Trimite mesaj Telegram in daemon thread — complet non-blocking pentru bot."""
     # Logheaza in notification store (independent de Telegram)
@@ -468,6 +511,37 @@ def _close_position_robust(symbol: str, volume: float, order_type,
                         f"retcode={result.retcode} — incercam alt filling")
     # Ultima sansa: fara type_filling
     return _mt5_exec.order_send(base_req)
+
+
+def _cancel_mt5_order(ticket: int, sig_id: str, reason: str, log) -> bool:
+    """
+    Anuleaza un ordin pending MT5 (TRADE_ACTION_REMOVE).
+    Returneaza True daca ordinul a disparut (anulat sau deja disparut din MT5).
+    Logheaza la INFO daca era deja disparut (nu e eroare), WARNING la esec real.
+    """
+    if _mt5_exec is None:
+        return False
+    _r = _mt5_exec.order_send({
+        "action": _mt5_exec.TRADE_ACTION_REMOVE,
+        "order":  ticket,
+    })
+    if _r and _r.retcode == _mt5_exec.TRADE_RETCODE_DONE:
+        log.info(f"  [EXEC] {sig_id}: ordin MT5 #{ticket} anulat ({reason})")
+        return True
+    # Verifica daca ordinul mai exista in MT5
+    still_open = _mt5_exec.orders_get(ticket=ticket)
+    if not still_open:
+        # Nu mai e in MT5 — triggerat sau deja anulat/expirat manual
+        log.info(f"  [EXEC] {sig_id}: ordin MT5 #{ticket} deja disparut din MT5 ({reason}) — ok")
+        return True
+    # Ordinul inca exista dar nu l-am putut anula — eroare reala
+    err = _mt5_exec.last_error()
+    retcode = _r.retcode if _r else "None"
+    log.warning(
+        f"  [EXEC] {sig_id}: anulare MT5 #{ticket} ESUATA ({reason}) "
+        f"retcode={retcode} last_error={err} — ordinul ramane deschis in MT5!"
+    )
+    return False
 
 
 def _notify_signal(sig: dict, session_id: str, telegram: bool = True) -> None:
@@ -936,28 +1010,41 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                     rows_to_remove.append(sig_id)
                     _ticket = state.get("mt5_tickets", {}).get(sig_id)
                     if _ticket and _mt5_exec is not None:
-                        _r = _mt5_exec.order_send({
-                            "action": _mt5_exec.TRADE_ACTION_REMOVE,
-                            "order":  _ticket,
-                        })
-                        if _r and _r.retcode == _mt5_exec.TRADE_RETCODE_DONE:
-                            log.info(f"  [EXEC] {sig_id}: ordin MT5 #{_ticket} anulat (expirat)")
+                        # VERIFICA INAINTE: pozitia poate fi triggerata si inchisa
+                        # in lipsa botului (crash / restart). MT5 are prioritate.
+                        _mt5_res = _check_mt5_position_closed(_ticket, p, log)
+                        if _mt5_res and not _mt5_res.get("__no_outcome__"):
+                            # Pozitie reala inchisa cu TP/SL — corectam in loc de "expirat"
+                            log.warning(
+                                f"  [RECOVER] {sig_id}: ar fi fost marcat 'expirat' dar "
+                                f"pozitia MT5 #{_ticket} era INCHISA — corectez la "
+                                f"{_mt5_res['status']} {_mt5_res['result_r']:+.3f}R"
+                            )
+                            _send_telegram(
+                                f"<b>[RECOVER] {sig_id}</b>\n"
+                                f"Pozitie recuperata: {_mt5_res['status']} "
+                                f"{_mt5_res['result_r']:+.3f}R | "
+                                f"{_mt5_res.get('pnl_usd', 0):+.2f} USD\n"
+                                f"<i>{session_id} — pozitie inchisa in lipsa botului</i>"
+                            )
+                            outcome_rows.append({**p, "signal_id": sig_id,
+                                                 "symbol": symbol,
+                                                 **_mt5_res, "time_check": now_local()})
                         else:
-                            log.warning(f"  [EXEC] {sig_id}: anulare MT5 #{_ticket} esuata "
-                                        f"({_mt5_exec.last_error()}) — poate deja inchis/triggerat")
+                            # Ordin inca pending sau inexistent → anulare + expirat
+                            _cancel_mt5_order(_ticket, sig_id, "expirat", log)
+                            outcome_rows.append({**p, "signal_id": sig_id,
+                                                 "symbol": symbol,
+                                                 "status": "expirat", "result_r": 0.0,
+                                                 "exit_time": current_bar_t,
+                                                 "time_check": now_local(),
+                                                 "pnl_usd": 0.0})
+                            _send_telegram(
+                                f"<b>EXPIRAT: {symbol}</b>\n"
+                                f"Ordinul nu a fost triggerat (>{expire_bars} bare)\n"
+                                f"<i>{session_id} | {sig_id}</i>"
+                            )
                         state["mt5_tickets"].pop(sig_id, None)
-                        # Ordin plasat in MT5 si expirat -> scriem in outcomes
-                        outcome_rows.append({**p, "signal_id": sig_id,
-                                             "symbol": symbol,
-                                             "status": "expirat", "result_r": 0.0,
-                                             "exit_time": current_bar_t,
-                                             "time_check": now_local(),
-                                             "pnl_usd": 0.0})
-                        _send_telegram(
-                            f"<b>EXPIRAT: {symbol}</b>\n"
-                            f"Ordinul nu a fost triggerat (>{expire_bars} bare)\n"
-                            f"<i>{session_id} | {sig_id}</i>"
-                        )
                     else:
                         # Fara ordin MT5 — pastram doar in signals.csv, nu in outcomes
                         log.info(f"  EXPIRAT (fara ordin MT5): {sig_id} {symbol} "
@@ -974,29 +1061,32 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                     rows_to_remove.append(sig_id)
                     _ticket = state.get("mt5_tickets", {}).get(sig_id)
                     if _ticket and _mt5_exec is not None:
-                        _r = _mt5_exec.order_send({
-                            "action": _mt5_exec.TRADE_ACTION_REMOVE,
-                            "order":  _ticket,
-                        })
-                        if _r and _r.retcode == _mt5_exec.TRADE_RETCODE_DONE:
-                            log.info(f"  [EXEC] {sig_id}: ordin MT5 #{_ticket} anulat (invalidat)")
+                        # VERIFICA INAINTE: pozitia poate fi deja inchisa cu TP/SL real
+                        _mt5_res = _check_mt5_position_closed(_ticket, p, log)
+                        if _mt5_res and not _mt5_res.get("__no_outcome__"):
+                            log.warning(
+                                f"  [RECOVER] {sig_id}: bar invalideaza dar MT5 #{_ticket} "
+                                f"era deja INCHIS — corectez la "
+                                f"{_mt5_res['status']} {_mt5_res['result_r']:+.3f}R"
+                            )
+                            outcome_rows.append({**p, "signal_id": sig_id,
+                                                 "symbol": symbol,
+                                                 **_mt5_res, "time_check": now_local()})
                         else:
-                            log.warning(f"  [EXEC] {sig_id}: anulare MT5 #{_ticket} esuata "
-                                        f"({_mt5_exec.last_error()}) — poate deja inchis/triggerat")
+                            _cancel_mt5_order(_ticket, sig_id, "invalidat", log)
+                            outcome_rows.append({**p, "signal_id": sig_id,
+                                                 "symbol": symbol,
+                                                 "status": "invalidat", "result_r": 0.0,
+                                                 "time_check": now_local(),
+                                                 "pnl_usd": 0.0})
+                            _dir_str = "LONG" if d == 1 else "SHORT"
+                            _send_telegram(
+                                f"<b>INVALIDAT #{_ticket}: {_dir_str} {symbol}</b>\n"
+                                f"Structura ruptă — ordinul anulat din MT5\n"
+                                f"Entry {p['entry']} | SL {p['sl']} | {p.get('r_ratio', '?')}R\n"
+                                f"<i>{session_id} | {sig_id}</i>"
+                            )
                         state["mt5_tickets"].pop(sig_id, None)
-                        # Ordin plasat in MT5 si invalidat -> scriem in outcomes
-                        outcome_rows.append({**p, "signal_id": sig_id,
-                                             "symbol": symbol,
-                                             "status": "invalidat", "result_r": 0.0,
-                                             "time_check": now_local(),
-                                             "pnl_usd": 0.0})
-                        _dir_str = "LONG" if d == 1 else "SHORT"
-                        _send_telegram(
-                            f"<b>INVALIDAT #{_ticket}: {_dir_str} {symbol}</b>\n"
-                            f"Structura ruptă — ordinul anulat din MT5\n"
-                            f"Entry {p['entry']} | SL {p['sl']} | {p.get('r_ratio', '?')}R\n"
-                            f"<i>{session_id} | {sig_id}</i>"
-                        )
                     else:
                         # Fara ordin MT5 — pastram doar in signals.csv, nu in outcomes
                         log.info(f"  INVALIDAT (fara ordin MT5): {sig_id} {symbol} "
@@ -1258,6 +1348,82 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
 
 
 # ---------------------------------------------------------------------------
+# Migrare format vechi pending la format nou (ruleaza o singura data la pornire)
+# ---------------------------------------------------------------------------
+
+def _migrate_pending_format(state: dict, session_cfg: dict, log) -> None:
+    """
+    Detecteaza si migraz semnalele in format vechi (flat) la formatul nou (nested).
+
+    Format vechi (inainte de refactorizare multi-simbol):
+        state["pending"] = { "S1-EURUSD-SIG0001": {entry, sl, tp, time, ...} }
+
+    Format nou (curent):
+        state["pending"] = { "EURUSD": { "S1-EURUSD-SIG0002": {entry, sl, tp, armed_at, ...} } }
+
+    Semnele unui entry in format vechi:
+      - cheia nu e un simbol (nu e all-caps simplu), ci un signal ID (contine '-' si 'SIG'/'IB'/'FLG')
+      - valoarea e un dict cu campul 'entry' (semnalul efectiv)
+
+    Semnele unui entry corrupt gol:
+      - cheia e un simbol (all-caps, fara '-') iar valoarea e {} (dict gol)
+    """
+    pending = state.get("pending", {})
+    all_symbols = {sym for mk in session_cfg.get("markets", []) for sym in [mk]}
+    # Adauga si simbolurile din fallbacks
+    for v in session_cfg.get("symbol_fallbacks", {}).values():
+        if isinstance(v, list):
+            all_symbols.update(v)
+        else:
+            all_symbols.add(v)
+
+    migrated = 0
+    removed_empty = 0
+
+    for key in list(pending.keys()):
+        value = pending[key]
+        # Detecteaza intrari in format vechi: cheia contine '-' si valoarea are 'entry'
+        if "-" in key and isinstance(value, dict) and "entry" in value:
+            # Extrage simbolul din campul 'symbol' al semnalului sau din signal_id
+            sym = value.get("symbol") or key.split("-")[1] if "-" in key else None
+            if not sym:
+                continue
+            # Adauga campurile lipsa necesare de _update_outcomes
+            if "armed_at" not in value or not value.get("armed_at"):
+                # Fallback: "time" din semnal, sau epoch (semnal va expira imediat)
+                value["armed_at"] = value.get("time") or "2000-01-01 00:00:00"
+            value.setdefault("signal_type",        "pullback")
+            value.setdefault("be_phase",           0)
+            value.setdefault("be_current_sl",      value["sl"])
+            value.setdefault("be_in_zone",         False)
+            value.setdefault("be_notified_phases", set())
+            value.setdefault("be_last_t",          None)
+            # Muta la noua locatie: pending[symbol][sig_id]
+            pending.pop(key)
+            pending.setdefault(sym, {})[key] = value
+            log.warning(
+                f"  [MIGRATE] Semnal in format vechi detectat si migrat: "
+                f"{key} -> pending[{sym}][{key}]"
+            )
+            migrated += 1
+
+    # Sterge cheile goale de tip simbol (corrupt empty dicts)
+    for key in list(pending.keys()):
+        value = pending[key]
+        is_symbol_like = (key == key.upper() and "-" not in key and len(key) >= 3)
+        if is_symbol_like and isinstance(value, dict) and len(value) == 0:
+            pending.pop(key)
+            log.warning(f"  [MIGRATE] Cheie goala stearsa din pending: {key!r}")
+            removed_empty += 1
+
+    if migrated or removed_empty:
+        log.info(
+            f"  [MIGRATE] Migrare pending: {migrated} semnale migrate, "
+            f"{removed_empty} chei goale sterse."
+        )
+
+
+# ---------------------------------------------------------------------------
 # Reconciliere tickets MT5 la pornire
 # ---------------------------------------------------------------------------
 
@@ -1306,6 +1472,165 @@ def _reconcile_mt5_tickets(state: dict, log) -> None:
     if to_remove:
         log.info(f"  [RECONCIL] Curatate {len(to_remove)} ticket(e) orfane; "
                  f"semnalele raman in pending si vor expira natural.")
+
+
+def _recover_lost_outcomes(
+    state: dict,
+    session_cfg: dict,
+    outcomes_file: str,
+    log,
+) -> None:
+    """
+    Startup: pentru semnale pending FARA ticket MT5 cunoscut, cauta in history MT5
+    ordine cu comment = signal_id (plasate de bot in sesiunile anterioare).
+
+    Scenariul acoperit: botul a plasat un ordin, l-a triggerat, pozitia s-a inchis
+    (TP/SL), dar state.pkl a fost sters intre timp (crash / reset manual).
+    Fara aceasta functie, semnalul ar fi marcat 'expirat 0R' la urmatoarea bara.
+
+    MT5 are prioritate — daca MT5 zice SL, se scrie SL, indiferent de bare.
+    """
+    if _mt5_exec is None:
+        return
+
+    pending = state.get("pending", {})
+    mt5_tickets = state.get("mt5_tickets", {})
+
+    sigs_without_ticket = [
+        (sym, sig_id, sig)
+        for sym, sym_sigs in pending.items()
+        for sig_id, sig in sym_sigs.items()
+        if sig_id not in mt5_tickets
+    ]
+    if not sigs_without_ticket:
+        return
+
+    log.info(f"  [RECOVER] Verificare {len(sigs_without_ticket)} semnale fara ticket MT5 in history...")
+    dt_from = datetime.now() - timedelta(days=10)
+    dt_to   = datetime.now()
+    recovered = 0
+
+    for sym, sig_id, sig in sigs_without_ticket:
+        hist_orders = _mt5_exec.history_orders_get(dt_from, dt_to, group=sym)
+        if not hist_orders:
+            continue
+
+        # Match exact pe comment; fallback pe primele 16 caractere (limit MT5 display)
+        matching = [
+            o for o in hist_orders
+            if o.comment == sig_id or o.comment.rstrip() == sig_id[:16]
+        ]
+        if not matching:
+            continue
+
+        # Cel mai recent ordin plasat cu comentariul potrivit
+        order = sorted(matching, key=lambda o: o.time_setup)[-1]
+        ticket = order.ticket
+        pos_id = getattr(order, "position_id", ticket) or ticket
+
+        # 1. Ordin inca pending (netriggerat)
+        if _mt5_exec.orders_get(ticket=ticket):
+            mt5_tickets[sig_id] = ticket
+            log.info(f"  [RECOVER] {sig_id}: ordin #{ticket} inca pending → actualizat mt5_tickets")
+            continue
+
+        # 2. Pozitie inca deschisa (triggerat, in curs)
+        if _mt5_exec.positions_get(ticket=pos_id):
+            mt5_tickets[sig_id] = ticket
+            sig["triggered"] = True
+            if order.time_done:
+                sig["triggered_at"] = datetime.fromtimestamp(order.time_done).strftime(
+                    "%Y-%m-%d %H:%M:%S"
+                )
+            log.info(f"  [RECOVER] {sig_id}: pozitie #{pos_id} deschisa → actualizat mt5_tickets+triggered")
+            continue
+
+        # 3. Pozitie inchisa — folosim _check_mt5_position_closed cu ticketul gasit
+        mt5_res = _check_mt5_position_closed(ticket, sig, log)
+        if mt5_res is None or mt5_res.get("__no_outcome__"):
+            # Order anulat/respins fara executie — lasa sa expire natural
+            continue
+
+        # Verifica ca nu e deja in outcomes.csv
+        if os.path.exists(outcomes_file):
+            try:
+                _ex = pd.read_csv(outcomes_file, usecols=["signal_id"])
+                if sig_id in _ex["signal_id"].values:
+                    pending.get(sym, {}).pop(sig_id, None)
+                    continue
+            except Exception:
+                pass
+
+        # Scrie outcome real in loc de "expirat"
+        row = {
+            **sig, "signal_id": sig_id, "symbol": sym,
+            **mt5_res, "time_check": now_local(),
+        }
+        pd.DataFrame([row]).reindex(columns=_OUTCOMES_COLS).to_csv(
+            outcomes_file, mode="a", header=False, index=False
+        )
+
+        pending.get(sym, {}).pop(sig_id, None)
+        mt5_tickets.pop(sig_id, None)
+        recovered += 1
+
+        log.warning(
+            f"  [RECOVER] {sig_id}: {mt5_res['status']} {mt5_res['result_r']:+.3f}R "
+            f"{mt5_res.get('pnl_usd', 0):+.2f}USD recuperat din history MT5 "
+            f"(pozitie inchisa in lipsa botului)"
+        )
+        _send_telegram(
+            f"<b>[RECOVER] {sig_id}</b>\n"
+            f"Pozitie recuperata din history MT5\n"
+            f"Status: {mt5_res['status']} | {mt5_res['result_r']:+.3f}R | "
+            f"{mt5_res.get('pnl_usd', 0):+.2f} USD\n"
+            f"<i>{session_cfg.get('session_id', '?')} — pozitie inchisa in lipsa botului</i>"
+        )
+
+    if recovered > 0:
+        log.warning(
+            f"  [RECOVER] {recovered} outcome(uri) recuperate din history MT5 la startup"
+        )
+
+
+def _detect_orphan_mt5_orders(state: dict, markets: list, session_id: str, log) -> None:
+    """
+    Detecteaza ordinele MT5 deschise (pending/pozitii) pentru simbolurile sesiunii
+    care NU sunt in state["mt5_tickets"]. Logheaza WARNING si trimite Telegram.
+
+    Ruleaza o singura data la pornire, dupa _reconcile_mt5_tickets.
+    Scop: alerteaza utilizatorul ca exista ordine in MT5 pe care botul nu le urmareste
+    (coruptie state, restart dupa crash, ordine manuale).
+    """
+    if _mt5_exec is None:
+        return
+    tracked_tickets = set(state.get("mt5_tickets", {}).values())
+    orphans = []
+
+    for symbol in markets:
+        # Ordine pending neactivate
+        for order in (_mt5_exec.orders_get(symbol=symbol) or []):
+            if order.ticket not in tracked_tickets:
+                orphans.append((symbol, order.ticket, "pending", order.price_open))
+        # Pozitii deschise
+        for pos in (_mt5_exec.positions_get(symbol=symbol) or []):
+            if pos.ticket not in tracked_tickets:
+                orphans.append((symbol, pos.ticket, "pozitie", pos.price_open))
+
+    if orphans:
+        lines = "\n".join(
+            f"  #{tkt} {sym} {kind} @ {price:.5f}"
+            for sym, tkt, kind, price in orphans
+        )
+        msg = (
+            f"⚠️ <b>[{session_id}] Ordine MT5 netrackuite detectate la pornire!</b>\n"
+            f"Botul NU urmareste urmatoarele ordine din MT5:\n<pre>{lines}</pre>\n"
+            f"Cauza: crash/restart cu pierdere state. Verifica si anuleaza manual daca sunt invalide."
+        )
+        log.warning(f"  [ORPHAN] {len(orphans)} ordine MT5 netrackuite: {orphans}")
+        _send_telegram(msg)
+    else:
+        log.info("  [ORPHAN] Niciun ordin MT5 netrackuit detectat — state consistent cu MT5.")
 
 
 # ---------------------------------------------------------------------------
@@ -2062,6 +2387,11 @@ def run_generator(session_cfg: dict):
         fh.setFormatter(fmt)
         log.addHandler(sh)
         log.addHandler(fh)
+        # Handler pentru notificari automate ERROR/WARNING → UI Notifications
+        _nh = _NotificationHandler(session_cfg["session_id"])
+        _nh.setLevel(logging.WARNING)
+        _nh.setFormatter(fmt)
+        log.addHandler(_nh)
 
     # Init CSV-uri
     if not os.path.exists(signals_file):
@@ -2150,8 +2480,21 @@ def run_generator(session_cfg: dict):
             pass
         return
 
+    # Migrare format vechi pending (flat sig_id->dict) la format nou (symbol->{sig_id->dict})
+    _migrate_pending_format(state, session_cfg, log)
+
     # Reconciliere tickets la pornire — curata orfanele din state
     _reconcile_mt5_tickets(state, log)
+
+    # Recupereaza outcome-uri pierdute la crash/reset: cauta in MT5 history dupa comment=sig_id
+    # Previne marcarea gresita ca "expirat 0R" a pozitiilor inchise in lipsa botului
+    _recover_lost_outcomes(state, session_cfg, outcomes_file, log)
+
+    # Detecteaza ordine MT5 netrackuite (coruptie state / crash) si alerteaza via Telegram
+    _detect_orphan_mt5_orders(
+        state, session_cfg.get("markets", []),
+        session_cfg.get("session_id", "?"), log
+    )
 
     # Rezolva simbolurile
     fallbacks = session_cfg.get("symbol_fallbacks", {})
@@ -2292,16 +2635,44 @@ def run_generator(session_cfg: dict):
 
                 sigs = _check_signals(df, symbol, cfg, state, session_cfg)
                 for sig in sigs:
-                    # Evita duplicate in signals.csv (doua instante simultane)
+                    # Evita duplicate in signals.csv (ID identic — doua instante simultane)
                     _sig_exists = False
                     try:
-                        _ex = pd.read_csv(signals_file, usecols=["signal_id"])["signal_id"].dropna()
-                        _sig_exists = sig["signal_id"] in _ex.values
+                        _ex_df = pd.read_csv(signals_file, usecols=["signal_id", "direction", "entry", "symbol"])
+                        _sig_exists = sig["signal_id"] in _ex_df["signal_id"].values
+                        # Dedup dupa (symbol, direction, entry) — prinde re-detectia aceluiasi
+                        # setup dupa restart cand se genereaza un ID nou dar acelasi trade
+                        if not _sig_exists:
+                            _recent = _ex_df[
+                                (_ex_df["symbol"] == sig["symbol"]) &
+                                (_ex_df["direction"] == sig["direction"]) &
+                                ((_ex_df["entry"] - sig["entry"]).abs() < 1e-6)
+                            ]
+                            if not _recent.empty:
+                                log.warning(
+                                    f"  [DEDUP] {sig['signal_id']} {symbol}: entry identic cu "
+                                    f"{_recent.iloc[-1]['signal_id']} deja in signals.csv — skipped"
+                                )
+                                _sig_exists = True
                     except Exception:
                         pass
+                    # Dedup si in pending curent (acelasi symbol, direction, entry)
                     if not _sig_exists:
-                        pd.DataFrame([sig]).reindex(columns=_SIGNALS_COLS).to_csv(
-                            signals_file, mode="a", header=False, index=False)
+                        for _existing_sig in state["pending"].get(symbol, {}).values():
+                            if (
+                                _existing_sig.get("direction") == sig["direction"]
+                                and abs(_existing_sig.get("entry", 0) - sig["entry"]) < 1e-6
+                            ):
+                                log.warning(
+                                    f"  [DEDUP] {sig['signal_id']} {symbol}: entry identic cu "
+                                    f"un semnal deja in pending — skipped"
+                                )
+                                _sig_exists = True
+                                break
+                    if _sig_exists:
+                        continue
+                    pd.DataFrame([sig]).reindex(columns=_SIGNALS_COLS).to_csv(
+                        signals_file, mode="a", header=False, index=False)
                     state["pending"].setdefault(symbol, {})[sig["signal_id"]] = {
                         "direction":  sig["direction"],
                         "entry":      sig["entry"],
