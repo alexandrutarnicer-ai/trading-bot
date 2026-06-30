@@ -462,7 +462,21 @@ def get_top_markets(period: str = "week", limit: int = 5):
 
     symbol_stats: dict = {}
 
+    # Descopera dinamic sesiunile cu outcomes pe disk (aceeasi logica ca reports.py)
+    live_base = os.path.join(DATA_DIR, "live_signals")
+    static_map = {s["id"]: s for s in SESSIONS}
+    all_sessions: list[dict] = []
+    seen: set[str] = set()
+    if os.path.isdir(live_base):
+        for name in sorted(os.listdir(live_base)):
+            if os.path.isfile(os.path.join(live_base, name, "outcomes.csv")):
+                all_sessions.append(static_map.get(name, {"id": name, "label": name, "markets": []}))
+                seen.add(name)
     for s in SESSIONS:
+        if s["id"] not in seen:
+            all_sessions.append(s)
+
+    for s in all_sessions:
         df = _read_outcomes(s["id"])
         if df.empty:
             continue
@@ -478,7 +492,7 @@ def get_top_markets(period: str = "week", limit: int = 5):
             continue
 
         for _, row in closed.iterrows():
-            sym = str(row.get("symbol", ""))
+            sym = str(row.get("symbol", "")).strip()
             if not sym:
                 continue
             if sym not in symbol_stats:
