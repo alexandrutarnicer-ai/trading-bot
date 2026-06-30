@@ -9,6 +9,7 @@ Sesiunile sunt complet independente: capital separat, loguri separate.
 """
 
 import os
+import re
 import sys
 import json
 import time
@@ -1593,44 +1594,112 @@ def _recover_lost_outcomes(
         )
 
 
+_BOT_SIG_RE = re.compile(r"^S\d+-[A-Z0-9]+-(?:[A-Z0-9]+-)?(?:SIG|IB|FLG)\d+", re.IGNORECASE)
+
+
 def _detect_orphan_mt5_orders(state: dict, markets: list, session_id: str, log) -> None:
     """
     Detecteaza ordinele MT5 deschise (pending/pozitii) pentru simbolurile sesiunii
-    care NU sunt in state["mt5_tickets"]. Logheaza WARNING si trimite Telegram.
+    care NU sunt in state["mt5_tickets"].
 
-    Ruleaza o singura data la pornire, dupa _reconcile_mt5_tickets.
-    Scop: alerteaza utilizatorul ca exista ordine in MT5 pe care botul nu le urmareste
-    (coruptie state, restart dupa crash, ordine manuale).
+    - Daca comment-ul e in formatul botului (SigID): preia automat in state si trimite
+      Telegram "[RECOVER] Pozitie preluata pentru monitorizare".
+    - Altfel (ordine manuale): alerteaza userul sa verifice si inchida manual daca e cazul.
+
+    Ruleaza o singura data la pornire, dupa _reconcile_mt5_tickets + _recover_lost_outcomes.
     """
     if _mt5_exec is None:
         return
     tracked_tickets = set(state.get("mt5_tickets", {}).values())
-    orphans = []
+    unknown_orphans: list[tuple] = []
+    recovered = 0
 
     for symbol in markets:
-        # Ordine pending neactivate
+        # ── Ordine pending neactivate ──
         for order in (_mt5_exec.orders_get(symbol=symbol) or []):
-            if order.ticket not in tracked_tickets:
-                orphans.append((symbol, order.ticket, "pending", order.price_open))
-        # Pozitii deschise
-        for pos in (_mt5_exec.positions_get(symbol=symbol) or []):
-            if pos.ticket not in tracked_tickets:
-                orphans.append((symbol, pos.ticket, "pozitie", pos.price_open))
+            if order.ticket in tracked_tickets:
+                continue
+            comment = getattr(order, "comment", "") or ""
+            if _BOT_SIG_RE.match(comment.strip()):
+                sig_id = comment.strip()
+                state.setdefault("mt5_tickets", {})[sig_id] = order.ticket
+                tracked_tickets.add(order.ticket)
+                log.warning(
+                    f"  [ORPHAN-RECOVER] Ordin pending #{order.ticket} ({sig_id}) "
+                    f"preluat din MT5 — adaugat in tracking"
+                )
+                _send_telegram(
+                    f"<b>[RECOVER] {sig_id}</b>\n"
+                    f"Ordin pending #{order.ticket} preluat automat pentru monitorizare\n"
+                    f"{symbol} @ {order.price_open:.5f}\n"
+                    f"<i>{session_id} — state recuperat la startup</i>"
+                )
+                recovered += 1
+            else:
+                unknown_orphans.append((symbol, order.ticket, "pending", order.price_open, comment))
 
-    if orphans:
+        # ── Pozitii deschise (triggerate) ──
+        for pos in (_mt5_exec.positions_get(symbol=symbol) or []):
+            if pos.ticket in tracked_tickets:
+                continue
+            comment = getattr(pos, "comment", "") or ""
+            if _BOT_SIG_RE.match(comment.strip()):
+                # Reconstruieste intrarea in pending din datele pozitiei MT5
+                sig_id  = comment.strip()
+                d       = 1 if pos.type == 0 else -1  # 0=buy, 1=sell
+                t_open  = datetime.fromtimestamp(pos.time).strftime("%Y-%m-%d %H:%M:%S")
+                reconstructed = {
+                    "direction":    d,
+                    "entry":        pos.price_open,
+                    "sl":           pos.sl if pos.sl else pos.price_open * (1 - 0.005 * d),
+                    "tp":           pos.tp if pos.tp else pos.price_open * (1 + 0.01 * d),
+                    "r_ratio":      0.0,   # necunoscut — se recalculeaza la inchidere din deal.profit
+                    "armed_at":     t_open,
+                    "triggered":    True,
+                    "triggered_at": t_open,
+                    "be_phase":     0,
+                    "be_current_sl": pos.sl or 0,
+                    "symbol":       symbol,
+                    "risk_usd":     None,  # necunoscut — pnl_usd va veni direct din deal.profit
+                }
+                state.setdefault("pending", {}).setdefault(symbol, {})[sig_id] = reconstructed
+                state.setdefault("mt5_tickets", {})[sig_id] = pos.ticket
+                tracked_tickets.add(pos.ticket)
+                dir_str = "LONG" if d == 1 else "SHORT"
+                log.warning(
+                    f"  [ORPHAN-RECOVER] Pozitie #{pos.ticket} ({sig_id}) {dir_str} {symbol} "
+                    f"@ {pos.price_open:.5f} preluata din MT5 — reconstruita in pending+tracking"
+                )
+                _send_telegram(
+                    f"<b>[RECOVER] {sig_id}</b>\n"
+                    f"Pozitie activa #{pos.ticket} preluata automat\n"
+                    f"{dir_str} {symbol} @ {pos.price_open:.5f} | "
+                    f"SL {pos.sl:.5f} | TP {pos.tp:.5f}\n"
+                    f"<i>{session_id} — botul monitorizeaza acum aceasta pozitie</i>"
+                )
+                recovered += 1
+            else:
+                unknown_orphans.append((symbol, pos.ticket, "pozitie", pos.price_open, comment))
+
+    if recovered:
+        log.warning(f"  [ORPHAN-RECOVER] {recovered} ordine/pozitii preluate automat din MT5 la startup")
+
+    if unknown_orphans:
         lines = "\n".join(
             f"  #{tkt} {sym} {kind} @ {price:.5f}"
-            for sym, tkt, kind, price in orphans
+            + (f" [{cmt}]" if cmt else "")
+            for sym, tkt, kind, price, cmt in unknown_orphans
         )
         msg = (
-            f"⚠️ <b>[{session_id}] Ordine MT5 netrackuite detectate la pornire!</b>\n"
-            f"Botul NU urmareste urmatoarele ordine din MT5:\n<pre>{lines}</pre>\n"
-            f"Cauza: crash/restart cu pierdere state. Verifica si anuleaza manual daca sunt invalide."
+            f"⚠️ <b>[{session_id}] Pozitii MT5 fara corespondent in bot</b>\n"
+            f"Urmatoarele pozitii din MT5 nu pot fi identificate automat\n"
+            f"(probabil deschise manual sau de alta sesiune):\n<pre>{lines}</pre>\n"
+            f"Verifica in MT5 si inchide manual daca nu sunt ale botului."
         )
-        log.warning(f"  [ORPHAN] {len(orphans)} ordine MT5 netrackuite: {orphans}")
+        log.warning(f"  [ORPHAN] {len(unknown_orphans)} pozitii MT5 neidentiabile: {unknown_orphans}")
         _send_telegram(msg)
-    else:
-        log.info("  [ORPHAN] Niciun ordin MT5 netrackuit detectat — state consistent cu MT5.")
+    elif not recovered:
+        log.info("  [ORPHAN] Nicio pozitie MT5 fara corespondent — state consistent cu MT5.")
 
 
 # ---------------------------------------------------------------------------
