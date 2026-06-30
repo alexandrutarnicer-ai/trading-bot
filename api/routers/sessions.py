@@ -296,11 +296,12 @@ def frequency_estimate(profile_id: str = ""):
 
     paused = _load_paused()
 
-    # Incarca jobs finalizate, sortate descrescator (cele mai noi primele)
+    # Incarca jobs finalizate si sorteaza pe started_at descrescator (cele mai noi primele)
     jobs_done: list[dict] = []
     try:
         all_jobs = json.load(open(_BACKTEST_JOBS_FILE, encoding="utf-8"))
-        jobs_done = [j for j in reversed(all_jobs) if j.get("status") == "done"]
+        jobs_done = [j for j in all_jobs if j.get("status") == "done"]
+        jobs_done.sort(key=lambda j: j.get("started_at", ""), reverse=True)
     except Exception:
         pass
 
