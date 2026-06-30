@@ -156,6 +156,10 @@ def _run_backtest_job(
         cfg["account"]["risk_per_trade_pct"] = risk_base * 100
         cfg["account"]["risk_per_trade_pct_all_criteria"] = risk_top * 100
 
+        # Ore sesiune din profil (altfel hardcodat 10-18 din standard_profile.json)
+        cfg["session"]["start_hour"] = session_cfg.get("session_start", cfg["session"]["start_hour"])
+        cfg["session"]["end_hour"]   = session_cfg.get("session_end",   cfg["session"]["end_hour"])
+
         src  = CsvDataSource(DATA_DIR)
         data = {}
         for symbol in session_cfg["markets"]:
