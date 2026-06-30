@@ -16,8 +16,8 @@
       "trend_tf": "M30",
       "direction": "BOTH",
       "pullback_window": 10,
-      "session_start": 0,
-      "session_end": 24,
+      "session_start": 10,
+      "session_end": 18,
       "skip_hours": [
         11
       ],
@@ -82,8 +82,8 @@
       "trend_tf": "M30",
       "direction": "LONG",
       "pullback_window": 8,
-      "session_start": 0,
-      "session_end": 24,
+      "session_start": 10,
+      "session_end": 18,
       "skip_hours": [
         11,
         15,
@@ -158,6 +158,8 @@
       "skip_hours": [
         0,
         1,
+        4,
+        6,
         8,
         9,
         10,
@@ -236,8 +238,8 @@
       "trend_tf": "M30",
       "direction": "BOTH",
       "pullback_window": 6,
-      "session_start": 9,
-      "session_end": 17,
+      "session_start": 10,
+      "session_end": 18,
       "skip_hours": [
         10,
         14
@@ -305,8 +307,8 @@
       "trend_tf": "D1",
       "direction": "BOTH",
       "pullback_window": 10,
-      "session_start": 0,
-      "session_end": 24,
+      "session_start": 10,
+      "session_end": 18,
       "skip_hours": [
         13,
         15
@@ -372,8 +374,8 @@
       "trend_tf": "M30",
       "direction": "BOTH",
       "pullback_window": 8,
-      "session_start": 0,
-      "session_end": 24,
+      "session_start": 10,
+      "session_end": 18,
       "skip_hours": [
         10,
         11,
@@ -444,8 +446,8 @@
       "trend_tf": "M30",
       "direction": "BOTH",
       "pullback_window": 4,
-      "session_start": 0,
-      "session_end": 24,
+      "session_start": 10,
+      "session_end": 18,
       "skip_hours": [
         13,
         14,
@@ -512,8 +514,8 @@
       "trend_tf": "D1",
       "direction": "LONG",
       "pullback_window": 6,
-      "session_start": 0,
-      "session_end": 24,
+      "session_start": 10,
+      "session_end": 18,
       "skip_hours": [
         10,
         11,
@@ -584,8 +586,8 @@
       "trend_tf": "M30",
       "direction": "LONG",
       "pullback_window": 6,
-      "session_start": 0,
-      "session_end": 24,
+      "session_start": 10,
+      "session_end": 18,
       "skip_hours": [
         10,
         12,
@@ -657,8 +659,8 @@
       "trend_tf": "H4",
       "direction": "BOTH",
       "pullback_window": 8,
-      "session_start": 0,
-      "session_end": 24,
+      "session_start": 10,
+      "session_end": 18,
       "skip_hours": [
         10,
         12,
@@ -728,8 +730,8 @@
       "trend_tf": "M30",
       "direction": "LONG",
       "pullback_window": 8,
-      "session_start": 0,
-      "session_end": 24,
+      "session_start": 10,
+      "session_end": 18,
       "skip_hours": [
         11,
         12,
@@ -799,8 +801,8 @@
       "trend_tf": "D1",
       "direction": "BOTH",
       "pullback_window": 8,
-      "session_start": 0,
-      "session_end": 24,
+      "session_start": 10,
+      "session_end": 18,
       "skip_hours": [
         10,
         13,
@@ -943,8 +945,8 @@
       "trend_tf": "H4",
       "direction": "BOTH",
       "pullback_window": 8,
-      "session_start": 0,
-      "session_end": 24,
+      "session_start": 10,
+      "session_end": 18,
       "skip_hours": [
         10,
         11,
@@ -1012,8 +1014,8 @@
       "trend_tf": "M30",
       "direction": "LONG",
       "pullback_window": 6,
-      "session_start": 0,
-      "session_end": 24,
+      "session_start": 10,
+      "session_end": 18,
       "skip_hours": [
         14,
         15,
@@ -1082,8 +1084,8 @@
       "trend_tf": "D1",
       "direction": "BOTH",
       "pullback_window": 4,
-      "session_start": 0,
-      "session_end": 24,
+      "session_start": 10,
+      "session_end": 18,
       "skip_hours": [
         11,
         13,
@@ -1154,8 +1156,8 @@
       "trend_tf": "D1",
       "direction": "BOTH",
       "pullback_window": 6,
-      "session_start": 0,
-      "session_end": 24,
+      "session_start": 10,
+      "session_end": 18,
       "skip_hours": [
         11,
         12,
@@ -1224,8 +1226,8 @@
       "trend_tf": "D1",
       "direction": "BOTH",
       "pullback_window": 4,
-      "session_start": 0,
-      "session_end": 24,
+      "session_start": 10,
+      "session_end": 18,
       "skip_hours": [
         16
       ],
@@ -1292,8 +1294,8 @@
       "trend_tf": "M30",
       "direction": "BOTH",
       "pullback_window": 8,
-      "session_start": 0,
-      "session_end": 24,
+      "session_start": 10,
+      "session_end": 18,
       "skip_hours": [
         11,
         12,
@@ -1366,8 +1368,8 @@
       "trend_tf": "M30",
       "direction": "BOTH",
       "pullback_window": 8,
-      "session_start": 0,
-      "session_end": 24,
+      "session_start": 10,
+      "session_end": 18,
       "skip_hours": [],
       "skip_weekdays": [],
       "expire_bars": 4,
@@ -1419,7 +1421,7 @@
       "inside_bar_risk_pct": 0.01
     }
   ],
-  "updated_at": "2026-06-30T17:24:00",
+  "updated_at": "2026-06-30T17:33:37",
   "capital_protection_enabled": false,
   "capital_protection_threshold_pct": 70
 }
