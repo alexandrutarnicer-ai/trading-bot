@@ -111,6 +111,11 @@ export function TradingStatsPanel({ sessions, mt5, botStatus }: Props) {
     ? Math.round((mt5Equity - startBalance) * 100) / 100
     : null;
 
+  // Cost operational: comisioane + swap = P&L MT5 - P&L bot cumulat
+  const costBroker = pnlMt5 != null && hasTotalPnl
+    ? Math.round((pnlMt5 - pnlTotal) * 100) / 100
+    : null;
+
   const fmtUsd = (v: number) =>
     `${v >= 0 ? "+" : ""}${v.toLocaleString("ro-RO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} $`;
 
@@ -188,6 +193,21 @@ export function TradingStatsPanel({ sessions, mt5, botStatus }: Props) {
                 {fmtUsd(pnlMt5)}
               </span>
               <div className="text-[10px] text-slate-600 mt-0.5">include comision + swap</div>
+            </div>
+          )}
+          {costBroker != null && (
+            <div className="flex-1 min-w-0 px-4 py-2.5 rounded-xl border border-surface-border bg-surface-card">
+              <div className="flex items-center gap-1 mb-0.5">
+                <span className="text-[10px] text-slate-500 uppercase tracking-wider">Comisioane + Swap</span>
+                <span
+                  className="text-[10px] text-slate-600 cursor-help"
+                  title="Cost operațional total acumulat: P&L Real MT5 − P&L Bot. Include comisioanele broker per lot și swap-ul overnight. Negativ înseamnă costuri plătite."
+                >ⓘ</span>
+              </div>
+              <span className={`text-lg font-bold font-mono tabular-nums ${costBroker > 0 ? "text-profit" : costBroker < 0 ? "text-loss" : "text-slate-400"}`}>
+                {fmtUsd(costBroker)}
+              </span>
+              <div className="text-[10px] text-slate-600 mt-0.5">cost operațional acumulat</div>
             </div>
           )}
         </div>
