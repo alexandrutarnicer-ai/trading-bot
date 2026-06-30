@@ -21,12 +21,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from api.routers import bot, sessions, profiles, backtest, markets, data_download, settings, mt5status
 from api.routers import backtest_history, notifications, reports
 from api.watchdog import start_watchdog
+from api.notifications import migrate_to_jsonl
 
 app = FastAPI(title="Trading Bot API", version="1.0.0")
 
 
 @app.on_event("startup")
 def _startup():
+    migrate_to_jsonl()   # converstie JSON array legacy → JSONL (one-time, idempotent)
     start_watchdog()
 
 app.add_middleware(
