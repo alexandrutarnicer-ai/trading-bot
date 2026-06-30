@@ -1493,6 +1493,9 @@ def _recover_lost_outcomes(
     """
     if _mt5_exec is None:
         return
+    # Sesiunile de observatie (execute_trades=False) nu plaseaza ordine in MT5
+    if not session_cfg.get("execute_trades", True):
+        return
 
     pending = state.get("pending", {})
     mt5_tickets = state.get("mt5_tickets", {})
@@ -1614,6 +1617,9 @@ def _scan_mt5_history_for_missing_outcomes(
     - Skip daca ordinul e inca activ (tracked in mt5_tickets sau pending)
     """
     if _mt5_exec is None:
+        return
+    # Sesiunile de observatie (execute_trades=False) nu plaseaza ordine in MT5 — skip
+    if not session_cfg.get("execute_trades", True):
         return
 
     markets    = session_cfg.get("markets", [])
