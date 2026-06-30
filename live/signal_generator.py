@@ -1629,10 +1629,24 @@ def _scan_mt5_history_for_missing_outcomes(
 
     # Citeste sig_id-urile existente (inclusiv cele scrise de _recover_lost_outcomes)
     existing_sig_ids: set[str] = set()
+    # Deduplicare pe identitate pozitie: (symbol, pnl_rotunjit, exit_time[:19])
+    # Previne scrieri duble cand mai multe ordine au acelasi comment trunchiat (ICMarketsEU 16 chars)
+    existing_pos_keys: set[tuple] = set()
     if os.path.exists(outcomes_file):
         try:
-            _df = pd.read_csv(outcomes_file, usecols=["signal_id"])
+            _df = pd.read_csv(outcomes_file)
             existing_sig_ids = set(_df["signal_id"].dropna().astype(str).tolist())
+            for _, _r in _df.iterrows():
+                try:
+                    _pnl = _r.get("pnl_usd", "")
+                    if _pnl != "" and str(_pnl) not in ("nan", ""):
+                        existing_pos_keys.add((
+                            str(_r.get("symbol", "")),
+                            round(float(_pnl), 2),
+                            str(_r.get("exit_time", ""))[:19],
+                        ))
+                except Exception:
+                    pass
         except Exception:
             pass
 
@@ -1666,11 +1680,7 @@ def _scan_mt5_history_for_missing_outcomes(
             if sig_id in existing_sig_ids:
                 continue
 
-            # Skip daca _recover_lost_outcomes a scris deja sub sig_id complet (acelasi prefix)
-            if not is_full and any(e.startswith(comment) for e in existing_sig_ids):
-                continue
-
-            # Obtine deals-urile pozitiei
+            # Obtine deals-urile pozitiei (necesar pentru pnl + exit_time → deduplicare)
             pos_id = getattr(order, "position_id", 0) or order.ticket
             deals  = _mt5_exec.history_deals_get(position=pos_id)
             if not deals:
@@ -1691,6 +1701,13 @@ def _scan_mt5_history_for_missing_outcomes(
             d_int       = 1 if order.type in (0, 2, 4) else -1
             sl_price    = float(getattr(order, "sl", 0) or 0)
             tp_price    = float(getattr(order, "tp", 0) or 0)
+
+            # Deduplicare pe identitate pozitie (pnl + exit_time).
+            # Necesar cand mai multe semnale au acelasi comment trunchiat (ICMarketsEU 16 chars):
+            # ex. SIG0001/SIG0002/SIG0003 → toate "S13-EURJPY-SIG00" in MT5.
+            pos_key = (symbol, round(pnl_usd, 2), exit_time[:19])
+            if pos_key in existing_pos_keys:
+                continue
 
             if sl_price and abs(entry_price - sl_price) > 1e-8:
                 risk_dist = abs(entry_price - sl_price)
@@ -1728,6 +1745,7 @@ def _scan_mt5_history_for_missing_outcomes(
                 outcomes_file, mode="a", header=False, index=False
             )
             existing_sig_ids.add(sig_id)
+            existing_pos_keys.add(pos_key)
             tracked_tickets.add(order.ticket)
             recovered += 1
 
