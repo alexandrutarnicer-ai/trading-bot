@@ -1,1 +1,4 @@
 signal_id,time_check,symbol,direction,status,entry,sl,tp,r_ratio,triggered_at,exit_price,exit_time,result_r,pnl_usd
+S13-EURJPY-SIG0002,2026-06-30 00:00:05.849320,EURJPY,1,invalidat,185.069,184.976,185.4875,4.5,,,,0.0,0.0
+S13-EURJPY-SIG0003,2026-06-30 06:31:03.956183,EURJPY,1,invalidat,184.971,184.848,185.4015,3.5,,,,0.0,0.0
+S13-EURJPY-IB0002,2026-06-30 08:00:06.085672,EURJPY,1,invalidat,184.887,184.775,185.111,2.0,,,,0.0,0.0
