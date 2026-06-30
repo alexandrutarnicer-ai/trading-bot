@@ -18,6 +18,19 @@ RUNTIME_PROFILE_FILE  = os.path.join(DATA_DIR, "active_profile_runtime.json")
 RUN_LOG_FILE          = os.path.join(DATA_DIR, "bot_run_log.json")
 UPTIME_LOG_FILE       = os.path.join(DATA_DIR, "bot_uptime_log.json")
 PROFILES_DIR          = os.path.join(ROOT, "data", "profiles")
+NEWS_AUTO_PAUSED_FILE = os.path.join(DATA_DIR, "news_auto_paused.json")
+
+
+def _clear_news_auto_paused() -> None:
+    """Reseteaza news_auto_paused.json la pornire/oprire.
+    Taskkill /F nu declanseaza cleanup-ul Python din run_all.py, deci fisierul poate
+    ramane cu date stale intre restartari — sesiunile ar parea blocate pe stiri expirate.
+    """
+    try:
+        with open(NEWS_AUTO_PAUSED_FILE, "w", encoding="utf-8") as f:
+            f.write("{}")
+    except Exception:
+        pass
 
 
 def _log_uptime_event(event: str, profile_name: str = "") -> None:
@@ -211,6 +224,7 @@ def start_bot(body: Optional[dict] = Body(default=None)):
     profile_id   = body.get("profile_id")   or "standard"
     profile_name = body.get("profile_name") or "Standard"
     _save_active_profile(profile_id, profile_name)
+    _clear_news_auto_paused()   # reset stare stiri stale de la runde anterioare
     _log_uptime_event("start", profile_name)
 
     # Trimite notificare Telegram cu profilul si sesiunile active
@@ -276,6 +290,7 @@ def stop_bot():
     ap = _read_active_profile()
     profile_name = ap.get("name") or "necunoscut"
     _clear_active_profile()
+    _clear_news_auto_paused()   # taskkill /F nu declanseaza cleanup Python — curatam manual
     _log_uptime_event("stop", profile_name)
 
     stopped_ok = result.returncode == 0
