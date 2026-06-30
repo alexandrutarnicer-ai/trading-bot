@@ -125,7 +125,7 @@ def _sig_stats(session_id: str) -> dict:
     }
 
 
-_CLOSED_STATUSES = ["TP", "SL", "vineri_close", "news_close"]
+_CLOSED_STATUSES = ["TP", "SL", "vineri_close", "news_close", "be_lock", "be_lock2"]
 
 
 def _outcome_stats(session_id: str) -> dict:

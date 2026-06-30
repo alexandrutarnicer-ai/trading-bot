@@ -1,12 +1,14 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import {
   BarChart2, TrendingUp, TrendingDown, Clock, Settings,
   Filter, ChevronDown, ChevronRight, Trophy, Target, Minus,
+  Terminal, AlertTriangle, AlertCircle, Info, RefreshCw,
 } from "lucide-react";
 import {
   useTransactions, useMarketStats, useBotUptime, useSessionChanges,
+  useSystemLogs, useLogSessions,
 } from "../api/hooks";
-import type { Transaction, MarketStat, UptimeEntry, SessionChangeEntry } from "../api/types";
+import type { Transaction, MarketStat, UptimeEntry, SessionChangeEntry, SystemLogEntry } from "../api/types";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -530,6 +532,157 @@ function SessionChangesTab() {
   );
 }
 
+// ── System Logs tab ───────────────────────────────────────────────────────────
+
+const LEVEL_CONFIG: Record<string, { label: string; color: string; icon: React.ReactElement }> = {
+  ERROR:   { label: "Eroare",   color: "text-red-400",    icon: <AlertCircle  size={11} /> },
+  WARNING: { label: "Warning",  color: "text-yellow-400", icon: <AlertTriangle size={11} /> },
+  INFO:    { label: "Info",     color: "text-slate-400",  icon: <Info         size={11} /> },
+};
+
+function SystemLogsTab() {
+  const [session,  setSession]  = useState("all");
+  const [level,    setLevel]    = useState("WARNING");
+  const [expanded, setExpanded] = useState<string | null>(null);
+
+  // Sesiuni disponibile descoperite dinamic de pe disk
+  const { data: sessionsData } = useLogSessions();
+  const sessionsList = ["all", ...(sessionsData?.sessions ?? [])];
+
+  const { data, isLoading, refetch, isFetching } = useSystemLogs({
+    session,
+    level,
+    lines_per_session: 300,
+  });
+
+  const items = data?.items ?? [];
+  const errCount  = items.filter(e => e.level === "ERROR").length;
+  const warnCount = items.filter(e => e.level === "WARNING").length;
+
+  return (
+    <div className="space-y-4">
+      {/* Filters */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <Terminal size={13} className="text-slate-500 flex-shrink-0" />
+
+        {/* Level filter */}
+        <div className="flex gap-1">
+          {(["all","ERROR","WARNING","INFO"] as const).map(l => (
+            <button
+              key={l}
+              onClick={() => setLevel(l)}
+              className={`text-[10px] px-2.5 py-1 rounded-lg transition-colors border ${
+                level === l
+                  ? l === "ERROR"   ? "bg-red-500/20 text-red-400 border-red-500/30 font-medium"
+                  : l === "WARNING" ? "bg-yellow-500/20 text-yellow-400 border-yellow-500/30 font-medium"
+                  : l === "INFO"    ? "bg-slate-500/20 text-slate-300 border-slate-500/30 font-medium"
+                  : "bg-blue-500/20 text-blue-400 border-blue-500/30 font-medium"
+                  : "text-slate-500 border-transparent hover:text-slate-300"
+              }`}
+            >
+              {l === "all" ? "Toate" : l}
+            </button>
+          ))}
+        </div>
+
+        {/* Session filter — dinamic, orice sesiune nouă apare automat */}
+        <select
+          value={session}
+          onChange={e => setSession(e.target.value)}
+          className="text-[10px] bg-surface-card border border-surface-border rounded-lg px-2 py-1 text-slate-300 focus:outline-none"
+        >
+          {sessionsList.map(s => (
+            <option key={s} value={s}>{s === "all" ? "Toate sesiunile" : s}</option>
+          ))}
+        </select>
+
+        {/* Summary badges */}
+        {errCount > 0 && (
+          <span className="flex items-center gap-1 text-[10px] text-red-400 bg-red-500/10 border border-red-500/20 px-2 py-0.5 rounded-full">
+            <AlertCircle size={10} /> {errCount} erori
+          </span>
+        )}
+        {warnCount > 0 && (
+          <span className="flex items-center gap-1 text-[10px] text-yellow-400 bg-yellow-500/10 border border-yellow-500/20 px-2 py-0.5 rounded-full">
+            <AlertTriangle size={10} /> {warnCount} warning-uri
+          </span>
+        )}
+
+        <button
+          onClick={() => refetch()}
+          disabled={isFetching}
+          className="ml-auto flex items-center gap-1 text-[10px] text-slate-400 hover:text-slate-200 transition-colors"
+        >
+          <RefreshCw size={11} className={isFetching ? "animate-spin" : ""} />
+          Refresh
+        </button>
+        <span className="text-[10px] text-slate-500">{data?.total ?? 0} intrări</span>
+      </div>
+
+      {/* Log entries */}
+      {isLoading ? (
+        <div className="space-y-1">
+          {[...Array(6)].map((_, i) => (
+            <div key={i} className="h-9 rounded-lg bg-surface-card animate-pulse" />
+          ))}
+        </div>
+      ) : items.length === 0 ? (
+        <div className="text-center py-10 text-slate-500 text-xs">
+          Niciun log la nivelul selectat.
+        </div>
+      ) : (
+        <div className="space-y-px font-mono text-[11px]">
+          {items.map((entry: SystemLogEntry, i: number) => {
+            const key    = `${entry.time}-${entry.session}-${i}`;
+            const cfg    = LEVEL_CONFIG[entry.level] ?? LEVEL_CONFIG.INFO;
+            const isOpen = expanded === key;
+            const isLong = entry.message.length > 120;
+
+            return (
+              <div
+                key={key}
+                className={`rounded-lg border transition-colors ${
+                  entry.level === "ERROR"
+                    ? "bg-red-950/20 border-red-900/30"
+                    : entry.level === "WARNING"
+                    ? "bg-yellow-950/20 border-yellow-900/30"
+                    : "bg-surface-card border-surface-border"
+                }`}
+              >
+                <div
+                  className={`flex items-start gap-2 px-3 py-2 ${isLong ? "cursor-pointer" : ""}`}
+                  onClick={() => isLong && setExpanded(isOpen ? null : key)}
+                >
+                  {/* Level icon */}
+                  <span className={`mt-0.5 flex-shrink-0 ${cfg.color}`}>{cfg.icon}</span>
+
+                  {/* Time */}
+                  <span className="text-slate-500 flex-shrink-0 w-[130px]">{entry.time}</span>
+
+                  {/* Session badge */}
+                  <span className="text-blue-400/70 flex-shrink-0 w-[72px] truncate">{entry.session}</span>
+
+                  {/* Message */}
+                  <span className={`${cfg.color} flex-1 min-w-0 ${isOpen ? "whitespace-pre-wrap break-all" : "truncate"}`}>
+                    {entry.message}
+                  </span>
+
+                  {isLong && (
+                    <ChevronDown
+                      size={11}
+                      className={`flex-shrink-0 text-slate-500 transition-transform ${isOpen ? "rotate-180" : ""}`}
+                    />
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 const TABS = [
@@ -537,6 +690,7 @@ const TABS = [
   { id: "markets",      label: "Piețe",      icon: <Trophy size={13} /> },
   { id: "uptime",       label: "Uptime Bot",  icon: <Clock size={13} /> },
   { id: "changes",      label: "Modificări",  icon: <Settings size={13} /> },
+  { id: "sistem",       label: "Sistem",      icon: <Terminal size={13} /> },
 ] as const;
 
 type ReportTab = (typeof TABS)[number]["id"];
@@ -577,6 +731,7 @@ export function ReportsPage() {
         {activeTab === "markets"      && <MarketStatsTab />}
         {activeTab === "uptime"       && <UptimeTab />}
         {activeTab === "changes"      && <SessionChangesTab />}
+        {activeTab === "sistem"       && <SystemLogsTab />}
       </div>
     </div>
   );

@@ -7,6 +7,7 @@ import type {
   BacktestHistoryEntry, BacktestJob, WeeklyStats,
   NotificationsResponse, TransactionsResponse, MarketStatsResponse,
   UptimeResponse, SessionChangesResponse, TopMarketEntry, TimezoneConfig,
+  SystemLogsResponse,
 } from "./types";
 
 
@@ -454,6 +455,31 @@ export const useSessionChanges = () =>
     queryKey: ["session-changes"],
     queryFn:  () => apiFetch("/reports/session-changes"),
     refetchInterval: 30_000,
+  });
+
+export const useSystemLogs = (params: {
+  session?: string;
+  level?: string;
+  lines_per_session?: number;
+}) =>
+  useQuery<SystemLogsResponse>({
+    queryKey: ["system-logs", params],
+    queryFn:  () => {
+      const q = new URLSearchParams();
+      if (params.session)           q.set("session",           params.session);
+      if (params.level)             q.set("level",             params.level);
+      if (params.lines_per_session) q.set("lines_per_session", String(params.lines_per_session));
+      return apiFetch(`/reports/system-logs?${q}`);
+    },
+    refetchInterval: 30_000,
+  });
+
+export const useLogSessions = () =>
+  useQuery<{ sessions: string[] }>({
+    queryKey: ["log-sessions"],
+    queryFn:  () => apiFetch("/reports/system-logs/sessions"),
+    refetchInterval: 60_000,
+    staleTime: 30_000,
   });
 
 // ── Backtest history (legacy) ─────────────────────────────────────────────────

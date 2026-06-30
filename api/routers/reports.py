@@ -1,9 +1,11 @@
 """
-Reports router — tranzactii, statistici piete, uptime bot, istoricul modificarilor.
+Reports router — tranzactii, statistici piete, uptime bot, istoricul modificarilor, system logs.
 """
 
 import json
 import os
+import re
+from collections import deque
 from datetime import date, timedelta
 from typing import Optional
 
@@ -17,7 +19,7 @@ router = APIRouter(prefix="/reports", tags=["reports"])
 UPTIME_LOG_FILE   = os.path.join(DATA_DIR, "bot_uptime_log.json")
 CHANGES_LOG_FILE  = os.path.join(DATA_DIR, "session_changes_log.json")
 
-_CLOSED_STATUSES = ["TP", "SL", "vineri_close", "news_close"]
+_CLOSED_STATUSES = ["TP", "SL", "vineri_close", "news_close", "be_lock", "be_lock2"]
 
 
 def _read_outcomes(session_id: str) -> pd.DataFrame:
@@ -37,6 +39,32 @@ def _session_label(session_id: str) -> str:
     return session_id
 
 
+def _discover_outcome_sessions() -> list[dict]:
+    """
+    Descopera dinamic sesiunile cu outcomes.csv pe disk.
+    Merge cu lista statica SESSIONS pentru metadata (label, markets).
+    Sesiunile noi (nelistate) primesc label=session_id.
+    """
+    base = os.path.join(DATA_DIR, "live_signals")
+    static_map = {s["id"]: s for s in SESSIONS}
+    result: list[dict] = []
+    seen: set[str] = set()
+
+    if os.path.isdir(base):
+        for name in sorted(os.listdir(base)):
+            outcomes_path = os.path.join(base, name, "outcomes.csv")
+            if os.path.isfile(outcomes_path):
+                result.append(static_map.get(name, {"id": name, "label": name, "markets": []}))
+                seen.add(name)
+
+    # Include si sesiunile statice fara outcomes inca (pentru consistenta)
+    for s in SESSIONS:
+        if s["id"] not in seen:
+            result.append(s)
+
+    return result
+
+
 @router.get("/transactions")
 def get_transactions(
     status:    Optional[str] = Query(None, description="TP,SL,open,vineri_close,news_close"),
@@ -48,11 +76,12 @@ def get_transactions(
     limit:     int = Query(200, le=1000),
     offset:    int = Query(0),
 ):
-    """Toate tranzactiile din toate sesiunile, cu filtre."""
+    """Toate tranzactiile din toate sesiunile, cu filtre. Descopera dinamic sesiunile noi."""
+    all_sessions = _discover_outcome_sessions()
     rows = []
     sessions_to_check = (
-        [s for s in SESSIONS if s["id"] == session_id]
-        if session_id else SESSIONS
+        [s for s in all_sessions if s["id"] == session_id]
+        if session_id else all_sessions
     )
     for s in sessions_to_check:
         df = _read_outcomes(s["id"])
@@ -122,10 +151,10 @@ def get_transactions(
 
 @router.get("/market-stats")
 def get_market_stats():
-    """Statistici agregate per piata (simbol) din toate sesiunile."""
+    """Statistici agregate per piata (simbol) din toate sesiunile. Descopera dinamic sesiunile noi."""
     market_stats: dict[str, dict] = {}
 
-    for s in SESSIONS:
+    for s in _discover_outcome_sessions():
         df = _read_outcomes(s["id"])
         if df.empty:
             continue
@@ -195,3 +224,120 @@ def get_session_changes():
         return {"items": items[:200]}
     except Exception:
         return {"items": []}
+
+
+# Format log: "2026-06-30 09:29:45  mesaj" sau cu prefix level
+_LOG_RE = re.compile(
+    r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\s{1,4}(.+)$"
+)
+_LEVEL_RE = re.compile(r"\b(ERROR|WARNING|CRITICAL)\b", re.IGNORECASE)
+
+
+def _classify_level(msg: str) -> str:
+    m = _LEVEL_RE.search(msg)
+    if m:
+        return m.group(1).upper()
+    lower = msg.lower()
+    if any(w in lower for w in ["error", "esuata", "esuata", "eroare", "critical", "traceback", "exception"]):
+        return "ERROR"
+    if any(w in lower for w in ["warning", "warn", "orfan", "orphan", "corupt", "migrare", "reconcil", "netrackuit"]):
+        return "WARNING"
+    return "INFO"
+
+
+def _tail_lines(path: str, n: int) -> list[str]:
+    """Citeste ultimele n linii dintr-un fisier fara a-l incarca complet in memorie."""
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as f:
+            return list(deque(f, maxlen=n))
+    except Exception:
+        return []
+
+
+def _discover_log_sessions() -> list[str]:
+    """Descopera dinamic sesiunile care au generator.log pe disk."""
+    base = os.path.join(DATA_DIR, "live_signals")
+    if not os.path.isdir(base):
+        return []
+    result = []
+    for name in sorted(os.listdir(base)):
+        log_path = os.path.join(base, name, "generator.log")
+        if os.path.isfile(log_path):
+            result.append(name)
+    return result
+
+
+@router.get("/system-logs/sessions")
+def get_log_sessions():
+    """Lista sesiunilor care au generator.log disponibil."""
+    return {"sessions": _discover_log_sessions()}
+
+
+@router.get("/system-logs")
+def get_system_logs(
+    session: str = Query("all", description="session_id sau 'all'"),
+    level: str = Query("all", description="INFO / WARNING / ERROR / all"),
+    lines_per_session: int = Query(200, ge=10, le=2000),
+):
+    """
+    Ultimele N linii din generator.log per sesiune, parsate si clasificate.
+    Sesiunile sunt descoperite dinamic de pe disk — sesiunile noi apar automat.
+    Returneaza lista de intrari {time, session, level, message} sortate DESC.
+    """
+    all_sessions = _discover_log_sessions()
+    if session == "all":
+        target_sessions = [{"session_id": s} for s in all_sessions]
+    else:
+        target_sessions = [{"session_id": session}] if session in all_sessions or session else []
+
+    entries = []
+    for s in target_sessions:
+        sid = s["session_id"]
+        log_path = os.path.join(DATA_DIR, "live_signals", sid, "generator.log")
+        raw_lines = _tail_lines(log_path, lines_per_session)
+
+        current_time = None
+        current_msg_parts: list[str] = []
+
+        def _flush():
+            nonlocal current_time, current_msg_parts
+            if current_time and current_msg_parts:
+                msg = " ".join(current_msg_parts).strip()
+                lvl = _classify_level(msg)
+                entries.append({
+                    "time":    current_time,
+                    "session": sid,
+                    "level":   lvl,
+                    "message": msg,
+                })
+            current_time = None
+            current_msg_parts = []
+
+        for raw in raw_lines:
+            raw = raw.rstrip("\n")
+            m = _LOG_RE.match(raw)
+            if m:
+                _flush()
+                current_time = m.group(1)
+                current_msg_parts = [m.group(2)]
+            else:
+                # Continuare linie (ex: traceback)
+                if current_time:
+                    current_msg_parts.append(raw.strip())
+        _flush()
+
+    # Filtru nivel
+    level_up = level.upper()
+    if level_up != "ALL":
+        _order = {"ERROR": 0, "WARNING": 1, "INFO": 2}
+        _min = _order.get(level_up, 2)
+        entries = [e for e in entries if _order.get(e["level"], 2) <= _min]
+
+    # Sortat descrescator (cele mai noi primele)
+    entries.sort(key=lambda e: e["time"], reverse=True)
+
+    # Max 500 intrari total
+    return {
+        "items": entries[:500],
+        "total": len(entries),
+    }
