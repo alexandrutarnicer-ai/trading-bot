@@ -19,6 +19,7 @@ ACTIVE_PROFILE_FILE  = os.path.join(DATA_DIR, "active_profile.json")
 RUN_LOG_FILE         = os.path.join(DATA_DIR, "bot_run_log.json")
 PROFILES_DIR         = os.path.join(DATA_DIR, "profiles")
 PAUSED_SESSIONS_FILE = os.path.join(DATA_DIR, "paused_sessions.json")
+NEWS_AUTO_PAUSED_FILE = os.path.join(DATA_DIR, "news_auto_paused.json")
 
 _CHECK_INTERVAL = 30   # secunde intre verificari
 
@@ -68,6 +69,12 @@ def _cleanup_and_log() -> None:
     try:
         if os.path.exists(PID_FILE):
             os.remove(PID_FILE)
+    except Exception:
+        pass
+    # Reseteaza news_auto_paused.json — la crash, run_all.py nu apuca sa il curete
+    try:
+        with open(NEWS_AUTO_PAUSED_FILE, "w", encoding="utf-8") as f:
+            f.write("{}")
     except Exception:
         pass
     # Actualizeaza run log cu last_stopped_at

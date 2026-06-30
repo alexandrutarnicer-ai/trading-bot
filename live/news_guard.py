@@ -500,6 +500,13 @@ def run_guard(session_configs: list[dict], send_telegram=None) -> None:
     active_count = sum(1 for s in session_configs if s.get("news_protection_enabled"))
     log.info(f"[NEWS GUARD] Pornit — {active_count}/{len(session_configs)} sesiuni cu protectie activa")
 
+    # Reset stare veche la startup. Fara asta, un restart dupa crash lasa sesiunile
+    # blocate pe o stire expirata. Primul poll (max 5 min) repopuleaza daca e nevoie.
+    try:
+        _save_state({})
+    except Exception:
+        pass
+
     _notified: dict[str, str] = {}  # session_key -> cheie eveniment notificat
 
     while True:
