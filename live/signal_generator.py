@@ -1594,7 +1594,159 @@ def _recover_lost_outcomes(
         )
 
 
-_BOT_SIG_RE = re.compile(r"^S\d+-[A-Z0-9]+-(?:[A-Z0-9]+-)?(?:SIG|IB|FLG)\d+", re.IGNORECASE)
+def _scan_mt5_history_for_missing_outcomes(
+    state: dict,
+    session_cfg: dict,
+    outcomes_file: str,
+    log,
+) -> None:
+    """
+    Startup: scanare completa history MT5 (10 zile) pentru simbolurile sesiunii.
+    Complementara cu _recover_lost_outcomes (care lucreaza doar cu semnale in pending).
+
+    Acopera cazul stat complet gol (crash total, state.pkl sters manual):
+    gaseste ORICE ordin/pozitie cu comment in formatul botului, a carui pozitie e
+    INCHISA si NU apare inca in outcomes.csv → scrie outcome real + trimite [RECOVER].
+
+    Deduplicare:
+    - Verifica sig_id exact in existing_sig_ids
+    - Verifica prefix (pentru comentarii trunchiate vs. sig_id full din _recover_lost_outcomes)
+    - Skip daca ordinul e inca activ (tracked in mt5_tickets sau pending)
+    """
+    if _mt5_exec is None:
+        return
+
+    markets    = session_cfg.get("markets", [])
+    session_id = session_cfg.get("session_id", "?")
+    if not markets:
+        return
+
+    # Citeste sig_id-urile existente (inclusiv cele scrise de _recover_lost_outcomes)
+    existing_sig_ids: set[str] = set()
+    if os.path.exists(outcomes_file):
+        try:
+            _df = pd.read_csv(outcomes_file, usecols=["signal_id"])
+            existing_sig_ids = set(_df["signal_id"].dropna().astype(str).tolist())
+        except Exception:
+            pass
+
+    # Ticketele deja trackuite (nu le procesam din nou)
+    tracked_tickets: set[int] = set(state.get("mt5_tickets", {}).values())
+
+    dt_from  = datetime.now() - timedelta(days=10)
+    dt_to    = datetime.now()
+    recovered = 0
+
+    for symbol in markets:
+        hist_orders = _mt5_exec.history_orders_get(dt_from, dt_to, group=symbol) or []
+
+        for order in hist_orders:
+            # Skip ordine neexecutate (anulate, respinse, expirate)
+            if order.state in (2, 5, 6):
+                continue
+
+            comment = (getattr(order, "comment", "") or "").strip()
+            if not _BOT_SIG_RE.match(comment):
+                continue
+
+            is_full = bool(_BOT_SIG_FULL_RE.match(comment))
+            sig_id  = comment if is_full else f"{comment}_{order.ticket}"
+
+            # Skip daca ticketul e deja in tracking activ
+            if order.ticket in tracked_tickets:
+                continue
+
+            # Skip daca sig_id deja in outcomes
+            if sig_id in existing_sig_ids:
+                continue
+
+            # Skip daca _recover_lost_outcomes a scris deja sub sig_id complet (acelasi prefix)
+            if not is_full and any(e.startswith(comment) for e in existing_sig_ids):
+                continue
+
+            # Obtine deals-urile pozitiei
+            pos_id = getattr(order, "position_id", 0) or order.ticket
+            deals  = _mt5_exec.history_deals_get(position=pos_id)
+            if not deals:
+                continue
+
+            # DEAL_ENTRY_IN=0 (deschidere), DEAL_ENTRY_OUT=1 (inchidere)
+            entry_deal = next((d for d in deals if d.entry == 0), None)
+            close_deal = next((d for d in deals if d.entry == 1), None)
+
+            if not close_deal:
+                # Pozitie inca deschisa → orphan detection se ocupa
+                continue
+
+            entry_price = float(entry_deal.price if entry_deal else order.price_open)
+            exit_price  = float(close_deal.price)
+            exit_time   = datetime.fromtimestamp(close_deal.time).strftime("%Y-%m-%d %H:%M:%S")
+            pnl_usd     = round(float(close_deal.profit), 4)
+            d_int       = 1 if order.type in (0, 2, 4) else -1
+            sl_price    = float(getattr(order, "sl", 0) or 0)
+            tp_price    = float(getattr(order, "tp", 0) or 0)
+
+            if sl_price and abs(entry_price - sl_price) > 1e-8:
+                risk_dist = abs(entry_price - sl_price)
+                result_r  = round((exit_price - entry_price) * d_int / risk_dist, 3)
+                r_ratio   = round(abs(tp_price - entry_price) / risk_dist, 3) if (
+                    tp_price and abs(tp_price - entry_price) > 1e-8
+                ) else 0.0
+            else:
+                result_r = 0.0
+                r_ratio  = 0.0
+
+            status       = "TP" if result_r > 0 else "SL"
+            t_done       = getattr(order, "time_done", 0) or 0
+            triggered_at = datetime.fromtimestamp(
+                t_done if t_done else order.time_setup
+            ).strftime("%Y-%m-%d %H:%M:%S")
+
+            row = {
+                "signal_id":    sig_id,
+                "time_check":   now_local(),
+                "symbol":       symbol,
+                "direction":    d_int,
+                "status":       status,
+                "entry":        entry_price,
+                "sl":           sl_price,
+                "tp":           tp_price,
+                "r_ratio":      r_ratio,
+                "triggered_at": triggered_at,
+                "exit_price":   exit_price,
+                "exit_time":    exit_time,
+                "result_r":     result_r,
+                "pnl_usd":      pnl_usd,
+            }
+            pd.DataFrame([row]).reindex(columns=_OUTCOMES_COLS).to_csv(
+                outcomes_file, mode="a", header=False, index=False
+            )
+            existing_sig_ids.add(sig_id)
+            tracked_tickets.add(order.ticket)
+            recovered += 1
+
+            log.warning(
+                f"  [SCAN-RECOVER] {sig_id}: {status} {result_r:+.3f}R "
+                f"{pnl_usd:+.2f}USD recuperat din scanare history MT5"
+            )
+            _send_telegram(
+                f"<b>[RECOVER] {sig_id}</b>\n"
+                f"Pozitie recuperata din scanare history MT5 (bot offline)\n"
+                f"Status: {status} | {result_r:+.3f}R | {pnl_usd:+.2f} USD\n"
+                f"<i>{session_id}</i>"
+            )
+
+    if recovered:
+        log.warning(
+            f"  [SCAN-RECOVER] {recovered} outcome(uri) recuperate din scanare history MT5"
+        )
+
+
+# ICMarketsEU trunchiaza comentariile MT5 la 16 caractere.
+# Ex: "S17-AUDCAD-H1-IB0001" (20 chars) → "S17-AUDCAD-H1-IB" (fara cifre finale).
+# \d* in loc de \d+ pentru a prinde si comentariile trunchiate.
+_BOT_SIG_RE = re.compile(r"^S\d+-[A-Z0-9]+-(?:[A-Z0-9]+-)?(?:SIG|IB|FLG)\d*", re.IGNORECASE)
+_BOT_SIG_FULL_RE = re.compile(r"^S\d+-[A-Z0-9]+-(?:[A-Z0-9]+-)?(?:SIG|IB|FLG)\d+$", re.IGNORECASE)
 
 
 def _detect_orphan_mt5_orders(state: dict, markets: list, session_id: str, log) -> None:
@@ -1621,7 +1773,9 @@ def _detect_orphan_mt5_orders(state: dict, markets: list, session_id: str, log) 
                 continue
             comment = getattr(order, "comment", "") or ""
             if _BOT_SIG_RE.match(comment.strip()):
-                sig_id = comment.strip()
+                # Comentariu trunchiat (ICMarketsEU limiteaza la 16 chars): adauga ticket pentru unicitate
+                c = comment.strip()
+                sig_id = c if _BOT_SIG_FULL_RE.match(c) else f"{c}_{order.ticket}"
                 state.setdefault("mt5_tickets", {})[sig_id] = order.ticket
                 tracked_tickets.add(order.ticket)
                 log.warning(
@@ -1645,8 +1799,10 @@ def _detect_orphan_mt5_orders(state: dict, markets: list, session_id: str, log) 
             comment = getattr(pos, "comment", "") or ""
             if _BOT_SIG_RE.match(comment.strip()):
                 # Reconstruieste intrarea in pending din datele pozitiei MT5
-                sig_id  = comment.strip()
-                d       = 1 if pos.type == 0 else -1  # 0=buy, 1=sell
+                # Comentariu trunchiat (ICMarketsEU limiteaza la 16 chars): adauga ticket pentru unicitate
+                c      = comment.strip()
+                sig_id = c if _BOT_SIG_FULL_RE.match(c) else f"{c}_{pos.ticket}"
+                d      = 1 if pos.type == 0 else -1  # 0=buy, 1=sell
                 t_open  = datetime.fromtimestamp(pos.time).strftime("%Y-%m-%d %H:%M:%S")
                 reconstructed = {
                     "direction":    d,
@@ -2558,6 +2714,10 @@ def run_generator(session_cfg: dict):
     # Recupereaza outcome-uri pierdute la crash/reset: cauta in MT5 history dupa comment=sig_id
     # Previne marcarea gresita ca "expirat 0R" a pozitiilor inchise in lipsa botului
     _recover_lost_outcomes(state, session_cfg, outcomes_file, log)
+
+    # Scanare completa history MT5 pentru pozitii inchise netrackuite (state complet gol).
+    # Complementara cu _recover_lost_outcomes; acopera crash total / state.pkl sters manual.
+    _scan_mt5_history_for_missing_outcomes(state, session_cfg, outcomes_file, log)
 
     # Detecteaza ordine MT5 netrackuite (coruptie state / crash) si alerteaza via Telegram
     _detect_orphan_mt5_orders(
