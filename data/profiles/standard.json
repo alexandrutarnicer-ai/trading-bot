@@ -17,13 +17,15 @@
       "direction": "BOTH",
       "pullback_window": 10,
       "session_start": 10,
-      "session_end": 18,
+      "session_end": 19,
       "skip_hours": [
         11
       ],
-      "skip_weekdays": [],
+      "skip_weekdays": [
+        4
+      ],
       "expire_bars": 3,
-      "account_fraction": 0.255,
+      "account_fraction": 0.265,
       "risk_pct": 0.01,
       "risk_base": 0.01,
       "risk_mid": 0.01,
@@ -1421,7 +1423,7 @@
       "inside_bar_risk_pct": 0.01
     }
   ],
-  "updated_at": "2026-06-30T17:33:37",
+  "updated_at": "2026-06-30T17:41:18",
   "capital_protection_enabled": false,
   "capital_protection_threshold_pct": 70
 }

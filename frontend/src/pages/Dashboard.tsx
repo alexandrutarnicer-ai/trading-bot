@@ -162,6 +162,7 @@ export function Dashboard() {
   const [selectedSession, setSelectedSession] = useState<string>("all");
   const [now, setNow] = useState(Date.now());
   const [runningMissing, setRunningMissing] = useState(false);
+  const [runningAll, setRunningAll] = useState(false);
   const qc = useQueryClient();
 
   const estimatedFreq = (freqData?.per_week != null)
@@ -183,6 +184,25 @@ export function Dashboard() {
 
   function refresh() {
     qc.invalidateQueries();
+  }
+
+  async function runAllBacktests() {
+    if (runningAll || runningMissing) return;
+    setRunningAll(true);
+    try {
+      const profileId = botStatus?.active_profile_id ?? "standard";
+      await apiFetch(`/backtest/run-missing`, {
+        method: "POST",
+        body: { profile_id: profileId, force: true },
+      });
+      qc.invalidateQueries({ queryKey: ["frequency-estimate"] });
+      qc.invalidateQueries({ queryKey: ["backtest-jobs"] });
+      qc.invalidateQueries({ queryKey: ["download-jobs"] });
+    } catch (e) {
+      console.error("run-all failed", e);
+    } finally {
+      setRunningAll(false);
+    }
   }
 
   async function runMissingBacktests(onDone?: () => void) {
@@ -281,6 +301,19 @@ export function Dashboard() {
           : "";
         const avgDD = freqData?.avg_max_dd ?? null;
         return (
+          <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-slate-600 uppercase tracking-wider">Frecvență estimată</span>
+            <button
+              onClick={runAllBacktests}
+              disabled={runningAll || runningMissing}
+              title="Rerulează backtestele pentru toate sesiunile active (actualizează estimările)"
+              className="flex items-center gap-1.5 text-[10px] text-slate-500 hover:text-blue-400 disabled:opacity-40 transition-colors"
+            >
+              <RefreshCw size={11} className={runningAll ? "animate-spin text-blue-400" : ""} />
+              {runningAll ? "Se recalculează..." : "Recalculează toate"}
+            </button>
+          </div>
           <div className="grid grid-cols-3 gap-3">
             {/* Card săptămână */}
             <div className="bg-surface-card rounded-xl border border-surface-border px-5 py-3 flex items-center justify-between gap-4">
@@ -337,6 +370,7 @@ export function Dashboard() {
                 : <p className="text-2xl font-bold font-mono text-slate-600">—</p>
               }
             </div>
+          </div>
           </div>
         );
       })()}

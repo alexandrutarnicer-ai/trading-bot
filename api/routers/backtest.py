@@ -212,6 +212,9 @@ def _run_backtest_job(
 
         skip_hours = tuple(session_cfg.get("skip_hours", []))
         skip_wd    = set(session_cfg.get("skip_weekdays", []))
+        # Daca inchiderea vineri e activa, skip automat Sambata (5) si Duminica (6)
+        if session_cfg.get("friday_close_enabled", True):
+            skip_wd |= {5, 6}
 
         params = {
             "spread_pips":                {s: SPREAD_DEFAULTS.get(s, 1.0) for s in data},
@@ -558,12 +561,14 @@ def run_backtest(body: dict):
 @router.post("/run-missing")
 def run_missing_backtests(body: dict = {}):
     """Triggerează backteste pentru sesiunile fără backtest recent.
+    Cu force=True, rerulează TOATE sesiunile (inclusiv cele cu backtest existent).
     Verifică dacă datele CSV există; dacă nu, pornește descărcarea întâi."""
     from api.routers.data_download import (
         csv_exists_for_session, start_download_job, register_pending_backtest
     )
 
     profile_id = body.get("profile_id", "")
+    force      = bool(body.get("force", False))
     _PROFILES_DIR = os.path.join(DATA_DIR, "profiles")
     _ACTIVE_FILE  = os.path.join(DATA_DIR, "active_profile.json")
     _PAUSED_FILE  = os.path.join(DATA_DIR, "paused_sessions.json")
@@ -608,7 +613,7 @@ def run_missing_backtests(body: dict = {}):
             continue
         if sess_key in paused:
             continue
-        if sess_id in latest_job:
+        if not force and sess_id in latest_job:
             continue
 
         # Construieste session_cfg din profil

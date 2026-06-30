@@ -699,6 +699,9 @@ def _check_signals(df: pd.DataFrame, symbol: str, cfg: dict,
     skip_hours    = session_cfg.get("skip_hours", ())
     skip_monday   = session_cfg.get("skip_monday", True)
     skip_weekdays = set(session_cfg.get("skip_weekdays", []))
+    # Daca inchiderea vineri e activa, skip automat Sambata (5) si Duminica (6)
+    if session_cfg.get("friday_close_enabled", True):
+        skip_weekdays |= {5, 6}
 
     n = len(df)
     # Offset 1 = bara curent deschisa (incompleta) — ignorata intentionat.
