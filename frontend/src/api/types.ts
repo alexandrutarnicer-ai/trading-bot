@@ -59,6 +59,7 @@ export interface SessionStatus {
   pnl_usd_today: number | null;
   pnl_usd_yesterday: number | null;
   pnl_usd_total: number | null;
+  pnl_count: number | null;
 }
 
 export interface Signal {
@@ -88,6 +89,8 @@ export interface Outcome {
   exit_time: string | null;
   result_r: number;
   pnl_usd: number | null;
+  commission_usd: number | null;
+  swap_usd: number | null;
 }
 
 export interface EquityCurvePoint {
@@ -449,4 +452,69 @@ export interface SystemLogEntry {
 export interface SystemLogsResponse {
   items: SystemLogEntry[];
   total: number;
+}
+
+export interface SyncDiscrepancy {
+  type: string;
+  sig_id: string;
+  symbol: string;
+  ticket?: number;
+  status?: string;
+  result_r?: number;
+  pnl_usd?: number;
+  exit_time?: string;
+  detail: string;
+}
+
+export interface SyncSessionReport {
+  session_id: string;
+  label: string;
+  discrepancies: SyncDiscrepancy[];
+  fixed: number;
+}
+
+export interface SyncResult {
+  ok: boolean | null;
+  time: string | null;
+  total_discrepancies: number | null;
+  total_fixed: number;
+  fix_applied: boolean;
+  error?: string;
+  sessions: SyncSessionReport[];
+}
+
+export interface CostStat {
+  symbol: string;
+  trades: number;
+  trades_with_mt5: number;
+  commission_usd: number;
+  swap_usd: number;
+  total_costs: number;
+  pnl_gross: number;
+  pnl_net: number | null;
+  sessions: string[];
+  has_cost_data: boolean;
+}
+
+export interface CostsResponse {
+  items: CostStat[];
+}
+
+export interface CostsDayEntry {
+  date: string;
+  trades: number;
+  trades_with_cost: number;
+  commission_usd: number;
+  swap_usd: number;
+  total_costs: number;
+  pnl_usd: number | null;
+  total_r: number | null;
+  has_cost_data: boolean;
+}
+
+export interface CostsDailyResponse {
+  items: CostsDayEntry[];
+  total_commission: number;
+  total_swap: number;
+  total_costs: number;
 }

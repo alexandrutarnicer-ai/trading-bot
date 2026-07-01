@@ -919,6 +919,10 @@ def _check_mt5_position_closed(ticket: int, p: dict, log) -> dict | None:
     if not deals:
         return None
 
+    entry_deal = next(
+        (deal for deal in deals if deal.entry == 0),  # DEAL_ENTRY_IN = 0
+        None,
+    )
     close_deal = next(
         (deal for deal in deals if deal.entry == _mt5_exec.DEAL_ENTRY_OUT),
         None,
@@ -937,18 +941,27 @@ def _check_mt5_position_closed(ticket: int, p: dict, log) -> dict | None:
         result_r = round((exit_price - p["entry"]) * d / risk_dist, 3)
         status   = "TP" if result_r > 0 else "SL"
 
-    pnl_usd = round(float(close_deal.profit), 4)
+    pnl_usd        = round(float(close_deal.profit), 4)
+    commission_usd = round(
+        float(getattr(entry_deal, "commission", 0) or 0) +
+        float(getattr(close_deal, "commission", 0) or 0),
+        4,
+    )
+    swap_usd = round(float(getattr(close_deal, "swap", 0) or 0), 4)
     log.info(
         f"  [MT5] Pozitie #{ticket} inchisa: "
-        f"exit={exit_price}  result={result_r:+.3f}R  pnl={pnl_usd:+.2f}USD  [{status}]"
+        f"exit={exit_price}  result={result_r:+.3f}R  pnl={pnl_usd:+.2f}USD  "
+        f"comm={commission_usd:+.2f}  swap={swap_usd:+.2f}  [{status}]"
     )
     return {
-        "status":       status,
-        "result_r":     result_r,
-        "exit_price":   exit_price,
-        "exit_time":    exit_time,
-        "triggered_at": p.get("triggered_at", exit_time),
-        "pnl_usd":      pnl_usd,
+        "status":         status,
+        "result_r":       result_r,
+        "exit_price":     exit_price,
+        "exit_time":      exit_time,
+        "triggered_at":   p.get("triggered_at", exit_time),
+        "pnl_usd":        pnl_usd,
+        "commission_usd": commission_usd,
+        "swap_usd":       swap_usd,
     }
 
 
@@ -963,14 +976,23 @@ _SIGNALS_COLS = [
 
 _OUTCOMES_COLS = [
     "signal_id", "time_check", "symbol", "direction", "status",
-    "entry", "sl", "tp", "r_ratio", "triggered_at",
+    "entry", "sl", "tp", "r_ratio", "armed_at", "triggered_at",
     "exit_price", "exit_time", "result_r", "pnl_usd",
+    "commission_usd", "swap_usd",
 ]
 
 
 def _pnl(result_r: float, risk_usd: float | None) -> float | None:
     """Calculeaza pnl_usd din result_r si risk_usd stocat la plasare."""
     return round(result_r * risk_usd, 4) if risk_usd is not None else None
+
+
+def _usd_str(pnl: float | None) -> str:
+    """Formateaza pnl_usd pentru mesaje Telegram. Returneaza '' daca None."""
+    if pnl is None:
+        return ""
+    sign = "+" if pnl >= 0 else ""
+    return f" ({sign}{pnl:.2f} USD)"
 
 
 def _update_outcomes(df: pd.DataFrame, symbol: str,
@@ -1142,7 +1164,8 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                     if mt5_res["status"] == "TP":
                         log.info(f"  PROFIT (MT5): {sig_id} TP +{mt5_res['result_r']:.3f}R")
                         _send_telegram(
-                            f"<b>PROFIT +{mt5_res['result_r']:.2f}R: {dir_str} {symbol}</b>\n"
+                            f"<b>PROFIT +{mt5_res['result_r']:.2f}R: {dir_str} {symbol}</b>"
+                            f"{_usd_str(mt5_res.get('pnl_usd'))}\n"
                             f"Entry {format(p['entry'], fmt)} → "
                             f"{format(mt5_res['exit_price'], fmt)} (exit real MT5)\n"
                             f"<i>{session_id} | {sig_id}</i>"
@@ -1150,7 +1173,8 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                     else:
                         log.info(f"  PIERDERE (MT5): {sig_id} SL {mt5_res['result_r']:.3f}R")
                         _send_telegram(
-                            f"<b>PIERDERE {mt5_res['result_r']:.2f}R: {dir_str} {symbol}</b>\n"
+                            f"<b>PIERDERE {mt5_res['result_r']:.2f}R: {dir_str} {symbol}</b>"
+                            f"{_usd_str(mt5_res.get('pnl_usd'))}\n"
                             f"Entry {format(p['entry'], fmt)} → "
                             f"{format(mt5_res['exit_price'], fmt)} (exit real MT5)\n"
                             f"<i>{session_id} | {sig_id}</i>"
@@ -1250,17 +1274,21 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                                              "pnl_usd": _pnl(_rr, p.get("risk_usd"))})
                         rows_to_remove.append(sig_id)
                         if _oc == "SL":
+                            _pnl_val = _pnl(_rr, p.get("risk_usd"))
                             log.info(f"  PIERDERE: {sig_id} SL -1.0R")
                             _send_telegram(
-                                f"<b>PIERDERE -1R: {dir_str} {symbol}</b>\n"
+                                f"<b>PIERDERE -1R: {dir_str} {symbol}</b>"
+                                f"{_usd_str(_pnl_val)}\n"
                                 f"Entry {format(p['entry'], fmt)} → SL {format(p['sl'], fmt)}\n"
                                 f"<i>{session_id} | {sig_id}</i>"
                             )
                         else:
+                            _pnl_val = _pnl(_rr, p.get("risk_usd"))
                             _lbl = "Faza 1" if _oc == "be_lock" else "Faza 2"
                             log.info(f"  [BE {_lbl}] {sig_id} +{_rr:.3f}R")
                             _send_telegram(
-                                f"<b>Break-Even {_lbl}: {dir_str} {symbol}</b>\n"
+                                f"<b>Break-Even {_lbl}: {dir_str} {symbol}</b>"
+                                f"{_usd_str(_pnl_val)}\n"
                                 f"Ieșire la +{_rr:.2f}R\n"
                                 f"<i>{session_id} | {sig_id}</i>"
                             )
@@ -1272,9 +1300,11 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                                              "time_check": now_local(),
                                              "pnl_usd": _pnl(p["r_ratio"], p.get("risk_usd"))})
                         rows_to_remove.append(sig_id)
+                        _pnl_tp = _pnl(p["r_ratio"], p.get("risk_usd"))
                         log.info(f"  PROFIT: {sig_id} TP +{p['r_ratio']:.1f}R")
                         _send_telegram(
-                            f"<b>PROFIT +{p['r_ratio']:.1f}R: {dir_str} {symbol}</b>\n"
+                            f"<b>PROFIT +{p['r_ratio']:.1f}R: {dir_str} {symbol}</b>"
+                            f"{_usd_str(_pnl_tp)}\n"
                             f"Entry {format(p['entry'], fmt)} → TP {format(p['tp'], fmt)}\n"
                             f"<i>{session_id} | {sig_id}</i>"
                         )
@@ -1304,31 +1334,35 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                     tp_hit = (d == 1 and bar["high"] >= p["tp"]) or \
                              (d == -1 and bar["low"]  <= p["tp"])
                     if sl_hit:
+                        _sl_pnl = _pnl(-1.0, p.get("risk_usd"))
                         outcome_rows.append({**p, "signal_id": sig_id,
                                              "symbol": symbol, "status": "SL",
                                              "result_r": -1.0, "exit_price": p["sl"],
                                              "exit_time": bar["time"],
                                              "time_check": now_local(),
-                                             "pnl_usd": _pnl(-1.0, p.get("risk_usd"))})
+                                             "pnl_usd": _sl_pnl})
                         rows_to_remove.append(sig_id)
                         log.info(f"  PIERDERE: {sig_id} SL -1.0R")
                         _send_telegram(
-                            f"<b>PIERDERE -1R: {dir_str} {symbol}</b>\n"
+                            f"<b>PIERDERE -1R: {dir_str} {symbol}</b>"
+                            f"{_usd_str(_sl_pnl)}\n"
                             f"Entry {format(p['entry'], fmt)} → SL {format(p['sl'], fmt)}\n"
                             f"<i>{session_id} | {sig_id}</i>"
                         )
                         break
                     if tp_hit:
+                        _tp_pnl = _pnl(p["r_ratio"], p.get("risk_usd"))
                         outcome_rows.append({**p, "signal_id": sig_id,
                                              "symbol": symbol, "status": "TP",
                                              "result_r": p["r_ratio"], "exit_price": p["tp"],
                                              "exit_time": bar["time"],
                                              "time_check": now_local(),
-                                             "pnl_usd": _pnl(p["r_ratio"], p.get("risk_usd"))})
+                                             "pnl_usd": _tp_pnl})
                         rows_to_remove.append(sig_id)
                         log.info(f"  PROFIT: {sig_id} TP +{p['r_ratio']:.1f}R")
                         _send_telegram(
-                            f"<b>PROFIT +{p['r_ratio']:.1f}R: {dir_str} {symbol}</b>\n"
+                            f"<b>PROFIT +{p['r_ratio']:.1f}R: {dir_str} {symbol}</b>"
+                            f"{_usd_str(_tp_pnl)}\n"
                             f"Entry {format(p['entry'], fmt)} → TP {format(p['tp'], fmt)}\n"
                             f"<i>{session_id} | {sig_id}</i>"
                         )
@@ -1342,7 +1376,14 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                 existing_ids = set(pd.read_csv(outcomes_file, usecols=["signal_id"])["signal_id"].dropna())
             except Exception:
                 pass
-        new_rows = [r for r in outcome_rows if r.get("signal_id") not in existing_ids]
+        # Dedup si in interiorul batch-ului (ex: doua semnale cu acelasi sig_id trunchiat)
+        seen_in_batch: set = set()
+        new_rows = []
+        for r in outcome_rows:
+            sid = r.get("signal_id")
+            if sid not in existing_ids and sid not in seen_in_batch:
+                new_rows.append(r)
+                seen_in_batch.add(sid)
         if new_rows:
             pd.DataFrame(new_rows).reindex(columns=_OUTCOMES_COLS).to_csv(
                 outcomes_file, mode="a", header=False, index=False)
@@ -1517,21 +1558,63 @@ def _recover_lost_outcomes(
     dt_to   = datetime.now()
     recovered = 0
 
+    # Previne doua semnale diferite sa claim-uiasca acelasi ordin MT5
+    # (ICMarketsEU trunchiaza la 16 chars → SIG0001/SIG0002 devin ambele "S13-EURJPY-SIG00")
+    claimed_tickets: set[int] = set()
+
     for sym, sig_id, sig in sigs_without_ticket:
         hist_orders = _mt5_exec.history_orders_get(dt_from, dt_to, group=sym)
         if not hist_orders:
             continue
 
-        # Match exact pe comment; fallback pe primele 16 caractere (limit MT5 display)
-        matching = [
-            o for o in hist_orders
-            if o.comment == sig_id or o.comment.rstrip() == sig_id[:16]
-        ]
+        # 1. Match exact pe comment (ideal — nu e trunchiat sau e acelasi ID)
+        exact_matching = [o for o in hist_orders if o.comment == sig_id]
+        if exact_matching:
+            matching = [o for o in exact_matching if o.ticket not in claimed_tickets]
+        else:
+            # 2. Fallback prefix 16 chars (ICMarketsEU trunchiaza la 16 caractere)
+            prefix_matching = [
+                o for o in hist_orders
+                if o.comment.rstrip() == sig_id[:16] and o.ticket not in claimed_tickets
+            ]
+            if len(prefix_matching) <= 1:
+                matching = prefix_matching
+            else:
+                # Mai multe ordine cu acelasi prefix — disambiguare prin pret de intrare
+                _entry = sig.get("entry")
+                if _entry is not None:
+                    try:
+                        from strategy.signals import pip_size as _psz
+                        _pip = _psz(sym)
+                    except Exception:
+                        _pip = 0.0001
+                    price_matched = [
+                        o for o in prefix_matching
+                        if abs(o.price_open - _entry) < 5 * _pip
+                    ]
+                    if len(price_matched) == 1:
+                        matching = price_matched
+                        log.info(
+                            f"  [RECOVER] {sig_id}: {len(prefix_matching)} ordine cu prefix "
+                            f"'{sig_id[:16]}' — selectat #{price_matched[0].ticket} "
+                            f"prin pret (|{price_matched[0].price_open:.5f}-{_entry:.5f}|<5pip)"
+                        )
+                    else:
+                        matching = []
+                        log.warning(
+                            f"  [RECOVER] {sig_id}: {len(prefix_matching)} ordine cu prefix "
+                            f"'{sig_id[:16]}' si {len(price_matched)} match-uri prin pret "
+                            f"— skip, va fi recuperat de scan_mt5_history la urmatorul restart"
+                        )
+                else:
+                    matching = []
+
         if not matching:
             continue
 
         # Cel mai recent ordin plasat cu comentariul potrivit
         order = sorted(matching, key=lambda o: o.time_setup)[-1]
+        claimed_tickets.add(order.ticket)
         ticket = order.ticket
         pos_id = getattr(order, "position_id", ticket) or ticket
 
@@ -1653,6 +1736,8 @@ def _scan_mt5_history_for_missing_outcomes(
         except Exception:
             pass
 
+    seen_tickets: set[int] = set()  # dedup ordine in cadrul acestei rulari (unicitate per ticket MT5)
+
     # Ticketele deja trackuite (nu le procesam din nou)
     tracked_tickets: set[int] = set(state.get("mt5_tickets", {}).values())
 
@@ -1673,14 +1758,16 @@ def _scan_mt5_history_for_missing_outcomes(
                 continue
 
             is_full = bool(_BOT_SIG_FULL_RE.match(comment))
+            # sig_id provizoriu pentru verificarea tracked_tickets/existing_sig_ids;
+            # poate fi corectat mai jos dupa obtinerea entry_price (matching in pending)
             sig_id  = comment if is_full else f"{comment}_{order.ticket}"
 
             # Skip daca ticketul e deja in tracking activ
             if order.ticket in tracked_tickets:
                 continue
 
-            # Skip daca sig_id deja in outcomes
-            if sig_id in existing_sig_ids:
+            # Skip daca sig_id deja in outcomes (verificare rapida pentru IDs complete)
+            if is_full and sig_id in existing_sig_ids:
                 continue
 
             # Obtine deals-urile pozitiei (necesar pentru pnl + exit_time → deduplicare)
@@ -1697,17 +1784,82 @@ def _scan_mt5_history_for_missing_outcomes(
                 # Pozitie inca deschisa → orphan detection se ocupa
                 continue
 
-            entry_price = float(entry_deal.price if entry_deal else order.price_open)
-            exit_price  = float(close_deal.price)
-            exit_time   = datetime.fromtimestamp(close_deal.time).strftime("%Y-%m-%d %H:%M:%S")
-            pnl_usd     = round(float(close_deal.profit), 4)
-            d_int       = 1 if order.type in (0, 2, 4) else -1
-            sl_price    = float(getattr(order, "sl", 0) or 0)
-            tp_price    = float(getattr(order, "tp", 0) or 0)
+            entry_price    = float(entry_deal.price if entry_deal else order.price_open)
+            exit_price     = float(close_deal.price)
+            exit_time      = datetime.fromtimestamp(close_deal.time).strftime("%Y-%m-%d %H:%M:%S")
+            pnl_usd        = round(float(close_deal.profit), 4)
+            commission_usd = round(
+                float(getattr(entry_deal, "commission", 0) or 0) +
+                float(getattr(close_deal, "commission", 0) or 0),
+                4,
+            )
+            swap_usd = round(float(getattr(close_deal, "swap", 0) or 0), 4)
+            d_int    = 1 if order.type in (0, 2, 4) else -1
+            sl_price = float(getattr(order, "sl", 0) or 0)
+            tp_price = float(getattr(order, "tp", 0) or 0)
 
-            # Deduplicare pe identitate pozitie (pnl + exit_time).
-            # Necesar cand mai multe semnale au acelasi comment trunchiat (ICMarketsEU 16 chars):
-            # ex. SIG0001/SIG0002/SIG0003 → toate "S13-EURJPY-SIG00" in MT5.
+            # Pentru comentarii trunchiate (ICMarketsEU 16 chars): cauta semnalul real
+            # Prioritate: 1. comment_map (stocat la plasare — sigur), 2. pending by price,
+            # 3. signals.csv by price (fallback dupa crash cu state gol)
+            if not is_full:
+                _matched_sig = None
+                # 1. comment_map — cea mai fiabila metoda
+                _cm_match = state.get("comment_map", {}).get(comment)
+                if _cm_match and _cm_match not in existing_sig_ids:
+                    _matched_sig = _cm_match
+                    log.info(
+                        f"  [SCAN-RECOVER] Comentariu trunchiat '{comment}' → {_matched_sig} "
+                        f"(via comment_map)"
+                    )
+                # 2. Pending by price
+                if not _matched_sig:
+                    _mt5_tickets = state.get("mt5_tickets", {})
+                    try:
+                        from strategy.signals import pip_size as _psz
+                        _pip = _psz(symbol)
+                    except Exception:
+                        _pip = 0.0001
+                    for _s_id, _s_sig in state.get("pending", {}).get(symbol, {}).items():
+                        if _s_id in _mt5_tickets:
+                            continue  # semnal activ — nu il revendicam
+                        if (_s_sig.get("direction") == d_int and
+                                abs(_s_sig.get("entry", 0) - entry_price) < 5 * _pip):
+                            _matched_sig = _s_id
+                            break
+                # 3. Fallback signals.csv daca pending gol (crash cu state resetat)
+                if not _matched_sig:
+                    _signals_file = outcomes_file.replace("outcomes.csv", "signals.csv")
+                    if os.path.exists(_signals_file):
+                        try:
+                            _sig_df = pd.read_csv(_signals_file)
+                            _sig_sym = _sig_df[_sig_df["symbol"] == symbol] if not _sig_df.empty else pd.DataFrame()
+                            for _, _srow in _sig_sym.iterrows():
+                                _s_id = str(_srow.get("signal_id", ""))
+                                if _s_id in existing_sig_ids:
+                                    continue
+                                if (int(_srow.get("direction", 0)) == d_int and
+                                        abs(float(_srow.get("entry", 0)) - entry_price) < 5 * _pip):
+                                    _matched_sig = _s_id
+                                    break
+                        except Exception:
+                            pass
+                if _matched_sig:
+                    sig_id = _matched_sig
+                    if not state.get("comment_map", {}).get(comment):
+                        log.info(
+                            f"  [SCAN-RECOVER] Comentariu trunchiat '{comment}' → {sig_id} "
+                            f"(match prin pret {entry_price:.5f})"
+                        )
+                # else: pastram {comment}_{order.ticket} ca fallback unic
+
+            # Dupa corectia sig_id: re-verifica ca nu e deja in outcomes
+            if sig_id in existing_sig_ids:
+                continue
+
+            # Dedup in cadrul acestei rulari pe ticket unic (previne rescrierea aceluiasi ordin)
+            if order.ticket in seen_tickets:
+                continue
+            # Dedup vs outcomes existente (pnl+exit_time — protectie dupa restart)
             pos_key = (symbol, round(pnl_usd, 2), exit_time[:19])
             if pos_key in existing_pos_keys:
                 continue
@@ -1729,26 +1881,29 @@ def _scan_mt5_history_for_missing_outcomes(
             ).strftime("%Y-%m-%d %H:%M:%S")
 
             row = {
-                "signal_id":    sig_id,
-                "time_check":   now_local(),
-                "symbol":       symbol,
-                "direction":    d_int,
-                "status":       status,
-                "entry":        entry_price,
-                "sl":           sl_price,
-                "tp":           tp_price,
-                "r_ratio":      r_ratio,
-                "triggered_at": triggered_at,
-                "exit_price":   exit_price,
-                "exit_time":    exit_time,
-                "result_r":     result_r,
-                "pnl_usd":      pnl_usd,
+                "signal_id":      sig_id,
+                "time_check":     now_local(),
+                "symbol":         symbol,
+                "direction":      d_int,
+                "status":         status,
+                "entry":          entry_price,
+                "sl":             sl_price,
+                "tp":             tp_price,
+                "r_ratio":        r_ratio,
+                "triggered_at":   triggered_at,
+                "exit_price":     exit_price,
+                "exit_time":      exit_time,
+                "result_r":       result_r,
+                "pnl_usd":        pnl_usd,
+                "commission_usd": commission_usd,
+                "swap_usd":       swap_usd,
             }
             pd.DataFrame([row]).reindex(columns=_OUTCOMES_COLS).to_csv(
                 outcomes_file, mode="a", header=False, index=False
             )
             existing_sig_ids.add(sig_id)
             existing_pos_keys.add(pos_key)
+            seen_tickets.add(order.ticket)
             tracked_tickets.add(order.ticket)
             recovered += 1
 
@@ -1773,10 +1928,15 @@ def _scan_mt5_history_for_missing_outcomes(
 # Ex: "S17-AUDCAD-H1-IB0001" (20 chars) → "S17-AUDCAD-H1-IB" (fara cifre finale).
 # \d* in loc de \d+ pentru a prinde si comentariile trunchiate.
 _BOT_SIG_RE = re.compile(r"^S\d+-[A-Z0-9]+-(?:[A-Z0-9]+-)?(?:SIG|IB|FLG)\d*", re.IGNORECASE)
-_BOT_SIG_FULL_RE = re.compile(r"^S\d+-[A-Z0-9]+-(?:[A-Z0-9]+-)?(?:SIG|IB|FLG)\d+$", re.IGNORECASE)
+# FULL = exact 4+ cifre la final (format :04d). Comentariile trunchiate (SIG00, IB000 etc.)
+# au mai putine cifre si sunt tratate ca partial → primesc sufixul _{ticket} pentru unicitate.
+_BOT_SIG_FULL_RE = re.compile(r"^S\d+-[A-Z0-9]+-(?:[A-Z0-9]+-)?(?:SIG|IB|FLG)\d{4,}$", re.IGNORECASE)
 
 
-def _detect_orphan_mt5_orders(state: dict, markets: list, session_id: str, log) -> None:
+def _detect_orphan_mt5_orders(
+    state: dict, markets: list, session_id: str, log,
+    signals_file: str = "",
+) -> None:
     """
     Detecteaza ordinele MT5 deschise (pending/pozitii) pentru simbolurile sesiunii
     care NU sunt in state["mt5_tickets"].
@@ -1790,6 +1950,21 @@ def _detect_orphan_mt5_orders(state: dict, markets: list, session_id: str, log) 
     if _mt5_exec is None:
         return
     tracked_tickets = set(state.get("mt5_tickets", {}).values())
+
+    # Cache signals.csv pentru fuzzy-match fallback (cand state["pending"] e gol dupa crash)
+    _sig_cache: dict[str, list[tuple[str, int, float]]] = {}  # symbol -> [(sig_id, dir, entry)]
+    if signals_file and os.path.exists(signals_file):
+        try:
+            _sig_df = pd.read_csv(signals_file)
+            for _, _srow in _sig_df.iterrows():
+                _sym = str(_srow.get("symbol", ""))
+                _sig_cache.setdefault(_sym, []).append((
+                    str(_srow.get("signal_id", "")),
+                    int(_srow.get("direction", 0)),
+                    float(_srow.get("entry", 0)),
+                ))
+        except Exception:
+            pass
     unknown_orphans: list[tuple] = []
     recovered = 0
 
@@ -1800,9 +1975,46 @@ def _detect_orphan_mt5_orders(state: dict, markets: list, session_id: str, log) 
                 continue
             comment = getattr(order, "comment", "") or ""
             if _BOT_SIG_RE.match(comment.strip()):
-                # Comentariu trunchiat (ICMarketsEU limiteaza la 16 chars): adauga ticket pentru unicitate
                 c = comment.strip()
-                sig_id = c if _BOT_SIG_FULL_RE.match(c) else f"{c}_{order.ticket}"
+                if _BOT_SIG_FULL_RE.match(c):
+                    sig_id = c
+                else:
+                    # Comentariu trunchiat — rezolva sig_id in ordinea prioritatii:
+                    # 1. comment_map (stocat la plasare), 2. pending by price, 3. signals.csv
+                    _matched = state.get("comment_map", {}).get(c)
+                    if _matched:
+                        log.info(
+                            f"  [ORPHAN-RECOVER] Ordin #{order.ticket} comment '{c}' "
+                            f"→ {_matched} (via comment_map)"
+                        )
+                    if not _matched:
+                        try:
+                            from strategy.signals import pip_size as _psz
+                            _pip = _psz(symbol)
+                        except Exception:
+                            _pip = 0.0001
+                        d_ord = 1 if order.type in (2, 4) else -1  # BUY_STOP=2, BUY_LIMIT=4
+                        for _s_id, _s_sig in state.get("pending", {}).get(symbol, {}).items():
+                            if (_s_sig.get("direction") == d_ord and
+                                    abs(_s_sig.get("entry", 0) - order.price_open) < 5 * _pip):
+                                _matched = _s_id
+                                break
+                    # Fallback: cauta in signals.csv daca pending e gol (state resetat la crash)
+                    if not _matched:
+                        _existing_tickets = set(state.get("mt5_tickets", {}).values())
+                        for _s_id, _s_dir, _s_entry in _sig_cache.get(symbol, []):
+                            if _s_id in state.get("mt5_tickets", {}):
+                                continue
+                            if (_s_dir == d_ord and
+                                    abs(_s_entry - order.price_open) < 5 * _pip):
+                                _matched = _s_id
+                                break
+                    sig_id = _matched if _matched else f"{c}_{order.ticket}"
+                    if _matched:
+                        log.info(
+                            f"  [ORPHAN-RECOVER] Ordin #{order.ticket} comment trunchiat '{c}' "
+                            f"→ {sig_id} (match prin pret {order.price_open:.5f})"
+                        )
                 state.setdefault("mt5_tickets", {})[sig_id] = order.ticket
                 tracked_tickets.add(order.ticket)
                 log.warning(
@@ -1826,26 +2038,66 @@ def _detect_orphan_mt5_orders(state: dict, markets: list, session_id: str, log) 
             comment = getattr(pos, "comment", "") or ""
             if _BOT_SIG_RE.match(comment.strip()):
                 # Reconstruieste intrarea in pending din datele pozitiei MT5
-                # Comentariu trunchiat (ICMarketsEU limiteaza la 16 chars): adauga ticket pentru unicitate
-                c      = comment.strip()
-                sig_id = c if _BOT_SIG_FULL_RE.match(c) else f"{c}_{pos.ticket}"
-                d      = 1 if pos.type == 0 else -1  # 0=buy, 1=sell
-                t_open  = datetime.fromtimestamp(pos.time).strftime("%Y-%m-%d %H:%M:%S")
-                reconstructed = {
-                    "direction":    d,
-                    "entry":        pos.price_open,
-                    "sl":           pos.sl if pos.sl else pos.price_open * (1 - 0.005 * d),
-                    "tp":           pos.tp if pos.tp else pos.price_open * (1 + 0.01 * d),
-                    "r_ratio":      0.0,   # necunoscut — se recalculeaza la inchidere din deal.profit
-                    "armed_at":     t_open,
-                    "triggered":    True,
-                    "triggered_at": t_open,
-                    "be_phase":     0,
-                    "be_current_sl": pos.sl or 0,
-                    "symbol":       symbol,
-                    "risk_usd":     None,  # necunoscut — pnl_usd va veni direct din deal.profit
-                }
-                state.setdefault("pending", {}).setdefault(symbol, {})[sig_id] = reconstructed
+                c = comment.strip()
+                d = 1 if pos.type == 0 else -1  # 0=buy, 1=sell
+                if _BOT_SIG_FULL_RE.match(c):
+                    sig_id = c
+                else:
+                    # Comentariu trunchiat — rezolva sig_id: comment_map → pending → signals.csv
+                    _matched = state.get("comment_map", {}).get(c)
+                    if _matched:
+                        log.info(
+                            f"  [ORPHAN-RECOVER] Pozitie #{pos.ticket} comment '{c}' "
+                            f"→ {_matched} (via comment_map)"
+                        )
+                    if not _matched:
+                        try:
+                            from strategy.signals import pip_size as _psz
+                            _pip = _psz(symbol)
+                        except Exception:
+                            _pip = 0.0001
+                        for _s_id, _s_sig in state.get("pending", {}).get(symbol, {}).items():
+                            if (_s_sig.get("direction") == d and
+                                    abs(_s_sig.get("entry", 0) - pos.price_open) < 10 * _pip):
+                                _matched = _s_id
+                                break
+                    # Fallback: cauta in signals.csv daca pending e gol (state resetat la crash)
+                    if not _matched:
+                        for _s_id, _s_dir, _s_entry in _sig_cache.get(symbol, []):
+                            if _s_id in state.get("mt5_tickets", {}):
+                                continue
+                            if (_s_dir == d and
+                                    abs(_s_entry - pos.price_open) < 10 * _pip):
+                                _matched = _s_id
+                                break
+                    sig_id = _matched if _matched else f"{c}_{pos.ticket}"
+                    if _matched and not state.get("comment_map", {}).get(c):
+                        log.info(
+                            f"  [ORPHAN-RECOVER] Pozitie #{pos.ticket} comment trunchiat '{c}' "
+                            f"→ {sig_id} (match prin pret {pos.price_open:.5f})"
+                        )
+                t_open = datetime.fromtimestamp(pos.time).strftime("%Y-%m-%d %H:%M:%S")
+                # Actualizeaza semnalul existent in pending daca exista; altfel creaza unul nou
+                existing_sig = state.get("pending", {}).get(symbol, {}).get(sig_id)
+                if existing_sig is not None:
+                    existing_sig["triggered"]    = True
+                    existing_sig["triggered_at"] = t_open
+                else:
+                    reconstructed = {
+                        "direction":     d,
+                        "entry":         pos.price_open,
+                        "sl":            pos.sl if pos.sl else pos.price_open * (1 - 0.005 * d),
+                        "tp":            pos.tp if pos.tp else pos.price_open * (1 + 0.01 * d),
+                        "r_ratio":       0.0,
+                        "armed_at":      t_open,
+                        "triggered":     True,
+                        "triggered_at":  t_open,
+                        "be_phase":      0,
+                        "be_current_sl": pos.sl or 0,
+                        "symbol":        symbol,
+                        "risk_usd":      None,
+                    }
+                    state.setdefault("pending", {}).setdefault(symbol, {})[sig_id] = reconstructed
                 state.setdefault("mt5_tickets", {})[sig_id] = pos.ticket
                 tracked_tickets.add(pos.ticket)
                 dir_str = "LONG" if d == 1 else "SHORT"
@@ -2075,7 +2327,13 @@ def _friday_close_check(
                 )
             except Exception:
                 pass
-        new_rows = [r for r in outcome_rows if r.get("signal_id") not in existing_ids]
+        seen_in_batch: set = set()
+        new_rows = []
+        for r in outcome_rows:
+            sid = r.get("signal_id")
+            if sid not in existing_ids and sid not in seen_in_batch:
+                new_rows.append(r)
+                seen_in_batch.add(sid)
         if new_rows:
             pd.DataFrame(new_rows).reindex(columns=_OUTCOMES_COLS).to_csv(
                 outcomes_file, mode="a", header=False, index=False)
@@ -2434,7 +2692,13 @@ def _news_close_check(
                 )
             except Exception:
                 pass
-        new_rows = [r for r in outcome_rows if r.get("signal_id") not in existing_ids]
+        seen_in_batch: set = set()
+        new_rows = []
+        for r in outcome_rows:
+            sid = r.get("signal_id")
+            if sid not in existing_ids and sid not in seen_in_batch:
+                new_rows.append(r)
+                seen_in_batch.add(sid)
         if new_rows:
             pd.DataFrame(new_rows).reindex(columns=_OUTCOMES_COLS).to_csv(
                 outcomes_file, mode="a", header=False, index=False)
@@ -2653,6 +2917,17 @@ def run_generator(session_cfg: dict):
         ]).to_csv(signals_file, index=False)
     if not os.path.exists(outcomes_file):
         pd.DataFrame(columns=_OUTCOMES_COLS).to_csv(outcomes_file, index=False)
+    else:
+        # Auto-migrare: adauga coloane lipsa fara a pierde datele existente
+        try:
+            _hdr = pd.read_csv(outcomes_file, nrows=0)
+            _missing_cols = [c for c in _OUTCOMES_COLS if c not in _hdr.columns]
+            if _missing_cols:
+                _full = pd.read_csv(outcomes_file, on_bad_lines="skip")
+                _full.reindex(columns=_OUTCOMES_COLS).to_csv(outcomes_file, index=False)
+                log.info(f"outcomes.csv migrat: adaugate coloane {_missing_cols}")
+        except Exception as _me:
+            log.warning(f"Migrare automata outcomes.csv esuata: {_me}")
 
     # Incarca stare (cu fallback la coruptie — ex: reboot in mijlocul scrierii)
     _empty_state = {"pending": {}, "signal_counter": 0, "flag_signal_counter": 0, "ib_signal_counter": 0, "last_checked": {}}
@@ -2662,6 +2937,7 @@ def run_generator(session_cfg: dict):
         log.warning(f"state.pkl corupt ({_e}) — resetat la stare goala.")
         state = _empty_state
     state.setdefault("mt5_tickets", {})
+    state.setdefault("comment_map", {})   # sig_id[:16] -> full_sig_id (ICMarketsEU 16-char truncation)
     state.setdefault("flag_signal_counter", 0)
     state.setdefault("ib_signal_counter", 0)
     state.setdefault("smart_news_tickets", {})
@@ -2749,7 +3025,8 @@ def run_generator(session_cfg: dict):
     # Detecteaza ordine MT5 netrackuite (coruptie state / crash) si alerteaza via Telegram
     _detect_orphan_mt5_orders(
         state, session_cfg.get("markets", []),
-        session_cfg.get("session_id", "?"), log
+        session_cfg.get("session_id", "?"), log,
+        signals_file=signals_file,
     )
 
     # Rezolva simbolurile
@@ -2984,6 +3261,8 @@ def run_generator(session_cfg: dict):
                         if ticket:
                             # Ordin plasat cu succes — stocheaza lot si risk real in pending
                             state["mt5_tickets"][sig["signal_id"]] = ticket
+                            # comment_map: sig_id[:16] -> full_sig_id (recuperare dupa truncation ICMarketsEU)
+                            state["comment_map"][sig["signal_id"][:16]] = sig["signal_id"]
                             state["pending"][symbol][sig["signal_id"]]["lot_size"] = lots
                             state["pending"][symbol][sig["signal_id"]]["risk_usd"] = risk_usd
                             fmt = ".2f" if sig["entry"] > 100 else ".5f"
@@ -3047,6 +3326,7 @@ def run_generator(session_cfg: dict):
                                                session_cfg["bar_minutes"], log)
                         if _ticket:
                             state["mt5_tickets"][_sid] = _ticket
+                            state["comment_map"][_sid[:16]] = _sid
                             state["pending"][symbol][_sid]["lot_size"] = _lots
                             state["pending"][symbol][_sid]["risk_usd"] = _risk_usd
                             dir_str = "LONG" if _p["direction"] == 1 else "SHORT"

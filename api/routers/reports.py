@@ -6,13 +6,13 @@ import json
 import os
 import re
 from collections import deque
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Optional
 
 import pandas as pd
 from fastapi import APIRouter, Query
 
-from api.config import DATA_DIR, SESSIONS
+from api.config import DATA_DIR, SESSIONS, get_profile_execute_map
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
@@ -39,14 +39,15 @@ def _session_label(session_id: str) -> str:
     return session_id
 
 
-def _discover_outcome_sessions() -> list[dict]:
+def _discover_outcome_sessions(live_only: bool = True) -> list[dict]:
     """
     Descopera dinamic sesiunile cu outcomes.csv pe disk.
     Merge cu lista statica SESSIONS pentru metadata (label, markets).
-    Sesiunile noi (nelistate) primesc label=session_id.
+    Cand live_only=True (default), exclude sesiunile OBS (execute_trades=False din profil activ).
     """
     base = os.path.join(DATA_DIR, "live_signals")
     static_map = {s["id"]: s for s in SESSIONS}
+    execute_map = get_profile_execute_map() if live_only else {}
     result: list[dict] = []
     seen: set[str] = set()
 
@@ -54,14 +55,34 @@ def _discover_outcome_sessions() -> list[dict]:
         for name in sorted(os.listdir(base)):
             outcomes_path = os.path.join(base, name, "outcomes.csv")
             if os.path.isfile(outcomes_path):
-                result.append(static_map.get(name, {"id": name, "label": name, "markets": []}))
+                sess = static_map.get(name, {"id": name, "label": name, "markets": [], "execute": True})
+                if live_only and not execute_map.get(name, sess.get("execute", True)):
+                    continue  # skip OBS sessions from aggregates
+                result.append(sess)
                 seen.add(name)
 
-    # Include si sesiunile statice fara outcomes inca (pentru consistenta)
+    # Include sesiunile statice fara outcomes (pentru consistenta, doar live)
     for s in SESSIONS:
         if s["id"] not in seen:
+            if live_only and not execute_map.get(s["id"], s["execute"]):
+                continue
             result.append(s)
 
+    return result
+
+
+def _discover_obs_sessions() -> list[dict]:
+    """Returneaza doar sesiunile OBS (execute_trades=False) cu outcomes.csv."""
+    base = os.path.join(DATA_DIR, "live_signals")
+    static_map = {s["id"]: s for s in SESSIONS}
+    execute_map = get_profile_execute_map()
+    result: list[dict] = []
+    if os.path.isdir(base):
+        for name in sorted(os.listdir(base)):
+            if os.path.isfile(os.path.join(base, name, "outcomes.csv")):
+                sess = static_map.get(name, {"id": name, "label": name, "markets": [], "execute": True})
+                if not execute_map.get(name, sess.get("execute", True)):
+                    result.append(sess)
     return result
 
 
@@ -73,11 +94,12 @@ def get_transactions(
     date_from: Optional[str] = Query(None, description="YYYY-MM-DD"),
     date_to:   Optional[str] = Query(None, description="YYYY-MM-DD"),
     session_id: Optional[str] = Query(None),
+    obs_only:  bool = Query(False, description="Returneaza doar sesiunile OBS (execute=False)"),
     limit:     int = Query(200, le=1000),
     offset:    int = Query(0),
 ):
-    """Toate tranzactiile din toate sesiunile, cu filtre. Descopera dinamic sesiunile noi."""
-    all_sessions = _discover_outcome_sessions()
+    """Tranzactiile sesiunilor live (sau OBS cand obs_only=True). Descopera dinamic sesiunile."""
+    all_sessions = _discover_obs_sessions() if obs_only else _discover_outcome_sessions()
     rows = []
     sessions_to_check = (
         [s for s in all_sessions if s["id"] == session_id]
@@ -195,6 +217,128 @@ def get_market_stats():
 
     results.sort(key=lambda x: x["total_r"], reverse=True)
     return {"items": results}
+
+
+@router.get("/costs")
+def get_costs():
+    """Comisioane si swap agregate per piata (simbol) din toate sesiunile.
+    Returneaza doar randurile care au date reale MT5 (commission_usd sau swap_usd nenule)."""
+    cost_stats: dict[str, dict] = {}
+
+    for s in _discover_outcome_sessions():
+        df = _read_outcomes(s["id"])
+        if df.empty:
+            continue
+        closed = df[df["status"].isin(_CLOSED_STATUSES)].copy()
+        if closed.empty:
+            continue
+        # Coloane optionale — prezente doar in outcomes cu date MT5 reale
+        if "commission_usd" not in closed.columns:
+            closed["commission_usd"] = float("nan")
+        if "swap_usd" not in closed.columns:
+            closed["swap_usd"] = float("nan")
+        for sym, grp in closed.groupby("symbol"):
+            sym = str(sym)
+            if sym not in cost_stats:
+                cost_stats[sym] = {
+                    "symbol":         sym,
+                    "trades":         0,
+                    "trades_with_mt5": 0,
+                    "commission_usd": 0.0,
+                    "swap_usd":       0.0,
+                    "pnl_gross":      0.0,
+                    "pnl_net":        None,
+                    "sessions":       [],
+                }
+            st = cost_stats[sym]
+            st["trades"] += len(grp)
+            if s["label"] not in st["sessions"]:
+                st["sessions"].append(s["label"])
+            # Calculeaza comisioane si swap unde exista date MT5
+            comm_vals = pd.to_numeric(grp["commission_usd"], errors="coerce").dropna()
+            swap_vals = pd.to_numeric(grp["swap_usd"],       errors="coerce").dropna()
+            pnl_vals  = pd.to_numeric(grp.get("pnl_usd", pd.Series(dtype=float)), errors="coerce").dropna()
+            st["commission_usd"] = round(st["commission_usd"] + float(comm_vals.sum()), 4)
+            st["swap_usd"]       = round(st["swap_usd"]       + float(swap_vals.sum()), 4)
+            if len(pnl_vals):
+                st["pnl_gross"]  = round(st["pnl_gross"] + float(pnl_vals.sum()), 4)
+                st["trades_with_mt5"] += len(pnl_vals)
+
+    results = []
+    for st in cost_stats.values():
+        has_cost_data = st["commission_usd"] != 0.0 or st["swap_usd"] != 0.0
+        total_costs = round(st["commission_usd"] + st["swap_usd"], 4)
+        pnl_net = round(st["pnl_gross"] + total_costs, 4) if st["trades_with_mt5"] else None
+        results.append({
+            **st,
+            "total_costs": total_costs,
+            "pnl_net":     pnl_net,
+            "has_cost_data": has_cost_data,
+        })
+
+    results.sort(key=lambda x: x["total_costs"])  # cel mai scump primul (total_costs negativ)
+    return {"items": results}
+
+
+@router.get("/costs-daily")
+def get_costs_daily():
+    """Comisioane + swap grupate per zi calendaristica. Include toate zilele cu tranzactii inchise."""
+    frames = []
+    for s in _discover_outcome_sessions():
+        df = _read_outcomes(s["id"])
+        if df.empty:
+            continue
+        closed = df[df["status"].isin(_CLOSED_STATUSES)].copy()
+        if closed.empty:
+            continue
+        if "commission_usd" not in closed.columns:
+            closed["commission_usd"] = float("nan")
+        if "swap_usd" not in closed.columns:
+            closed["swap_usd"] = float("nan")
+        frames.append(closed)
+
+    if not frames:
+        return {"items": [], "total_commission": 0.0, "total_swap": 0.0}
+
+    all_df = pd.concat(frames, ignore_index=True)
+    all_df["exit_dt"] = pd.to_datetime(all_df["exit_time"], errors="coerce")
+    all_df["day"] = all_df["exit_dt"].dt.date
+    all_df["comm_n"] = pd.to_numeric(all_df["commission_usd"], errors="coerce")
+    all_df["swap_n"]  = pd.to_numeric(all_df["swap_usd"],      errors="coerce")
+    all_df["pnl_n"]   = pd.to_numeric(all_df.get("pnl_usd", float("nan")), errors="coerce")
+    all_df["rr_n"]    = pd.to_numeric(all_df["result_r"],      errors="coerce")
+
+    items = []
+    for day, grp in all_df.groupby("day"):
+        comm_vals = grp["comm_n"].dropna()
+        swap_vals = grp["swap_n"].dropna()
+        pnl_vals  = grp["pnl_n"].dropna()
+        rr_vals   = grp["rr_n"].dropna()
+        comm = round(float(comm_vals.sum()), 4) if len(comm_vals) else 0.0
+        swap = round(float(swap_vals.sum()), 4) if len(swap_vals) else 0.0
+        pnl  = round(float(pnl_vals.sum()), 4)  if len(pnl_vals)  else None
+        rr   = round(float(rr_vals.sum()), 3)   if len(rr_vals)   else None
+        items.append({
+            "date":          str(day),
+            "trades":        int(len(grp)),
+            "trades_with_cost": int(len(comm_vals)),
+            "commission_usd": comm,
+            "swap_usd":       swap,
+            "total_costs":    round(comm + swap, 4),
+            "pnl_usd":        pnl,
+            "total_r":        rr,
+            "has_cost_data":  len(comm_vals) > 0 or len(swap_vals) > 0,
+        })
+
+    items.sort(key=lambda x: x["date"])
+    total_comm = round(sum(x["commission_usd"] for x in items), 4)
+    total_swap = round(sum(x["swap_usd"] for x in items), 4)
+    return {
+        "items": items,
+        "total_commission": total_comm,
+        "total_swap": total_swap,
+        "total_costs": round(total_comm + total_swap, 4),
+    }
 
 
 @router.get("/uptime")
@@ -341,3 +485,28 @@ def get_system_logs(
         "items": entries[:500],
         "total": len(entries),
     }
+
+
+@router.post("/send-daily")
+def trigger_daily_report(target_date: Optional[str] = None):
+    """
+    Trimite manual raportul zilnic via Telegram + Notificari.
+    target_date: YYYY-MM-DD (default: azi)
+    """
+    from api.scheduled_reports import send_daily_report
+    d = date.fromisoformat(target_date) if target_date else date.today()
+    text = send_daily_report(d)
+    return {"sent": True, "date": str(d), "preview": text[:200]}
+
+
+@router.post("/send-weekly")
+def trigger_weekly_report(week_start: Optional[str] = None):
+    """
+    Trimite manual raportul saptamanal via Telegram + Notificari.
+    week_start: YYYY-MM-DD (default: luni din saptamana curenta)
+    """
+    from api.scheduled_reports import send_weekly_report
+    today = date.today()
+    ws = date.fromisoformat(week_start) if week_start else today - timedelta(days=today.weekday())
+    text = send_weekly_report(ws)
+    return {"sent": True, "week_start": str(ws), "preview": text[:200]}

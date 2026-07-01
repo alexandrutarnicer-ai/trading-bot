@@ -56,7 +56,7 @@ SESSIONS = [
         "tf":          "M15+M30",
         "hours":       "09–17h UTC",
         "validated":   True,
-        "execute":     True,
+        "execute":     False,
         "capital_pct": 50.0,
         "score":       3.31,
     },
@@ -80,7 +80,7 @@ SESSIONS = [
         "tf":          "M15+M30",
         "hours":       "15–22h UTC",
         "validated":   True,
-        "execute":     True,
+        "execute":     False,
         "capital_pct": 57.0,
         "score":       2.71,
     },
@@ -242,16 +242,41 @@ SESSIONS = [
     },
     {
         "id":          "session20",
-        "label":       "S20 — XAUUSD obs (no exec)",
+        "label":       "S20 — XAUUSD M15 BOTH",
         "markets":     ["XAUUSD"],
         "direction":   "BOTH",
         "tf":          "M15+M30",
         "hours":       "0–24h",
         "validated":   False,
-        "execute":     False,
+        "execute":     True,
         "capital_pct": 10.0,
         "score":       None,
     },
 ]
 
 SESSION_MAP = {s["id"]: s for s in SESSIONS}
+
+
+def get_profile_execute_map() -> dict[str, bool]:
+    """
+    Returns {session_key: execute_trades} from the active profile.
+    Falls back to static SESSIONS execute field when profile is unavailable.
+    Call this at request time (not at import) to pick up profile changes made via UI.
+    """
+    import json  # local import — avoids circular issues at module load
+    fallback = {s["id"]: s["execute"] for s in SESSIONS}
+    try:
+        active_file = os.path.join(DATA_DIR, "active_profile.json")
+        profile_id  = "standard"
+        if os.path.exists(active_file):
+            with open(active_file, encoding="utf-8") as fh:
+                profile_id = json.load(fh).get("id", "standard")
+        pfile = os.path.join(DATA_DIR, "profiles", f"{profile_id}.json")
+        if not os.path.exists(pfile):
+            return fallback
+        with open(pfile, encoding="utf-8") as fh:
+            profile = json.load(fh)
+        return {s["session_key"]: bool(s.get("execute_trades", True))
+                for s in profile.get("sessions", [])}
+    except Exception:
+        return fallback
