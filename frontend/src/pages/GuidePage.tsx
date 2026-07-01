@@ -376,6 +376,7 @@ const TOC = [
   { id: "signals",       label: "8. Semnale & Ordine" },
   { id: "notifications", label: "9. Notificări" },
   { id: "reports",       label: "10. Rapoarte" },
+  { id: "live",          label: "11. Cont live" },
 ];
 
 // ── Page ──────────────────────────────────────────────────────────────────────
@@ -620,6 +621,29 @@ export function GuidePage() {
               sunt normale. P&L USD apare doar pentru sesiunile cu execute_trades=True care au ordine
               închise prin MT5 (câmpul pnl_usd din outcomes.csv).
             </Tip>
+          </SubSection>
+
+          <SubSection title="P&L Real MT5 și Comisioane">
+            <p>
+              Sub grila de statistici, două carduri secundare afișează date financiare agregate:
+            </p>
+            <div className="space-y-2 text-xs mt-2">
+              <div className="bg-surface rounded-lg border border-surface-border p-3 space-y-1">
+                <div className="text-[11px] font-semibold text-slate-300">P&L Real MT5</div>
+                <div className="text-slate-400">
+                  <code className="text-blue-300">equity curentă MT5 − capital inițial din profil</code>
+                  {" "}— sursa de adevăr absolut. Include toate tranzacțiile, comisioane, swap și cele fără date în bot.
+                </div>
+                <Tip>Setează <strong className="text-white">Capital Inițial</strong> corect în Profile înainte de prima pornire — sau folosește butonul <Badge color="bg-blue-600/20 text-blue-400" label="↓ Import din MT5" /> pentru a prelua equity curentă.</Tip>
+              </div>
+              <div className="bg-surface rounded-lg border border-surface-border p-3 space-y-1">
+                <div className="text-[11px] font-semibold text-slate-300">Comisioane + Swap</div>
+                <div className="text-slate-400">Suma comisioanelor și swap-ului din <code className="text-blue-300">outcomes.csv</code>. Detalii complete în tab-ul Rapoarte → Comisioane.</div>
+              </div>
+            </div>
+            <Note>
+              Sesiunile de observație (<Badge color="bg-surface-border text-slate-500" label="OBS" />) sunt excluse din toate agregările. Excepție: dacă o sesiune a avut tranzacții reale MT5 (<code className="text-blue-300">pnl_usd ≠ 0</code>) și ulterior a fost oprită din execuție, tranzacțiile istorice rămân vizibile în statistici. MT5 este sursa de adevăr — dacă există <code className="text-blue-300">pnl_usd</code> real, trade-ul a fost executat indiferent de setarea curentă a profilului.
+            </Note>
           </SubSection>
 
           <SubSection title="Statistici Totale (TradingStatsPanel)">
@@ -1102,6 +1126,76 @@ export function GuidePage() {
             </Note>
           </SubSection>
 
+          <SubSection title="Recuperare automată la crash / restart" defaultOpen={false}>
+            <p>
+              Dacă botul se oprește neașteptat (crash, curent, restart manual) în timp ce o
+              poziție este activă în MT5, <strong className="text-white">mecanismul de reconciliere</strong>{" "}
+              corectează automat datele la repornire — fără intervenție manuală.
+            </p>
+
+            <div className="mt-3 font-mono text-xs bg-surface rounded-lg border border-surface-border p-4 space-y-3">
+              <div className="text-[10px] text-slate-500 uppercase mb-2">Flux recuperare la startup</div>
+              <div className="space-y-2 text-slate-300">
+                <div className="flex items-start gap-2">
+                  <span className="text-profit shrink-0">1.</span>
+                  <span><code className="text-blue-300">_migrate_pending_format</code> — migrare format vechi state.pkl</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="text-profit shrink-0">2.</span>
+                  <span><code className="text-blue-300">_reconcile_mt5_tickets</code> — curăță orfanele din state</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="text-warn font-semibold shrink-0">3.</span>
+                  <span>
+                    <code className="text-blue-300">_recover_lost_outcomes</code> — caută în MT5 history
+                    (10 zile) după <code className="text-blue-300">comment = signal_id</code>:
+                    <ul className="mt-1 ml-4 space-y-0.5 text-slate-400">
+                      <li>· Ordin pending → actualizează mt5_tickets</li>
+                      <li>· Poziție deschisă → marked triggered=True</li>
+                      <li>· Poziție închisă → scrie TP/SL real în outcomes.csv + Telegram <span className="text-warn">[RECOVER]</span></li>
+                    </ul>
+                  </span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="text-profit shrink-0">4.</span>
+                  <span><code className="text-blue-300">_detect_orphan_mt5_orders</code> — alertează pentru ordine netrackuite</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+              <div className="bg-surface rounded-lg border border-loss/30 p-3 space-y-1">
+                <div className="text-loss text-[10px] uppercase font-semibold mb-1">Fără mecanism (înainte)</div>
+                <div className="text-slate-400 leading-relaxed">
+                  Bot restartuit → semnal fără ticket → barul expiră →
+                  scris <span className="text-loss">expirat 0R</span> în outcomes.csv<br/>
+                  <span className="text-slate-500 text-[10px]">Dashboard ≠ MT5</span>
+                </div>
+              </div>
+              <div className="bg-surface rounded-lg border border-profit/30 p-3 space-y-1">
+                <div className="text-profit text-[10px] uppercase font-semibold mb-1">Cu mecanism (acum)</div>
+                <div className="text-slate-400 leading-relaxed">
+                  Bot restartuit → <code className="text-blue-300">_recover_lost_outcomes</code> →
+                  găsit în MT5 history → scris <span className="text-profit">SL -1.1R</span> corect<br/>
+                  <span className="text-slate-500 text-[10px]">Dashboard = MT5 ✓</span>
+                </div>
+              </div>
+            </div>
+
+            <Note>
+              Orice corecție automată trimite notificare Telegram cu prefix{" "}
+              <code className="text-warn">[RECOVER]</code> și apare în tab-ul Notificări.
+              MT5 are întotdeauna prioritate față de starea locală a botului.
+            </Note>
+
+            <p className="text-xs text-slate-400 mt-2">
+              <strong className="text-slate-300">Fix la expirare/invalidare:</strong> Dacă un semnal cu
+              ticket MT5 ajunge la expirare sau invalidare din bare, botul verifică întâi MT5 înainte de
+              a scrie <code className="text-blue-300">expirat</code>. Dacă pozitia era deja închisă în MT5
+              (TP/SL real), scrie outcome-ul real în loc de <code className="text-loss">expirat 0R</code>.
+            </p>
+          </SubSection>
+
           <SubSection title="Când apare statusul 'invalidat'?" defaultOpen={false}>
             <p>
               <strong className="text-warn">Invalidat</strong> apare strict în fereastra{" "}
@@ -1473,10 +1567,11 @@ export function GuidePage() {
             </p>
             <div className="grid grid-cols-2 gap-2 text-xs mt-2">
               {[
-                { tab: "Tranzacții",     desc: "Toate tranzacțiile live cu filtre" },
-                { tab: "Piețe",          desc: "Clasament simboluri după performanță" },
-                { tab: "Uptime Bot",     desc: "Istoric porniri/opriri cu durate" },
-                { tab: "Modificări",     desc: "Diff parametri la fiecare salvare profil" },
+                { tab: "Tranzacții",  desc: "Toate tranzacțiile live cu filtre + secțiune OBS" },
+                { tab: "Piețe",       desc: "Clasament simboluri după performanță" },
+                { tab: "Comisioane",  desc: "Timeline zilnic comisioane + swap per piață" },
+                { tab: "Uptime Bot",  desc: "Istoric porniri/opriri cu durate" },
+                { tab: "Modificări",  desc: "Diff parametri la fiecare salvare profil" },
               ].map(({ tab, desc }) => (
                 <div key={tab} className="bg-surface-card rounded-lg border border-surface-border p-2.5 space-y-0.5">
                   <div className="text-[11px] font-semibold text-slate-300">{tab}</div>
@@ -1553,6 +1648,31 @@ export function GuidePage() {
             </Note>
           </SubSection>
 
+          <SubSection title="Comisioane" defaultOpen={false}>
+            <p>
+              Tab dedicat costurilor de broker — comisioane și swap înregistrate la fiecare tranzacție reală MT5.
+            </p>
+            <div className="space-y-2 text-xs mt-2">
+              <div className="bg-surface rounded-lg border border-surface-border p-3 space-y-1.5">
+                <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Timeline zilnic (primar)</div>
+                <KV k="Azi (evidențiat)" v="Ziua curentă cu fundal albastru" />
+                <KV k="Com." v="Suma comisioanelor din ziua respectivă" />
+                <KV k="Swap" v="Suma swap-ului din ziua respectivă" />
+                <KV k="Total" v="Com + Swap combinate" />
+                <KV k="Trades" v="Câte tranzacții cu date de cost în ziua respectivă" />
+              </div>
+              <div className="bg-surface rounded-lg border border-surface-border p-3 space-y-1.5">
+                <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Breakdown per piață</div>
+                <div className="text-slate-400">Afișat sub timeline — totalizat per simbol pentru toate datele disponibile.</div>
+              </div>
+            </div>
+            <Note>
+              Datele de cost (<code className="text-blue-300">commission_usd</code>, <code className="text-blue-300">swap_usd</code>) sunt înregistrate din June 2026.
+              Tranzacțiile anterioare au <code className="text-blue-300">NaN</code> în aceste câmpuri și nu apar în timeline.
+              Rulează <code className="text-blue-300">scripts/backfill_pnl_usd.py</code> cu MT5 conectat pentru a completa istoricul.
+            </Note>
+          </SubSection>
+
           <SubSection title="Modificări Sesiuni" defaultOpen={false}>
             <p>
               Istoric al tuturor modificărilor de parametri la fiecare salvare profil.
@@ -1573,6 +1693,125 @@ export function GuidePage() {
             </p>
             <Tip>
               Util pentru a urmări evoluția configurației și pentru a reveni la parametrii anteriori dacă performanța se degradează după o modificare.
+            </Tip>
+          </SubSection>
+        </Section>
+
+        {/* ── 11. CONT LIVE ── */}
+        <Section id="live" title="11. Lansare cont live">
+          <SubSection title="Demo vs Live — ce se schimbă">
+            <p>
+              Botul nu distinge între demo și live — folosește același API MT5. Singura diferință este contul activ logat în MT5.
+              Atâta timp cât MT5 este deschis și logat pe contul live, ordinele sunt plasate cu bani reali.
+            </p>
+            <div className="grid grid-cols-1 gap-2 text-xs mt-3">
+              {[
+                { label: "Funcționează identic", items: ["Detectare semnale (strategie neschimbată)", "Calculul loturilor din equity real MT5", "Filling modes (FOK/IOC/RETURN cu retry)", "Reconciliere la restart (recovery din history MT5)", "Notificări Telegram", "Toate protecțiile (BE, news guard, vineri close)"] },
+                { label: "Necesită atenție la tranziție", items: ["Capital Inițial — setează ÎNAINTE de prima pornire", "Simboluri broker — live poate folosi alias-uri diferite față de demo", "AutoTrading activat în MT5 (butonul verde)", "Stop level mai mare pe live = mai puține semnale acceptate"], color: "text-amber-400" },
+              ].map(({ label, items, color }) => (
+                <div key={label} className="bg-surface rounded-lg border border-surface-border p-3 space-y-1.5">
+                  <div className={`text-[11px] font-semibold ${color ?? "text-slate-300"}`}>{label}</div>
+                  <ul className="space-y-0.5">
+                    {items.map(i => <li key={i} className="text-[10px] text-slate-400 flex gap-1.5"><span className="text-slate-600 mt-0.5">·</span>{i}</li>)}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          </SubSection>
+
+          <SubSection title="Lista de verificare înainte de prima pornire live">
+            <div className="space-y-2 mt-1">
+              {[
+                { step: "1", title: "Setează Capital Inițial", desc: "Profile → câmpul \"Capital Inițial\" → introdu suma de start a contului live. Alternativ, folosește butonul \"↓ Import din MT5\" pentru a prelua equity curentă automat. Salvează profilul." },
+                { step: "2", title: "Verifică simbolurile", desc: "Markets → conectează MT5 pe contul live → verifică că toate simbolurile sesiunilor active sunt disponibile. Unii brokeri folosesc alias-uri (ex: GER40 → DE40). Dacă lipsesc, actualizează SYMBOL_ALIASES în settings sau contactează brokerul." },
+                { step: "3", title: "AutoTrading activ în MT5", desc: "Butonul \"AutoTrading\" din bara de instrumente MT5 trebuie să fie verde. Dacă este gri/roșu, click pentru activare. Dashboard-ul afișează banner galben de avertizare când este dezactivat." },
+                { step: "4", title: "Verifică account_fraction și risc/trade", desc: "În Profile → SessionEditor, verifică că breakdown-ul live (capital sesiune × fracție / piețe) și risc/trade în USD corespund toleranței tale la risc pentru suma reală." },
+                { step: "5", title: "Pornește botul din UI", desc: "Click Start Bot → selectează profilul → confirmă. La prima bară nouă, botul va detecta semnale și va plasa ordine reale în MT5. Urmărește tab-ul Notificări și log-urile pentru primele ore." },
+                { step: "6", title: "Verifică primele ordine", desc: "La primul semnal: verifică că ordinul apare în MT5 cu prețul corect (BUY_STOP/SELL_STOP). Compară entry/SL/TP din Dashboard cu ordinul MT5. Dacă există discrepanțe, folosește butonul Sync MT5 din NavBar." },
+              ].map(({ step, title, desc }) => (
+                <div key={step} className="flex gap-3 bg-surface rounded-lg border border-surface-border p-3">
+                  <div className="w-6 h-6 rounded-full bg-blue-600/20 border border-blue-500/40 flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <span className="text-[11px] font-bold text-blue-400">{step}</span>
+                  </div>
+                  <div className="space-y-0.5">
+                    <div className="text-xs font-semibold text-slate-200">{title}</div>
+                    <div className="text-[11px] text-slate-400 leading-relaxed">{desc}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </SubSection>
+
+          <SubSection title="Comportament la restart și crash" defaultOpen={false}>
+            <p>
+              Botul este proiectat să fie robust la reporniri neașteptate:
+            </p>
+            <div className="space-y-1.5 text-xs mt-2">
+              <div className="bg-surface rounded-lg border border-surface-border p-3 space-y-1.5">
+                <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">La fiecare restart</div>
+                <KV k="_reconcile_mt5_tickets" v="Sincronizează ordinele pending cu biletele MT5 active" />
+                <KV k="_recover_lost_outcomes" v="Găsește în history MT5 tranzacțiile închise în lipsa botului" />
+                <KV k="_scan_mt5_history" v="Scanare completă 10 zile — prinde orice outcome neînregistrat" />
+              </div>
+              <Note>
+                Ordinele pending în MT5 sunt <strong className="text-white">independente de bot</strong> — rămân active chiar dacă botul se oprește.
+                La restart, botul le regăsește și continuă monitorizarea. Niciun ordin nu se pierde la crash.
+              </Note>
+            </div>
+          </SubSection>
+
+          <SubSection title="Rapoarte automate (Telegram)" defaultOpen={false}>
+            <p>
+              Botul trimite automat rapoarte periodice via Telegram:
+            </p>
+            <div className="space-y-2 text-xs mt-2">
+              <KV k="Zilnic — 23:30" v="Trades din ziua respectivă: Total R, P&L USD, top simboluri, per sesiune" />
+              <KV k="Săptămânal — Vineri 23:30" v="Rezumat săptămâna curentă (Luni–Vineri): același format ca zilnicul" />
+            </div>
+            <Tip>
+              Rapoartele automate folosesc doar sesiunile cu <code className="text-blue-300">execute_trades: true</code> — sesiunile de observație sunt excluse.
+              Formatul include: 📊 Trades (W/L — WR%), 📈 Total R, 💵 P&L USD, 🏆 Top 3 simboluri.
+            </Tip>
+          </SubSection>
+
+          <SubSection title="Monitorizare continuă" defaultOpen={false}>
+            <p>Indicatori cheie de urmărit în primele zile pe live:</p>
+            <div className="space-y-1.5 text-xs mt-2">
+              <KV k="Banner galben AutoTrading" v="Dacă apare, click AutoTrading în MT5 — ordinele NU se plasează când este dezactivat" />
+              <KV k="P&L Real MT5 vs așteptat" v="Compară zilnic cu suma raportată de MT5 — diferențe mari pot indica duplicate" />
+              <KV k="Notificări [RECOVER]" v="Apar când botul a recuperat tranzacții închise în lipsa lui — normale după restart" />
+              <KV k="min stops distance" v="Log warning = SL prea aproape de preț curent — ordinul nu s-a plasat, se reîncearcă la bara următoare" />
+              <KV k="Sync MT5" v="Butonul din NavBar forțează resincronizarea outcomes cu history MT5 — folosește dacă P&L pare incorect" />
+              <KV k="Notificări [DEDUP]" v="Apar când botul a detectat un ordin MT5 deja existent pentru același semnal și l-a adoptat în loc să plaseze un duplicat — pot apărea după un crash/restart" />
+            </div>
+          </SubSection>
+
+          <SubSection title="Sync MT5 — Reconciliere manuală" defaultOpen={false}>
+            <p>
+              Butonul <strong className="text-white">Sync MT5</strong> din NavBar reconciliază <code className="text-blue-300">outcomes.csv</code> cu
+              istoricul real din MT5. Principiu: <strong className="text-yellow-400">MT5 este sursa de adevăr</strong> — dacă o tranzacție
+              există în MT5, ea trebuie să fie reflectată în dashboard.
+            </p>
+            <div className="grid grid-cols-2 gap-3 text-xs mt-3">
+              <div className="bg-surface rounded-lg border border-surface-border p-3 space-y-1">
+                <div className="text-[11px] font-semibold text-slate-300">Detectează</div>
+                <div className="text-slate-400">Scanează history MT5 (10 zile) și raportează discrepanțele fără să modifice nimic. Arată ticket, simbol, R și P&L pentru fiecare poziție MT5 care lipsește din outcomes.csv.</div>
+              </div>
+              <div className="bg-surface rounded-lg border border-surface-border p-3 space-y-1">
+                <div className="text-[11px] font-semibold text-slate-300">Corectează</div>
+                <div className="text-slate-400">Scrie în outcomes.csv rândurile lipsă cu datele reale MT5. Sigur de rulat și cu botul activ — nu modifică state.pkl.</div>
+              </div>
+            </div>
+            <div className="mt-3 space-y-1.5 text-xs">
+              <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Ce detectează</div>
+              <KV k="Pozitii MT5 lipsă din outcomes" v="Ordine executate în MT5 care nu au rând corespondent în outcomes.csv (ex: bot oprit înainte să scrie rezultatul)" />
+              <KV k="Semnale triggered fără poziție deschisă" v="State.pkl are semnal ca triggered, dar poziția MT5 nu mai există — potențial trade neînregistrat" />
+            </div>
+            <Note>
+              Sincronizarea filtrează automat semnalele altor sesiuni care tranzacționează același simbol (ex: S2-NZDJPY găsit în sesiunea care tranzacționează și ea NZDJPY). Prefixul comentariului MT5 (<code>S18-</code>, <code>S2-</code> etc.) identifică sesiunea de origine.
+            </Note>
+            <Tip>
+              Dacă după sync mai apar discrepanțe persistente, verifică în MT5 că ordinul comentariul include prefix-ul corect al sesiunii. ICMarketsEU trunchiază comentariile la 16 caractere — semnalele cu ID lung (ex: <code>S18-NZDJPY-H1-IB0010</code>) sunt stocate trunchiat în MT5.
             </Tip>
           </SubSection>
         </Section>

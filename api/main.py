@@ -19,15 +19,19 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.routers import bot, sessions, profiles, backtest, markets, data_download, settings, mt5status
-from api.routers import backtest_history, notifications, reports
+from api.routers import backtest_history, notifications, reports, mt5_sync
 from api.watchdog import start_watchdog
+from api.notifications import migrate_to_jsonl
+from api.scheduled_reports import start_scheduler as start_reports_scheduler
 
 app = FastAPI(title="Trading Bot API", version="1.0.0")
 
 
 @app.on_event("startup")
 def _startup():
+    migrate_to_jsonl()   # converstie JSON array legacy → JSONL (one-time, idempotent)
     start_watchdog()
+    start_reports_scheduler()
 
 app.add_middleware(
     CORSMiddleware,
@@ -48,6 +52,7 @@ app.include_router(mt5status.router,          prefix="/api")
 app.include_router(backtest_history.router,   prefix="/api")
 app.include_router(notifications.router,      prefix="/api")
 app.include_router(reports.router,            prefix="/api")
+app.include_router(mt5_sync.router,           prefix="/api")
 
 
 @app.get("/api/health")

@@ -7,6 +7,7 @@ import type {
   BacktestHistoryEntry, BacktestJob, WeeklyStats,
   NotificationsResponse, TransactionsResponse, MarketStatsResponse,
   UptimeResponse, SessionChangesResponse, TopMarketEntry, TimezoneConfig,
+  SystemLogsResponse, SyncResult, CostsResponse, CostsDailyResponse,
 } from "./types";
 
 
@@ -32,7 +33,8 @@ export const useWeeklyStats = () =>
   useQuery<WeeklyStats>({
     queryKey: ["weekly-stats"],
     queryFn:  () => apiFetch("/sessions/weekly_stats"),
-    refetchInterval: POLL,
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
   });
 
 export interface FrequencyEstimate {
@@ -46,7 +48,8 @@ export const useFrequencyEstimate = (profileId?: string) =>
   useQuery<FrequencyEstimate>({
     queryKey: ["frequency-estimate", profileId ?? ""],
     queryFn:  () => apiFetch(`/sessions/frequency-estimate${profileId ? `?profile_id=${profileId}` : ""}`),
-    refetchInterval: POLL,
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
   });
 
 export const useSignals = (sessionId: string) =>
@@ -354,7 +357,8 @@ export const useNotifications = (limit = 100) =>
   useQuery<NotificationsResponse>({
     queryKey: ["notifications", limit],
     queryFn:  () => apiFetch(`/notifications?limit=${limit}`),
-    refetchInterval: 10_000,
+    refetchInterval: 20_000,
+    refetchIntervalInBackground: false,
   });
 
 export const useMarkNotificationsRead = () => {
@@ -390,6 +394,7 @@ export const useTransactions = (params: {
   date_from?: string;
   date_to?: string;
   session_id?: string;
+  obs_only?: boolean;
   limit?: number;
   offset?: number;
 }) =>
@@ -403,25 +408,29 @@ export const useTransactions = (params: {
       if (params.date_from)  qs.set("date_from",  params.date_from);
       if (params.date_to)    qs.set("date_to",    params.date_to);
       if (params.session_id) qs.set("session_id", params.session_id);
+      if (params.obs_only)   qs.set("obs_only",   "true");
       qs.set("limit",  String(params.limit  ?? 200));
       qs.set("offset", String(params.offset ?? 0));
       return apiFetch(`/reports/transactions?${qs.toString()}`);
     },
-    refetchInterval: 30_000,
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
   });
 
 export const useMarketStats = () =>
   useQuery<MarketStatsResponse>({
     queryKey: ["market-stats"],
     queryFn:  () => apiFetch("/reports/market-stats"),
-    refetchInterval: 30_000,
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
   });
 
 export const useTopMarkets = (period: string) =>
   useQuery<TopMarketEntry[]>({
     queryKey: ["top-markets", period],
     queryFn:  () => apiFetch(`/sessions/top-markets?period=${period}&limit=5`),
-    refetchInterval: 30_000,
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
   });
 
 // ── Timezone ─────────────────────────────────────────────────────────────────
@@ -446,15 +455,81 @@ export const useBotUptime = () =>
   useQuery<UptimeResponse>({
     queryKey: ["bot-uptime"],
     queryFn:  () => apiFetch("/reports/uptime"),
-    refetchInterval: 30_000,
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
   });
 
 export const useSessionChanges = () =>
   useQuery<SessionChangesResponse>({
     queryKey: ["session-changes"],
     queryFn:  () => apiFetch("/reports/session-changes"),
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
+  });
+
+export const useSystemLogs = (params: {
+  session?: string;
+  level?: string;
+  lines_per_session?: number;
+}) =>
+  useQuery<SystemLogsResponse>({
+    queryKey: ["system-logs", params],
+    queryFn:  () => {
+      const q = new URLSearchParams();
+      if (params.session)           q.set("session",           params.session);
+      if (params.level)             q.set("level",             params.level);
+      if (params.lines_per_session) q.set("lines_per_session", String(params.lines_per_session));
+      return apiFetch(`/reports/system-logs?${q}`);
+    },
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
+  });
+
+export const useLogSessions = () =>
+  useQuery<{ sessions: string[] }>({
+    queryKey: ["log-sessions"],
+    queryFn:  () => apiFetch("/reports/system-logs/sessions"),
+    refetchInterval: 120_000,
+    staleTime: 60_000,
+    refetchIntervalInBackground: false,
+  });
+
+export const useCosts = () =>
+  useQuery<CostsResponse>({
+    queryKey: ["costs"],
+    queryFn:  () => apiFetch("/reports/costs"),
+    refetchInterval: 120_000,
+    refetchIntervalInBackground: false,
+  });
+
+export const useCostsDaily = () =>
+  useQuery<CostsDailyResponse>({
+    queryKey: ["costs-daily"],
+    queryFn:  () => apiFetch("/reports/costs-daily"),
+    refetchInterval: 120_000,
+    refetchIntervalInBackground: false,
+  });
+
+// ── MT5 Sync ─────────────────────────────────────────────────────────────────
+
+export const useSyncStatus = () =>
+  useQuery<SyncResult>({
+    queryKey: ["mt5-sync-status"],
+    queryFn:  () => apiFetch("/mt5/sync-status"),
     refetchInterval: 30_000,
   });
+
+export const useRunSync = () => {
+  const qc = useQueryClient();
+  return useMutation<SyncResult, Error, { fix: boolean }>({
+    mutationFn: ({ fix }) => apiFetch(`/mt5/sync?fix=${fix}`, { method: "POST" }),
+    onSuccess:  () => {
+      qc.invalidateQueries({ queryKey: ["mt5-sync-status"] });
+      qc.invalidateQueries({ queryKey: ["sessions"] });
+      qc.invalidateQueries({ queryKey: ["outcomes"] });
+    },
+  });
+};
 
 // ── Backtest history (legacy) ─────────────────────────────────────────────────
 

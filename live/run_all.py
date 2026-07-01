@@ -232,6 +232,13 @@ _TG_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 
 def _send_telegram(text: str) -> None:
+    # Logheaza in notification store (independent de Telegram)
+    try:
+        from api.notifications import log_notification
+        log_notification(text)
+    except Exception:
+        pass
+
     if not _TG_TOKEN or not _TG_CHAT_ID:
         return
     try:

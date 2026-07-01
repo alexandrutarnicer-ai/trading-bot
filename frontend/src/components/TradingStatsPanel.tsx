@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useCosts } from "../api/hooks";
 import type { SessionStatus } from "../api/types";
 import type { Mt5Status, BotStatus } from "../api/types";
 
@@ -76,9 +77,12 @@ function PnlCard({ todayUsd, yesterdayUsd }: { todayUsd: number; yesterdayUsd: n
 
 export function TradingStatsPanel({ sessions, mt5, botStatus }: Props) {
   const [expanded, setExpanded] = useState<"signals" | "trades" | null>(null);
+  const { data: costsData } = useCosts();
 
-  // Statistici doar din sesiunile live (execute=true); sesiunile de observatie (S20 etc.) excluse
-  const liveSessions = sessions.filter(x => x.execute);
+  // Sesiunile live (execute=true) + sesiunile care au avut tranzactii reale MT5 (pnl_count>0)
+  // dar au fost ulterior oprite (execute=false). MT5 e sursa de adevar — daca pnl_usd exista,
+  // trade-ul a fost real, indiferent de setarea curenta a profilului.
+  const liveSessions = sessions.filter(x => x.execute || (x.pnl_count != null && x.pnl_count > 0));
 
   const totalSignals   = liveSessions.reduce((s, x) => s + x.signals_total,    0);
   const totalTrades    = liveSessions.reduce((s, x) => s + x.outcomes_total,   0);
@@ -100,15 +104,20 @@ export function TradingStatsPanel({ sessions, mt5, botStatus }: Props) {
   const pnlToday     = liveSessions.reduce((s, x) => s + (x.pnl_usd_today    ?? 0), 0);
   const pnlYesterday = liveSessions.reduce((s, x) => s + (x.pnl_usd_yesterday ?? 0), 0);
 
-  // P&L cumulat total (din outcomes.csv — fara comision/swap MT5)
-  const hasTotalPnl  = liveSessions.some(x => x.pnl_usd_total != null);
-  const pnlTotal     = liveSessions.reduce((s, x) => s + (x.pnl_usd_total ?? 0), 0);
-
-  // P&L real MT5 (equity - start_balance — include comision + swap)
+  // P&L real MT5 (equity - start_balance — sursa de adevar, include tot)
   const mt5Equity    = mt5?.connected ? mt5.equity : null;
   const startBalance = botStatus?.active_profile_start_balance ?? null;
   const pnlMt5       = mt5Equity != null && startBalance != null
     ? Math.round((mt5Equity - startBalance) * 100) / 100
+    : null;
+
+  // Comisioane + swap din outcomes.csv (via /reports/costs)
+  const pnlTracked      = liveSessions.reduce((s, x) => s + (x.pnl_count ?? 0), 0);
+  const costItems       = costsData?.items ?? [];
+  const totalCommission = costItems.reduce((s, x) => s + x.commission_usd, 0);
+  const totalSwap       = costItems.reduce((s, x) => s + x.swap_usd, 0);
+  const costBroker      = costItems.length > 0
+    ? Math.round((totalCommission + totalSwap) * 100) / 100
     : null;
 
   const fmtUsd = (v: number) =>
@@ -158,36 +167,39 @@ export function TradingStatsPanel({ sessions, mt5, botStatus }: Props) {
         )}
       </div>
 
-      {/* P&L cumulat + MT5 real */}
-      {(hasTotalPnl || pnlMt5 != null) && (
+      {/* P&L Real MT5 + Comisioane */}
+      {(pnlMt5 != null || costBroker != null) && (
         <div className="flex gap-2 flex-wrap pt-1 border-t border-surface-border/40">
-          {hasTotalPnl && (
-            <div className="flex-1 min-w-0 px-4 py-2.5 rounded-xl border border-surface-border bg-surface-card">
-              <div className="flex items-center gap-1 mb-0.5">
-                <span className="text-[10px] text-slate-500 uppercase tracking-wider">P&L Bot (cumulat)</span>
-                <span
-                  className="text-[10px] text-slate-600 cursor-help"
-                  title="Suma profiturilor/pierderilor din toate tranzacțiile botului (din outcomes.csv). Nu include comision și swap MT5."
-                >ⓘ</span>
-              </div>
-              <span className={`text-lg font-bold font-mono tabular-nums ${pnlTotal > 0 ? "text-profit" : pnlTotal < 0 ? "text-loss" : "text-slate-400"}`}>
-                {fmtUsd(pnlTotal)}
-              </span>
-            </div>
-          )}
           {pnlMt5 != null && (
             <div className="flex-1 min-w-0 px-4 py-2.5 rounded-xl border border-surface-border bg-surface-card">
               <div className="flex items-center gap-1 mb-0.5">
                 <span className="text-[10px] text-slate-500 uppercase tracking-wider">P&L Real MT5</span>
                 <span
                   className="text-[10px] text-slate-600 cursor-help"
-                  title={`Equity curentă MT5 (${mt5Equity?.toFixed(2)} $) minus capitalul de start (${startBalance?.toFixed(2)} $). Include comision și swap — este valoarea reală a contului.`}
+                  title={`Equity curentă MT5 (${mt5Equity?.toFixed(2)} $) minus capitalul de start din profil (${startBalance?.toFixed(2)} $). Include toate tranzacțiile + comision + swap.`}
                 >ⓘ</span>
               </div>
               <span className={`text-lg font-bold font-mono tabular-nums ${pnlMt5 > 0 ? "text-profit" : pnlMt5 < 0 ? "text-loss" : "text-slate-400"}`}>
                 {fmtUsd(pnlMt5)}
               </span>
-              <div className="text-[10px] text-slate-600 mt-0.5">include comision + swap</div>
+              <div className="text-[10px] text-slate-600 mt-0.5">equity MT5 − capital start</div>
+            </div>
+          )}
+          {costBroker != null && (
+            <div className="flex-1 min-w-0 px-4 py-2.5 rounded-xl border border-surface-border bg-surface-card">
+              <div className="flex items-center gap-1 mb-0.5">
+                <span className="text-[10px] text-slate-500 uppercase tracking-wider">Comisioane + Swap</span>
+                <span
+                  className="text-[10px] text-slate-600 cursor-help"
+                  title={`Comisioane: ${fmtUsd(totalCommission)} · Swap: ${fmtUsd(totalSwap)}. Date înregistrate din ${pnlTracked} trades cu date MT5 complete.`}
+                >ⓘ</span>
+              </div>
+              <span className={`text-lg font-bold font-mono tabular-nums ${costBroker > 0 ? "text-profit" : costBroker < 0 ? "text-loss" : "text-slate-400"}`}>
+                {fmtUsd(costBroker)}
+              </span>
+              <div className="text-[10px] text-slate-600 mt-0.5">
+                com: {fmtUsd(totalCommission)} · swap: {fmtUsd(totalSwap)}
+              </div>
             </div>
           )}
         </div>

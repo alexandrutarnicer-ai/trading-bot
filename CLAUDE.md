@@ -177,6 +177,25 @@ Starea persistenta per sesiune: `state.pkl` (pending dict + counter + tickets MT
 **`_send_telegram(text)` — non-blocking, daemon thread:**
 Toate notificarile Telegram din `signal_generator.py` sunt trimise in `threading.Thread(target=_do_send, daemon=True).start()`. Botul nu asteapta niciodata raspunsul Telegram — timeout-ul de retea (8s) nu afecteaza performanta loop-ului principal.
 
+**`_NotificationHandler` — rate-limiting notificari:**
+Handler de logging care captureaza WARNING/ERROR din sesiunile live si le scrie in `data/notifications.json` (tab Notificari din UI). Implementeaza rate-limit: acelasi mesaj (primele 80 caractere) nu e retrimis mai devreme de 600s. Mesajele de rutina (`iter `, `Urmatoarea bara`, `Niciun semnal nou`, `[DEDUP]`, `[ORPHAN] Niciun`) sunt ignorate complet. Cache intern max 200 chei (LRU trim la 50 cand depasit). Previne flood de notificari repetitive (ex: 96+ WARNING/zi pentru aceeasi eroare).
+
+**Reconciliere MT5 la startup — 3 straturi:**
+
+1. **`_recover_lost_outcomes(state, session_cfg, outcomes_file, log)`** — apelata la fiecare pornire sesiune, dupa `_reconcile_mt5_tickets`. Pentru semnale pending FARA ticket MT5 (state sters la crash), cauta in MT5 `history_orders_get()` (10 zile lookback) dupa `o.comment == sig_id`. Daca gaseste:
+   - Ordin inca pending → actualizeaza `mt5_tickets[sig_id] = ticket`
+   - Pozitie deschisa → actualizeaza `mt5_tickets` + `triggered=True`
+   - Pozitie inchisa → scrie outcome real (TP/SL/R/pnl_usd) in `outcomes.csv`, sterge din `pending`, trimite Telegram `[RECOVER]`
+   - Daca sig_id deja in outcomes.csv → sare (nu duplica)
+
+2. **Fix expirare in `_update_outcomes`** — inainte de a scrie `status=expirat, result_r=0.0`, verifica daca pozitia MT5 era de fapt INCHISA (`_check_mt5_position_closed`). Daca da, scrie TP/SL real + trimite Telegram `[RECOVER]`. Acopera scenariul: bot restartuit dupa ce pozitia fusese triggerata si inchisa in lipsa lui.
+
+3. **Fix invalidare in `_update_outcomes`** — acelasi mecanism: bara invalideaza structura DAR MT5 poate fi deja inchis cu TP/SL real → prioritate MT5.
+
+**Principiu: MT5 are intotdeauna prioritate.** Bot-ul nu poate marca niciodata `expirat/invalidat` daca MT5 confirma ca pozitia a fost executata real. Orice corectie trimite notificare Telegram cu prefix `[RECOVER]` si apare in tab-ul Notificari.
+
+**`_CLOSED_STATUSES`:** `["TP", "SL", "vineri_close", "news_close", "be_lock", "be_lock2"]` — include acum `be_lock` si `be_lock2` pentru statisticile corecte in `sessions.py` si `reports.py`.
+
 **Notificare ACTIVAT ordin MT5:**
 La tranzitia `triggered=False → True` (ordinul BUY_STOP/SELL_STOP a fost atins de pret si activat), se trimite Telegram: `ACTIVAT #ticket: LONG/SHORT SYMBOL @ entry | SL ... | TP ... (R)`. Se trimite o singura data per semnal (persitat in `state.pkl` — `triggered=True` previne re-trimiterea). Activ doar cand `execute_trades=True`.
 
@@ -204,7 +223,8 @@ Fiecare sesiune are si propriul `session.lock` (PID file per sesiune) care previ
 - `markets` — lista simboluri disponibile in MT5
 - `settings` — configurare Telegram (token/chat_id in `data/telegram_config.json`). `POST /settings/telegram/test` trimite mesaj de test direct via Telegram API.
 - `notifications` — CRUD notificari din `data/notifications.json`. `GET /notifications?limit=N`, `POST /notifications/mark-read`, `DELETE /notifications/{id}`, `DELETE /notifications` (clear all).
-- `reports` — 4 endpointuri read-only: `GET /reports/transactions` (toate outcomes agregate, filtre status/symbol/direction/date), `GET /reports/market-stats` (clasament piete dupa R), `GET /reports/uptime` (istoric start/stop bot), `GET /reports/session-changes` (diff parametri la fiecare salvare profil).
+- `reports` — 5 endpointuri read-only: `GET /reports/transactions` (toate outcomes agregate, filtre status/symbol/direction/date + `obs_only=true` pentru sesiuni observatie), `GET /reports/market-stats` (clasament piete dupa R), `GET /reports/costs` (comisioane+swap per simbol), `GET /reports/costs-daily` (timeline zilnic comisioane+swap), `GET /reports/uptime` (istoric start/stop bot), `GET /reports/session-changes` (diff parametri la fiecare salvare profil). Endpointurile de rapoarte zilnic/saptamanal manual: `POST /reports/daily` si `POST /reports/weekly`.
+- `mt5_sync` — `GET /mt5/sync-status` (statistici discrepante outcomes), `POST /mt5/sync` (resincronizare outcomes cu history MT5 — forteaza rescrierea entrarilor incorecte din CSV).
 
 **Date persistente create de API:**
 - `data/profiles/*.json` — profile utilizator
@@ -249,6 +269,15 @@ Ambele routere `bot.py` si `sessions.py` folosesc `GetExitCodeProcess(STILL_ACTI
 **Telegram + Notificari:**
 `api/telegram.py` — helper shared folosit de `bot.py` pentru notificare la start/stop din UI. Citeste credentialele din `data/telegram_config.json` cu fallback pe env vars. `live/signal_generator.py` isi are propriul `_get_tg_creds()` care citeste acelasi fisier.
 - **Captura notificari:** Ambele `api/telegram.py:send_message()` si `live/signal_generator.py:_send_telegram()` apeleaza `from api.notifications import log_notification(text)` la inceputul functiei (lazy import in `try/except`). Asigura ca 100% din notificarile Telegram apar si in tab-ul Notificari din UI, indiferent de sursa. Esecul `log_notification` nu afecteaza niciodata trimiterea Telegram sau botul.
+
+**`api/config.py` — `get_profile_execute_map()`:**
+Citeste `execute_trades` per sesiune din profilul activ la runtime (nu din `SESSIONS` static). Folosit de `sessions.py`, `reports.py`, `scheduled_reports.py` pentru a filtra sesiunile OBS (execute_trades=False) din toate agregarile. `session4` (GER40) si `session6` (US30) au `execute=False` in config; `session20` (XAUUSD) are `execute=True`. Fallback pe valorile statice din `SESSIONS` daca profilul nu e accesibil.
+
+**`api/scheduled_reports.py` — rapoarte periodice automate:**
+Pornit ca daemon thread la startup API. Trimite via Telegram + Notificari:
+- **Zilnic la 23:30** — tranzactii din ziua respectiva (R, P&L, comisioane, top simboluri, per sesiune)
+- **Vineri la 23:30** — rezumat saptamanal (Luni-Vineri)
+Foloseste `get_profile_execute_map()` pentru a exclude OBS. Triggerable manual via `POST /reports/daily` si `POST /reports/weekly`.
 
 **`api/watchdog.py` — daemon watchdog oprire neasteptata:**
 Pornit automat la startup API (`@app.on_event("startup")`). Ruleaza ca thread daemon, polleaza la fiecare 30s: daca exista profil activ (`data/active_profile.json`) dar PID-ul botului (`data/run_all.pid`) nu mai e viu → trimite notificare Telegram ("Bot Trading oprit neasteptat!") si curata fisierele de stare (profil activ, pid). Acopera scenariile de crash sau oprire fortata fara Ctrl+C.
@@ -368,7 +397,7 @@ Daca numerele se schimba semnificativ → bug introdus, nu progres.
 
 **`pnl_usd` in `outcomes.csv`:** Coloana 14 din `_OUTCOMES_COLS`. Scrisa de `_pnl()` la inchiderea ordinelor MT5 reale (TP/SL/vineri_close/news_close). Valoarea vine din `deal.profit` returnat de `history_deals_get`. Ramane `NaN` pentru ordine expirate sau sesiunile cu `execute_trades=False`. Backfill retroactiv: `python scripts/backfill_pnl_usd.py` (necesita MT5 conectat).
 
-**`_CLOSED_STATUSES`:** `["TP", "SL", "vineri_close", "news_close"]` — toate statusurile care corespund pozitiilor reale inchise. Folosit in `_outcome_stats`, `weekly_stats._aggregate` si `equity_curve` din `api/routers/sessions.py`. Castigurile/pierderile sunt calculate din `result_r > 0` / `result_r < 0` (nu din status) pentru a acoperi si vineri_close cu R pozitiv.
+**`_CLOSED_STATUSES`:** `["TP", "SL", "vineri_close", "news_close", "be_lock", "be_lock2"]` — toate statusurile care corespund pozitiilor reale inchise. Folosit in `_outcome_stats`, `weekly_stats._aggregate` si `equity_curve` din `api/routers/sessions.py`. Castigurile/pierderile sunt calculate din `result_r > 0` / `result_r < 0` (nu din status) pentru a acoperi si vineri_close cu R pozitiv. `be_lock`/`be_lock2` corespund exiturilor break-even — trebuie incluse explicit.
 
 **`GET /sessions/frequency-estimate`:** Calculeaza frecventa estimata trades/saptamana + trades/luna din cele mai recente backtest-uri finalizate (din `data/backtest_jobs.json`). Filtreaza sesiunile pe pauza **si cele cu `execute_trades=False`**. Mapare: `job.session_id` ("S2") → `profile_session.id` ("S2"). Returneaza `{per_week, per_month, missing}` sau `null` daca nu exista backtest-uri.
 
@@ -386,6 +415,18 @@ Daca numerele se schimba semnificativ → bug introdus, nu progres.
 **AutoTrading dezactivat (retcode 10026/10027):** returneaza `None` (retry bara urm.), nu `False`.
 
 **ICMarketsEU — hedging mode:** Contul foloseste hedging mode, nu netting. In hedging mode `position_id ≠ order_ticket` — `history_deals_get(position=order_ticket)` returneaza gol. `_check_mt5_position_closed` rezolva asta prin `history_orders_get(ticket)` → `order.position_id` → `history_deals_get(position=position_id)`. Fara aceasta, toate outcome-urile ar folosi bar-based tracking (exit_price = exact SL, nu pretul real MT5). ORDER_STATE: CANCELED=2, REJECTED=5, EXPIRED=6 — FILLED=4 nu inseamna ordin orfan.
+
+**`comment_map` — guard in `_scan_mt5_history_for_missing_outcomes`:**
+ICMarketsEU trunchiaza comentariile la 16 caractere. `state["comment_map"][comment[:16]] = full_sig_id` e setat la plasarea fiecarui ordin nou. **Bug cunoscut rezolvat (2026-07-01):** la scanare history, un ordin vechi cu acelasi prefix 16-char ca un semnal curent pending era incorect asociat via comment_map → scria outcome din trecut sub sig_id-ul semnalului curent (afisa SL in dashboard pentru un ordin pending real in MT5). **Fix:** inainte sa folosim comment_map, verificam `_cm_match not in state["mt5_tickets"]` — daca semnalul are deja ticket activ, ordinul din history e alt trade cu prefix identic, se foloseste ID ticket-based ca fallback.
+
+**Deduplicare semnale duplicate (restart re-detection):**
+`_check_signals()` → inainte de scriere in signals.csv, verifica `(symbol, direction, entry)` in signals.csv existent si in pending dict. Previne re-detectia aceluiasi setup dupa restart (IDs diferite, trade identic). Semnale duplicate istorice gasite in session7/16/17/18/19 (generate inainte de implementarea dedup-ului) — curatate manual cu `scripts/repair_outcomes.py`.
+
+**`_scan_mt5_history` — deduplicare imbunatatita (2026-07-01):**
+`existing_pos_keys` include acum doua chei alternative per outcome existent:
+- `(symbol, round(pnl_usd, 2), exit_time[:19])` — cheia originala
+- `(symbol, round(pnl_usd, 2), round(entry_price, 5))` — cheia alternativa fara exit_time
+Prinde duplicate unde exit_time difera intre inregistrarea bot (vineri_close la 20:00) si deal-ul MT5 real (23:01 dupa executia asincron).
 
 **`body_strength` criteriu optional:** dezactivat by default (`enabled: false`) pentru a nu schimba baselines. Verifica intotdeauna ca `body_strength_enabled: false` in profilul standard inainte de a rula backtests de validare.
 
@@ -424,13 +465,23 @@ Daca numerele se schimba semnificativ → bug introdus, nu progres.
 - Buton Pause/Play langa delete — acelasi mecanism ca Dashboard-ul, fara restart
 - Tooltips (i) pentru expire_bars (exemplu: "4 bare = 1h") si pullback_window (exemplu: "8 = 2h M15")
 
-**App.tsx — persistenta stare taburi:** Taburile Dashboard / Profile / Notificari / Audit / Rapoarte / Ghid sunt ascunse cu CSS `hidden` (nu cu conditional rendering). Componentele raman montate permanent — `useState`, acordeoanele deschise si editarile nesalvate din ProfilePage supravietuiesc navigarii intre taburi fara niciun prop drilling.
-- **React Query `gcTime: 90_000`** — elibereaza cache dupa 90 secunde (vs 5 minute default). Reduce amprenta de memorie cand pagina e deschisa ore intregi cu polling constant.
-- **`refetchIntervalInBackground: true`** doar pe `useBotStatus` si `useSessions` (date critice). `useWeeklyStats`, `useFrequencyEstimate`, `useMt5Status` nu mai polleaza in background (tab minimizat/ascuns). Previne acumularea de memorie overnight.
+**App.tsx — persistenta stare taburi + memory management:**
+- Dashboard + Profile: montate permanent (stare critica: editari nesalvate profil).
+- Notifications, Audit, Reports, Guide: **lazy mount** — montate doar la prima vizita. Hookurile lor nu polleaza pana nu sunt deschise → reduce semnificativ numarul de requesturi si amprenta de memorie.
+- **Auto-refresh la 4 ore** — `setTimeout(() => window.location.reload(), 4h)` la startup. Elibereaza toata memoria acumulata (React state + React Query cache) dupa o sesiune lunga.
+- **React Query `gcTime: 90_000`** — elibereaza cache dupa 90 secunde (vs 5 minute default).
+- **`refetchIntervalInBackground: false`** pe toate hookurile non-critice (reports, costs, notifications, weekly-stats, frequency-estimate). Doar `useBotStatus` si `useSessions` polleaza in background.
+- Polling redus: reports/costs 30s→60-120s, notifications 10s→20s, weekly-stats/frequency 15s→60s.
 
 **ProfilePage.tsx:** Pagina Profile. Buton Salveaza/Reset apare atat in header cat si **la finalul listei de sesiuni** (duplicat de jos pentru scroll lung). Starea editarilor (`dirty`) e pastrata cand userul navigheaza la alt tab si revine.
+- **Camp `start_balance` editabil** — input numeric direct in sectiunea "Capital Initial". Include buton "↓ Import din MT5" care preia equity curenta MT5 (`useMt5Status().data.equity`) cu un singur click. Apare doar cand MT5 e conectat.
+- `start_balance` este punctul de referinta fix pentru `P&L Real MT5 = equity - start_balance`. Se seteaza o singura data la pornirea pe un cont nou.
 
 **TradingStatsPanel.tsx:** Panel statistici in Dashboard. 4 carduri: Total Semnale, Total Trades, Castiguri, Pierderi. Fiecare arata numarul agregat + "X azi" + indicator trend ▲/▼ vs ieri. Castiguri si Pierderi arata acum si breakdownul azi/ieri (`wins_today`, `wins_yesterday`, `losses_today`, `losses_yesterday` din `SessionStatus`). Click pe "Total Semnale" sau "Total Trades" expandeaza breakdown per sesiune (ascunde sesiunile cu 0 activitate).
+- **P&L Real MT5** — `equity MT5 − start_balance din profil`. Sursa de adevar absolut, include tot.
+- **Comisioane + Swap** — din `/reports/costs`. Dezagregat: com: X $ · swap: Y $.
+- Cardul "P&L Bot (partial)" a fost eliminat — datele partiale (fara backfill complet) induceau in eroare.
+- Sesiunile OBS (execute_trades=False) excluse din TOATE agregerile.
 
 **AuditPage.tsx:** Tab Audit (fostul Istoric). Doua sectiuni: **Descarcari Date** si **Backteste**.
 - *Descarcari Date*: `DownloadJobRow` expandabil per simbol — arata alias MT5 folosit (ex: "MT5: DE40"), ✓/⚠/✗ per timeframe, warning scroll daca istoricul nu e incarcat. Joburile persista in `data/download_jobs.json`.
