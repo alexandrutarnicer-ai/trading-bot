@@ -134,9 +134,20 @@ def _run_sync(fix: bool = False) -> dict:
                         })
                         continue
                     # Verifica daca pozitia e inca deschisa
+                    # Retry de 2 ori (300ms pauza) pentru a evita false pozitive
+                    # cauzate de latenta tranzitorie MT5 (ex: botul face o operatiune simultan)
                     pos = mt5.positions_get(ticket=ticket)
                     if not pos:
-                        # Pozitia nu mai exista — ar trebui sa fie in outcomes
+                        import time as _time
+                        _time.sleep(0.3)
+                        pos = mt5.positions_get(ticket=ticket)
+                    if not pos:
+                        _time.sleep(0.3)
+                        # Fallback: cauta prin simbol (hedging mode edge case)
+                        sym_pos = mt5.positions_get(symbol=sym) or []
+                        pos = [p for p in sym_pos if p.ticket == ticket]
+                    if not pos:
+                        # Pozitia nu mai exista dupa 3 verificari — intr-adevar inchisa
                         if sig_id not in existing_sig_ids:
                             discrepancies.append({
                                 "type": "triggered_position_closed_not_in_outcomes",
