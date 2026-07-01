@@ -1726,10 +1726,21 @@ def _scan_mt5_history_for_missing_outcomes(
                 try:
                     _pnl = _r.get("pnl_usd", "")
                     if _pnl != "" and str(_pnl) not in ("nan", ""):
+                        # Includ si entry_price in cheie ca sa prind duplicate cu exit_time
+                        # usor diferit (ex: vineri_close inregistrat de bot vs deal MT5)
+                        _entry_r = _r.get("entry", "")
+                        _entry_k = round(float(_entry_r), 5) if str(_entry_r) not in ("", "nan") else 0.0
                         existing_pos_keys.add((
                             str(_r.get("symbol", "")),
                             round(float(_pnl), 2),
                             str(_r.get("exit_time", ""))[:19],
+                        ))
+                        # Cheie alternativa fara exit_time, cu entry — prinde acelasi trade
+                        # chiar daca exit_time difera intre bot record si MT5 deal record
+                        existing_pos_keys.add((
+                            str(_r.get("symbol", "")),
+                            round(float(_pnl), 2),
+                            _entry_k,
                         ))
                 except Exception:
                     pass
@@ -1803,14 +1814,24 @@ def _scan_mt5_history_for_missing_outcomes(
             # 3. signals.csv by price (fallback dupa crash cu state gol)
             if not is_full:
                 _matched_sig = None
-                # 1. comment_map — cea mai fiabila metoda
+                # 1. comment_map — cea mai fiabila metoda, DAR numai daca sig_id-ul rezolvat
+                # nu are deja un ticket activ in mt5_tickets. Daca are, inseamna ca ordinul
+                # scanat din history este un alt ordin (acelasi prefix 16-char, alta tranzactie)
+                # si nu trebuie asociat semnalului curent pending.
                 _cm_match = state.get("comment_map", {}).get(comment)
                 if _cm_match and _cm_match not in existing_sig_ids:
-                    _matched_sig = _cm_match
-                    log.info(
-                        f"  [SCAN-RECOVER] Comentariu trunchiat '{comment}' → {_matched_sig} "
-                        f"(via comment_map)"
-                    )
+                    if _cm_match not in state.get("mt5_tickets", {}):
+                        _matched_sig = _cm_match
+                        log.info(
+                            f"  [SCAN-RECOVER] Comentariu trunchiat '{comment}' → {_matched_sig} "
+                            f"(via comment_map)"
+                        )
+                    else:
+                        log.info(
+                            f"  [SCAN-RECOVER] Comentariu trunchiat '{comment}' → comment_map "
+                            f"arata spre {_cm_match} care are ticket activ — ordin vechi ignorat, "
+                            f"se foloseste ID ticket-based"
+                        )
                 # 2. Pending by price
                 if not _matched_sig:
                     _mt5_tickets = state.get("mt5_tickets", {})
@@ -1859,9 +1880,10 @@ def _scan_mt5_history_for_missing_outcomes(
             # Dedup in cadrul acestei rulari pe ticket unic (previne rescrierea aceluiasi ordin)
             if order.ticket in seen_tickets:
                 continue
-            # Dedup vs outcomes existente (pnl+exit_time — protectie dupa restart)
+            # Dedup vs outcomes existente (pnl+exit_time sau pnl+entry — protectie dupa restart)
             pos_key = (symbol, round(pnl_usd, 2), exit_time[:19])
-            if pos_key in existing_pos_keys:
+            pos_key_alt = (symbol, round(pnl_usd, 2), round(entry_price, 5))
+            if pos_key in existing_pos_keys or pos_key_alt in existing_pos_keys:
                 continue
 
             if sl_price and abs(entry_price - sl_price) > 1e-8:
