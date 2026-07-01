@@ -9,6 +9,7 @@ Sesiunile sunt complet independente: capital separat, loguri separate.
 """
 
 import os
+import re
 import sys
 import json
 import time
@@ -63,6 +64,49 @@ def _get_tg_creds() -> tuple[str, str]:
             except Exception:
                 pass
     return token, chat_id
+
+
+class _NotificationHandler(logging.Handler):
+    """
+    Handler de logging care trimite automat mesajele WARNING/ERROR
+    catre notification store din UI (api/notifications.py).
+    Non-blocking — esecul nu afecteaza niciodata botul.
+
+    Rate-limiting: acelasi mesaj (primele 80 caractere) se trimite max o data
+    la 10 minute, prevenind flood-ul din WARNING-uri repetate la fiecare bara.
+    """
+    # Mesaje de ignora (spam frecvent, nu erori reale)
+    _IGNORE = ("Niciun semnal nou", "Urmatoarea bara", "iter ", "Pornit.",
+               "[DEDUP]", "[ORPHAN] Niciun")
+    _COOLDOWN_SEC = 600   # 10 minute intre doua notificari cu acelasi prefix
+
+    def __init__(self, session_id: str):
+        super().__init__()
+        self._session_id = session_id
+        self._seen: dict[str, float] = {}   # prefix80 → timestamp ultima notificare
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            raw_msg = record.getMessage()
+            if any(skip in raw_msg for skip in self._IGNORE):
+                return
+            # Rate-limiting pe primele 80 de caractere (ignora detalii variabile)
+            key = raw_msg[:80]
+            now = datetime.now().timestamp()
+            last = self._seen.get(key, 0.0)
+            if now - last < self._COOLDOWN_SEC:
+                return
+            self._seen[key] = now
+            # Curata cache-ul periodic (max 200 intrari)
+            if len(self._seen) > 200:
+                oldest = sorted(self._seen.items(), key=lambda x: x[1])
+                for k, _ in oldest[:50]:
+                    self._seen.pop(k, None)
+            from api.notifications import log_notification
+            level_tag = "ERROR" if record.levelno >= logging.ERROR else "WARNING"
+            log_notification(f"[{level_tag}][{self._session_id}] {raw_msg}")
+        except Exception:
+            pass
 
 
 def _send_telegram(text: str) -> None:
@@ -470,6 +514,37 @@ def _close_position_robust(symbol: str, volume: float, order_type,
     return _mt5_exec.order_send(base_req)
 
 
+def _cancel_mt5_order(ticket: int, sig_id: str, reason: str, log) -> bool:
+    """
+    Anuleaza un ordin pending MT5 (TRADE_ACTION_REMOVE).
+    Returneaza True daca ordinul a disparut (anulat sau deja disparut din MT5).
+    Logheaza la INFO daca era deja disparut (nu e eroare), WARNING la esec real.
+    """
+    if _mt5_exec is None:
+        return False
+    _r = _mt5_exec.order_send({
+        "action": _mt5_exec.TRADE_ACTION_REMOVE,
+        "order":  ticket,
+    })
+    if _r and _r.retcode == _mt5_exec.TRADE_RETCODE_DONE:
+        log.info(f"  [EXEC] {sig_id}: ordin MT5 #{ticket} anulat ({reason})")
+        return True
+    # Verifica daca ordinul mai exista in MT5
+    still_open = _mt5_exec.orders_get(ticket=ticket)
+    if not still_open:
+        # Nu mai e in MT5 — triggerat sau deja anulat/expirat manual
+        log.info(f"  [EXEC] {sig_id}: ordin MT5 #{ticket} deja disparut din MT5 ({reason}) — ok")
+        return True
+    # Ordinul inca exista dar nu l-am putut anula — eroare reala
+    err = _mt5_exec.last_error()
+    retcode = _r.retcode if _r else "None"
+    log.warning(
+        f"  [EXEC] {sig_id}: anulare MT5 #{ticket} ESUATA ({reason}) "
+        f"retcode={retcode} last_error={err} — ordinul ramane deschis in MT5!"
+    )
+    return False
+
+
 def _notify_signal(sig: dict, session_id: str, telegram: bool = True) -> None:
     """
     Notificare Windows Toast + Telegram + terminal bell la detectarea unui semnal nou.
@@ -624,6 +699,9 @@ def _check_signals(df: pd.DataFrame, symbol: str, cfg: dict,
     skip_hours    = session_cfg.get("skip_hours", ())
     skip_monday   = session_cfg.get("skip_monday", True)
     skip_weekdays = set(session_cfg.get("skip_weekdays", []))
+    # Daca inchiderea vineri e activa, skip automat Sambata (5) si Duminica (6)
+    if session_cfg.get("friday_close_enabled", True):
+        skip_weekdays |= {5, 6}
 
     n = len(df)
     # Offset 1 = bara curent deschisa (incompleta) — ignorata intentionat.
@@ -841,6 +919,10 @@ def _check_mt5_position_closed(ticket: int, p: dict, log) -> dict | None:
     if not deals:
         return None
 
+    entry_deal = next(
+        (deal for deal in deals if deal.entry == 0),  # DEAL_ENTRY_IN = 0
+        None,
+    )
     close_deal = next(
         (deal for deal in deals if deal.entry == _mt5_exec.DEAL_ENTRY_OUT),
         None,
@@ -859,18 +941,27 @@ def _check_mt5_position_closed(ticket: int, p: dict, log) -> dict | None:
         result_r = round((exit_price - p["entry"]) * d / risk_dist, 3)
         status   = "TP" if result_r > 0 else "SL"
 
-    pnl_usd = round(float(close_deal.profit), 4)
+    pnl_usd        = round(float(close_deal.profit), 4)
+    commission_usd = round(
+        float(getattr(entry_deal, "commission", 0) or 0) +
+        float(getattr(close_deal, "commission", 0) or 0),
+        4,
+    )
+    swap_usd = round(float(getattr(close_deal, "swap", 0) or 0), 4)
     log.info(
         f"  [MT5] Pozitie #{ticket} inchisa: "
-        f"exit={exit_price}  result={result_r:+.3f}R  pnl={pnl_usd:+.2f}USD  [{status}]"
+        f"exit={exit_price}  result={result_r:+.3f}R  pnl={pnl_usd:+.2f}USD  "
+        f"comm={commission_usd:+.2f}  swap={swap_usd:+.2f}  [{status}]"
     )
     return {
-        "status":       status,
-        "result_r":     result_r,
-        "exit_price":   exit_price,
-        "exit_time":    exit_time,
-        "triggered_at": p.get("triggered_at", exit_time),
-        "pnl_usd":      pnl_usd,
+        "status":         status,
+        "result_r":       result_r,
+        "exit_price":     exit_price,
+        "exit_time":      exit_time,
+        "triggered_at":   p.get("triggered_at", exit_time),
+        "pnl_usd":        pnl_usd,
+        "commission_usd": commission_usd,
+        "swap_usd":       swap_usd,
     }
 
 
@@ -885,14 +976,23 @@ _SIGNALS_COLS = [
 
 _OUTCOMES_COLS = [
     "signal_id", "time_check", "symbol", "direction", "status",
-    "entry", "sl", "tp", "r_ratio", "triggered_at",
+    "entry", "sl", "tp", "r_ratio", "armed_at", "triggered_at",
     "exit_price", "exit_time", "result_r", "pnl_usd",
+    "commission_usd", "swap_usd",
 ]
 
 
 def _pnl(result_r: float, risk_usd: float | None) -> float | None:
     """Calculeaza pnl_usd din result_r si risk_usd stocat la plasare."""
     return round(result_r * risk_usd, 4) if risk_usd is not None else None
+
+
+def _usd_str(pnl: float | None) -> str:
+    """Formateaza pnl_usd pentru mesaje Telegram. Returneaza '' daca None."""
+    if pnl is None:
+        return ""
+    sign = "+" if pnl >= 0 else ""
+    return f" ({sign}{pnl:.2f} USD)"
 
 
 def _update_outcomes(df: pd.DataFrame, symbol: str,
@@ -936,28 +1036,41 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                     rows_to_remove.append(sig_id)
                     _ticket = state.get("mt5_tickets", {}).get(sig_id)
                     if _ticket and _mt5_exec is not None:
-                        _r = _mt5_exec.order_send({
-                            "action": _mt5_exec.TRADE_ACTION_REMOVE,
-                            "order":  _ticket,
-                        })
-                        if _r and _r.retcode == _mt5_exec.TRADE_RETCODE_DONE:
-                            log.info(f"  [EXEC] {sig_id}: ordin MT5 #{_ticket} anulat (expirat)")
+                        # VERIFICA INAINTE: pozitia poate fi triggerata si inchisa
+                        # in lipsa botului (crash / restart). MT5 are prioritate.
+                        _mt5_res = _check_mt5_position_closed(_ticket, p, log)
+                        if _mt5_res and not _mt5_res.get("__no_outcome__"):
+                            # Pozitie reala inchisa cu TP/SL — corectam in loc de "expirat"
+                            log.warning(
+                                f"  [RECOVER] {sig_id}: ar fi fost marcat 'expirat' dar "
+                                f"pozitia MT5 #{_ticket} era INCHISA — corectez la "
+                                f"{_mt5_res['status']} {_mt5_res['result_r']:+.3f}R"
+                            )
+                            _send_telegram(
+                                f"<b>[RECOVER] {sig_id}</b>\n"
+                                f"Pozitie recuperata: {_mt5_res['status']} "
+                                f"{_mt5_res['result_r']:+.3f}R | "
+                                f"{_mt5_res.get('pnl_usd', 0):+.2f} USD\n"
+                                f"<i>{session_id} — pozitie inchisa in lipsa botului</i>"
+                            )
+                            outcome_rows.append({**p, "signal_id": sig_id,
+                                                 "symbol": symbol,
+                                                 **_mt5_res, "time_check": now_local()})
                         else:
-                            log.warning(f"  [EXEC] {sig_id}: anulare MT5 #{_ticket} esuata "
-                                        f"({_mt5_exec.last_error()}) — poate deja inchis/triggerat")
+                            # Ordin inca pending sau inexistent → anulare + expirat
+                            _cancel_mt5_order(_ticket, sig_id, "expirat", log)
+                            outcome_rows.append({**p, "signal_id": sig_id,
+                                                 "symbol": symbol,
+                                                 "status": "expirat", "result_r": 0.0,
+                                                 "exit_time": current_bar_t,
+                                                 "time_check": now_local(),
+                                                 "pnl_usd": 0.0})
+                            _send_telegram(
+                                f"<b>EXPIRAT: {symbol}</b>\n"
+                                f"Ordinul nu a fost triggerat (>{expire_bars} bare)\n"
+                                f"<i>{session_id} | {sig_id}</i>"
+                            )
                         state["mt5_tickets"].pop(sig_id, None)
-                        # Ordin plasat in MT5 si expirat -> scriem in outcomes
-                        outcome_rows.append({**p, "signal_id": sig_id,
-                                             "symbol": symbol,
-                                             "status": "expirat", "result_r": 0.0,
-                                             "exit_time": current_bar_t,
-                                             "time_check": now_local(),
-                                             "pnl_usd": 0.0})
-                        _send_telegram(
-                            f"<b>EXPIRAT: {symbol}</b>\n"
-                            f"Ordinul nu a fost triggerat (>{expire_bars} bare)\n"
-                            f"<i>{session_id} | {sig_id}</i>"
-                        )
                     else:
                         # Fara ordin MT5 — pastram doar in signals.csv, nu in outcomes
                         log.info(f"  EXPIRAT (fara ordin MT5): {sig_id} {symbol} "
@@ -974,29 +1087,32 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                     rows_to_remove.append(sig_id)
                     _ticket = state.get("mt5_tickets", {}).get(sig_id)
                     if _ticket and _mt5_exec is not None:
-                        _r = _mt5_exec.order_send({
-                            "action": _mt5_exec.TRADE_ACTION_REMOVE,
-                            "order":  _ticket,
-                        })
-                        if _r and _r.retcode == _mt5_exec.TRADE_RETCODE_DONE:
-                            log.info(f"  [EXEC] {sig_id}: ordin MT5 #{_ticket} anulat (invalidat)")
+                        # VERIFICA INAINTE: pozitia poate fi deja inchisa cu TP/SL real
+                        _mt5_res = _check_mt5_position_closed(_ticket, p, log)
+                        if _mt5_res and not _mt5_res.get("__no_outcome__"):
+                            log.warning(
+                                f"  [RECOVER] {sig_id}: bar invalideaza dar MT5 #{_ticket} "
+                                f"era deja INCHIS — corectez la "
+                                f"{_mt5_res['status']} {_mt5_res['result_r']:+.3f}R"
+                            )
+                            outcome_rows.append({**p, "signal_id": sig_id,
+                                                 "symbol": symbol,
+                                                 **_mt5_res, "time_check": now_local()})
                         else:
-                            log.warning(f"  [EXEC] {sig_id}: anulare MT5 #{_ticket} esuata "
-                                        f"({_mt5_exec.last_error()}) — poate deja inchis/triggerat")
+                            _cancel_mt5_order(_ticket, sig_id, "invalidat", log)
+                            outcome_rows.append({**p, "signal_id": sig_id,
+                                                 "symbol": symbol,
+                                                 "status": "invalidat", "result_r": 0.0,
+                                                 "time_check": now_local(),
+                                                 "pnl_usd": 0.0})
+                            _dir_str = "LONG" if d == 1 else "SHORT"
+                            _send_telegram(
+                                f"<b>INVALIDAT #{_ticket}: {_dir_str} {symbol}</b>\n"
+                                f"Structura ruptă — ordinul anulat din MT5\n"
+                                f"Entry {p['entry']} | SL {p['sl']} | {p.get('r_ratio', '?')}R\n"
+                                f"<i>{session_id} | {sig_id}</i>"
+                            )
                         state["mt5_tickets"].pop(sig_id, None)
-                        # Ordin plasat in MT5 si invalidat -> scriem in outcomes
-                        outcome_rows.append({**p, "signal_id": sig_id,
-                                             "symbol": symbol,
-                                             "status": "invalidat", "result_r": 0.0,
-                                             "time_check": now_local(),
-                                             "pnl_usd": 0.0})
-                        _dir_str = "LONG" if d == 1 else "SHORT"
-                        _send_telegram(
-                            f"<b>INVALIDAT #{_ticket}: {_dir_str} {symbol}</b>\n"
-                            f"Structura ruptă — ordinul anulat din MT5\n"
-                            f"Entry {p['entry']} | SL {p['sl']} | {p.get('r_ratio', '?')}R\n"
-                            f"<i>{session_id} | {sig_id}</i>"
-                        )
                     else:
                         # Fara ordin MT5 — pastram doar in signals.csv, nu in outcomes
                         log.info(f"  INVALIDAT (fara ordin MT5): {sig_id} {symbol} "
@@ -1048,7 +1164,8 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                     if mt5_res["status"] == "TP":
                         log.info(f"  PROFIT (MT5): {sig_id} TP +{mt5_res['result_r']:.3f}R")
                         _send_telegram(
-                            f"<b>PROFIT +{mt5_res['result_r']:.2f}R: {dir_str} {symbol}</b>\n"
+                            f"<b>PROFIT +{mt5_res['result_r']:.2f}R: {dir_str} {symbol}</b>"
+                            f"{_usd_str(mt5_res.get('pnl_usd'))}\n"
                             f"Entry {format(p['entry'], fmt)} → "
                             f"{format(mt5_res['exit_price'], fmt)} (exit real MT5)\n"
                             f"<i>{session_id} | {sig_id}</i>"
@@ -1056,7 +1173,8 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                     else:
                         log.info(f"  PIERDERE (MT5): {sig_id} SL {mt5_res['result_r']:.3f}R")
                         _send_telegram(
-                            f"<b>PIERDERE {mt5_res['result_r']:.2f}R: {dir_str} {symbol}</b>\n"
+                            f"<b>PIERDERE {mt5_res['result_r']:.2f}R: {dir_str} {symbol}</b>"
+                            f"{_usd_str(mt5_res.get('pnl_usd'))}\n"
                             f"Entry {format(p['entry'], fmt)} → "
                             f"{format(mt5_res['exit_price'], fmt)} (exit real MT5)\n"
                             f"<i>{session_id} | {sig_id}</i>"
@@ -1156,17 +1274,21 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                                              "pnl_usd": _pnl(_rr, p.get("risk_usd"))})
                         rows_to_remove.append(sig_id)
                         if _oc == "SL":
+                            _pnl_val = _pnl(_rr, p.get("risk_usd"))
                             log.info(f"  PIERDERE: {sig_id} SL -1.0R")
                             _send_telegram(
-                                f"<b>PIERDERE -1R: {dir_str} {symbol}</b>\n"
+                                f"<b>PIERDERE -1R: {dir_str} {symbol}</b>"
+                                f"{_usd_str(_pnl_val)}\n"
                                 f"Entry {format(p['entry'], fmt)} → SL {format(p['sl'], fmt)}\n"
                                 f"<i>{session_id} | {sig_id}</i>"
                             )
                         else:
+                            _pnl_val = _pnl(_rr, p.get("risk_usd"))
                             _lbl = "Faza 1" if _oc == "be_lock" else "Faza 2"
                             log.info(f"  [BE {_lbl}] {sig_id} +{_rr:.3f}R")
                             _send_telegram(
-                                f"<b>Break-Even {_lbl}: {dir_str} {symbol}</b>\n"
+                                f"<b>Break-Even {_lbl}: {dir_str} {symbol}</b>"
+                                f"{_usd_str(_pnl_val)}\n"
                                 f"Ieșire la +{_rr:.2f}R\n"
                                 f"<i>{session_id} | {sig_id}</i>"
                             )
@@ -1178,9 +1300,11 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                                              "time_check": now_local(),
                                              "pnl_usd": _pnl(p["r_ratio"], p.get("risk_usd"))})
                         rows_to_remove.append(sig_id)
+                        _pnl_tp = _pnl(p["r_ratio"], p.get("risk_usd"))
                         log.info(f"  PROFIT: {sig_id} TP +{p['r_ratio']:.1f}R")
                         _send_telegram(
-                            f"<b>PROFIT +{p['r_ratio']:.1f}R: {dir_str} {symbol}</b>\n"
+                            f"<b>PROFIT +{p['r_ratio']:.1f}R: {dir_str} {symbol}</b>"
+                            f"{_usd_str(_pnl_tp)}\n"
                             f"Entry {format(p['entry'], fmt)} → TP {format(p['tp'], fmt)}\n"
                             f"<i>{session_id} | {sig_id}</i>"
                         )
@@ -1210,31 +1334,35 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                     tp_hit = (d == 1 and bar["high"] >= p["tp"]) or \
                              (d == -1 and bar["low"]  <= p["tp"])
                     if sl_hit:
+                        _sl_pnl = _pnl(-1.0, p.get("risk_usd"))
                         outcome_rows.append({**p, "signal_id": sig_id,
                                              "symbol": symbol, "status": "SL",
                                              "result_r": -1.0, "exit_price": p["sl"],
                                              "exit_time": bar["time"],
                                              "time_check": now_local(),
-                                             "pnl_usd": _pnl(-1.0, p.get("risk_usd"))})
+                                             "pnl_usd": _sl_pnl})
                         rows_to_remove.append(sig_id)
                         log.info(f"  PIERDERE: {sig_id} SL -1.0R")
                         _send_telegram(
-                            f"<b>PIERDERE -1R: {dir_str} {symbol}</b>\n"
+                            f"<b>PIERDERE -1R: {dir_str} {symbol}</b>"
+                            f"{_usd_str(_sl_pnl)}\n"
                             f"Entry {format(p['entry'], fmt)} → SL {format(p['sl'], fmt)}\n"
                             f"<i>{session_id} | {sig_id}</i>"
                         )
                         break
                     if tp_hit:
+                        _tp_pnl = _pnl(p["r_ratio"], p.get("risk_usd"))
                         outcome_rows.append({**p, "signal_id": sig_id,
                                              "symbol": symbol, "status": "TP",
                                              "result_r": p["r_ratio"], "exit_price": p["tp"],
                                              "exit_time": bar["time"],
                                              "time_check": now_local(),
-                                             "pnl_usd": _pnl(p["r_ratio"], p.get("risk_usd"))})
+                                             "pnl_usd": _tp_pnl})
                         rows_to_remove.append(sig_id)
                         log.info(f"  PROFIT: {sig_id} TP +{p['r_ratio']:.1f}R")
                         _send_telegram(
-                            f"<b>PROFIT +{p['r_ratio']:.1f}R: {dir_str} {symbol}</b>\n"
+                            f"<b>PROFIT +{p['r_ratio']:.1f}R: {dir_str} {symbol}</b>"
+                            f"{_usd_str(_tp_pnl)}\n"
                             f"Entry {format(p['entry'], fmt)} → TP {format(p['tp'], fmt)}\n"
                             f"<i>{session_id} | {sig_id}</i>"
                         )
@@ -1248,13 +1376,96 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                 existing_ids = set(pd.read_csv(outcomes_file, usecols=["signal_id"])["signal_id"].dropna())
             except Exception:
                 pass
-        new_rows = [r for r in outcome_rows if r.get("signal_id") not in existing_ids]
+        # Dedup si in interiorul batch-ului (ex: doua semnale cu acelasi sig_id trunchiat)
+        seen_in_batch: set = set()
+        new_rows = []
+        for r in outcome_rows:
+            sid = r.get("signal_id")
+            if sid not in existing_ids and sid not in seen_in_batch:
+                new_rows.append(r)
+                seen_in_batch.add(sid)
         if new_rows:
             pd.DataFrame(new_rows).reindex(columns=_OUTCOMES_COLS).to_csv(
                 outcomes_file, mode="a", header=False, index=False)
 
     for sig_id in rows_to_remove:
         state["pending"][symbol].pop(sig_id, None)
+
+
+# ---------------------------------------------------------------------------
+# Migrare format vechi pending la format nou (ruleaza o singura data la pornire)
+# ---------------------------------------------------------------------------
+
+def _migrate_pending_format(state: dict, session_cfg: dict, log) -> None:
+    """
+    Detecteaza si migraz semnalele in format vechi (flat) la formatul nou (nested).
+
+    Format vechi (inainte de refactorizare multi-simbol):
+        state["pending"] = { "S1-EURUSD-SIG0001": {entry, sl, tp, time, ...} }
+
+    Format nou (curent):
+        state["pending"] = { "EURUSD": { "S1-EURUSD-SIG0002": {entry, sl, tp, armed_at, ...} } }
+
+    Semnele unui entry in format vechi:
+      - cheia nu e un simbol (nu e all-caps simplu), ci un signal ID (contine '-' si 'SIG'/'IB'/'FLG')
+      - valoarea e un dict cu campul 'entry' (semnalul efectiv)
+
+    Semnele unui entry corrupt gol:
+      - cheia e un simbol (all-caps, fara '-') iar valoarea e {} (dict gol)
+    """
+    pending = state.get("pending", {})
+    all_symbols = {sym for mk in session_cfg.get("markets", []) for sym in [mk]}
+    # Adauga si simbolurile din fallbacks
+    for v in session_cfg.get("symbol_fallbacks", {}).values():
+        if isinstance(v, list):
+            all_symbols.update(v)
+        else:
+            all_symbols.add(v)
+
+    migrated = 0
+    removed_empty = 0
+
+    for key in list(pending.keys()):
+        value = pending[key]
+        # Detecteaza intrari in format vechi: cheia contine '-' si valoarea are 'entry'
+        if "-" in key and isinstance(value, dict) and "entry" in value:
+            # Extrage simbolul din campul 'symbol' al semnalului sau din signal_id
+            sym = value.get("symbol") or key.split("-")[1] if "-" in key else None
+            if not sym:
+                continue
+            # Adauga campurile lipsa necesare de _update_outcomes
+            if "armed_at" not in value or not value.get("armed_at"):
+                # Fallback: "time" din semnal, sau epoch (semnal va expira imediat)
+                value["armed_at"] = value.get("time") or "2000-01-01 00:00:00"
+            value.setdefault("signal_type",        "pullback")
+            value.setdefault("be_phase",           0)
+            value.setdefault("be_current_sl",      value["sl"])
+            value.setdefault("be_in_zone",         False)
+            value.setdefault("be_notified_phases", set())
+            value.setdefault("be_last_t",          None)
+            # Muta la noua locatie: pending[symbol][sig_id]
+            pending.pop(key)
+            pending.setdefault(sym, {})[key] = value
+            log.warning(
+                f"  [MIGRATE] Semnal in format vechi detectat si migrat: "
+                f"{key} -> pending[{sym}][{key}]"
+            )
+            migrated += 1
+
+    # Sterge cheile goale de tip simbol (corrupt empty dicts)
+    for key in list(pending.keys()):
+        value = pending[key]
+        is_symbol_like = (key == key.upper() and "-" not in key and len(key) >= 3)
+        if is_symbol_like and isinstance(value, dict) and len(value) == 0:
+            pending.pop(key)
+            log.warning(f"  [MIGRATE] Cheie goala stearsa din pending: {key!r}")
+            removed_empty += 1
+
+    if migrated or removed_empty:
+        log.info(
+            f"  [MIGRATE] Migrare pending: {migrated} semnale migrate, "
+            f"{removed_empty} chei goale sterse."
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -1306,6 +1517,646 @@ def _reconcile_mt5_tickets(state: dict, log) -> None:
     if to_remove:
         log.info(f"  [RECONCIL] Curatate {len(to_remove)} ticket(e) orfane; "
                  f"semnalele raman in pending si vor expira natural.")
+
+
+def _recover_lost_outcomes(
+    state: dict,
+    session_cfg: dict,
+    outcomes_file: str,
+    log,
+) -> None:
+    """
+    Startup: pentru semnale pending FARA ticket MT5 cunoscut, cauta in history MT5
+    ordine cu comment = signal_id (plasate de bot in sesiunile anterioare).
+
+    Scenariul acoperit: botul a plasat un ordin, l-a triggerat, pozitia s-a inchis
+    (TP/SL), dar state.pkl a fost sters intre timp (crash / reset manual).
+    Fara aceasta functie, semnalul ar fi marcat 'expirat 0R' la urmatoarea bara.
+
+    MT5 are prioritate — daca MT5 zice SL, se scrie SL, indiferent de bare.
+    """
+    if _mt5_exec is None:
+        return
+    # Sesiunile de observatie (execute_trades=False) nu plaseaza ordine in MT5
+    if not session_cfg.get("execute_trades", True):
+        return
+
+    pending = state.get("pending", {})
+    mt5_tickets = state.get("mt5_tickets", {})
+
+    sigs_without_ticket = [
+        (sym, sig_id, sig)
+        for sym, sym_sigs in pending.items()
+        for sig_id, sig in sym_sigs.items()
+        if sig_id not in mt5_tickets
+    ]
+    if not sigs_without_ticket:
+        return
+
+    log.info(f"  [RECOVER] Verificare {len(sigs_without_ticket)} semnale fara ticket MT5 in history...")
+    dt_from = datetime.now() - timedelta(days=10)
+    dt_to   = datetime.now()
+    recovered = 0
+
+    # Previne doua semnale diferite sa claim-uiasca acelasi ordin MT5
+    # (ICMarketsEU trunchiaza la 16 chars → SIG0001/SIG0002 devin ambele "S13-EURJPY-SIG00")
+    claimed_tickets: set[int] = set()
+
+    for sym, sig_id, sig in sigs_without_ticket:
+        hist_orders = _mt5_exec.history_orders_get(dt_from, dt_to, group=sym)
+        if not hist_orders:
+            continue
+
+        # 1. Match exact pe comment (ideal — nu e trunchiat sau e acelasi ID)
+        exact_matching = [o for o in hist_orders if o.comment == sig_id]
+        if exact_matching:
+            matching = [o for o in exact_matching if o.ticket not in claimed_tickets]
+        else:
+            # 2. Fallback prefix 16 chars (ICMarketsEU trunchiaza la 16 caractere)
+            prefix_matching = [
+                o for o in hist_orders
+                if o.comment.rstrip() == sig_id[:16] and o.ticket not in claimed_tickets
+            ]
+            if len(prefix_matching) <= 1:
+                matching = prefix_matching
+            else:
+                # Mai multe ordine cu acelasi prefix — disambiguare prin pret de intrare
+                _entry = sig.get("entry")
+                if _entry is not None:
+                    try:
+                        from strategy.signals import pip_size as _psz
+                        _pip = _psz(sym)
+                    except Exception:
+                        _pip = 0.0001
+                    price_matched = [
+                        o for o in prefix_matching
+                        if abs(o.price_open - _entry) < 5 * _pip
+                    ]
+                    if len(price_matched) == 1:
+                        matching = price_matched
+                        log.info(
+                            f"  [RECOVER] {sig_id}: {len(prefix_matching)} ordine cu prefix "
+                            f"'{sig_id[:16]}' — selectat #{price_matched[0].ticket} "
+                            f"prin pret (|{price_matched[0].price_open:.5f}-{_entry:.5f}|<5pip)"
+                        )
+                    else:
+                        matching = []
+                        log.warning(
+                            f"  [RECOVER] {sig_id}: {len(prefix_matching)} ordine cu prefix "
+                            f"'{sig_id[:16]}' si {len(price_matched)} match-uri prin pret "
+                            f"— skip, va fi recuperat de scan_mt5_history la urmatorul restart"
+                        )
+                else:
+                    matching = []
+
+        if not matching:
+            continue
+
+        # Cel mai recent ordin plasat cu comentariul potrivit
+        order = sorted(matching, key=lambda o: o.time_setup)[-1]
+        claimed_tickets.add(order.ticket)
+        ticket = order.ticket
+        pos_id = getattr(order, "position_id", ticket) or ticket
+
+        # 1. Ordin inca pending (netriggerat)
+        if _mt5_exec.orders_get(ticket=ticket):
+            mt5_tickets[sig_id] = ticket
+            log.info(f"  [RECOVER] {sig_id}: ordin #{ticket} inca pending → actualizat mt5_tickets")
+            continue
+
+        # 2. Pozitie inca deschisa (triggerat, in curs)
+        if _mt5_exec.positions_get(ticket=pos_id):
+            mt5_tickets[sig_id] = ticket
+            sig["triggered"] = True
+            if order.time_done:
+                sig["triggered_at"] = datetime.fromtimestamp(order.time_done).strftime(
+                    "%Y-%m-%d %H:%M:%S"
+                )
+            log.info(f"  [RECOVER] {sig_id}: pozitie #{pos_id} deschisa → actualizat mt5_tickets+triggered")
+            continue
+
+        # 3. Pozitie inchisa — folosim _check_mt5_position_closed cu ticketul gasit
+        mt5_res = _check_mt5_position_closed(ticket, sig, log)
+        if mt5_res is None or mt5_res.get("__no_outcome__"):
+            # Order anulat/respins fara executie — lasa sa expire natural
+            continue
+
+        # Verifica ca nu e deja in outcomes.csv
+        if os.path.exists(outcomes_file):
+            try:
+                _ex = pd.read_csv(outcomes_file, usecols=["signal_id"])
+                if sig_id in _ex["signal_id"].values:
+                    pending.get(sym, {}).pop(sig_id, None)
+                    continue
+            except Exception:
+                pass
+
+        # Scrie outcome real in loc de "expirat"
+        row = {
+            **sig, "signal_id": sig_id, "symbol": sym,
+            **mt5_res, "time_check": now_local(),
+        }
+        pd.DataFrame([row]).reindex(columns=_OUTCOMES_COLS).to_csv(
+            outcomes_file, mode="a", header=False, index=False
+        )
+
+        pending.get(sym, {}).pop(sig_id, None)
+        mt5_tickets.pop(sig_id, None)
+        recovered += 1
+
+        log.warning(
+            f"  [RECOVER] {sig_id}: {mt5_res['status']} {mt5_res['result_r']:+.3f}R "
+            f"{mt5_res.get('pnl_usd', 0):+.2f}USD recuperat din history MT5 "
+            f"(pozitie inchisa in lipsa botului)"
+        )
+        _send_telegram(
+            f"<b>[RECOVER] {sig_id}</b>\n"
+            f"Pozitie recuperata din history MT5\n"
+            f"Status: {mt5_res['status']} | {mt5_res['result_r']:+.3f}R | "
+            f"{mt5_res.get('pnl_usd', 0):+.2f} USD\n"
+            f"<i>{session_cfg.get('session_id', '?')} — pozitie inchisa in lipsa botului</i>"
+        )
+
+    if recovered > 0:
+        log.warning(
+            f"  [RECOVER] {recovered} outcome(uri) recuperate din history MT5 la startup"
+        )
+
+
+def _scan_mt5_history_for_missing_outcomes(
+    state: dict,
+    session_cfg: dict,
+    outcomes_file: str,
+    log,
+) -> None:
+    """
+    Startup: scanare completa history MT5 (10 zile) pentru simbolurile sesiunii.
+    Complementara cu _recover_lost_outcomes (care lucreaza doar cu semnale in pending).
+
+    Acopera cazul stat complet gol (crash total, state.pkl sters manual):
+    gaseste ORICE ordin/pozitie cu comment in formatul botului, a carui pozitie e
+    INCHISA si NU apare inca in outcomes.csv → scrie outcome real + trimite [RECOVER].
+
+    Deduplicare:
+    - Verifica sig_id exact in existing_sig_ids
+    - Verifica prefix (pentru comentarii trunchiate vs. sig_id full din _recover_lost_outcomes)
+    - Skip daca ordinul e inca activ (tracked in mt5_tickets sau pending)
+    """
+    if _mt5_exec is None:
+        return
+    # Sesiunile de observatie (execute_trades=False) nu plaseaza ordine in MT5 — skip
+    if not session_cfg.get("execute_trades", True):
+        return
+
+    markets    = session_cfg.get("markets", [])
+    session_id = session_cfg.get("session_id", "?")
+    if not markets:
+        return
+
+    # Citeste sig_id-urile existente (inclusiv cele scrise de _recover_lost_outcomes)
+    existing_sig_ids: set[str] = set()
+    # Deduplicare pe identitate pozitie: (symbol, pnl_rotunjit, exit_time[:19])
+    # Previne scrieri duble cand mai multe ordine au acelasi comment trunchiat (ICMarketsEU 16 chars)
+    existing_pos_keys: set[tuple] = set()
+    if os.path.exists(outcomes_file):
+        try:
+            _df = pd.read_csv(outcomes_file)
+            existing_sig_ids = set(_df["signal_id"].dropna().astype(str).tolist())
+            for _, _r in _df.iterrows():
+                try:
+                    _pnl = _r.get("pnl_usd", "")
+                    if _pnl != "" and str(_pnl) not in ("nan", ""):
+                        # Includ si entry_price in cheie ca sa prind duplicate cu exit_time
+                        # usor diferit (ex: vineri_close inregistrat de bot vs deal MT5)
+                        _entry_r = _r.get("entry", "")
+                        _entry_k = round(float(_entry_r), 5) if str(_entry_r) not in ("", "nan") else 0.0
+                        existing_pos_keys.add((
+                            str(_r.get("symbol", "")),
+                            round(float(_pnl), 2),
+                            str(_r.get("exit_time", ""))[:19],
+                        ))
+                        # Cheie alternativa fara exit_time, cu entry — prinde acelasi trade
+                        # chiar daca exit_time difera intre bot record si MT5 deal record
+                        existing_pos_keys.add((
+                            str(_r.get("symbol", "")),
+                            round(float(_pnl), 2),
+                            _entry_k,
+                        ))
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    seen_tickets: set[int] = set()  # dedup ordine in cadrul acestei rulari (unicitate per ticket MT5)
+
+    # Ticketele deja trackuite (nu le procesam din nou)
+    tracked_tickets: set[int] = set(state.get("mt5_tickets", {}).values())
+
+    dt_from  = datetime.now() - timedelta(days=10)
+    dt_to    = datetime.now()
+    recovered = 0
+
+    for symbol in markets:
+        hist_orders = _mt5_exec.history_orders_get(dt_from, dt_to, group=symbol) or []
+
+        for order in hist_orders:
+            # Skip ordine neexecutate (anulate, respinse, expirate)
+            if order.state in (2, 5, 6):
+                continue
+
+            comment = (getattr(order, "comment", "") or "").strip()
+            if not _BOT_SIG_RE.match(comment):
+                continue
+
+            is_full = bool(_BOT_SIG_FULL_RE.match(comment))
+            # sig_id provizoriu pentru verificarea tracked_tickets/existing_sig_ids;
+            # poate fi corectat mai jos dupa obtinerea entry_price (matching in pending)
+            sig_id  = comment if is_full else f"{comment}_{order.ticket}"
+
+            # Skip daca ticketul e deja in tracking activ
+            if order.ticket in tracked_tickets:
+                continue
+
+            # Skip daca sig_id deja in outcomes (verificare rapida pentru IDs complete)
+            if is_full and sig_id in existing_sig_ids:
+                continue
+
+            # Obtine deals-urile pozitiei (necesar pentru pnl + exit_time → deduplicare)
+            pos_id = getattr(order, "position_id", 0) or order.ticket
+            deals  = _mt5_exec.history_deals_get(position=pos_id)
+            if not deals:
+                continue
+
+            # DEAL_ENTRY_IN=0 (deschidere), DEAL_ENTRY_OUT=1 (inchidere)
+            entry_deal = next((d for d in deals if d.entry == 0), None)
+            close_deal = next((d for d in deals if d.entry == 1), None)
+
+            if not close_deal:
+                # Pozitie inca deschisa → orphan detection se ocupa
+                continue
+
+            entry_price    = float(entry_deal.price if entry_deal else order.price_open)
+            exit_price     = float(close_deal.price)
+            exit_time      = datetime.fromtimestamp(close_deal.time).strftime("%Y-%m-%d %H:%M:%S")
+            pnl_usd        = round(float(close_deal.profit), 4)
+            commission_usd = round(
+                float(getattr(entry_deal, "commission", 0) or 0) +
+                float(getattr(close_deal, "commission", 0) or 0),
+                4,
+            )
+            swap_usd = round(float(getattr(close_deal, "swap", 0) or 0), 4)
+            d_int    = 1 if order.type in (0, 2, 4) else -1
+            sl_price = float(getattr(order, "sl", 0) or 0)
+            tp_price = float(getattr(order, "tp", 0) or 0)
+
+            # Pentru comentarii trunchiate (ICMarketsEU 16 chars): cauta semnalul real
+            # Prioritate: 1. comment_map (stocat la plasare — sigur), 2. pending by price,
+            # 3. signals.csv by price (fallback dupa crash cu state gol)
+            if not is_full:
+                _matched_sig = None
+                # 1. comment_map — cea mai fiabila metoda, DAR numai daca sig_id-ul rezolvat
+                # nu are deja un ticket activ in mt5_tickets. Daca are, inseamna ca ordinul
+                # scanat din history este un alt ordin (acelasi prefix 16-char, alta tranzactie)
+                # si nu trebuie asociat semnalului curent pending.
+                _cm_match = state.get("comment_map", {}).get(comment)
+                if _cm_match and _cm_match not in existing_sig_ids:
+                    if _cm_match not in state.get("mt5_tickets", {}):
+                        _matched_sig = _cm_match
+                        log.info(
+                            f"  [SCAN-RECOVER] Comentariu trunchiat '{comment}' → {_matched_sig} "
+                            f"(via comment_map)"
+                        )
+                    else:
+                        log.info(
+                            f"  [SCAN-RECOVER] Comentariu trunchiat '{comment}' → comment_map "
+                            f"arata spre {_cm_match} care are ticket activ — ordin vechi ignorat, "
+                            f"se foloseste ID ticket-based"
+                        )
+                # 2. Pending by price
+                if not _matched_sig:
+                    _mt5_tickets = state.get("mt5_tickets", {})
+                    try:
+                        from strategy.signals import pip_size as _psz
+                        _pip = _psz(symbol)
+                    except Exception:
+                        _pip = 0.0001
+                    for _s_id, _s_sig in state.get("pending", {}).get(symbol, {}).items():
+                        if _s_id in _mt5_tickets:
+                            continue  # semnal activ — nu il revendicam
+                        if (_s_sig.get("direction") == d_int and
+                                abs(_s_sig.get("entry", 0) - entry_price) < 5 * _pip):
+                            _matched_sig = _s_id
+                            break
+                # 3. Fallback signals.csv daca pending gol (crash cu state resetat)
+                if not _matched_sig:
+                    _signals_file = outcomes_file.replace("outcomes.csv", "signals.csv")
+                    if os.path.exists(_signals_file):
+                        try:
+                            _sig_df = pd.read_csv(_signals_file)
+                            _sig_sym = _sig_df[_sig_df["symbol"] == symbol] if not _sig_df.empty else pd.DataFrame()
+                            for _, _srow in _sig_sym.iterrows():
+                                _s_id = str(_srow.get("signal_id", ""))
+                                if _s_id in existing_sig_ids:
+                                    continue
+                                if (int(_srow.get("direction", 0)) == d_int and
+                                        abs(float(_srow.get("entry", 0)) - entry_price) < 5 * _pip):
+                                    _matched_sig = _s_id
+                                    break
+                        except Exception:
+                            pass
+                if _matched_sig:
+                    sig_id = _matched_sig
+                    if not state.get("comment_map", {}).get(comment):
+                        log.info(
+                            f"  [SCAN-RECOVER] Comentariu trunchiat '{comment}' → {sig_id} "
+                            f"(match prin pret {entry_price:.5f})"
+                        )
+                # else: pastram {comment}_{order.ticket} ca fallback unic
+
+            # Dupa corectia sig_id: re-verifica ca nu e deja in outcomes
+            if sig_id in existing_sig_ids:
+                continue
+
+            # Dedup in cadrul acestei rulari pe ticket unic (previne rescrierea aceluiasi ordin)
+            if order.ticket in seen_tickets:
+                continue
+            # Dedup vs outcomes existente (pnl+exit_time sau pnl+entry — protectie dupa restart)
+            pos_key = (symbol, round(pnl_usd, 2), exit_time[:19])
+            pos_key_alt = (symbol, round(pnl_usd, 2), round(entry_price, 5))
+            if pos_key in existing_pos_keys or pos_key_alt in existing_pos_keys:
+                continue
+
+            if sl_price and abs(entry_price - sl_price) > 1e-8:
+                risk_dist = abs(entry_price - sl_price)
+                result_r  = round((exit_price - entry_price) * d_int / risk_dist, 3)
+                r_ratio   = round(abs(tp_price - entry_price) / risk_dist, 3) if (
+                    tp_price and abs(tp_price - entry_price) > 1e-8
+                ) else 0.0
+            else:
+                result_r = 0.0
+                r_ratio  = 0.0
+
+            status       = "TP" if result_r > 0 else "SL"
+            t_done       = getattr(order, "time_done", 0) or 0
+            triggered_at = datetime.fromtimestamp(
+                t_done if t_done else order.time_setup
+            ).strftime("%Y-%m-%d %H:%M:%S")
+
+            row = {
+                "signal_id":      sig_id,
+                "time_check":     now_local(),
+                "symbol":         symbol,
+                "direction":      d_int,
+                "status":         status,
+                "entry":          entry_price,
+                "sl":             sl_price,
+                "tp":             tp_price,
+                "r_ratio":        r_ratio,
+                "triggered_at":   triggered_at,
+                "exit_price":     exit_price,
+                "exit_time":      exit_time,
+                "result_r":       result_r,
+                "pnl_usd":        pnl_usd,
+                "commission_usd": commission_usd,
+                "swap_usd":       swap_usd,
+            }
+            pd.DataFrame([row]).reindex(columns=_OUTCOMES_COLS).to_csv(
+                outcomes_file, mode="a", header=False, index=False
+            )
+            existing_sig_ids.add(sig_id)
+            existing_pos_keys.add(pos_key)
+            seen_tickets.add(order.ticket)
+            tracked_tickets.add(order.ticket)
+            recovered += 1
+
+            log.warning(
+                f"  [SCAN-RECOVER] {sig_id}: {status} {result_r:+.3f}R "
+                f"{pnl_usd:+.2f}USD recuperat din scanare history MT5"
+            )
+            _send_telegram(
+                f"<b>[RECOVER] {sig_id}</b>\n"
+                f"Pozitie recuperata din scanare history MT5 (bot offline)\n"
+                f"Status: {status} | {result_r:+.3f}R | {pnl_usd:+.2f} USD\n"
+                f"<i>{session_id}</i>"
+            )
+
+    if recovered:
+        log.warning(
+            f"  [SCAN-RECOVER] {recovered} outcome(uri) recuperate din scanare history MT5"
+        )
+
+
+# ICMarketsEU trunchiaza comentariile MT5 la 16 caractere.
+# Ex: "S17-AUDCAD-H1-IB0001" (20 chars) → "S17-AUDCAD-H1-IB" (fara cifre finale).
+# \d* in loc de \d+ pentru a prinde si comentariile trunchiate.
+_BOT_SIG_RE = re.compile(r"^S\d+-[A-Z0-9]+-(?:[A-Z0-9]+-)?(?:SIG|IB|FLG)\d*", re.IGNORECASE)
+# FULL = exact 4+ cifre la final (format :04d). Comentariile trunchiate (SIG00, IB000 etc.)
+# au mai putine cifre si sunt tratate ca partial → primesc sufixul _{ticket} pentru unicitate.
+_BOT_SIG_FULL_RE = re.compile(r"^S\d+-[A-Z0-9]+-(?:[A-Z0-9]+-)?(?:SIG|IB|FLG)\d{4,}$", re.IGNORECASE)
+
+
+def _detect_orphan_mt5_orders(
+    state: dict, markets: list, session_id: str, log,
+    signals_file: str = "",
+) -> None:
+    """
+    Detecteaza ordinele MT5 deschise (pending/pozitii) pentru simbolurile sesiunii
+    care NU sunt in state["mt5_tickets"].
+
+    - Daca comment-ul e in formatul botului (SigID): preia automat in state si trimite
+      Telegram "[RECOVER] Pozitie preluata pentru monitorizare".
+    - Altfel (ordine manuale): alerteaza userul sa verifice si inchida manual daca e cazul.
+
+    Ruleaza o singura data la pornire, dupa _reconcile_mt5_tickets + _recover_lost_outcomes.
+    """
+    if _mt5_exec is None:
+        return
+    tracked_tickets = set(state.get("mt5_tickets", {}).values())
+
+    # Cache signals.csv pentru fuzzy-match fallback (cand state["pending"] e gol dupa crash)
+    _sig_cache: dict[str, list[tuple[str, int, float]]] = {}  # symbol -> [(sig_id, dir, entry)]
+    if signals_file and os.path.exists(signals_file):
+        try:
+            _sig_df = pd.read_csv(signals_file)
+            for _, _srow in _sig_df.iterrows():
+                _sym = str(_srow.get("symbol", ""))
+                _sig_cache.setdefault(_sym, []).append((
+                    str(_srow.get("signal_id", "")),
+                    int(_srow.get("direction", 0)),
+                    float(_srow.get("entry", 0)),
+                ))
+        except Exception:
+            pass
+    unknown_orphans: list[tuple] = []
+    recovered = 0
+
+    for symbol in markets:
+        # ── Ordine pending neactivate ──
+        for order in (_mt5_exec.orders_get(symbol=symbol) or []):
+            if order.ticket in tracked_tickets:
+                continue
+            comment = getattr(order, "comment", "") or ""
+            if _BOT_SIG_RE.match(comment.strip()):
+                c = comment.strip()
+                if _BOT_SIG_FULL_RE.match(c):
+                    sig_id = c
+                else:
+                    # Comentariu trunchiat — rezolva sig_id in ordinea prioritatii:
+                    # 1. comment_map (stocat la plasare), 2. pending by price, 3. signals.csv
+                    _matched = state.get("comment_map", {}).get(c)
+                    if _matched:
+                        log.info(
+                            f"  [ORPHAN-RECOVER] Ordin #{order.ticket} comment '{c}' "
+                            f"→ {_matched} (via comment_map)"
+                        )
+                    if not _matched:
+                        try:
+                            from strategy.signals import pip_size as _psz
+                            _pip = _psz(symbol)
+                        except Exception:
+                            _pip = 0.0001
+                        d_ord = 1 if order.type in (2, 4) else -1  # BUY_STOP=2, BUY_LIMIT=4
+                        for _s_id, _s_sig in state.get("pending", {}).get(symbol, {}).items():
+                            if (_s_sig.get("direction") == d_ord and
+                                    abs(_s_sig.get("entry", 0) - order.price_open) < 5 * _pip):
+                                _matched = _s_id
+                                break
+                    # Fallback: cauta in signals.csv daca pending e gol (state resetat la crash)
+                    if not _matched:
+                        _existing_tickets = set(state.get("mt5_tickets", {}).values())
+                        for _s_id, _s_dir, _s_entry in _sig_cache.get(symbol, []):
+                            if _s_id in state.get("mt5_tickets", {}):
+                                continue
+                            if (_s_dir == d_ord and
+                                    abs(_s_entry - order.price_open) < 5 * _pip):
+                                _matched = _s_id
+                                break
+                    sig_id = _matched if _matched else f"{c}_{order.ticket}"
+                    if _matched:
+                        log.info(
+                            f"  [ORPHAN-RECOVER] Ordin #{order.ticket} comment trunchiat '{c}' "
+                            f"→ {sig_id} (match prin pret {order.price_open:.5f})"
+                        )
+                state.setdefault("mt5_tickets", {})[sig_id] = order.ticket
+                tracked_tickets.add(order.ticket)
+                log.warning(
+                    f"  [ORPHAN-RECOVER] Ordin pending #{order.ticket} ({sig_id}) "
+                    f"preluat din MT5 — adaugat in tracking"
+                )
+                _send_telegram(
+                    f"<b>[RECOVER] {sig_id}</b>\n"
+                    f"Ordin pending #{order.ticket} preluat automat pentru monitorizare\n"
+                    f"{symbol} @ {order.price_open:.5f}\n"
+                    f"<i>{session_id} — state recuperat la startup</i>"
+                )
+                recovered += 1
+            else:
+                unknown_orphans.append((symbol, order.ticket, "pending", order.price_open, comment))
+
+        # ── Pozitii deschise (triggerate) ──
+        for pos in (_mt5_exec.positions_get(symbol=symbol) or []):
+            if pos.ticket in tracked_tickets:
+                continue
+            comment = getattr(pos, "comment", "") or ""
+            if _BOT_SIG_RE.match(comment.strip()):
+                # Reconstruieste intrarea in pending din datele pozitiei MT5
+                c = comment.strip()
+                d = 1 if pos.type == 0 else -1  # 0=buy, 1=sell
+                if _BOT_SIG_FULL_RE.match(c):
+                    sig_id = c
+                else:
+                    # Comentariu trunchiat — rezolva sig_id: comment_map → pending → signals.csv
+                    _matched = state.get("comment_map", {}).get(c)
+                    if _matched:
+                        log.info(
+                            f"  [ORPHAN-RECOVER] Pozitie #{pos.ticket} comment '{c}' "
+                            f"→ {_matched} (via comment_map)"
+                        )
+                    if not _matched:
+                        try:
+                            from strategy.signals import pip_size as _psz
+                            _pip = _psz(symbol)
+                        except Exception:
+                            _pip = 0.0001
+                        for _s_id, _s_sig in state.get("pending", {}).get(symbol, {}).items():
+                            if (_s_sig.get("direction") == d and
+                                    abs(_s_sig.get("entry", 0) - pos.price_open) < 10 * _pip):
+                                _matched = _s_id
+                                break
+                    # Fallback: cauta in signals.csv daca pending e gol (state resetat la crash)
+                    if not _matched:
+                        for _s_id, _s_dir, _s_entry in _sig_cache.get(symbol, []):
+                            if _s_id in state.get("mt5_tickets", {}):
+                                continue
+                            if (_s_dir == d and
+                                    abs(_s_entry - pos.price_open) < 10 * _pip):
+                                _matched = _s_id
+                                break
+                    sig_id = _matched if _matched else f"{c}_{pos.ticket}"
+                    if _matched and not state.get("comment_map", {}).get(c):
+                        log.info(
+                            f"  [ORPHAN-RECOVER] Pozitie #{pos.ticket} comment trunchiat '{c}' "
+                            f"→ {sig_id} (match prin pret {pos.price_open:.5f})"
+                        )
+                t_open = datetime.fromtimestamp(pos.time).strftime("%Y-%m-%d %H:%M:%S")
+                # Actualizeaza semnalul existent in pending daca exista; altfel creaza unul nou
+                existing_sig = state.get("pending", {}).get(symbol, {}).get(sig_id)
+                if existing_sig is not None:
+                    existing_sig["triggered"]    = True
+                    existing_sig["triggered_at"] = t_open
+                else:
+                    reconstructed = {
+                        "direction":     d,
+                        "entry":         pos.price_open,
+                        "sl":            pos.sl if pos.sl else pos.price_open * (1 - 0.005 * d),
+                        "tp":            pos.tp if pos.tp else pos.price_open * (1 + 0.01 * d),
+                        "r_ratio":       0.0,
+                        "armed_at":      t_open,
+                        "triggered":     True,
+                        "triggered_at":  t_open,
+                        "be_phase":      0,
+                        "be_current_sl": pos.sl or 0,
+                        "symbol":        symbol,
+                        "risk_usd":      None,
+                    }
+                    state.setdefault("pending", {}).setdefault(symbol, {})[sig_id] = reconstructed
+                state.setdefault("mt5_tickets", {})[sig_id] = pos.ticket
+                tracked_tickets.add(pos.ticket)
+                dir_str = "LONG" if d == 1 else "SHORT"
+                log.warning(
+                    f"  [ORPHAN-RECOVER] Pozitie #{pos.ticket} ({sig_id}) {dir_str} {symbol} "
+                    f"@ {pos.price_open:.5f} preluata din MT5 — reconstruita in pending+tracking"
+                )
+                _send_telegram(
+                    f"<b>[RECOVER] {sig_id}</b>\n"
+                    f"Pozitie activa #{pos.ticket} preluata automat\n"
+                    f"{dir_str} {symbol} @ {pos.price_open:.5f} | "
+                    f"SL {pos.sl:.5f} | TP {pos.tp:.5f}\n"
+                    f"<i>{session_id} — botul monitorizeaza acum aceasta pozitie</i>"
+                )
+                recovered += 1
+            else:
+                unknown_orphans.append((symbol, pos.ticket, "pozitie", pos.price_open, comment))
+
+    if recovered:
+        log.warning(f"  [ORPHAN-RECOVER] {recovered} ordine/pozitii preluate automat din MT5 la startup")
+
+    if unknown_orphans:
+        lines = "\n".join(
+            f"  #{tkt} {sym} {kind} @ {price:.5f}"
+            + (f" [{cmt}]" if cmt else "")
+            for sym, tkt, kind, price, cmt in unknown_orphans
+        )
+        msg = (
+            f"⚠️ <b>[{session_id}] Pozitii MT5 fara corespondent in bot</b>\n"
+            f"Urmatoarele pozitii din MT5 nu pot fi identificate automat\n"
+            f"(probabil deschise manual sau de alta sesiune):\n<pre>{lines}</pre>\n"
+            f"Verifica in MT5 si inchide manual daca nu sunt ale botului."
+        )
+        log.warning(f"  [ORPHAN] {len(unknown_orphans)} pozitii MT5 neidentiabile: {unknown_orphans}")
+        _send_telegram(msg)
+    elif not recovered:
+        log.info("  [ORPHAN] Nicio pozitie MT5 fara corespondent — state consistent cu MT5.")
 
 
 # ---------------------------------------------------------------------------
@@ -1498,7 +2349,13 @@ def _friday_close_check(
                 )
             except Exception:
                 pass
-        new_rows = [r for r in outcome_rows if r.get("signal_id") not in existing_ids]
+        seen_in_batch: set = set()
+        new_rows = []
+        for r in outcome_rows:
+            sid = r.get("signal_id")
+            if sid not in existing_ids and sid not in seen_in_batch:
+                new_rows.append(r)
+                seen_in_batch.add(sid)
         if new_rows:
             pd.DataFrame(new_rows).reindex(columns=_OUTCOMES_COLS).to_csv(
                 outcomes_file, mode="a", header=False, index=False)
@@ -1857,7 +2714,13 @@ def _news_close_check(
                 )
             except Exception:
                 pass
-        new_rows = [r for r in outcome_rows if r.get("signal_id") not in existing_ids]
+        seen_in_batch: set = set()
+        new_rows = []
+        for r in outcome_rows:
+            sid = r.get("signal_id")
+            if sid not in existing_ids and sid not in seen_in_batch:
+                new_rows.append(r)
+                seen_in_batch.add(sid)
         if new_rows:
             pd.DataFrame(new_rows).reindex(columns=_OUTCOMES_COLS).to_csv(
                 outcomes_file, mode="a", header=False, index=False)
@@ -2062,6 +2925,11 @@ def run_generator(session_cfg: dict):
         fh.setFormatter(fmt)
         log.addHandler(sh)
         log.addHandler(fh)
+        # Handler pentru notificari automate ERROR/WARNING → UI Notifications
+        _nh = _NotificationHandler(session_cfg["session_id"])
+        _nh.setLevel(logging.WARNING)
+        _nh.setFormatter(fmt)
+        log.addHandler(_nh)
 
     # Init CSV-uri
     if not os.path.exists(signals_file):
@@ -2071,6 +2939,17 @@ def run_generator(session_cfg: dict):
         ]).to_csv(signals_file, index=False)
     if not os.path.exists(outcomes_file):
         pd.DataFrame(columns=_OUTCOMES_COLS).to_csv(outcomes_file, index=False)
+    else:
+        # Auto-migrare: adauga coloane lipsa fara a pierde datele existente
+        try:
+            _hdr = pd.read_csv(outcomes_file, nrows=0)
+            _missing_cols = [c for c in _OUTCOMES_COLS if c not in _hdr.columns]
+            if _missing_cols:
+                _full = pd.read_csv(outcomes_file, on_bad_lines="skip")
+                _full.reindex(columns=_OUTCOMES_COLS).to_csv(outcomes_file, index=False)
+                log.info(f"outcomes.csv migrat: adaugate coloane {_missing_cols}")
+        except Exception as _me:
+            log.warning(f"Migrare automata outcomes.csv esuata: {_me}")
 
     # Incarca stare (cu fallback la coruptie — ex: reboot in mijlocul scrierii)
     _empty_state = {"pending": {}, "signal_counter": 0, "flag_signal_counter": 0, "ib_signal_counter": 0, "last_checked": {}}
@@ -2080,6 +2959,7 @@ def run_generator(session_cfg: dict):
         log.warning(f"state.pkl corupt ({_e}) — resetat la stare goala.")
         state = _empty_state
     state.setdefault("mt5_tickets", {})
+    state.setdefault("comment_map", {})   # sig_id[:16] -> full_sig_id (ICMarketsEU 16-char truncation)
     state.setdefault("flag_signal_counter", 0)
     state.setdefault("ib_signal_counter", 0)
     state.setdefault("smart_news_tickets", {})
@@ -2150,8 +3030,26 @@ def run_generator(session_cfg: dict):
             pass
         return
 
+    # Migrare format vechi pending (flat sig_id->dict) la format nou (symbol->{sig_id->dict})
+    _migrate_pending_format(state, session_cfg, log)
+
     # Reconciliere tickets la pornire — curata orfanele din state
     _reconcile_mt5_tickets(state, log)
+
+    # Recupereaza outcome-uri pierdute la crash/reset: cauta in MT5 history dupa comment=sig_id
+    # Previne marcarea gresita ca "expirat 0R" a pozitiilor inchise in lipsa botului
+    _recover_lost_outcomes(state, session_cfg, outcomes_file, log)
+
+    # Scanare completa history MT5 pentru pozitii inchise netrackuite (state complet gol).
+    # Complementara cu _recover_lost_outcomes; acopera crash total / state.pkl sters manual.
+    _scan_mt5_history_for_missing_outcomes(state, session_cfg, outcomes_file, log)
+
+    # Detecteaza ordine MT5 netrackuite (coruptie state / crash) si alerteaza via Telegram
+    _detect_orphan_mt5_orders(
+        state, session_cfg.get("markets", []),
+        session_cfg.get("session_id", "?"), log,
+        signals_file=signals_file,
+    )
 
     # Rezolva simbolurile
     fallbacks = session_cfg.get("symbol_fallbacks", {})
@@ -2263,6 +3161,9 @@ def run_generator(session_cfg: dict):
                     log=log,
                 )
 
+            # Recuperare runtime pentru semnalele pending fara ticket MT5
+            _recover_lost_outcomes(state, session_cfg, outcomes_file, log)
+
             new_sigs = 0
             for market, symbol in resolved.items():
                 df = _prepare_live(
@@ -2292,16 +3193,44 @@ def run_generator(session_cfg: dict):
 
                 sigs = _check_signals(df, symbol, cfg, state, session_cfg)
                 for sig in sigs:
-                    # Evita duplicate in signals.csv (doua instante simultane)
+                    # Evita duplicate in signals.csv (ID identic — doua instante simultane)
                     _sig_exists = False
                     try:
-                        _ex = pd.read_csv(signals_file, usecols=["signal_id"])["signal_id"].dropna()
-                        _sig_exists = sig["signal_id"] in _ex.values
+                        _ex_df = pd.read_csv(signals_file, usecols=["signal_id", "direction", "entry", "symbol"])
+                        _sig_exists = sig["signal_id"] in _ex_df["signal_id"].values
+                        # Dedup dupa (symbol, direction, entry) — prinde re-detectia aceluiasi
+                        # setup dupa restart cand se genereaza un ID nou dar acelasi trade
+                        if not _sig_exists:
+                            _recent = _ex_df[
+                                (_ex_df["symbol"] == sig["symbol"]) &
+                                (_ex_df["direction"] == sig["direction"]) &
+                                ((_ex_df["entry"] - sig["entry"]).abs() < 1e-6)
+                            ]
+                            if not _recent.empty:
+                                log.warning(
+                                    f"  [DEDUP] {sig['signal_id']} {symbol}: entry identic cu "
+                                    f"{_recent.iloc[-1]['signal_id']} deja in signals.csv — skipped"
+                                )
+                                _sig_exists = True
                     except Exception:
                         pass
+                    # Dedup si in pending curent (acelasi symbol, direction, entry)
                     if not _sig_exists:
-                        pd.DataFrame([sig]).reindex(columns=_SIGNALS_COLS).to_csv(
-                            signals_file, mode="a", header=False, index=False)
+                        for _existing_sig in state["pending"].get(symbol, {}).values():
+                            if (
+                                _existing_sig.get("direction") == sig["direction"]
+                                and abs(_existing_sig.get("entry", 0) - sig["entry"]) < 1e-6
+                            ):
+                                log.warning(
+                                    f"  [DEDUP] {sig['signal_id']} {symbol}: entry identic cu "
+                                    f"un semnal deja in pending — skipped"
+                                )
+                                _sig_exists = True
+                                break
+                    if _sig_exists:
+                        continue
+                    pd.DataFrame([sig]).reindex(columns=_SIGNALS_COLS).to_csv(
+                        signals_file, mode="a", header=False, index=False)
                     state["pending"].setdefault(symbol, {})[sig["signal_id"]] = {
                         "direction":  sig["direction"],
                         "entry":      sig["entry"],
@@ -2357,6 +3286,8 @@ def run_generator(session_cfg: dict):
                         if ticket:
                             # Ordin plasat cu succes — stocheaza lot si risk real in pending
                             state["mt5_tickets"][sig["signal_id"]] = ticket
+                            # comment_map: sig_id[:16] -> full_sig_id (recuperare dupa truncation ICMarketsEU)
+                            state["comment_map"][sig["signal_id"][:16]] = sig["signal_id"]
                             state["pending"][symbol][sig["signal_id"]]["lot_size"] = lots
                             state["pending"][symbol][sig["signal_id"]]["risk_usd"] = risk_usd
                             fmt = ".2f" if sig["entry"] > 100 else ".5f"
@@ -2403,6 +3334,40 @@ def run_generator(session_cfg: dict):
                             continue  # ordin deja plasat in MT5
                         if _p.get("triggered"):
                             continue  # deja triggerat
+                        # Guard anti-duplicat: verifica daca exista deja un ordin MT5 pending
+                        # pentru acelasi simbol/directie/entry (plasare anterioara neconfirmata
+                        # in state — ex: crash intre order_send si pickle.dump).
+                        # Daca exista, adopta ticket-ul existent in loc sa plaseze un ordin nou.
+                        if _mt5_exec is not None:
+                            _d_ord = _p["direction"]
+                            _stop_types = (4, 2) if _d_ord == 1 else (5, 3)  # BUY/SELL STOP+LIMIT
+                            try:
+                                from strategy.signals import pip_size as _pip_sz
+                                _tol = 5 * _pip_sz(symbol)
+                            except Exception:
+                                _tol = 0.001
+                            _tracked = set(state.get("mt5_tickets", {}).values())
+                            _dup_ticket = None
+                            for _o in (_mt5_exec.orders_get(symbol=symbol) or []):
+                                if _o.ticket in _tracked:
+                                    continue
+                                if (_o.type in _stop_types and
+                                        abs(_o.price_open - _p["entry"]) < _tol):
+                                    _dup_ticket = _o.ticket
+                                    break
+                            if _dup_ticket is not None:
+                                state["mt5_tickets"][_sid] = _dup_ticket
+                                state["comment_map"][_sid[:16]] = _sid
+                                log.warning(
+                                    f"  [DEDUP] {_sid}: ordin MT5 #{_dup_ticket} deja existent "
+                                    f"@ {_p['entry']:.5f} — adoptat, plasare noua evitata"
+                                )
+                                _send_telegram(
+                                    f"⚠️ <b>[DEDUP] {_sid}</b>\n"
+                                    f"Ordin MT5 #{_dup_ticket} adoptat (era orfan in MT5)\n"
+                                    f"<i>{session_cfg['session_id']}</i>"
+                                )
+                                continue
                         # Reconstituie sig dict minimal pentru _place_order
                         _sig_retry = {
                             "symbol":    symbol,
@@ -2420,6 +3385,7 @@ def run_generator(session_cfg: dict):
                                                session_cfg["bar_minutes"], log)
                         if _ticket:
                             state["mt5_tickets"][_sid] = _ticket
+                            state["comment_map"][_sid[:16]] = _sid
                             state["pending"][symbol][_sid]["lot_size"] = _lots
                             state["pending"][symbol][_sid]["risk_usd"] = _risk_usd
                             dir_str = "LONG" if _p["direction"] == 1 else "SHORT"
