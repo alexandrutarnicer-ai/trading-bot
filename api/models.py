@@ -33,6 +33,7 @@ class SessionStatus(BaseModel):
     pnl_usd_today: Optional[float] = None
     pnl_usd_yesterday: Optional[float] = None
     pnl_usd_total: Optional[float] = None
+    pnl_count: Optional[int] = None
 
 
 class Signal(BaseModel):

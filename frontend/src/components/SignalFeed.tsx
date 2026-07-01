@@ -35,6 +35,18 @@ function statusBadge(o: Outcome, riskUsd: number | null) {
       </span>
     );
   }
+  if (o.status === "vineri_close" || o.status === "news_close" || o.status === "be_lock" || o.status === "be_lock2") {
+    const usdStr = o.pnl_usd != null
+      ? fmtUsd(o.pnl_usd)
+      : riskUsd != null ? fmtUsd(o.result_r * riskUsd) : "";
+    const label = o.status === "vineri_close" ? "vineri" : o.status === "news_close" ? "stire" : o.status;
+    const color = o.result_r > 0 ? "text-profit" : o.result_r < 0 ? "text-loss" : "text-slate-400";
+    return (
+      <span className={`text-[10px] font-bold ${color}`}>
+        {o.result_r > 0 ? "+" : ""}{o.result_r.toFixed(2)}R {label}{usdStr ? <span className="font-normal opacity-75">{usdStr}</span> : null}
+      </span>
+    );
+  }
   if (o.status === "expirat")  return <span className="text-[10px] text-slate-500">expirat</span>;
   if (o.status === "invalidat") return <span className="text-[10px] text-warn">invalidat</span>;
   return <span className="text-[10px] text-slate-500">{o.status}</span>;

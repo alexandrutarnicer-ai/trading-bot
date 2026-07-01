@@ -8,7 +8,7 @@ from typing import Optional
 import pandas as pd
 from fastapi import APIRouter, HTTPException
 
-from api.config import DATA_DIR, SESSIONS, SESSION_MAP
+from api.config import DATA_DIR, SESSIONS, SESSION_MAP, get_profile_execute_map
 from api.models import SessionStatus, Signal, Outcome, EquityCurvePoint
 from api.telegram import send_message as _tg_send
 
@@ -106,6 +106,82 @@ def _read_outcomes(session_id: str) -> pd.DataFrame:
         return pd.DataFrame()
 
 
+def _pip_for_symbol(symbol: str) -> float:
+    """Returneza pip size pentru un simbol — folosit la fuzzy-match entry price."""
+    sym = symbol.upper()
+    if "JPY" in sym:
+        return 0.01
+    if any(x in sym for x in ("BTC", "ETH", "XRP", "LTC")):
+        return 1.0
+    if any(x in sym for x in ("GER", "DAX", "US30", "UK100", "NAS", "SP5", "DE4")):
+        return 1.0
+    if "XAU" in sym:
+        return 0.1
+    return 0.0001
+
+
+def _resolve_outcome_sig_ids(outcomes_df: pd.DataFrame, signals_df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Rezolva sig_id-urile trunchiate din outcomes.csv (ex: IB_1781721724) la sig_id-ul
+    real din signals.csv (ex: IB0002), prin fuzzy-match pe (symbol, direction, entry +/-5pip).
+    Previne ca semnalele sa apara ca 'pending' in SignalFeed cand de fapt au outcome.
+    """
+    if outcomes_df.empty or signals_df.empty:
+        return outcomes_df
+
+    sig_id_set = set(signals_df["signal_id"].astype(str))
+
+    # Grupam semnalele din signals.csv dupa (symbol, direction) -> [(sig_id, entry)]
+    sig_groups: dict = {}
+    for _, srow in signals_df.iterrows():
+        key = (str(srow.get("symbol", "")), int(srow.get("direction", 0)))
+        sig_groups.setdefault(key, []).append(
+            (str(srow["signal_id"]), float(srow.get("entry", 0)))
+        )
+
+    # Tinem evidenta sig_id-urilor deja folosite (direct sau rezolvate) — evitam double-match
+    used: set[str] = set(
+        str(s) for s in outcomes_df["signal_id"].astype(str) if s in sig_id_set
+    )
+
+    outcomes_df = outcomes_df.copy()
+    for idx, row in outcomes_df.iterrows():
+        sid = str(row.get("signal_id", ""))
+        if sid in sig_id_set:
+            continue  # match direct — nu schimbam
+
+        sym  = str(row.get("symbol", ""))
+        dirn = int(row.get("direction", 0))
+        entry = float(row.get("entry", 0))
+        pip  = _pip_for_symbol(sym)
+
+        best_id, best_dist = None, float("inf")
+        for s_id, s_entry in sig_groups.get((sym, dirn), []):
+            if s_id in used:
+                continue
+            dist = abs(s_entry - entry)
+            if dist < 5 * pip and dist < best_dist:
+                best_dist = dist
+                best_id   = s_id
+
+        if best_id:
+            outcomes_df.at[idx, "signal_id"] = best_id
+            used.add(best_id)
+
+    return outcomes_df
+
+
+def _read_outcomes_resolved(session_id: str) -> pd.DataFrame:
+    """Citeste outcomes.csv si rezolva sig_id-urile trunchiate folosind signals.csv."""
+    df = _read_outcomes(session_id)
+    if df.empty:
+        return df
+    sigs = _read_signals(session_id)
+    if not sigs.empty:
+        df = _resolve_outcome_sig_ids(df, sigs)
+    return df
+
+
 def _sig_stats(session_id: str) -> dict:
     df = _read_signals(session_id)
     if df.empty:
@@ -129,7 +205,7 @@ _CLOSED_STATUSES = ["TP", "SL", "vineri_close", "news_close", "be_lock", "be_loc
 
 
 def _outcome_stats(session_id: str) -> dict:
-    df = _read_outcomes(session_id)
+    df = _read_outcomes_resolved(session_id)
     if df.empty:
         return {"total": 0, "wins": 0, "losses": 0,
                 "wins_today": 0, "wins_yesterday": 0, "losses_today": 0, "losses_yesterday": 0,
@@ -162,8 +238,10 @@ def _outcome_stats(session_id: str) -> dict:
     wins   = int((closed["result_r"] > 0).sum()) if len(closed) else 0
     losses = int((closed["result_r"] < 0).sum()) if len(closed) else 0
     pnl_total = None
+    pnl_count = None
     if "pnl_usd" in closed.columns:
         all_pnl = pd.to_numeric(closed["pnl_usd"], errors="coerce").dropna()
+        pnl_count = int(len(all_pnl))
         if len(all_pnl):
             pnl_total = round(float(all_pnl.sum()), 2)
     return {
@@ -179,6 +257,7 @@ def _outcome_stats(session_id: str) -> dict:
         "pnl_usd_today":    pnl_today,
         "pnl_usd_yesterday": pnl_yest,
         "pnl_usd_total":    pnl_total,
+        "pnl_count":        pnl_count,
     }
 
 
@@ -197,12 +276,16 @@ def weekly_stats():
     else:
         prev_month_start = month_start.replace(month=month_start.month - 1)
 
+    execute_map = get_profile_execute_map()
+
     def _aggregate(start: datetime, end: datetime) -> dict:
         totals = {"trades": 0, "wins": 0, "losses": 0, "total_r": 0.0, "pnl_usd": None}
         all_slices: list[pd.DataFrame] = []
         pnl_sum = 0.0
         pnl_any = False
         for s in SESSIONS:
+            if not execute_map.get(s["id"], s["execute"]):
+                continue  # skip OBS sessions
             df = _read_outcomes(s["id"])
             if df.empty or "exit_time" not in df.columns:
                 continue
@@ -385,44 +468,14 @@ def frequency_estimate(profile_id: str = ""):
     }
 
 
-@router.get("/all/outcomes", response_model=list[Outcome])
-def get_all_outcomes(limit: int = 200):
-    """Outcomes agregate din toate sesiunile — pentru SignalFeed in modul ALL."""
-    all_rows = []
-    for s in SESSIONS:
-        df = _read_outcomes(s["id"])
-        if df.empty:
-            continue
-        all_rows.append(df.tail(limit))
-    if not all_rows:
-        return []
-    combined = pd.concat(all_rows, ignore_index=True)
-    result = []
-    for _, row in combined.iterrows():
-        result.append(Outcome(
-            signal_id=str(row.get("signal_id", "")),
-            time_check=str(row.get("time_check", "")),
-            symbol=str(row.get("symbol", "")),
-            direction=int(row.get("direction", 0)),
-            status=str(row.get("status", "")),
-            entry=float(row.get("entry", 0)),
-            sl=float(row.get("sl", 0)),
-            tp=float(row.get("tp", 0)),
-            r_ratio=float(row.get("r_ratio", 0)),
-            triggered_at=str(row["triggered_at"]) if pd.notna(row.get("triggered_at")) else None,
-            exit_price=float(row["exit_price"]) if pd.notna(row.get("exit_price")) else None,
-            exit_time=str(row["exit_time"]) if pd.notna(row.get("exit_time")) else None,
-            result_r=float(row.get("result_r", 0)),
-            pnl_usd=float(row["pnl_usd"]) if pd.notna(row.get("pnl_usd")) else None,
-        ))
-    return result
-
-
 @router.get("/all/signals", response_model=list[Signal])
 def get_all_signals(limit: int = 50):
-    """Semnale agregate din toate sesiunile, sortate cronologic (cele mai noi primele)."""
+    """Semnale agregate din sesiunile live (execute=True), sortate cronologic."""
+    execute_map = get_profile_execute_map()
     all_rows = []
     for s in SESSIONS:
+        if not execute_map.get(s["id"], s["execute"]):
+            continue
         df = _read_signals(s["id"])
         if df.empty:
             continue
@@ -445,6 +498,53 @@ def get_all_signals(limit: int = 50):
             tp=float(row.get("tp", 0)),
             r_ratio=float(row.get("r_ratio", 0)),
         ))
+    return result
+
+
+@router.get("/all/outcomes", response_model=list[Outcome])
+def get_all_outcomes(limit: int = 200):
+    """Outcomes agregate din sesiunile live (execute=True), sortate dupa exit_time.
+    Trebuie plasat INAINTE de /{session_id}/outcomes pentru a nu fi interceptat ca session_id."""
+    execute_map = get_profile_execute_map()
+    all_rows = []
+    for s in SESSIONS:
+        if not execute_map.get(s["id"], s["execute"]):
+            continue
+        df = _read_outcomes_resolved(s["id"])
+        if df.empty:
+            continue
+        all_rows.append(df)
+    if not all_rows:
+        return []
+    combined = pd.concat(all_rows, ignore_index=True)
+    sort_col = "exit_time" if "exit_time" in combined.columns else "time_check"
+    try:
+        combined["_sort"] = pd.to_datetime(combined[sort_col], errors="coerce")
+        combined = combined.sort_values("_sort", ascending=False, na_position="last")
+    except Exception:
+        pass
+    combined = combined.head(limit)
+    result = []
+    for _, row in combined.iterrows():
+        try:
+            result.append(Outcome(
+                signal_id=str(row.get("signal_id", "")),
+                time_check=str(row.get("time_check", "")),
+                symbol=str(row.get("symbol", "")),
+                direction=int(row.get("direction", 0)),
+                status=str(row.get("status", "")),
+                entry=float(row.get("entry", 0)),
+                sl=float(row.get("sl", 0)),
+                tp=float(row.get("tp", 0)),
+                r_ratio=float(row.get("r_ratio", 0)),
+                triggered_at=str(row["triggered_at"]) if pd.notna(row.get("triggered_at")) else None,
+                exit_price=float(row["exit_price"]) if pd.notna(row.get("exit_price")) else None,
+                exit_time=str(row["exit_time"]) if pd.notna(row.get("exit_time")) else None,
+                result_r=float(row.get("result_r", 0)),
+                pnl_usd=float(row["pnl_usd"]) if pd.notna(row.get("pnl_usd")) else None,
+            ))
+        except Exception:
+            pass
     return result
 
 
@@ -477,7 +577,10 @@ def get_top_markets(period: str = "week", limit: int = 5):
         if s["id"] not in seen:
             all_sessions.append(s)
 
+    exec_map = get_profile_execute_map()
     for s in all_sessions:
+        if not exec_map.get(s["id"], s.get("execute", True)):
+            continue  # skip OBS sessions
         df = _read_outcomes(s["id"])
         if df.empty:
             continue
@@ -536,12 +639,14 @@ def get_top_markets(period: str = "week", limit: int = 5):
 def list_sessions():
     paused      = _load_paused()
     news_paused = _load_news_paused()
+    execute_map = get_profile_execute_map()  # dynamic — reflects profile changes from UI
     result = []
     for s in SESSIONS:
         running, pid = _session_running(s["id"])
         sig  = _sig_stats(s["id"])
         out  = _outcome_stats(s["id"])
         np_entry  = news_paused.get(s["id"], {})
+        execute   = execute_map.get(s["id"], s["execute"])
         result.append(SessionStatus(
             id=s["id"],
             label=s["label"],
@@ -550,7 +655,7 @@ def list_sessions():
             tf=s["tf"],
             hours=s["hours"],
             validated=s["validated"],
-            execute=s["execute"],
+            execute=execute,
             capital_pct=s["capital_pct"],
             running=running,
             pid=pid,
@@ -573,6 +678,7 @@ def list_sessions():
             pnl_usd_today=out["pnl_usd_today"],
             pnl_usd_yesterday=out["pnl_usd_yesterday"],
             pnl_usd_total=out["pnl_usd_total"],
+            pnl_count=out.get("pnl_count"),
         ))
     return result
 
@@ -636,7 +742,7 @@ def get_signals(session_id: str, limit: int = 50):
 def get_outcomes(session_id: str, limit: int = 100):
     if session_id not in SESSION_MAP:
         raise HTTPException(404, f"Sesiune necunoscuta: {session_id}")
-    df = _read_outcomes(session_id)
+    df = _read_outcomes_resolved(session_id)
     if df.empty:
         return []
     df = df.tail(limit).iloc[::-1]
@@ -666,7 +772,7 @@ def equity_curve():
     """R cumulat per sesiune, sortat cronologic — pentru graficul de performanta."""
     points = []
     for s in SESSIONS:
-        df = _read_outcomes(s["id"])
+        df = _read_outcomes_resolved(s["id"])
         if df.empty:
             continue
         closed = df[df["status"].isin(_CLOSED_STATUSES)].copy()

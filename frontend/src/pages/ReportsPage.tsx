@@ -2,13 +2,15 @@ import React, { useState } from "react";
 import {
   BarChart2, TrendingUp, TrendingDown, Clock, Settings,
   Filter, ChevronDown, ChevronRight, Trophy, Target, Minus,
-  Terminal, AlertTriangle, AlertCircle, Info, RefreshCw,
+  Terminal, AlertTriangle, AlertCircle, Info, RefreshCw, DollarSign,
+  Send, Calendar,
 } from "lucide-react";
 import {
   useTransactions, useMarketStats, useBotUptime, useSessionChanges,
-  useSystemLogs, useLogSessions,
+  useSystemLogs, useLogSessions, useCosts, useCostsDaily,
 } from "../api/hooks";
-import type { Transaction, MarketStat, UptimeEntry, SessionChangeEntry, SystemLogEntry } from "../api/types";
+import { apiFetch } from "../api/client";
+import type { Transaction, MarketStat, UptimeEntry, SessionChangeEntry, SystemLogEntry, CostStat, CostsDayEntry } from "../api/types";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -231,6 +233,71 @@ function TransactionsTab() {
           >
             Următor →
           </button>
+        </div>
+      )}
+
+      {/* ── OBS sessions (execute=False) ─────────────────────────────── */}
+      <ObsTransactionsSection />
+    </div>
+  );
+}
+
+function ObsTransactionsSection() {
+  const [open, setOpen] = React.useState(false);
+  const { data, isLoading } = useTransactions({ obs_only: true, limit: 200 });
+  const items = data?.items ?? [];
+  if (!open) {
+    return (
+      <div className="border-t border-surface-border/50 pt-3">
+        <button
+          onClick={() => setOpen(true)}
+          className="text-[10px] text-slate-500 hover:text-slate-300 flex items-center gap-1.5 transition-colors"
+        >
+          <span className="w-4 h-4 rounded border border-slate-700 flex items-center justify-center text-[9px]">▶</span>
+          Sesiuni OBS (observatie, fara executare) — {data?.total ?? "…"} semnale
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div className="border-t border-surface-border/50 pt-3 space-y-3">
+      <div className="flex items-center gap-2">
+        <button onClick={() => setOpen(false)} className="text-[10px] text-slate-500 hover:text-slate-300">▼</button>
+        <span className="text-[11px] font-semibold text-slate-400">Sesiuni OBS — observatie fara executare reala</span>
+        <span className="text-[10px] bg-slate-700/50 text-slate-400 px-2 py-0.5 rounded-full">
+          {data?.total ?? 0} semnale · nu apar in statistici
+        </span>
+      </div>
+      {isLoading ? (
+        <div className="space-y-1">{[...Array(3)].map((_, i) => <div key={i} className="h-8 rounded bg-surface-card animate-pulse" />)}</div>
+      ) : items.length === 0 ? (
+        <p className="text-[11px] text-slate-600 py-4 text-center">Niciun semnal OBS înregistrat</p>
+      ) : (
+        <div className="overflow-x-auto rounded-xl border border-surface-border/50">
+          <table className="w-full text-[11px]">
+            <thead>
+              <tr className="border-b border-surface-border/50 bg-surface-card/50">
+                <th className="text-left px-3 py-2 text-slate-600 font-medium">Simbol</th>
+                <th className="text-left px-3 py-2 text-slate-600 font-medium">Sesiune</th>
+                <th className="text-left px-3 py-2 text-slate-600 font-medium">Status</th>
+                <th className="text-right px-3 py-2 text-slate-600 font-medium">R</th>
+                <th className="text-left px-3 py-2 text-slate-600 font-medium">Timp ieșire</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-surface-border/30">
+              {items.map((t) => (
+                <tr key={t.signal_id} className="hover:bg-surface-border/5 transition-colors opacity-70">
+                  <td className="px-3 py-2 text-slate-400 font-medium">{t.symbol}</td>
+                  <td className="px-3 py-2 text-slate-600 text-[10px]">{t.session_label.replace(/^S\d+ — /, "")}</td>
+                  <td className="px-3 py-2 text-slate-500">{t.status}</td>
+                  <td className={`px-3 py-2 text-right font-mono ${t.result_r > 0 ? "text-profit/60" : t.result_r < 0 ? "text-loss/60" : "text-slate-600"}`}>
+                    {t.result_r > 0 ? "+" : ""}{t.result_r.toFixed(3)}R
+                  </td>
+                  <td className="px-3 py-2 text-slate-600">{t.exit_time?.slice(0, 16) ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
@@ -532,6 +599,255 @@ function SessionChangesTab() {
   );
 }
 
+// ── Costs tab ────────────────────────────────────────────────────────────────
+
+function CostsTab() {
+  const { data: perSymbol, isLoading: loadSym } = useCosts();
+  const { data: perDay,    isLoading: loadDay } = useCostsDaily();
+
+  const symItems: CostStat[]   = perSymbol?.items ?? [];
+  const dayItems: CostsDayEntry[] = perDay?.items ?? [];
+
+  const totalComm  = perDay?.total_commission ?? 0;
+  const totalSwap  = perDay?.total_swap ?? 0;
+  const totalCosts = perDay?.total_costs ?? 0;
+  const hasAnyData = dayItems.some(d => d.has_cost_data);
+
+  // Zile cu date de cost (pentru bara vizuala)
+  const maxCost = Math.max(...dayItems.map(d => Math.abs(d.total_costs)), 0.01);
+
+  const fmtMoney = (v: number, showPlus = true) => {
+    const sign = v > 0 && showPlus ? "+" : "";
+    return `${sign}${v.toLocaleString("ro-RO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} $`;
+  };
+
+  const MoneyCell = ({ v, dimZero = true }: { v: number; dimZero?: boolean }) => {
+    if (v === 0 && dimZero) return <span className="text-slate-600">0,00 $</span>;
+    return <span className={v < 0 ? "text-loss" : v > 0 ? "text-profit" : "text-slate-400"}>{fmtMoney(v)}</span>;
+  };
+
+  const fmtDate = (s: string) => {
+    const d = new Date(s);
+    return d.toLocaleDateString("ro-RO", { day: "2-digit", month: "short" });
+  };
+
+  if (loadSym || loadDay) {
+    return (
+      <div className="space-y-2">
+        {[...Array(6)].map((_, i) => (
+          <div key={i} className="h-12 rounded-xl bg-surface-card animate-pulse" />
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+
+      {/* ── 1. Summary totals ─────────────────────────────────────────── */}
+      <div className="grid grid-cols-3 gap-3">
+        <div className="bg-surface-card border border-surface-border rounded-xl p-4">
+          <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Comisioane broker</div>
+          <div className={`text-xl font-bold font-mono ${totalComm < 0 ? "text-loss" : "text-slate-300"}`}>
+            {fmtMoney(totalComm)}
+          </div>
+          <div className="text-[10px] text-slate-600 mt-1">plătit la broker per lot închis</div>
+        </div>
+        <div className="bg-surface-card border border-surface-border rounded-xl p-4">
+          <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Swap overnight</div>
+          <div className={`text-xl font-bold font-mono ${totalSwap < 0 ? "text-loss" : "text-profit"}`}>
+            {fmtMoney(totalSwap, true)}
+          </div>
+          <div className="text-[10px] text-slate-600 mt-1">
+            {totalSwap >= 0 ? "pozitiv = primit de la broker" : "negativ = plătit la broker"}
+          </div>
+        </div>
+        <div className="bg-surface-card border border-surface-border rounded-xl p-4">
+          <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Cost total net</div>
+          <div className={`text-xl font-bold font-mono ${totalCosts < 0 ? "text-loss" : "text-slate-300"}`}>
+            {fmtMoney(totalCosts)}
+          </div>
+          <div className="text-[10px] text-slate-600 mt-1">comisioane + swap</div>
+        </div>
+      </div>
+
+      {/* ── 2. Daily timeline ─────────────────────────────────────────── */}
+      <div>
+        <div className="flex items-center gap-2 mb-3">
+          <span className="text-[11px] font-semibold text-slate-300">Evoluție Zilnică</span>
+          <span className="text-[10px] text-slate-600">
+            {dayItems.length > 0 ? `din ${fmtDate(dayItems[0].date)} până azi` : ""}
+          </span>
+          {!hasAnyData && (
+            <span className="text-[10px] text-warn ml-1">Date MT5 indisponibile — apar după prima închidere de ordin real</span>
+          )}
+        </div>
+        <div className="overflow-x-auto rounded-xl border border-surface-border">
+          <table className="w-full text-[11px]">
+            <thead>
+              <tr className="border-b border-surface-border bg-surface-card">
+                <th className="text-left px-3 py-2 text-slate-500 font-medium w-24">Data</th>
+                <th className="text-right px-3 py-2 text-slate-500 font-medium">Trades</th>
+                <th className="text-right px-3 py-2 text-slate-500 font-medium">Cu date</th>
+                <th className="text-right px-3 py-2 text-slate-500 font-medium">Comisioane</th>
+                <th className="text-right px-3 py-2 text-slate-500 font-medium">Swap</th>
+                <th className="text-right px-3 py-2 text-slate-500 font-medium">Cost total</th>
+                <th className="text-right px-3 py-2 text-slate-500 font-medium">P&L USD</th>
+                <th className="text-right px-3 py-2 text-slate-500 font-medium">R total</th>
+                <th className="px-3 py-2 text-slate-500 font-medium w-28">Cost vizual</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-surface-border/40">
+              {[...dayItems].reverse().map(row => {
+                const today = new Date().toISOString().slice(0, 10);
+                const isToday = row.date === today;
+                const barPct  = row.has_cost_data
+                  ? Math.round(Math.min(Math.abs(row.total_costs) / maxCost * 100, 100))
+                  : 0;
+                return (
+                  <tr key={row.date} className={`hover:bg-surface-border/10 transition-colors ${isToday ? "bg-blue-500/5" : ""}`}>
+                    <td className="px-3 py-2.5 text-slate-300 font-medium">
+                      {fmtDate(row.date)}
+                      {isToday && <span className="ml-1 text-[9px] text-blue-400">azi</span>}
+                    </td>
+                    <td className="px-3 py-2.5 text-right text-slate-400">{row.trades}</td>
+                    <td className="px-3 py-2.5 text-right">
+                      {row.has_cost_data
+                        ? <span className="text-slate-300">{row.trades_with_cost}</span>
+                        : <span className="text-slate-600">—</span>}
+                    </td>
+                    <td className="px-3 py-2.5 text-right">
+                      {row.has_cost_data && row.commission_usd !== 0
+                        ? <MoneyCell v={row.commission_usd} />
+                        : <span className="text-slate-600">—</span>}
+                    </td>
+                    <td className="px-3 py-2.5 text-right">
+                      {row.has_cost_data && row.swap_usd !== 0
+                        ? <MoneyCell v={row.swap_usd} />
+                        : <span className="text-slate-600">—</span>}
+                    </td>
+                    <td className="px-3 py-2.5 text-right font-semibold">
+                      {row.has_cost_data
+                        ? <MoneyCell v={row.total_costs} dimZero={false} />
+                        : <span className="text-slate-600">—</span>}
+                    </td>
+                    <td className="px-3 py-2.5 text-right">
+                      {row.pnl_usd != null
+                        ? <MoneyCell v={row.pnl_usd} />
+                        : <span className="text-slate-600">—</span>}
+                    </td>
+                    <td className="px-3 py-2.5 text-right">
+                      {row.total_r != null
+                        ? <span className={row.total_r >= 0 ? "text-profit" : "text-loss"}>
+                            {row.total_r > 0 ? "+" : ""}{row.total_r.toFixed(2)}R
+                          </span>
+                        : <span className="text-slate-600">—</span>}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      {row.has_cost_data && barPct > 0 ? (
+                        <div className="flex items-center gap-1">
+                          <div className="flex-1 h-2 rounded-full bg-surface-border overflow-hidden">
+                            <div
+                              className={`h-full rounded-full ${row.total_costs < 0 ? "bg-loss/60" : "bg-profit/60"}`}
+                              style={{ width: `${barPct}%` }}
+                            />
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="text-slate-700 text-[9px]">fără date</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            {dayItems.length > 0 && hasAnyData && (
+              <tfoot>
+                <tr className="border-t-2 border-surface-border bg-surface-card/80 font-semibold">
+                  <td className="px-3 py-2.5 text-slate-400 text-[10px]">TOTAL</td>
+                  <td className="px-3 py-2.5 text-right text-slate-400">
+                    {dayItems.reduce((s, d) => s + d.trades, 0)}
+                  </td>
+                  <td className="px-3 py-2.5 text-right text-slate-400">
+                    {dayItems.reduce((s, d) => s + d.trades_with_cost, 0)}
+                  </td>
+                  <td className="px-3 py-2.5 text-right"><MoneyCell v={totalComm} dimZero={false} /></td>
+                  <td className="px-3 py-2.5 text-right"><MoneyCell v={totalSwap} dimZero={false} /></td>
+                  <td className="px-3 py-2.5 text-right"><MoneyCell v={totalCosts} dimZero={false} /></td>
+                  <td className="px-3 py-2.5 text-right">
+                    {(() => {
+                      const s = dayItems.reduce((acc, d) => acc + (d.pnl_usd ?? 0), 0);
+                      return <MoneyCell v={s} dimZero={false} />;
+                    })()}
+                  </td>
+                  <td className="px-3 py-2.5 text-right">
+                    {(() => {
+                      const s = dayItems.reduce((acc, d) => acc + (d.total_r ?? 0), 0);
+                      return <span className={s >= 0 ? "text-profit" : "text-loss"}>{s > 0 ? "+" : ""}{s.toFixed(2)}R</span>;
+                    })()}
+                  </td>
+                  <td />
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+        <p className="text-[10px] text-slate-600 mt-2">
+          <span className="text-slate-500">Cu date</span> = trade-uri cu comisioane reale MT5. Zilele fără date = bot nu înregistra încă comisioane (înainte de 2026-07-01).
+        </p>
+      </div>
+
+      {/* ── 3. Per-market breakdown ───────────────────────────────────── */}
+      {symItems.some(r => r.has_cost_data) && (
+        <div>
+          <div className="text-[11px] font-semibold text-slate-300 mb-3">Pe Piețe</div>
+          <div className="overflow-x-auto rounded-xl border border-surface-border">
+            <table className="w-full text-[11px]">
+              <thead>
+                <tr className="border-b border-surface-border bg-surface-card">
+                  <th className="text-left px-3 py-2 text-slate-500 font-medium">Piață</th>
+                  <th className="text-right px-3 py-2 text-slate-500 font-medium">Trade-uri</th>
+                  <th className="text-right px-3 py-2 text-slate-500 font-medium">Comisioane</th>
+                  <th className="text-right px-3 py-2 text-slate-500 font-medium">Swap</th>
+                  <th className="text-right px-3 py-2 text-slate-500 font-medium">Cost/trade</th>
+                  <th className="text-right px-3 py-2 text-slate-500 font-medium">P&L Brut</th>
+                  <th className="text-right px-3 py-2 text-slate-500 font-medium">P&L Net</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-surface-border/40">
+                {symItems.filter(r => r.has_cost_data).map(r => {
+                  const costPerTrade = r.trades_with_mt5 > 0
+                    ? r.total_costs / r.trades_with_mt5
+                    : 0;
+                  return (
+                    <tr key={r.symbol} className="hover:bg-surface-border/10 transition-colors">
+                      <td className="px-3 py-2.5 font-semibold text-white">{r.symbol}</td>
+                      <td className="px-3 py-2.5 text-right text-slate-400">
+                        {r.trades_with_mt5}/{r.trades}
+                      </td>
+                      <td className="px-3 py-2.5 text-right"><MoneyCell v={r.commission_usd} /></td>
+                      <td className="px-3 py-2.5 text-right"><MoneyCell v={r.swap_usd} /></td>
+                      <td className="px-3 py-2.5 text-right">
+                        <span className="text-slate-400">{fmtMoney(costPerTrade)}</span>
+                      </td>
+                      <td className="px-3 py-2.5 text-right">
+                        {r.pnl_net != null ? <MoneyCell v={r.pnl_gross} /> : <span className="text-slate-600">—</span>}
+                      </td>
+                      <td className="px-3 py-2.5 text-right">
+                        {r.pnl_net != null ? <MoneyCell v={r.pnl_net} /> : <span className="text-slate-600">—</span>}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── System Logs tab ───────────────────────────────────────────────────────────
 
 const LEVEL_CONFIG: Record<string, { label: string; color: string; icon: React.ReactElement }> = {
@@ -686,14 +1002,55 @@ function SystemLogsTab() {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 const TABS = [
-  { id: "transactions", label: "Tranzacții", icon: <BarChart2 size={13} /> },
-  { id: "markets",      label: "Piețe",      icon: <Trophy size={13} /> },
-  { id: "uptime",       label: "Uptime Bot",  icon: <Clock size={13} /> },
-  { id: "changes",      label: "Modificări",  icon: <Settings size={13} /> },
-  { id: "sistem",       label: "Sistem",      icon: <Terminal size={13} /> },
+  { id: "transactions", label: "Tranzacții",      icon: <BarChart2 size={13} /> },
+  { id: "markets",      label: "Piețe",           icon: <Trophy size={13} /> },
+  { id: "costs",        label: "Comisioane+Swap", icon: <DollarSign size={13} /> },
+  { id: "uptime",       label: "Uptime Bot",      icon: <Clock size={13} /> },
+  { id: "changes",      label: "Modificări",      icon: <Settings size={13} /> },
+  { id: "sistem",       label: "Sistem",          icon: <Terminal size={13} /> },
 ] as const;
 
 type ReportTab = (typeof TABS)[number]["id"];
+
+function ManualReportButtons() {
+  const [sending, setSending] = useState<"daily" | "weekly" | null>(null);
+  const [lastSent, setLastSent] = useState<"daily" | "weekly" | null>(null);
+
+  const send = async (type: "daily" | "weekly") => {
+    setSending(type);
+    try {
+      await apiFetch(`/reports/send-${type}`, { method: "POST" });
+      setLastSent(type);
+      setTimeout(() => setLastSent(null), 4000);
+    } catch {
+      // silently fail — Telegram config may not be set
+    } finally {
+      setSending(null);
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-2 ml-auto">
+      <span className="text-[10px] text-slate-500">Trimite manual:</span>
+      <button
+        onClick={() => send("daily")}
+        disabled={sending !== null}
+        className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] rounded-lg border border-surface-border bg-surface-card hover:border-blue-500/50 hover:text-blue-300 text-slate-300 transition-colors disabled:opacity-50"
+      >
+        {sending === "daily" ? <RefreshCw size={11} className="animate-spin" /> : <Send size={11} />}
+        {lastSent === "daily" ? "✓ Trimis!" : "Zilnic"}
+      </button>
+      <button
+        onClick={() => send("weekly")}
+        disabled={sending !== null}
+        className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] rounded-lg border border-surface-border bg-surface-card hover:border-blue-500/50 hover:text-blue-300 text-slate-300 transition-colors disabled:opacity-50"
+      >
+        {sending === "weekly" ? <RefreshCw size={11} className="animate-spin" /> : <Calendar size={11} />}
+        {lastSent === "weekly" ? "✓ Trimis!" : "Săptămânal"}
+      </button>
+    </div>
+  );
+}
 
 export function ReportsPage() {
   const [activeTab, setActiveTab] = useState<ReportTab>("transactions");
@@ -705,6 +1062,7 @@ export function ReportsPage() {
         <BarChart2 size={16} className="text-blue-400" />
         <h1 className="text-sm font-semibold text-white">Rapoarte</h1>
         <span className="text-[10px] text-slate-500">Date live din toate sesiunile active</span>
+        <ManualReportButtons />
       </div>
 
       {/* Tab selector */}
@@ -729,6 +1087,7 @@ export function ReportsPage() {
       <div>
         {activeTab === "transactions" && <TransactionsTab />}
         {activeTab === "markets"      && <MarketStatsTab />}
+        {activeTab === "costs"        && <CostsTab />}
         {activeTab === "uptime"       && <UptimeTab />}
         {activeTab === "changes"      && <SessionChangesTab />}
         {activeTab === "sistem"       && <SystemLogsTab />}

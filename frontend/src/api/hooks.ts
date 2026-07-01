@@ -7,7 +7,7 @@ import type {
   BacktestHistoryEntry, BacktestJob, WeeklyStats,
   NotificationsResponse, TransactionsResponse, MarketStatsResponse,
   UptimeResponse, SessionChangesResponse, TopMarketEntry, TimezoneConfig,
-  SystemLogsResponse,
+  SystemLogsResponse, SyncResult, CostsResponse, CostsDailyResponse,
 } from "./types";
 
 
@@ -391,6 +391,7 @@ export const useTransactions = (params: {
   date_from?: string;
   date_to?: string;
   session_id?: string;
+  obs_only?: boolean;
   limit?: number;
   offset?: number;
 }) =>
@@ -404,6 +405,7 @@ export const useTransactions = (params: {
       if (params.date_from)  qs.set("date_from",  params.date_from);
       if (params.date_to)    qs.set("date_to",    params.date_to);
       if (params.session_id) qs.set("session_id", params.session_id);
+      if (params.obs_only)   qs.set("obs_only",   "true");
       qs.set("limit",  String(params.limit  ?? 200));
       qs.set("offset", String(params.offset ?? 0));
       return apiFetch(`/reports/transactions?${qs.toString()}`);
@@ -481,6 +483,41 @@ export const useLogSessions = () =>
     refetchInterval: 60_000,
     staleTime: 30_000,
   });
+
+export const useCosts = () =>
+  useQuery<CostsResponse>({
+    queryKey: ["costs"],
+    queryFn:  () => apiFetch("/reports/costs"),
+    refetchInterval: 60_000,
+  });
+
+export const useCostsDaily = () =>
+  useQuery<CostsDailyResponse>({
+    queryKey: ["costs-daily"],
+    queryFn:  () => apiFetch("/reports/costs-daily"),
+    refetchInterval: 60_000,
+  });
+
+// ── MT5 Sync ─────────────────────────────────────────────────────────────────
+
+export const useSyncStatus = () =>
+  useQuery<SyncResult>({
+    queryKey: ["mt5-sync-status"],
+    queryFn:  () => apiFetch("/mt5/sync-status"),
+    refetchInterval: 30_000,
+  });
+
+export const useRunSync = () => {
+  const qc = useQueryClient();
+  return useMutation<SyncResult, Error, { fix: boolean }>({
+    mutationFn: ({ fix }) => apiFetch(`/mt5/sync?fix=${fix}`, { method: "POST" }),
+    onSuccess:  () => {
+      qc.invalidateQueries({ queryKey: ["mt5-sync-status"] });
+      qc.invalidateQueries({ queryKey: ["sessions"] });
+      qc.invalidateQueries({ queryKey: ["outcomes"] });
+    },
+  });
+};
 
 // ── Backtest history (legacy) ─────────────────────────────────────────────────
 
