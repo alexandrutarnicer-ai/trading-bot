@@ -1,2 +1,5 @@
-signal_id,time_check,symbol,direction,status,entry,sl,tp,r_ratio,triggered_at,exit_price,exit_time,result_r,pnl_usd
-S19-AUDNZD-IB0002,2026-06-29 20:15:56.445158,AUDNZD,-1,expirat,1.21836,1.2194,1.21628,2.0,,,2026-06-29 20:00:00,0.0,0.0
+signal_id,time_check,symbol,direction,status,entry,sl,tp,r_ratio,armed_at,triggered_at,exit_price,exit_time,result_r,pnl_usd,commission_usd,swap_usd
+S19-AUDNZD-IB0002,2026-06-29 20:15:56.445158,AUDNZD,-1,expirat,1.21836,1.2194,1.21628,2.0,,,,2026-06-29 20:00:00,0.0,0.0,,
+S19-AUDNZD-IB0001,2026-06-30 21:52:21,AUDNZD,-1,expirat,1.22047,1.2214,1.21861,2.0,,,,,0.0,0.0,,
+S19-AUDNZD-SIG0001,2026-06-30 21:52:21,AUDNZD,-1,expirat,1.21992,1.22093,1.21538,4.5,,,,,0.0,0.0,,
+S19-AUDNZD-SIG0002,2026-06-30 21:52:21,AUDNZD,-1,expirat,1.21992,1.22093,1.21538,4.5,,,,,0.0,0.0,,
