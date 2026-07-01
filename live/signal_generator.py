@@ -3161,6 +3161,9 @@ def run_generator(session_cfg: dict):
                     log=log,
                 )
 
+            # Recuperare runtime pentru semnalele pending fara ticket MT5
+            _recover_lost_outcomes(state, session_cfg, outcomes_file, log)
+
             new_sigs = 0
             for market, symbol in resolved.items():
                 df = _prepare_live(
@@ -3331,6 +3334,40 @@ def run_generator(session_cfg: dict):
                             continue  # ordin deja plasat in MT5
                         if _p.get("triggered"):
                             continue  # deja triggerat
+                        # Guard anti-duplicat: verifica daca exista deja un ordin MT5 pending
+                        # pentru acelasi simbol/directie/entry (plasare anterioara neconfirmata
+                        # in state — ex: crash intre order_send si pickle.dump).
+                        # Daca exista, adopta ticket-ul existent in loc sa plaseze un ordin nou.
+                        if _mt5_exec is not None:
+                            _d_ord = _p["direction"]
+                            _stop_types = (4, 2) if _d_ord == 1 else (5, 3)  # BUY/SELL STOP+LIMIT
+                            try:
+                                from strategy.signals import pip_size as _pip_sz
+                                _tol = 5 * _pip_sz(symbol)
+                            except Exception:
+                                _tol = 0.001
+                            _tracked = set(state.get("mt5_tickets", {}).values())
+                            _dup_ticket = None
+                            for _o in (_mt5_exec.orders_get(symbol=symbol) or []):
+                                if _o.ticket in _tracked:
+                                    continue
+                                if (_o.type in _stop_types and
+                                        abs(_o.price_open - _p["entry"]) < _tol):
+                                    _dup_ticket = _o.ticket
+                                    break
+                            if _dup_ticket is not None:
+                                state["mt5_tickets"][_sid] = _dup_ticket
+                                state["comment_map"][_sid[:16]] = _sid
+                                log.warning(
+                                    f"  [DEDUP] {_sid}: ordin MT5 #{_dup_ticket} deja existent "
+                                    f"@ {_p['entry']:.5f} — adoptat, plasare noua evitata"
+                                )
+                                _send_telegram(
+                                    f"⚠️ <b>[DEDUP] {_sid}</b>\n"
+                                    f"Ordin MT5 #{_dup_ticket} adoptat (era orfan in MT5)\n"
+                                    f"<i>{session_cfg['session_id']}</i>"
+                                )
+                                continue
                         # Reconstituie sig dict minimal pentru _place_order
                         _sig_retry = {
                             "symbol":    symbol,

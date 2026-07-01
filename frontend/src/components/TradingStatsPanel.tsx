@@ -79,8 +79,10 @@ export function TradingStatsPanel({ sessions, mt5, botStatus }: Props) {
   const [expanded, setExpanded] = useState<"signals" | "trades" | null>(null);
   const { data: costsData } = useCosts();
 
-  // Statistici doar din sesiunile live (execute=true); sesiunile de observatie (S20 etc.) excluse
-  const liveSessions = sessions.filter(x => x.execute);
+  // Sesiunile live (execute=true) + sesiunile care au avut tranzactii reale MT5 (pnl_count>0)
+  // dar au fost ulterior oprite (execute=false). MT5 e sursa de adevar — daca pnl_usd exista,
+  // trade-ul a fost real, indiferent de setarea curenta a profilului.
+  const liveSessions = sessions.filter(x => x.execute || (x.pnl_count != null && x.pnl_count > 0));
 
   const totalSignals   = liveSessions.reduce((s, x) => s + x.signals_total,    0);
   const totalTrades    = liveSessions.reduce((s, x) => s + x.outcomes_total,   0);

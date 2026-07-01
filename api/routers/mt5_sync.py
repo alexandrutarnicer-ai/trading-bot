@@ -94,6 +94,11 @@ def _run_sync(fix: bool = False) -> dict:
         outcomes_df = _load_outcomes(session_id)
         outcomes_file = os.path.join(DATA_DIR, "live_signals", session_id, "outcomes.csv")
         markets = sess.get("markets", [])
+        # Prefix semnal asteptat — ex: "S18-" pentru session18.
+        # Ordinele care apartin altor sesiuni dar tranzactioneaza acelasi simbol
+        # (ex: S2-NZDJPY gasit in session18 care si ea tradeaza NZDJPY) sunt ignorate.
+        _label = sess.get("label", "")
+        _sess_prefix = (_label.split()[0] + "-") if _label else ""
 
         existing_sig_ids: set = set()
         existing_pos_keys: set = set()
@@ -169,6 +174,10 @@ def _run_sync(fix: bool = False) -> dict:
                     continue
                 comment = (getattr(order, "comment", "") or "").strip()
                 if not _BOT_SIG_RE.match(comment):
+                    continue
+                # Ignora ordinele care apartin altor sesiuni ce tranzactioneaza acelasi simbol.
+                # Prefixul "S18-" asigura ca numai semnalele acestei sesiuni sunt procesate.
+                if _sess_prefix and not comment.upper().startswith(_sess_prefix.upper()):
                     continue
                 if order.ticket in tracked_tickets:
                     continue  # Inca activ — gestionat de bot
