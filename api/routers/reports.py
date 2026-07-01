@@ -57,7 +57,17 @@ def _discover_outcome_sessions(live_only: bool = True) -> list[dict]:
             if os.path.isfile(outcomes_path):
                 sess = static_map.get(name, {"id": name, "label": name, "markets": [], "execute": True})
                 if live_only and not execute_map.get(name, sess.get("execute", True)):
-                    continue  # skip OBS sessions from aggregates
+                    # Sesiunea e marcata OBS in profil — dar daca are pnl_usd real (MT5 e legea),
+                    # o includem in rapoarte. Exclude doar sesiunile cu 0 tranzactii reale.
+                    try:
+                        _df = pd.read_csv(outcomes_path, usecols=["pnl_usd"])
+                        _pnl_ser = pd.to_numeric(_df["pnl_usd"], errors="coerce").dropna()
+                        # pnl=0.0 apare la expirat/invalidat — nu e trade real MT5
+                        _has_real = bool((_pnl_ser != 0).any())
+                    except Exception:
+                        _has_real = False
+                    if not _has_real:
+                        continue
                 result.append(sess)
                 seen.add(name)
 

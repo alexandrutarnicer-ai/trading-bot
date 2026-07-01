@@ -642,7 +642,7 @@ export function GuidePage() {
               </div>
             </div>
             <Note>
-              Sesiunile de observație (<Badge color="bg-surface-border text-slate-500" label="OBS" />) sunt excluse din toate agregările — doar sesiunile cu <code className="text-blue-300">execute_trades: true</code> contează în statistici.
+              Sesiunile de observație (<Badge color="bg-surface-border text-slate-500" label="OBS" />) sunt excluse din toate agregările. Excepție: dacă o sesiune a avut tranzacții reale MT5 (<code className="text-blue-300">pnl_usd ≠ 0</code>) și ulterior a fost oprită din execuție, tranzacțiile istorice rămân vizibile în statistici. MT5 este sursa de adevăr — dacă există <code className="text-blue-300">pnl_usd</code> real, trade-ul a fost executat indiferent de setarea curentă a profilului.
             </Note>
           </SubSection>
 
@@ -1782,7 +1782,37 @@ export function GuidePage() {
               <KV k="Notificări [RECOVER]" v="Apar când botul a recuperat tranzacții închise în lipsa lui — normale după restart" />
               <KV k="min stops distance" v="Log warning = SL prea aproape de preț curent — ordinul nu s-a plasat, se reîncearcă la bara următoare" />
               <KV k="Sync MT5" v="Butonul din NavBar forțează resincronizarea outcomes cu history MT5 — folosește dacă P&L pare incorect" />
+              <KV k="Notificări [DEDUP]" v="Apar când botul a detectat un ordin MT5 deja existent pentru același semnal și l-a adoptat în loc să plaseze un duplicat — pot apărea după un crash/restart" />
             </div>
+          </SubSection>
+
+          <SubSection title="Sync MT5 — Reconciliere manuală" defaultOpen={false}>
+            <p>
+              Butonul <strong className="text-white">Sync MT5</strong> din NavBar reconciliază <code className="text-blue-300">outcomes.csv</code> cu
+              istoricul real din MT5. Principiu: <strong className="text-yellow-400">MT5 este sursa de adevăr</strong> — dacă o tranzacție
+              există în MT5, ea trebuie să fie reflectată în dashboard.
+            </p>
+            <div className="grid grid-cols-2 gap-3 text-xs mt-3">
+              <div className="bg-surface rounded-lg border border-surface-border p-3 space-y-1">
+                <div className="text-[11px] font-semibold text-slate-300">Detectează</div>
+                <div className="text-slate-400">Scanează history MT5 (10 zile) și raportează discrepanțele fără să modifice nimic. Arată ticket, simbol, R și P&L pentru fiecare poziție MT5 care lipsește din outcomes.csv.</div>
+              </div>
+              <div className="bg-surface rounded-lg border border-surface-border p-3 space-y-1">
+                <div className="text-[11px] font-semibold text-slate-300">Corectează</div>
+                <div className="text-slate-400">Scrie în outcomes.csv rândurile lipsă cu datele reale MT5. Sigur de rulat și cu botul activ — nu modifică state.pkl.</div>
+              </div>
+            </div>
+            <div className="mt-3 space-y-1.5 text-xs">
+              <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Ce detectează</div>
+              <KV k="Pozitii MT5 lipsă din outcomes" v="Ordine executate în MT5 care nu au rând corespondent în outcomes.csv (ex: bot oprit înainte să scrie rezultatul)" />
+              <KV k="Semnale triggered fără poziție deschisă" v="State.pkl are semnal ca triggered, dar poziția MT5 nu mai există — potențial trade neînregistrat" />
+            </div>
+            <Note>
+              Sincronizarea filtrează automat semnalele altor sesiuni care tranzacționează același simbol (ex: S2-NZDJPY găsit în sesiunea care tranzacționează și ea NZDJPY). Prefixul comentariului MT5 (<code>S18-</code>, <code>S2-</code> etc.) identifică sesiunea de origine.
+            </Note>
+            <Tip>
+              Dacă după sync mai apar discrepanțe persistente, verifică în MT5 că ordinul comentariul include prefix-ul corect al sesiunii. ICMarketsEU trunchiază comentariile la 16 caractere — semnalele cu ID lung (ex: <code>S18-NZDJPY-H1-IB0010</code>) sunt stocate trunchiat în MT5.
+            </Tip>
           </SubSection>
         </Section>
 

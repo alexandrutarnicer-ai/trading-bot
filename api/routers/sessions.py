@@ -151,7 +151,11 @@ def _resolve_outcome_sig_ids(outcomes_df: pd.DataFrame, signals_df: pd.DataFrame
             continue  # match direct — nu schimbam
 
         sym  = str(row.get("symbol", ""))
-        dirn = int(row.get("direction", 0))
+        _dir = row.get("direction", 0)
+        try:
+            dirn = int(float(_dir)) if str(_dir) not in ("", "nan", "None") else 0
+        except (ValueError, TypeError):
+            dirn = 0
         entry = float(row.get("entry", 0))
         pip  = _pip_for_symbol(sym)
 
