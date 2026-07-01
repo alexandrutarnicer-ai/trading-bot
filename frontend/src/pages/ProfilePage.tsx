@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import {
   useProfileList, useProfile, useMeta, useSaveProfile, useCreateProfile, useDeleteProfile,
   useBotStatus, useSessions, usePauseSession, useResumeSession,
-  useTimezone, useSetTimezone,
+  useTimezone, useSetTimezone, useMt5Status,
 } from "../api/hooks";
 import { SessionEditor } from "../components/SessionEditor";
 import { InfoTooltip } from "../components/InfoTooltip";
@@ -189,6 +189,7 @@ export function ProfilePage({
   const { data: profiles, isLoading: loadingList } = useProfileList();
   const { data: meta } = useMeta();
   const { data: botStatus } = useBotStatus();
+  const { data: mt5 } = useMt5Status();
 
   const runningProfileId = botStatus?.running ? (botStatus.active_profile_id ?? null) : null;
 
@@ -538,6 +539,51 @@ export function ProfilePage({
         </div>
       )}
 
+
+      {/* Capital Initial */}
+      {draft && (
+        <div className="bg-surface-card border border-surface-border rounded-xl p-4">
+          <div className="flex items-center gap-3 flex-wrap">
+            <span className="text-sm font-semibold text-white">Capital Inițial</span>
+            <InfoTooltip text={
+              "Balanța de referință pentru calculul P&L Real MT5 (equity curentă − capital inițial). " +
+              "Setează-l o singură dată la prima pornire a botului pe cont nou. " +
+              "Nu se modifică automat — reprezintă punctul de start fix al contului."
+            } />
+            <div className="flex items-center gap-2 ml-auto">
+              <input
+                type="number"
+                min={1}
+                step={1}
+                value={draft.start_balance}
+                onChange={(e) => {
+                  const v = Math.max(1, Number(e.target.value));
+                  setDraft({ ...draft, start_balance: v });
+                  setDirty(true);
+                }}
+                className="w-28 bg-surface border border-surface-border rounded px-2 py-1 text-sm text-white text-right focus:outline-none focus:border-blue-500"
+              />
+              <span className="text-xs text-slate-400">$</span>
+              {mt5?.connected && mt5?.equity != null && (
+                <button
+                  onClick={() => {
+                    const eq = Math.round(mt5.equity! * 100) / 100;
+                    setDraft({ ...draft, start_balance: eq });
+                    setDirty(true);
+                  }}
+                  title={`Importă equity curentă MT5: ${mt5.equity?.toFixed(2)} $`}
+                  className="text-xs px-2.5 py-1 rounded-lg bg-blue-600/20 border border-blue-500/40 text-blue-400 hover:bg-blue-600/30 transition-colors whitespace-nowrap"
+                >
+                  ↓ Import din MT5 ({mt5.equity?.toFixed(0)} $)
+                </button>
+              )}
+            </div>
+          </div>
+          <p className="text-[10px] text-slate-600 mt-2">
+            Folosit pentru: P&L Real MT5 în Dashboard, prag Protecție Capital, capital implicit în Backtest Panel.
+          </p>
+        </div>
+      )}
 
       {/* Capital Protection */}
       {draft && (
