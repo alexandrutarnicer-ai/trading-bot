@@ -489,6 +489,25 @@ export interface Mt5MarketStatsResponse {
   error: string | null;
 }
 
+export interface Mt5SessionStat {
+  session_id: string;
+  symbol: string;
+  trades_today: number;
+  trades_total: number;
+  wins: number;
+  losses: number;
+  win_rate: number;
+  pnl_usd_today: number;
+  pnl_usd_yesterday: number;
+  last_trade_time: string | null;
+}
+
+export interface Mt5SessionsResponse {
+  connected: boolean;
+  items: Mt5SessionStat[];
+  error: string | null;
+}
+
 export interface Mt5Transaction {
   ticket: number;
   symbol: string;

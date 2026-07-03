@@ -5,7 +5,7 @@ import type {
   Profile, ProfileSummary, Meta,
   DataCheckResult, DownloadJob, TelegramConfig, Mt5Status, Mt5TradeStats, Mt5EquityCurveResponse,
   Mt5WeeklyStats, Mt5TopMarketsResponse, Mt5MarketStatsResponse, Mt5TransactionsResponse,
-  Mt5CostsResponse, Mt5CostsDailyResponse,
+  Mt5CostsResponse, Mt5CostsDailyResponse, Mt5SessionsResponse,
   BacktestHistoryEntry, BacktestJob, WeeklyStats,
   NotificationsResponse, TransactionsResponse, MarketStatsResponse,
   UptimeResponse, SessionChangesResponse, TopMarketEntry, TimezoneConfig,
@@ -472,6 +472,14 @@ export const useMt5MarketStats = () =>
     queryKey: ["mt5-market-stats"],
     queryFn:  () => apiFetch("/mt5/top-markets?period=all&limit=100"),
     refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
+  });
+
+export const useMt5SessionStats = () =>
+  useQuery<Mt5SessionsResponse>({
+    queryKey: ["mt5-session-stats"],
+    queryFn:  () => apiFetch("/mt5/sessions"),
+    refetchInterval: POLL,
     refetchIntervalInBackground: false,
   });
 

@@ -15,8 +15,16 @@ sys.path.insert(0, ROOT)
 from fastapi import APIRouter
 
 from tz_helper import get_configured_tz_name
+from api.config import SESSIONS
 
 router = APIRouter(prefix="/mt5", tags=["mt5"])
+
+# Mapare simbol -> session_id. Fiecare sesiune live tranzactioneaza o singura
+# piata (vezi api/config.py), deci maparea e biunivoca — sigura pentru
+# agregarea trade-urilor MT5 pe card de sesiune.
+_SYMBOL_TO_SESSION: dict[str, str] = {
+    m: s["id"] for s in SESSIONS for m in s["markets"]
+}
 
 
 def _detect_server_offset_h(mt5, symbol: str = "EURUSD") -> int:
@@ -645,3 +653,78 @@ def mt5_costs_daily():
     except Exception as e:
         return {"connected": False, "error": str(e), "items": [],
                  "total_commission": 0.0, "total_swap": 0.0, "total_costs": 0.0}
+
+
+@router.get("/sessions")
+def mt5_session_stats():
+    """
+    Statistici MT5-directe per sesiune (Dashboard → Sesiuni active), mapate
+    prin simbol -> session_id (_SYMBOL_TO_SESSION, biunivoc — o piata per
+    sesiune). Echivalentul MT5 pentru signals_today/signals_total/wins din
+    /sessions (care sunt calculate din outcomes.csv). Trade-urile pe simboluri
+    nemapate la nicio sesiune (ex. simbol scos din profil) sunt ignorate.
+    """
+    try:
+        import MetaTrader5 as mt5
+
+        if not mt5.initialize():
+            err = mt5.last_error()
+            mt5.shutdown()
+            return {"connected": False, "error": f"MT5 nu s-a putut initializa: {err}", "items": []}
+
+        trades = _fetch_closed_trades(mt5, days=400)
+        mt5.shutdown()
+
+        today = _date.today()
+        yesterday = today - timedelta(days=1)
+
+        by_session: dict[str, dict] = {}
+        for t in trades:
+            session_id = _SYMBOL_TO_SESSION.get(t["symbol"])
+            if session_id is None:
+                continue
+            st = by_session.setdefault(session_id, {
+                "trades_today": 0, "trades_total": 0, "wins": 0, "losses": 0,
+                "pnl_usd_today": 0.0, "pnl_usd_yesterday": 0.0, "last_trade_time": None,
+            })
+            st["trades_total"] += 1
+            if t["profit"] > 0:
+                st["wins"] += 1
+            elif t["profit"] < 0:
+                st["losses"] += 1
+            day = t["close_time"].date()
+            if day == today:
+                st["trades_today"] += 1
+                st["pnl_usd_today"] += t["profit"]
+            elif day == yesterday:
+                st["pnl_usd_yesterday"] += t["profit"]
+            if st["last_trade_time"] is None or t["close_time"] > st["last_trade_time"]:
+                st["last_trade_time"] = t["close_time"]
+
+        items = []
+        for s in SESSIONS:
+            st = by_session.get(s["id"])
+            if st is None:
+                items.append({
+                    "session_id": s["id"], "symbol": s["markets"][0] if s["markets"] else "",
+                    "trades_today": 0, "trades_total": 0, "wins": 0, "losses": 0,
+                    "win_rate": 0.0, "pnl_usd_today": 0.0, "pnl_usd_yesterday": 0.0,
+                    "last_trade_time": None,
+                })
+                continue
+            n = st["trades_total"]
+            items.append({
+                "session_id": s["id"], "symbol": s["markets"][0] if s["markets"] else "",
+                "trades_today": st["trades_today"], "trades_total": n,
+                "wins": st["wins"], "losses": st["losses"],
+                "win_rate": round(st["wins"] / n * 100, 1) if n else 0.0,
+                "pnl_usd_today": round(st["pnl_usd_today"], 2),
+                "pnl_usd_yesterday": round(st["pnl_usd_yesterday"], 2),
+                "last_trade_time": st["last_trade_time"].strftime("%H:%M") if st["last_trade_time"] else None,
+            })
+
+        return {"connected": True, "items": items, "error": None}
+    except ImportError:
+        return {"connected": False, "error": "MetaTrader5 nu este instalat", "items": []}
+    except Exception as e:
+        return {"connected": False, "error": str(e), "items": []}

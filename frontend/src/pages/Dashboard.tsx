@@ -2,9 +2,9 @@ import { useState, useEffect } from "react";
 import { RefreshCw, TrendingUp, TrendingDown, Minus, Play } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "../api/client";
-import { useSessions, useBotStatus, useMt5Status, useWeeklyStats, useMt5WeeklyStats, useFrequencyEstimate } from "../api/hooks";
+import { useSessions, useBotStatus, useMt5Status, useWeeklyStats, useMt5WeeklyStats, useFrequencyEstimate, useMt5SessionStats } from "../api/hooks";
 import { useStatsSource, type StatsSource } from "../hooks/useStatsSource";
-import type { PeriodStats, Mt5PeriodStats } from "../api/types";
+import type { PeriodStats, Mt5PeriodStats, SessionStatus, Mt5SessionStat } from "../api/types";
 import { BotStatusBar } from "../components/BotStatusBar";
 import { SessionCard } from "../components/SessionCard";
 import { SignalFeed } from "../components/SignalFeed";
@@ -34,6 +34,28 @@ const toViewMt5 = (p: Mt5PeriodStats): ViewPeriod => ({
   ddUnit: p.total_r != null ? "R" : "USD",
   totalR: p.total_r,
 });
+
+// Suprapune statisticile MT5-directe pe cardul de sesiune, pastrand SessionCard
+// neschimbat — cardul citeste mereu signals_today/signals_total/outcomes_total/wins,
+// doar sursa numerelor se schimba. Starea de proces (running/paused/execute) ramane
+// mereu din Bot, indiferent de sursa — MT5 nu are conceptul de sesiune pe pauza.
+function mergeSessionWithMt5(s: SessionStatus, m: Mt5SessionStat | undefined): SessionStatus {
+  if (!m) {
+    return {
+      ...s,
+      signals_today: 0, signals_total: 0, outcomes_total: 0,
+      wins: 0, losses: 0, pnl_usd_today: 0, pnl_usd_yesterday: 0,
+      last_signal_time: null,
+    };
+  }
+  return {
+    ...s,
+    signals_today: m.trades_today, signals_total: m.trades_total, outcomes_total: m.trades_total,
+    wins: m.wins, losses: m.losses,
+    pnl_usd_today: m.pnl_usd_today, pnl_usd_yesterday: m.pnl_usd_yesterday,
+    last_signal_time: m.last_trade_time,
+  };
+}
 
 function WeeklyStatsPanel({ source, onSourceChange }: { source: StatsSource; onSourceChange: (s: StatsSource) => void }) {
   const { data: botData, isLoading: botLoading } = useWeeklyStats();
@@ -209,6 +231,7 @@ export function Dashboard() {
   const { data: botStatus } = useBotStatus();
   const { data: mt5 } = useMt5Status();
   const { data: freqData } = useFrequencyEstimate(botStatus?.active_profile_id ?? undefined);
+  const { data: mt5SessionsData } = useMt5SessionStats();
   const [selectedSession, setSelectedSession] = useState<string>("all");
   const [now, setNow] = useState(Date.now());
   const [runningMissing, setRunningMissing] = useState(false);
@@ -232,6 +255,12 @@ export function Dashboard() {
     : `${Math.floor(secsAgo / 60)}m`;
 
   const selected = sessions?.find(s => s.id === selectedSession);
+
+  const usingMt5Sessions = statsSource === "mt5";
+  const mt5SessionMap = new Map((mt5SessionsData?.items ?? []).map(m => [m.session_id, m]));
+  const cardSessions = usingMt5Sessions
+    ? sessions?.map(s => mergeSessionWithMt5(s, mt5SessionMap.get(s.id)))
+    : sessions;
 
   function refresh() {
     qc.invalidateQueries();
@@ -428,11 +457,17 @@ export function Dashboard() {
 
       {/* Sessions grid */}
       <div>
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
           <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
             Sesiuni active
           </h2>
+          <SourceToggle source={statsSource} onChange={setStatsSource} />
         </div>
+        {usingMt5Sessions && mt5SessionsData && !mt5SessionsData.connected && (
+          <div className="text-[11px] text-warn/80 bg-warn/10 border border-warn/30 rounded-lg px-3 py-2 mb-3">
+            MT5 neconectat — {mt5SessionsData.error ?? "statisticile directe pe sesiune nu sunt disponibile"}. Comută pe „Bot" pentru date din outcomes.csv.
+          </div>
+        )}
         {isLoading ? (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
             {[...Array(6)].map((_, i) => (
@@ -441,7 +476,7 @@ export function Dashboard() {
           </div>
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-            {sessions?.map(s => (
+            {cardSessions?.map(s => (
               <SessionCard
                 key={s.id}
                 session={s}
@@ -459,7 +494,9 @@ export function Dashboard() {
         <div className="bg-surface-card rounded-xl border border-surface-border p-4">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-semibold text-white">
-              {selectedSession === "all" ? "Semnale — Toate sesiunile" : `Semnale — ${selected?.label ?? "—"}`}
+              {statsSource === "mt5"
+                ? (selectedSession === "all" ? "Tranzacții MT5 — Toate sesiunile" : `Tranzacții MT5 — ${selected?.label ?? "—"}`)
+                : (selectedSession === "all" ? "Semnale — Toate sesiunile" : `Semnale — ${selected?.label ?? "—"}`)}
             </h2>
             <div className="flex gap-1 flex-wrap justify-end">
               <button
@@ -491,6 +528,8 @@ export function Dashboard() {
             sessionId={selectedSession}
             balanceUsd={mt5?.connected ? mt5.balance : null}
             capitalPct={selectedSession === "all" ? undefined : selected?.capital_pct}
+            source={statsSource}
+            symbol={selectedSession === "all" ? undefined : selected?.markets[0]}
           />
         </div>
 
