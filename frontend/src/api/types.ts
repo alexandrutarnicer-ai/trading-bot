@@ -22,6 +22,37 @@ export interface Mt5Status {
   error: string | null;
 }
 
+export interface Mt5EquityPoint {
+  date: string;
+  value: number;
+}
+
+export interface Mt5EquityCurveResponse {
+  connected: boolean;
+  metric?: "usd" | "r";
+  points: Mt5EquityPoint[];
+  error: string | null;
+}
+
+export interface Mt5TradeStats {
+  connected: boolean;
+  total_trades: number;
+  wins: number;
+  losses: number;
+  trades_today: number;
+  trades_yesterday: number;
+  wins_today: number;
+  wins_yesterday: number;
+  losses_today: number;
+  losses_yesterday: number;
+  pnl_today: number | null;
+  pnl_yesterday: number | null;
+  pnl_total: number | null;
+  commission_total: number | null;
+  swap_total: number | null;
+  error: string | null;
+}
+
 export interface SessionStatus {
   id: string;
   label: string;
@@ -243,7 +274,7 @@ export interface BacktestResult {
   hour_stats?: Record<number, HourStat>;
 }
 
-interface PeriodStats {
+export interface PeriodStats {
   start: string;
   end: string;
   trades: number;
@@ -260,6 +291,28 @@ export interface WeeklyStats {
   previous_week: PeriodStats;
   current_month: PeriodStats;
   previous_month: PeriodStats;
+}
+
+export interface Mt5PeriodStats {
+  start: string;
+  end: string;
+  trades: number;
+  wins: number;
+  losses: number;
+  win_rate: number;
+  pnl_usd: number;
+  max_dd_usd: number;
+  total_r: number | null;
+  max_dd_r: number | null;
+}
+
+export interface Mt5WeeklyStats {
+  connected: boolean;
+  current_week: Mt5PeriodStats;
+  previous_week: Mt5PeriodStats;
+  current_month: Mt5PeriodStats;
+  previous_month: Mt5PeriodStats;
+  error: string | null;
 }
 
 export interface BacktestJob {
@@ -411,6 +464,89 @@ export interface TopMarketEntry {
   expectancy: number;
   pnl_usd: number | null;
   sessions: string[];
+}
+
+export interface Mt5TopMarketEntry {
+  symbol: string;
+  trades: number;
+  wins: number;
+  losses: number;
+  total_r: number;
+  win_rate: number;
+  expectancy: number;
+  pnl_usd: number;
+}
+
+export interface Mt5TopMarketsResponse {
+  connected: boolean;
+  items: Mt5TopMarketEntry[];
+  error: string | null;
+}
+
+export interface Mt5MarketStatsResponse {
+  connected: boolean;
+  items: MarketStat[];
+  error: string | null;
+}
+
+export interface Mt5SessionStat {
+  session_id: string;
+  symbol: string;
+  trades_today: number;
+  trades_total: number;
+  wins: number;
+  losses: number;
+  win_rate: number;
+  pnl_usd_today: number;
+  pnl_usd_yesterday: number;
+  last_trade_time: string | null;
+}
+
+export interface Mt5SessionsResponse {
+  connected: boolean;
+  items: Mt5SessionStat[];
+  error: string | null;
+}
+
+export interface Mt5Transaction {
+  ticket: number;
+  symbol: string;
+  direction: number;
+  dir_str: string;
+  status: string;
+  entry: number;
+  sl: number | null;
+  tp: number | null;
+  r_ratio: number | null;
+  entry_time: string | null;
+  exit_price: number | null;
+  exit_time: string | null;
+  result_r: number | null;
+  pnl_usd: number;
+  commission_usd: number;
+  swap_usd: number;
+}
+
+export interface Mt5TransactionsResponse {
+  connected: boolean;
+  items: Mt5Transaction[];
+  total: number;
+  error: string | null;
+}
+
+export interface Mt5CostsResponse {
+  connected: boolean;
+  items: CostStat[];
+  error: string | null;
+}
+
+export interface Mt5CostsDailyResponse {
+  connected: boolean;
+  items: CostsDayEntry[];
+  total_commission: number;
+  total_swap: number;
+  total_costs: number;
+  error: string | null;
 }
 
 export interface UptimeEntry {
