@@ -1,12 +1,16 @@
 import { useState } from "react";
-import { useCosts } from "../api/hooks";
+import { useCosts, useMt5Stats } from "../api/hooks";
 import type { SessionStatus } from "../api/types";
 import type { Mt5Status, BotStatus } from "../api/types";
+import type { StatsSource } from "../hooks/useStatsSource";
+import { SourceToggle } from "./SourceToggle";
 
 interface Props {
   sessions: SessionStatus[];
   mt5?: Mt5Status | null;
   botStatus?: BotStatus | null;
+  source: StatsSource;
+  onSourceChange: (s: StatsSource) => void;
 }
 
 function TodayYest({ today, yesterday }: { today: number; yesterday: number }) {
@@ -75,50 +79,96 @@ function PnlCard({ todayUsd, yesterdayUsd }: { todayUsd: number; yesterdayUsd: n
   );
 }
 
-export function TradingStatsPanel({ sessions, mt5, botStatus }: Props) {
+export function TradingStatsPanel({ sessions, mt5, botStatus, source, onSourceChange }: Props) {
   const [expanded, setExpanded] = useState<"signals" | "trades" | null>(null);
   const { data: costsData } = useCosts();
+  const { data: mt5Stats } = useMt5Stats();
+
+  const changeSource = (s: StatsSource) => {
+    onSourceChange(s);
+    if (s === "mt5" && expanded === "trades") setExpanded(null);
+  };
 
   // Sesiunile live (execute=true) + sesiunile care au avut tranzactii reale MT5 (pnl_count>0)
   // dar au fost ulterior oprite (execute=false). MT5 e sursa de adevar — daca pnl_usd exista,
   // trade-ul a fost real, indiferent de setarea curenta a profilului.
   const liveSessions = sessions.filter(x => x.execute || (x.pnl_count != null && x.pnl_count > 0));
 
-  const totalSignals   = liveSessions.reduce((s, x) => s + x.signals_total,    0);
-  const totalTrades    = liveSessions.reduce((s, x) => s + x.outcomes_total,   0);
-  const signalsToday   = liveSessions.reduce((s, x) => s + x.signals_today,    0);
-  const signalsYest    = liveSessions.reduce((s, x) => s + x.signals_yesterday, 0);
-  const tradesToday    = liveSessions.reduce((s, x) => s + x.outcomes_today,    0);
-  const tradesYest     = liveSessions.reduce((s, x) => s + x.outcomes_yesterday, 0);
-  const totalWins      = liveSessions.reduce((s, x) => s + x.wins,              0);
-  const totalLosses    = liveSessions.reduce((s, x) => s + x.losses,            0);
-  const winsToday      = liveSessions.reduce((s, x) => s + (x.wins_today    ?? 0), 0);
-  const winsYest       = liveSessions.reduce((s, x) => s + (x.wins_yesterday ?? 0), 0);
-  const lossesToday    = liveSessions.reduce((s, x) => s + (x.losses_today    ?? 0), 0);
-  const lossesYest     = liveSessions.reduce((s, x) => s + (x.losses_yesterday ?? 0), 0);
-  const winRate        = totalWins + totalLosses > 0
+  // Semnalele nu au echivalent in MT5 (sunt detectii pre-tranzactie ale botului) — mereu din Bot.
+  const totalSignals = liveSessions.reduce((s, x) => s + x.signals_total,    0);
+  const signalsToday = liveSessions.reduce((s, x) => s + x.signals_today,    0);
+  const signalsYest  = liveSessions.reduce((s, x) => s + x.signals_yesterday, 0);
+
+  // Trades/wins/losses — sursa "Bot" (agregat din outcomes.csv per sesiune).
+  const botTotalTrades = liveSessions.reduce((s, x) => s + x.outcomes_total,    0);
+  const botTradesToday  = liveSessions.reduce((s, x) => s + x.outcomes_today,    0);
+  const botTradesYest   = liveSessions.reduce((s, x) => s + x.outcomes_yesterday, 0);
+  const botTotalWins    = liveSessions.reduce((s, x) => s + x.wins,              0);
+  const botTotalLosses  = liveSessions.reduce((s, x) => s + x.losses,            0);
+  const botWinsToday    = liveSessions.reduce((s, x) => s + (x.wins_today    ?? 0), 0);
+  const botWinsYest     = liveSessions.reduce((s, x) => s + (x.wins_yesterday ?? 0), 0);
+  const botLossesToday  = liveSessions.reduce((s, x) => s + (x.losses_today    ?? 0), 0);
+  const botLossesYest   = liveSessions.reduce((s, x) => s + (x.losses_yesterday ?? 0), 0);
+  const botHasPnl       = liveSessions.some(x => x.pnl_usd_today != null || x.pnl_usd_yesterday != null);
+  const botPnlToday     = liveSessions.reduce((s, x) => s + (x.pnl_usd_today    ?? 0), 0);
+  const botPnlYesterday = liveSessions.reduce((s, x) => s + (x.pnl_usd_yesterday ?? 0), 0);
+  const botPnlTracked   = liveSessions.reduce((s, x) => s + (x.pnl_count ?? 0), 0);
+  const costItems       = costsData?.items ?? [];
+  const botCommission   = costItems.reduce((s, x) => s + x.commission_usd, 0);
+  const botSwap         = costItems.reduce((s, x) => s + x.swap_usd, 0);
+  const botCostBroker   = costItems.length > 0
+    ? Math.round((botCommission + botSwap) * 100) / 100
+    : null;
+
+  // Trades/wins/losses — sursa "MT5" (calculate direct din history_deals_get, independent de bot).
+  const mt5Connected      = mt5Stats?.connected ?? false;
+  const mt5TotalTrades    = mt5Stats?.total_trades ?? 0;
+  const mt5TradesToday    = mt5Stats?.trades_today ?? 0;
+  const mt5TradesYest     = mt5Stats?.trades_yesterday ?? 0;
+  const mt5TotalWins      = mt5Stats?.wins ?? 0;
+  const mt5TotalLosses    = mt5Stats?.losses ?? 0;
+  const mt5WinsToday      = mt5Stats?.wins_today ?? 0;
+  const mt5WinsYest       = mt5Stats?.wins_yesterday ?? 0;
+  const mt5LossesToday    = mt5Stats?.losses_today ?? 0;
+  const mt5LossesYest     = mt5Stats?.losses_yesterday ?? 0;
+  const mt5HasPnl         = mt5Connected && (mt5Stats?.pnl_today != null || mt5Stats?.pnl_yesterday != null);
+  const mt5PnlToday       = mt5Stats?.pnl_today ?? 0;
+  const mt5PnlYesterday   = mt5Stats?.pnl_yesterday ?? 0;
+  const mt5Commission     = mt5Stats?.commission_total ?? 0;
+  const mt5Swap           = mt5Stats?.swap_total ?? 0;
+  const mt5CostBroker     = mt5Connected && (mt5Stats?.commission_total != null || mt5Stats?.swap_total != null)
+    ? Math.round((mt5Commission + mt5Swap) * 100) / 100
+    : null;
+
+  const usingMt5 = source === "mt5";
+
+  const totalTrades = usingMt5 ? mt5TotalTrades : botTotalTrades;
+  const tradesToday  = usingMt5 ? mt5TradesToday : botTradesToday;
+  const tradesYest   = usingMt5 ? mt5TradesYest  : botTradesYest;
+  const totalWins    = usingMt5 ? mt5TotalWins   : botTotalWins;
+  const totalLosses  = usingMt5 ? mt5TotalLosses : botTotalLosses;
+  const winsToday    = usingMt5 ? mt5WinsToday   : botWinsToday;
+  const winsYest     = usingMt5 ? mt5WinsYest    : botWinsYest;
+  const lossesToday  = usingMt5 ? mt5LossesToday : botLossesToday;
+  const lossesYest   = usingMt5 ? mt5LossesYest  : botLossesYest;
+  const hasPnl       = usingMt5 ? mt5HasPnl      : botHasPnl;
+  const pnlToday     = usingMt5 ? mt5PnlToday    : botPnlToday;
+  const pnlYesterday = usingMt5 ? mt5PnlYesterday : botPnlYesterday;
+  const winRate      = totalWins + totalLosses > 0
     ? Math.round(totalWins / (totalWins + totalLosses) * 100)
     : null;
 
-  const hasPnl       = liveSessions.some(x => x.pnl_usd_today != null || x.pnl_usd_yesterday != null);
-  const pnlToday     = liveSessions.reduce((s, x) => s + (x.pnl_usd_today    ?? 0), 0);
-  const pnlYesterday = liveSessions.reduce((s, x) => s + (x.pnl_usd_yesterday ?? 0), 0);
-
-  // P&L real MT5 (equity - start_balance — sursa de adevar, include tot)
+  // P&L real MT5 (equity - start_balance — sursa de adevar, include tot, independent de toggle)
   const mt5Equity    = mt5?.connected ? mt5.equity : null;
   const startBalance = botStatus?.active_profile_start_balance ?? null;
   const pnlMt5       = mt5Equity != null && startBalance != null
     ? Math.round((mt5Equity - startBalance) * 100) / 100
     : null;
 
-  // Comisioane + swap din outcomes.csv (via /reports/costs)
-  const pnlTracked      = liveSessions.reduce((s, x) => s + (x.pnl_count ?? 0), 0);
-  const costItems       = costsData?.items ?? [];
-  const totalCommission = costItems.reduce((s, x) => s + x.commission_usd, 0);
-  const totalSwap       = costItems.reduce((s, x) => s + x.swap_usd, 0);
-  const costBroker      = costItems.length > 0
-    ? Math.round((totalCommission + totalSwap) * 100) / 100
-    : null;
+  const totalCommission = usingMt5 ? mt5Commission : botCommission;
+  const totalSwap        = usingMt5 ? mt5Swap        : botSwap;
+  const costBroker       = usingMt5 ? mt5CostBroker  : botCostBroker;
+  const pnlTracked       = usingMt5 ? mt5TotalTrades : botPnlTracked;
 
   const fmtUsd = (v: number) =>
     `${v >= 0 ? "+" : ""}${v.toLocaleString("ro-RO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} $`;
@@ -128,6 +178,14 @@ export function TradingStatsPanel({ sessions, mt5, botStatus }: Props) {
 
   return (
     <div className="space-y-2">
+      <SourceToggle source={source} onChange={changeSource} />
+
+      {usingMt5 && !mt5Connected && (
+        <div className="text-[11px] text-warn/80 bg-warn/10 border border-warn/30 rounded-lg px-3 py-1.5">
+          MT5 neconectat — {mt5Stats?.error ?? "statisticile directe nu sunt disponibile"}. Comută pe „Bot" pentru date din outcomes.csv.
+        </div>
+      )}
+
       {/* Stat cards row */}
       <div className="flex gap-2 flex-wrap">
         <StatCard
@@ -135,6 +193,7 @@ export function TradingStatsPanel({ sessions, mt5, botStatus }: Props) {
           value={totalSignals}
           today={signalsToday}
           yesterday={signalsYest}
+          sub={usingMt5 ? "mereu din Bot" : undefined}
           onClick={() => toggle("signals")}
           active={expanded === "signals"}
         />
@@ -145,7 +204,7 @@ export function TradingStatsPanel({ sessions, mt5, botStatus }: Props) {
           yesterday={tradesYest}
           sub={winRate !== null ? `${winRate}% win rate` : undefined}
           accent={winRate !== null && winRate >= 50 ? "text-profit" : "text-white"}
-          onClick={() => toggle("trades")}
+          onClick={usingMt5 ? undefined : () => toggle("trades")}
           active={expanded === "trades"}
         />
         <StatCard
@@ -191,7 +250,7 @@ export function TradingStatsPanel({ sessions, mt5, botStatus }: Props) {
                 <span className="text-[10px] text-slate-500 uppercase tracking-wider">Comisioane + Swap</span>
                 <span
                   className="text-[10px] text-slate-600 cursor-help"
-                  title={`Comisioane: ${fmtUsd(totalCommission)} · Swap: ${fmtUsd(totalSwap)}. Date înregistrate din ${pnlTracked} trades cu date MT5 complete.`}
+                  title={`Comisioane: ${fmtUsd(totalCommission)} · Swap: ${fmtUsd(totalSwap)}. Sursă: ${usingMt5 ? "MT5 direct (history_deals_get)" : "outcomes.csv"} — ${pnlTracked} trades.`}
                 >ⓘ</span>
               </div>
               <span className={`text-lg font-bold font-mono tabular-nums ${costBroker > 0 ? "text-profit" : costBroker < 0 ? "text-loss" : "text-slate-400"}`}>
