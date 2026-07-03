@@ -4,7 +4,8 @@ import type {
   BotStatus, SessionStatus, Signal, Outcome, EquityCurvePoint,
   Profile, ProfileSummary, Meta,
   DataCheckResult, DownloadJob, TelegramConfig, Mt5Status, Mt5TradeStats, Mt5EquityCurveResponse,
-  Mt5WeeklyStats, Mt5TopMarketsResponse,
+  Mt5WeeklyStats, Mt5TopMarketsResponse, Mt5MarketStatsResponse, Mt5TransactionsResponse,
+  Mt5CostsResponse, Mt5CostsDailyResponse,
   BacktestHistoryEntry, BacktestJob, WeeklyStats,
   NotificationsResponse, TransactionsResponse, MarketStatsResponse,
   UptimeResponse, SessionChangesResponse, TopMarketEntry, TimezoneConfig,
@@ -458,11 +459,57 @@ export const useTopMarkets = (period: string) =>
     refetchIntervalInBackground: false,
   });
 
-export const useMt5TopMarkets = (period: string) =>
+export const useMt5TopMarkets = (period: string, limit = 5) =>
   useQuery<Mt5TopMarketsResponse>({
-    queryKey: ["mt5-top-markets", period],
-    queryFn:  () => apiFetch(`/mt5/top-markets?period=${period}&limit=5`),
+    queryKey: ["mt5-top-markets", period, limit],
+    queryFn:  () => apiFetch(`/mt5/top-markets?period=${period}&limit=${limit}`),
     refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
+  });
+
+export const useMt5MarketStats = () =>
+  useQuery<Mt5MarketStatsResponse>({
+    queryKey: ["mt5-market-stats"],
+    queryFn:  () => apiFetch("/mt5/top-markets?period=all&limit=100"),
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
+  });
+
+export const useMt5Transactions = (params: {
+  status?: string;
+  direction?: string;
+  symbol?: string;
+  limit?: number;
+  offset?: number;
+}) =>
+  useQuery<Mt5TransactionsResponse>({
+    queryKey: ["mt5-transactions", params],
+    queryFn:  () => {
+      const qs = new URLSearchParams();
+      if (params.status)    qs.set("status",    params.status);
+      if (params.direction) qs.set("direction", params.direction);
+      if (params.symbol)    qs.set("symbol",    params.symbol);
+      qs.set("limit",  String(params.limit  ?? 200));
+      qs.set("offset", String(params.offset ?? 0));
+      return apiFetch(`/mt5/transactions?${qs.toString()}`);
+    },
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
+  });
+
+export const useMt5Costs = () =>
+  useQuery<Mt5CostsResponse>({
+    queryKey: ["mt5-costs"],
+    queryFn:  () => apiFetch("/mt5/costs"),
+    refetchInterval: 120_000,
+    refetchIntervalInBackground: false,
+  });
+
+export const useMt5CostsDaily = () =>
+  useQuery<Mt5CostsDailyResponse>({
+    queryKey: ["mt5-costs-daily"],
+    queryFn:  () => apiFetch("/mt5/costs-daily"),
+    refetchInterval: 120_000,
     refetchIntervalInBackground: false,
   });
 

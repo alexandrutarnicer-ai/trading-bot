@@ -483,6 +483,53 @@ export interface Mt5TopMarketsResponse {
   error: string | null;
 }
 
+export interface Mt5MarketStatsResponse {
+  connected: boolean;
+  items: MarketStat[];
+  error: string | null;
+}
+
+export interface Mt5Transaction {
+  ticket: number;
+  symbol: string;
+  direction: number;
+  dir_str: string;
+  status: string;
+  entry: number;
+  sl: number | null;
+  tp: number | null;
+  r_ratio: number | null;
+  entry_time: string | null;
+  exit_price: number | null;
+  exit_time: string | null;
+  result_r: number | null;
+  pnl_usd: number;
+  commission_usd: number;
+  swap_usd: number;
+}
+
+export interface Mt5TransactionsResponse {
+  connected: boolean;
+  items: Mt5Transaction[];
+  total: number;
+  error: string | null;
+}
+
+export interface Mt5CostsResponse {
+  connected: boolean;
+  items: CostStat[];
+  error: string | null;
+}
+
+export interface Mt5CostsDailyResponse {
+  connected: boolean;
+  items: CostsDayEntry[];
+  total_commission: number;
+  total_swap: number;
+  total_costs: number;
+  error: string | null;
+}
+
 export interface UptimeEntry {
   event: "start" | "stop";
   time: string;

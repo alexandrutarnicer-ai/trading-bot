@@ -152,17 +152,21 @@ def _fetch_closed_trades(mt5, days: int) -> list[dict]:
         pos = by_position.setdefault(d.position_id, {
             "profit": 0.0, "commission": 0.0, "swap": 0.0,
             "has_out": False, "close_time": None, "symbol": d.symbol,
-            "entry_price": None, "direction": None, "sl": None,
+            "entry_price": None, "entry_time": None, "direction": None, "sl": None, "tp": None,
             "_out_px_vol": 0.0, "_out_vol": 0.0,
         })
         pos["commission"] += float(d.commission or 0)
         pos["swap"] += float(d.swap or 0)
         if d.entry == 0:  # DEAL_ENTRY_IN
             pos["entry_price"] = float(d.price)
+            pos["entry_time"] = _mt5_ts_to_local(d.time, offset_h, tz_name)
             pos["direction"] = 1 if d.type == 0 else -1
             order = order_by_ticket.get(d.order)
-            if order is not None and getattr(order, "sl", 0):
-                pos["sl"] = float(order.sl)
+            if order is not None:
+                if getattr(order, "sl", 0):
+                    pos["sl"] = float(order.sl)
+                if getattr(order, "tp", 0):
+                    pos["tp"] = float(order.tp)
         else:  # OUT / OUT_BY
             pos["profit"] += float(d.profit or 0)
             pos["has_out"] = True
@@ -174,18 +178,26 @@ def _fetch_closed_trades(mt5, days: int) -> list[dict]:
             pos["_out_vol"] += vol
 
     trades = []
-    for pos in by_position.values():
+    for position_id, pos in by_position.items():
         if not pos["has_out"]:
             continue
         result_r = None
-        if pos["sl"] is not None and pos["entry_price"] is not None and pos["_out_vol"] > 0:
+        risk_dist = None
+        exit_price = pos["_out_px_vol"] / pos["_out_vol"] if pos["_out_vol"] > 0 else None
+        if pos["sl"] is not None and pos["entry_price"] is not None and exit_price is not None:
             risk_dist = abs(pos["entry_price"] - pos["sl"])
             if risk_dist > 0:
-                avg_exit = pos["_out_px_vol"] / pos["_out_vol"]
-                result_r = round((avg_exit - pos["entry_price"]) * pos["direction"] / risk_dist, 3)
+                result_r = round((exit_price - pos["entry_price"]) * pos["direction"] / risk_dist, 3)
+        planned_r = None
+        if risk_dist and pos["tp"] is not None and pos["entry_price"] is not None:
+            planned_r = round(abs(pos["tp"] - pos["entry_price"]) / risk_dist, 2)
         trades.append({
+            "position_id": position_id, "symbol": pos["symbol"],
             "profit": pos["profit"], "commission": pos["commission"], "swap": pos["swap"],
-            "close_time": pos["close_time"], "result_r": result_r, "symbol": pos["symbol"],
+            "entry_price": pos["entry_price"], "entry_time": pos["entry_time"],
+            "exit_price": exit_price, "close_time": pos["close_time"],
+            "direction": pos["direction"], "sl": pos["sl"], "tp": pos["tp"],
+            "result_r": result_r, "planned_r": planned_r,
         })
     return trades
 
@@ -439,6 +451,7 @@ def mt5_top_markets(period: str = "week", limit: int = 5):
                 "win_rate":   round(st["wins"] / n * 100, 1) if n else 0.0,
                 "expectancy": round(st["total_r"] / n, 3) if n else 0.0,
                 "pnl_usd":    round(st["pnl_usd"], 2),
+                "sessions":   [],  # fara concept de sesiune in MT5 — pastrat pentru compat. de tip cu MarketStat
             })
 
         result.sort(key=lambda x: x["total_r"], reverse=True)
@@ -447,3 +460,188 @@ def mt5_top_markets(period: str = "week", limit: int = 5):
         return {"connected": False, "error": "MetaTrader5 nu este instalat", "items": []}
     except Exception as e:
         return {"connected": False, "error": str(e), "items": []}
+
+
+def _trade_status(t: dict) -> str:
+    """Eticheta afisata in tab-ul Tranzactii — 'TP'/'SL' dupa semnul rezultatului
+    (profit real daca R nu e rezolvabil), pastrand codul de culoare existent in UI.
+    Nu reflecta neaparat ca pretul a atins literal nivelul TP/SL (poate fi si
+    inchidere manuala) — e o eticheta de castig/pierdere, nu un motiv de inchidere."""
+    v = t["result_r"] if t["result_r"] is not None else t["profit"]
+    if v > 0:
+        return "TP"
+    if v < 0:
+        return "SL"
+    return "—"
+
+
+@router.get("/transactions")
+def mt5_transactions(
+    status: str = "",
+    direction: str = "",
+    symbol: str = "",
+    limit: int = 200,
+    offset: int = 0,
+):
+    """
+    Echivalentul MT5-direct al /reports/transactions — lista tranzactiilor
+    inchise, calculate direct din history_deals_get (vezi _fetch_closed_trades).
+    status: TP/SL (dupa semnul rezultatului) — MT5 nu are conceptul de
+    expirat/vineri_close/news_close (acelea sunt clasificari ale botului).
+    """
+    try:
+        import MetaTrader5 as mt5
+
+        if not mt5.initialize():
+            err = mt5.last_error()
+            mt5.shutdown()
+            return {"connected": False, "error": f"MT5 nu s-a putut initializa: {err}", "items": [], "total": 0}
+
+        trades = _fetch_closed_trades(mt5, days=400)
+        mt5.shutdown()
+
+        if symbol:
+            trades = [t for t in trades if t["symbol"].upper() == symbol.upper()]
+        if direction:
+            want = 1 if direction.upper() == "LONG" else -1
+            trades = [t for t in trades if t["direction"] == want]
+        if status:
+            trades = [t for t in trades if _trade_status(t) == status]
+
+        trades.sort(key=lambda t: t["close_time"], reverse=True)
+        total = len(trades)
+        page = trades[offset: offset + limit]
+
+        items = []
+        for t in page:
+            items.append({
+                "ticket":      t["position_id"],
+                "symbol":      t["symbol"],
+                "direction":   t["direction"],
+                "dir_str":     "LONG" if t["direction"] == 1 else "SHORT",
+                "status":      _trade_status(t),
+                "entry":       t["entry_price"],
+                "sl":          t["sl"],
+                "tp":          t["tp"],
+                "r_ratio":     t["planned_r"],
+                "entry_time":  t["entry_time"].strftime("%Y-%m-%d %H:%M") if t["entry_time"] else None,
+                "exit_price":  t["exit_price"],
+                "exit_time":   t["close_time"].strftime("%Y-%m-%d %H:%M") if t["close_time"] else None,
+                "result_r":    t["result_r"],
+                "pnl_usd":     round(t["profit"], 2),
+                "commission_usd": round(t["commission"], 2),
+                "swap_usd":    round(t["swap"], 2),
+            })
+
+        return {"connected": True, "items": items, "total": total, "error": None}
+    except ImportError:
+        return {"connected": False, "error": "MetaTrader5 nu este instalat", "items": [], "total": 0}
+    except Exception as e:
+        return {"connected": False, "error": str(e), "items": [], "total": 0}
+
+
+@router.get("/costs")
+def mt5_costs():
+    """Echivalentul MT5-direct al /reports/costs — comisioane+swap per simbol, din history_deals_get."""
+    try:
+        import MetaTrader5 as mt5
+
+        if not mt5.initialize():
+            err = mt5.last_error()
+            mt5.shutdown()
+            return {"connected": False, "error": f"MT5 nu s-a putut initializa: {err}", "items": []}
+
+        trades = _fetch_closed_trades(mt5, days=400)
+        mt5.shutdown()
+
+        by_symbol: dict[str, dict] = {}
+        for t in trades:
+            st = by_symbol.setdefault(t["symbol"], {
+                "trades": 0, "commission_usd": 0.0, "swap_usd": 0.0, "pnl_gross": 0.0,
+            })
+            st["trades"] += 1
+            st["commission_usd"] += t["commission"]
+            st["swap_usd"] += t["swap"]
+            st["pnl_gross"] += t["profit"]
+
+        items = []
+        for sym, st in by_symbol.items():
+            total_costs = round(st["commission_usd"] + st["swap_usd"], 2)
+            items.append({
+                "symbol": sym,
+                "trades": st["trades"],
+                "trades_with_mt5": st["trades"],  # 100% din trades MT5 au date reale
+                "commission_usd": round(st["commission_usd"], 2),
+                "swap_usd": round(st["swap_usd"], 2),
+                "total_costs": total_costs,
+                "pnl_gross": round(st["pnl_gross"], 2),
+                "pnl_net": round(st["pnl_gross"] + total_costs, 2),
+                "has_cost_data": True,
+                "sessions": [],  # fara concept de sesiune in MT5 — pastrat pentru compat. de tip cu CostStat
+            })
+
+        items.sort(key=lambda x: x["total_costs"])
+        return {"connected": True, "items": items, "error": None}
+    except ImportError:
+        return {"connected": False, "error": "MetaTrader5 nu este instalat", "items": []}
+    except Exception as e:
+        return {"connected": False, "error": str(e), "items": []}
+
+
+@router.get("/costs-daily")
+def mt5_costs_daily():
+    """Echivalentul MT5-direct al /reports/costs-daily — comisioane+swap pe zi, din history_deals_get."""
+    try:
+        import MetaTrader5 as mt5
+
+        if not mt5.initialize():
+            err = mt5.last_error()
+            mt5.shutdown()
+            return {"connected": False, "error": f"MT5 nu s-a putut initializa: {err}", "items": [],
+                     "total_commission": 0.0, "total_swap": 0.0, "total_costs": 0.0}
+
+        trades = _fetch_closed_trades(mt5, days=400)
+        mt5.shutdown()
+
+        by_day: dict[_date, dict] = {}
+        for t in trades:
+            day = t["close_time"].date()
+            st = by_day.setdefault(day, {
+                "trades": 0, "commission_usd": 0.0, "swap_usd": 0.0, "pnl_usd": 0.0, "total_r": 0.0,
+            })
+            st["trades"] += 1
+            st["commission_usd"] += t["commission"]
+            st["swap_usd"] += t["swap"]
+            st["pnl_usd"] += t["profit"]
+            if t["result_r"] is not None:
+                st["total_r"] += t["result_r"]
+
+        items = []
+        for day, st in sorted(by_day.items()):
+            comm = round(st["commission_usd"], 2)
+            swap = round(st["swap_usd"], 2)
+            items.append({
+                "date": day.isoformat(),
+                "trades": st["trades"],
+                "trades_with_cost": st["trades"],
+                "commission_usd": comm,
+                "swap_usd": swap,
+                "total_costs": round(comm + swap, 2),
+                "pnl_usd": round(st["pnl_usd"], 2),
+                "total_r": round(st["total_r"], 3),
+                "has_cost_data": True,
+            })
+
+        total_comm = round(sum(x["commission_usd"] for x in items), 2)
+        total_swap = round(sum(x["swap_usd"] for x in items), 2)
+        return {
+            "connected": True, "items": items, "error": None,
+            "total_commission": total_comm, "total_swap": total_swap,
+            "total_costs": round(total_comm + total_swap, 2),
+        }
+    except ImportError:
+        return {"connected": False, "error": "MetaTrader5 nu este instalat", "items": [],
+                 "total_commission": 0.0, "total_swap": 0.0, "total_costs": 0.0}
+    except Exception as e:
+        return {"connected": False, "error": str(e), "items": [],
+                 "total_commission": 0.0, "total_swap": 0.0, "total_costs": 0.0}
