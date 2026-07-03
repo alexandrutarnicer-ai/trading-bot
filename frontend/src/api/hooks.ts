@@ -3,7 +3,8 @@ import { apiFetch } from "./client";
 import type {
   BotStatus, SessionStatus, Signal, Outcome, EquityCurvePoint,
   Profile, ProfileSummary, Meta,
-  DataCheckResult, DownloadJob, TelegramConfig, Mt5Status,
+  DataCheckResult, DownloadJob, TelegramConfig, Mt5Status, Mt5TradeStats, Mt5EquityCurveResponse,
+  Mt5WeeklyStats, Mt5TopMarketsResponse,
   BacktestHistoryEntry, BacktestJob, WeeklyStats,
   NotificationsResponse, TransactionsResponse, MarketStatsResponse,
   UptimeResponse, SessionChangesResponse, TopMarketEntry, TimezoneConfig,
@@ -33,6 +34,14 @@ export const useWeeklyStats = () =>
   useQuery<WeeklyStats>({
     queryKey: ["weekly-stats"],
     queryFn:  () => apiFetch("/sessions/weekly_stats"),
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
+  });
+
+export const useMt5WeeklyStats = () =>
+  useQuery<Mt5WeeklyStats>({
+    queryKey: ["mt5-weekly-stats"],
+    queryFn:  () => apiFetch("/mt5/weekly-stats"),
     refetchInterval: 60_000,
     refetchIntervalInBackground: false,
   });
@@ -271,6 +280,22 @@ export const useMt5Status = () =>
     retry: false,
   });
 
+export const useMt5Stats = () =>
+  useQuery<Mt5TradeStats>({
+    queryKey: ["mt5-stats"],
+    queryFn:  () => apiFetch("/mt5/stats"),
+    refetchInterval: POLL,
+    retry: false,
+  });
+
+export const useMt5EquityCurve = (metric: "usd" | "r" = "usd") =>
+  useQuery<Mt5EquityCurveResponse>({
+    queryKey: ["mt5-equity-curve", metric],
+    queryFn:  () => apiFetch(`/mt5/equity-curve?metric=${metric}`),
+    refetchInterval: POLL,
+    retry: false,
+  });
+
 export const useStopBot = () => {
   const qc = useQueryClient();
   return useMutation({
@@ -429,6 +454,14 @@ export const useTopMarkets = (period: string) =>
   useQuery<TopMarketEntry[]>({
     queryKey: ["top-markets", period],
     queryFn:  () => apiFetch(`/sessions/top-markets?period=${period}&limit=5`),
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
+  });
+
+export const useMt5TopMarkets = (period: string) =>
+  useQuery<Mt5TopMarketsResponse>({
+    queryKey: ["mt5-top-markets", period],
+    queryFn:  () => apiFetch(`/mt5/top-markets?period=${period}&limit=5`),
     refetchInterval: 60_000,
     refetchIntervalInBackground: false,
   });
