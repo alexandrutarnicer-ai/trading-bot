@@ -1491,7 +1491,7 @@
         2
       ],
       "expire_bars": 4,
-      "account_fraction": 0.83,
+      "account_fraction": 0.4,
       "risk_pct": 0.01,
       "risk_base": 0.01,
       "risk_mid": 0.01,
@@ -1539,7 +1539,7 @@
       "inside_bar_risk_pct": 0.01
     }
   ],
-  "updated_at": "2026-07-01T22:49:16",
+  "updated_at": "2026-07-02T14:49:24",
   "capital_protection_enabled": false,
   "capital_protection_threshold_pct": 70
 }
