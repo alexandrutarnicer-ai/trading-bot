@@ -1116,20 +1116,38 @@
       ],
       "entry_tf": "M15",
       "trend_tf": "M30",
-      "direction": "LONG",
+      "direction": "BOTH",
       "pullback_window": 6,
-      "session_start": 10,
-      "session_end": 18,
+      "session_start": 0,
+      "session_end": 24,
       "skip_hours": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        12,
+        13,
         14,
         15,
-        17
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23
       ],
       "skip_weekdays": [
-        0
+        3,
+        4
       ],
       "expire_bars": 4,
-      "account_fraction": 0.2,
+      "account_fraction": 0.225,
       "risk_pct": 0.01,
       "risk_base": 0.01,
       "risk_mid": 0.01,
@@ -1539,7 +1557,7 @@
       "inside_bar_risk_pct": 0.01
     }
   ],
-  "updated_at": "2026-07-01T22:49:16",
+  "updated_at": "2026-07-02T21:01:12",
   "capital_protection_enabled": false,
   "capital_protection_threshold_pct": 70
 }
