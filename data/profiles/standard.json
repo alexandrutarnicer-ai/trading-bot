@@ -1509,7 +1509,7 @@
         2
       ],
       "expire_bars": 4,
-      "account_fraction": 0.83,
+      "account_fraction": 0.4,
       "risk_pct": 0.01,
       "risk_base": 0.01,
       "risk_mid": 0.01,
