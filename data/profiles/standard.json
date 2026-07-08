@@ -61,7 +61,7 @@
       "min_bars_between_trades": 0,
       "break_even_enabled": true,
       "be_phase2_enabled": true,
-      "be_trigger_pct": 95,
+      "be_trigger_pct": 90,
       "be_lock1_pct": 60,
       "be_lock2_pct": 80,
       "be_phase2_zone_pct": 70,
@@ -203,7 +203,7 @@
       "risk_mid": 0.01,
       "risk_top": 0.012,
       "risk_max": 0.015,
-      "execute_trades": false,
+      "execute_trades": true,
       "rsi_enabled": true,
       "rsi_buy_min": 40,
       "rsi_buy_max": 65,
@@ -876,10 +876,13 @@
       "skip_hours": [
         1,
         2,
+        4,
         5,
         6,
         7,
         8,
+        10,
+        11,
         16,
         17,
         18,
@@ -1143,6 +1146,7 @@
         23
       ],
       "skip_weekdays": [
+        2,
         3,
         4
       ],
@@ -1381,6 +1385,7 @@
         13,
         15,
         16,
+        17,
         18,
         19,
         20,
@@ -1602,7 +1607,7 @@
       "inside_bar_risk_pct": 0.01
     }
   ],
-  "updated_at": "2026-07-05T13:45:48",
+  "updated_at": "2026-07-08T13:48:44",
   "capital_protection_enabled": false,
   "capital_protection_threshold_pct": 80
 }
