@@ -739,3 +739,33 @@ export const useMt5Orders = () =>
     refetchInterval: 15_000,
     refetchIntervalInBackground: false,
   });
+
+// ── Surse AI multi-provider ───────────────────────────────────────────────────
+
+import type { AiProvidersResponse, AiProviderTestResult } from "./types";
+
+export const useAiProviders = () =>
+  useQuery<AiProvidersResponse>({
+    queryKey: ["ai-providers"],
+    queryFn:  () => apiFetch("/ai/providers"),
+    refetchInterval: 15_000,
+    refetchIntervalInBackground: false,
+  });
+
+export const useAiSaveProviders = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: {
+      providers?: Record<string, Record<string, unknown>>;
+      role_assignments?: Record<string, string>;
+      keys?: Record<string, string>;
+    }) => apiFetch("/ai/providers", { method: "PUT", body }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["ai-providers"] }),
+  });
+};
+
+export const useAiTestProvider = () =>
+  useMutation<AiProviderTestResult, Error, string>({
+    mutationFn: (name: string) =>
+      apiFetch("/ai/providers/test", { method: "POST", body: { name } }),
+  });

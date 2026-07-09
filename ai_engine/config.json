@@ -27,5 +27,33 @@
   "max_daily_loss_R": 3.0,
   "min_rr": 1.0,
   "max_sl_atr_mult": 5.0,
-  "decision_valid_bars": 8
+  "decision_valid_bars": 8,
+  "providers": {
+    "ollama": {
+      "enabled": true,
+      "type": "ollama",
+      "model": "qwen3:8b",
+      "url": "http://localhost:11434"
+    },
+    "claude": {
+      "enabled": false,
+      "type": "anthropic",
+      "model": "claude-haiku-4-5"
+    },
+    "gemini": {
+      "enabled": true,
+      "type": "gemini",
+      "model": "gemini-2.5-flash"
+    },
+    "chatgpt": {
+      "type": "openai_compatible",
+      "model": "gpt-4o-mini",
+      "enabled": false,
+      "base_url": "https://api.openai.com/v1"
+    }
+  },
+  "role_assignments": {
+    "macro": "ollama",
+    "risk": "ollama"
+  }
 }

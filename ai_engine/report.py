@@ -26,6 +26,29 @@ def main():
     for k, v in sc.items():
         print(f"  {k:14s}: {v}")
 
+    # Funnel: consilii -> veto -> actiuni -> plasate (diagnoza rata de tranzactionare)
+    print("\n=== FUNNEL DECIZII ===")
+    n_councils = led.con.execute("SELECT COUNT(*) FROM councils").fetchone()[0]
+    vetoes = valid_vetoes = 0
+    for (tr,) in led.con.execute("SELECT transcript FROM councils"):
+        try:
+            t = json.loads(tr)
+            r = t.get("risk", {})
+            v = r.get("veto")
+            if v is True or (isinstance(v, str) and v.strip().lower() in ("true", "yes", "da")):
+                vetoes += 1
+                from ai_engine.council import VALID_VETO_CODES
+                if str(r.get("veto_code") or "").strip().upper() in VALID_VETO_CODES:
+                    valid_vetoes += 1
+        except Exception:
+            pass
+    print(f"  consilii: {n_councils} | veto-uri: {vetoes} "
+          f"(valide/onorate: {valid_vetoes}, prudenta->risc redus: {vetoes - valid_vetoes})")
+    for act, st, n in led.con.execute(
+            "SELECT action, exec_status, COUNT(*) FROM decisions "
+            "GROUP BY action, exec_status ORDER BY COUNT(*) DESC"):
+        print(f"  {act:10s} [{st:8s}]: {n}")
+
     print(f"\n=== ULTIMELE {args.limit} DECIZII ===")
     rows = led.con.execute(
         "SELECT id, ts, symbol, action, entry, sl, tp, confidence, exec_status, "

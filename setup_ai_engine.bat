@@ -25,7 +25,7 @@ if errorlevel 1 (
 )
 
 echo     Instalez dependintele pip...
-py -m pip install --quiet MetaTrader5 pandas numpy scipy fastapi uvicorn
+py -m pip install --quiet MetaTrader5 pandas numpy scipy fastapi uvicorn anthropic
 if errorlevel 1 (
     echo     EROARE la pip install — verifica conexiunea la internet.
     pause

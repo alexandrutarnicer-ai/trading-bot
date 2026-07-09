@@ -1,0 +1,291 @@
+================================================================================
+ TRADING-BOT — ISTORIC COMPLET SESIUNE DE LUCRU (2026-07-08 → 2026-07-09)
+ De la studiu de fezabilitate AI → M0 audit → AI Engine autonom → multi-provider
+================================================================================
+
+Acest fisier rezuma TOT ce s-a facut in aceasta sesiune: analize, decizii,
+cod construit, teste, bug-uri gasite si reparate, si starea finala a sistemului.
+Documentele detaliate (RO) sunt in docs/. Codul e pe branch-urile git
+alex-pc-laptop (cu semnale) si main (cod curat, fara semnale).
+
+Cont demo folosit: ICMarketsEU-Demo #52906593, ~$925-948 equity, levier 1:30.
+Hardware: RTX 4060 8GB + 32GB RAM. Model AI local: Ollama qwen3:8b.
+
+
+================================================================================
+ FAZA 1 — STUDIU DE FEZABILITATE AI (analiza, fara cod)
+================================================================================
+
+Cerere: analiza arhitecturala completa + fezabilitatea unui motor AI de trading
+de nouă generatie, integrat in trading-bot, FARA a investi bani inca.
+
+Ce s-a facut:
+- Inspectie completa a codului real (nu doar docs): strategy/, engine/, live/,
+  api/, adapters/, frontend/. ~5300 linii core + 1.4GB date CSV.
+- Cercetare cu surse (arXiv, QuantStart, Lopez de Prado etc.) pe: multi-agent
+  LLM trading (TradingAgents), reinforcement learning, HMM regime detection,
+  meta-labeling, sentiment/FinBERT, deflated Sharpe / CPCV.
+
+Concluzii cheie (in docs/AI_ENGINE_FEASIBILITY.md):
+- RECOMANDAT: motor "advisor" pe etape (regime detection HMM + meta-labeling
+  LightGBM + sizing adaptiv), integrat prin data/ai_advice.json (polling, ca
+  paused_sessions.json), shadow ledger, fail-open.
+- RESPINS: multi-agent LLM per-trade (cost ≥ risc/trade la $1000, fara dovezi
+  live) si RL end-to-end (date cu 2-3 ordine de marime prea putine).
+- PREREQUISIT M0: audit statistic al celor 20 sesiuni INAINTE de orice AI —
+  S1/S2 au expectancy NEGATIV pe train (edge posibil = un singur regim favorabil).
+
+18 livrabile complete in raport. Zero cod modificat in aceasta faza.
+
+
+================================================================================
+ FAZA 2 — M0: AUDIT STATISTIC DE ROBUSTETE (m0/)
+================================================================================
+
+Intrebare M0: care sesiuni au un edge REAL, distinct de norocul de cautare?
+
+Metoda (docs/M0_METHOD.md — explicat pe intelesul tuturor):
+1. Stationary block bootstrap pe seria de R → P(edge>0) + interval de incredere.
+2. Deflated Sharpe / "trial-uri de breakeven" N* → robustete la multiple testing.
+3. Consistenta pe 8 fold-uri contigue + trend Spearman → stabilitate in timp.
+
+Pachet construit (read-only, reutilizeaza engine.portfolio.run_portfolio):
+- m0/session_runner.py — profil sesiune → params run_portfolio (COPIAT verbatim
+  din api/routers/backtest.py). VALIDAT: reproduce baseline-ul 284 trade-uri exact.
+- m0/stats.py — bootstrap (vectorizat), PSR/DSR, fold consistency.
+- m0/robustness.py — SURSA UNICA DE ADEVAR: evaluate_trades() + classify() +
+  to_result_payload(). Folosit de CLI si de API (nu pot diverge).
+- m0/audit.py — ruleaza toate 20 sesiuni → data/m0_audit.csv + docs/M0_RESULTS.md.
+- m0/selftest.py, m0/validate_runner.py — verificari integritate.
+
+REZULTAT AUDIT (20 sesiuni): 5 KEEP · 3 OBSERVE · 12 DEMOTE.
+- De incredere real: S3 (BTC, +0.110R, P=100%, 1176 trades) si S14 (CHFJPY,
+  +0.153R, train≈test — cel mai echilibrat).
+- KEEP dar sub-esantionate (N mic): S11 (USDCAD, 88t), S17 (AUDCAD, 47t), S18.
+- 13/20 sesiuni au tiparul "train negativ / test pozitiv" = edge fragil, un
+  singur regim. Concluzie: majoritatea sesiunilor n-au edge dovedit ca atare.
+
+
+================================================================================
+ FAZA 3 — INTEGRARE M0 IN TAB-UL AUDIT (verdict pe fiecare backtest)
+================================================================================
+
+- api/routers/backtest.py: worker-ul de backtest apeleaza evaluate_trades
+  (n_boot=2000) si adauga cheia "robustness" in rezultat (fail-open).
+- frontend: RobustnessResult in types.ts, banner RobustnessBanner in capul lui
+  ResultsGrid (AuditPage.tsx) — verdict + P(edge>0) + Fold+ + N* + CI, tooltips.
+- GuidePage: sectiune noua explicativa. CLAUDE.md actualizat.
+- Necesita restart API (fara --reload codul vechi ramane in memorie).
+Verificat: payload real S14 → KEEP, identic cu CLI. Baselines neschimbate (284).
+
+
+================================================================================
+ FAZA 4 — AI ENGINE v0.1 (motor autonom, ai_engine/)
+================================================================================
+
+Decizii user: ordine reale pe DEMO din prima zi · cadenta M15 · AI GRATUIT
+(Ollama local, fara costuri API).
+
+Arhitectura (docs/AI_ENGINE.md):
+  la fiecare bara M15 (gratuit): PERCEPTIE (snapshot numeric per piata) →
+  TRIGGERS (consiliul se convoaca DOAR pe: regime flip / breakout tension /
+  vol spike / news window / heartbeat 24h / review pozitie) → CONSILIU AI
+  (4 roluri secventiale pe Ollama: Analist Tehnic → Macro → Risk Manager cu
+  VETO → Head Trader, JSON strict) → RAILS HARD → EXECUTIE demo → LEDGER SQLite.
+
+Componente ai_engine/: config.py, providers.py, ledger.py, perception.py,
+triggers.py, council.py, executor.py, engine.py, report.py, selftest.py, __main__.py.
+
+Detalii tehnice critice:
+- Ollama instalat via winget; model qwen3:8b (~5GB). think:false OBLIGATORIU
+  (altfel 100s+/apel; cu el ~7s/apel, consiliu complet ~25s).
+- Izolare totala: magic 770015 + comment "AI-{id}"; executor.connect() refuza
+  non-DEMO (RuntimeError).
+- Rails: geometrie SL/TP, RR≥1, SL≤5×ATR, max 3 pozitii, stop zilnic -3R, risc≤1%.
+- Fail-safe: orice eroare LLM → WAIT.
+- start_ai_engine.bat (dublu-click). Selftest: 21 verificari incl. consiliu LIVE.
+
+
+================================================================================
+ FAZA 5 — BATCH MARE PESTE NOAPTE (24 task-uri, docs/RAPORT_NOAPTE_2026-07-09.md)
+================================================================================
+
+AI Engine:
+1. Fix eroare 404 ForexFactory nextweek (conditie normala → log debug).
+2. Cache calendar TTL 10 min (inainte: 10 fetch-uri HTTP identice/bara).
+3. PIETE REDIMENSIONATE PENTRU $1000 (specs reale ICMarkets interogate):
+   XAUUSD/BTCUSD/US30 SCOASE (risc lot minim $12-16 sau marja $260-310/pozitie
+   la 1:30!) → EURUSD/USDJPY/GBPUSD/AUDUSD/USDCAD (risc $2-4, marja $33-45).
+4. Rail nou de marja: ordin respins daca marja > 40% din marja libera.
+5. Reconectare automata MT5 daca toate pietele esueaza intr-o iteratie.
+6. status.json heartbeat + ring buffer de erori pentru UI.
+7. TEST ORDIN REAL: BUY_STOP 0.01 plasat prin executor (ticket 1798132979,
+   SL/TP/magic corecte), verificat in MT5, anulat. PASS.
+8. API router api/routers/ai_engine.py: status/start/stop/decizii/council/
+   outcomes/config/logs.
+9. Tab UI "AI Engine" (AiEnginePage.tsx): buton On/Off, scorecard, editor piete
+   (validat contra MT5), decizii cu transcript dezbatere, outcomes, log viewer.
+10. Tabel "Ordine Active" pe Dashboard (ActiveOrdersTable.tsx): sursa MT5,
+    badge BOT/AI/MANUAL, marja per pozitie, capital folosit/liber, P&L flotant.
+11. setup_ai_engine.bat — instalare completa pe laptop (winget Python+Ollama).
+12. Timezone verificat: toate orele in ora Romaniei.
+
+Bot existent:
+1. Toggle "Strategia Pullback (principala)" — default ON, gate-uit peste tot
+   (engine/live/API/m0). Baselines verificate: 284 trades exact.
+2. "Corp Lumanare" inlocuit in UI cu "Trend puternic D1 (ADX>25)" — criteriu mai
+   valoros (coloana f2_adx, fara lookahead), dezactivat implicit.
+3. Praguri R-ladder Mid/Top/Max accepta acum 0 (0 = nivelul se acorda mereu).
+
+Watchdog nou (ai_engine/watchdog.py): verifica motorul la 5 min, restart automat
++ Telegram daca a cazut (max 5 restarturi). Sleep PC dezactivat pe AC.
+
+
+================================================================================
+ FAZA 6 — GIT: COMMIT + PUSH PE DOUA BRANCH-URI
+================================================================================
+
+Politica: alex-pc-laptop = tot (inclusiv semnale live); main = cod curat FARA semnale.
+
+- Verificari pre-commit: fara secrete in fisiere tracked (token Telegram + chei
+  API viitoare sunt sub data/ gitignored); OHLC CSV 1.4GB gitignorate; m0/frontend
+  build OK.
+- alex-pc-laptop: commit 1249873 (tot + 12 CSV semnale) → push.
+- main: merge alex-pc-laptop → git rm --cached data/live_signals → commit → push.
+  Verificat: 0 fisiere semnale, cod complet, data/ doar profiles + crypto_specs.
+- Ambele branch-uri sincronizate cu origin (alexandrutarnicer-ai/trading-bot).
+
+NOTA pentru viitor: semnalele sunt tracked pe alex dar ignored pe main. Un merge
+viitor alex→main le readuce; repeta git rm --cached data/live_signals + commit.
+
+
+================================================================================
+ FAZA 7 — AI ENGINE v0.3: SURSE AI MULTIPLE + FAILOVER
+ (docs/PLAN_SURSE_AI_MULTI_PROVIDER.md)
+================================================================================
+
+Obiectiv: consiliul poate rula pe surse AI diferite, cu failover automat la
+epuizarea tokenilor/quotei.
+
+Implementat:
+- providers.py rescris: BaseProvider + 4 adaptori:
+  * OllamaProvider (local, gratuit, DEFAULT/safety-net, nu se sterge/dezactiveaza)
+  * AnthropicProvider (Claude, SDK oficial `anthropic`)
+  * GeminiProvider (Google, are free tier)
+  * OpenAICompatProvider (ChatGPT/Groq/DeepSeek/Mistral/xAI/OpenRouter — base_url)
+- Clasificare erori: quota / rate_limit / auth / network / bad_response.
+- ProviderRegistry cu stari de sanatate + cooldowns:
+  quota → pauza 6h | 429 → 60s (sau Retry-After) | retea → 2min |
+  401/403 → DEZACTIVAT (fara auto-retry, necesita om).
+- Rutare per rol: sursa asignata → alta sursa sanatoasa → Ollama → WAIT.
+  Revenire automata lazy la expirarea pauzei. Notificari Telegram pe tranzitii.
+- Chei API in data/ai/providers.json (gitignored), mascate in UI.
+- council.convene primeste registry; transcript per rol: _provider/_latency_s/
+  _fallback_from.
+- engine.py: hot-reload config+registry per iteratie → schimbarile din UI se
+  aplica la urmatorul consiliu FARA restart de motor. Sanatate in status.json.
+- API: GET/PUT /ai/providers, POST /ai/providers/test.
+- UI: cardul "Surse AI" (AiProvidersCard.tsx) — stari live, buton Testeaza cu
+  latenta/motiv, input chei, formular "Adauga sursa", dropdown roluri.
+- Surse default: ollama, claude (haiku-4-5), gemini (2.5-flash), chatgpt (gpt-4o-mini).
+- Selftest extins: 8 teste failover mock + consiliu live prin registry. Toate PASS.
+
+Bug reparat (raportat de user din screenshot): input-uri "goale" = de fapt text
+alb pe fundal alb. Cauza: clasa CSS `bg-background` nedefinita in tema Tailwind
+(exista doar surface/surface-card/surface-border/profit/loss/warn) → browser cade
+pe fundal alb default. Fix: bg-background → bg-surface-card (9 aparitii).
+
+Unde se ia cheia Claude API: console.anthropic.com/settings/keys (cont separat de
+claude.ai, necesita credit prepaid, fara free tier). Gemini gratuit:
+aistudio.google.com/apikey.
+
+
+================================================================================
+ FAZA 8 — INCIDENT "ZERO TRADES OVERNIGHT" — DIAGNOZA + FIX
+================================================================================
+
+Simptom: motorul ruleaza pe M15 dar niciun ordin de aseara pana acum.
+
+Investigatie forensica (ledger data/ai/ledger.db):
+- Infrastructura INOCENTA: motor rulat toata noaptea fara gap (4 iteratii/ora),
+  MT5 conectat, ZERO erori LLM, 29 consilii convocate (19 breakout-tension!).
+- FUNNEL demascator:
+  * 29/29 consilii: Analistul Tehnic a spus "neutral" (0 directii date)
+  * 29/29 consilii: Risk Manager a dat VETO (100%)
+  * 28 decizii, toate WAIT, 0 OPEN, 0 ordine.
+
+ROOT CAUSE (nu bug de infrastructura — politica de decizie care facea
+tranzactionarea IMPOSIBILA matematic). Trei defecte compuse in prompturi:
+1. Analistul Tehnic nu putea lua pozitie: briefing cu trend M30+D1+W1 care rar
+   coincid + prompt "skeptical" → orice dezacord = neutral. (AUDUSD la varful
+   range-ului cu M30 bullish — breakout clasic — tot "neutral" ca D1 diferea.)
+2. Risk Manager cu veto NELIMITAT + mandat "gaseste motive sa NU tranzactionezi".
+   Motivele lui erau analiza tehnica ("RSI neutral", "conflicting trends"), nu risc.
+3. Head Trader legat de reguli: "dezacord = WAIT" + "veto = WAIT". Cu portile 1+2
+   permanent inchise → P(trade)=0 prin constructie. Paralizie de comitet.
+Edge case gasit: veto returnat ca STRING "false" ar fi fost truthy in Python.
+
+FIX (structural + enforced in cod, nu doar prompturi mai bune):
+- Analist Tehnic: politica de pozitie — M30+price action = semnal PRIMAR de
+  directie; higher-TF conflict scade CONFIDENCE, nu forteaza neutral; pret la
+  marginea range-ului cu trend M30 = setup directional; "neutral" doar la chop real.
+  Primeste si trigger-ul care a convocat consiliul.
+- Risk Manager: veto ENFORCED IN COD — doar cu unul din 6 coduri de risc dur
+  (NEWS_IMMINENT, DAILY_STOP, MAX_POSITIONS, EXTREME_VOL, WEEKEND_GAP, BAD_GEOMETRY).
+  Veto fara cod valid → IGNORAT ca blocaj, convertit in prudenta (risc redus la
+  0.25%). Modelul nu mai poate paraliza desk-ul; codul decide ce e veto.
+- Head Trader: regula cantitativa — OPEN in directia analistului la confidence≥55
+  daca macro nu semnaleaza risc de eveniment contrar; dubiile scad SIZE, nu decizia;
+  ordine STOP = confirmare gratuita (netriggerat = costa nimic).
+- Parsing veto robust (_veto_flag): 'false'/'true' string tratate corect.
+- Rails de siguranta NESCHIMBATE (geometrie, RR≥1, SL≤5ATR, max 3, -3R, ≤1%, DEMO).
+
+Verificare: 30/30 selftest incl. 4 teste noi de veto. Testul decisiv — acelasi
+consiliu live care veta un setup bullish curat ieri, acum da OPEN_LONG conf=75%
+cu SL/TP valide, risc 0.5%. Motor repornit pe fix. report.py arata acum un FUNNEL
+(consilii → veto onorate vs. degradate → actiuni → plasate).
+
+
+================================================================================
+ STAREA FINALA A SISTEMULUI (2026-07-09 seara)
+================================================================================
+
+RULEAZA ACUM:
+- AI Engine v0.3 pe cont demo, 6 piete (EURUSD/USDJPY/GBPUSD/AUDUSD/USDCAD/XRPUSD),
+  consiliu pe Ollama (toate 4 roluri), failover pregatit pentru surse API.
+- Watchdog activ (restart automat + Telegram).
+- Bot pe reguli (20 sesiuni) — separat, magic diferit.
+
+PACHETE NOI IN COD:
+- m0/            — audit statistic (python -m m0.audit / m0.selftest)
+- ai_engine/     — motor AI autonom (python -m ai_engine / .selftest / .report)
+
+DOCS RELEVANTE:
+- docs/AI_ENGINE_FEASIBILITY.md      — studiul de fezabilitate (18 livrabile)
+- docs/M0_METHOD.md / M0_RESULTS.md  — metoda + rezultate audit
+- docs/AI_ENGINE.md                  — ghid motor AI (v0.3)
+- docs/PLAN_SURSE_AI_MULTI_PROVIDER.md — plan surse multiple (IMPLEMENTAT)
+- docs/RAPORT_NOAPTE_2026-07-09.md   — raport batch overnight
+- docs/ISTORIC_SESIUNE_2026-07.txt   — acest fisier
+
+COMENZI UTILE:
+  python -m m0.audit                 # audit 20 sesiuni
+  python -m ai_engine.selftest       # 30 verificari (incl. consiliu live)
+  python -m ai_engine.report         # scorecard + funnel decizii
+  python -m ai_engine.report --councils  # + transcripturi dezbateri
+  start_ai_engine.bat                # porneste Ollama + motor
+  setup_ai_engine.bat                # instalare pe laptop nou
+
+DE FACUT DE CATRE USER:
+- Restart API/UI (start_ui.bat) ca sa apara cardul Surse AI actualizat.
+- Optional: cheie Gemini gratuita (aistudio.google.com) sau Claude
+  (console.anthropic.com, necesita credit) → paste in card → Testeaza → Activeaza.
+- Monitorizare: primele ordine AI ar trebui sa apara in urmatoarele ore acum ca
+  paralizia consiliului e reparata. Scorecard-ul masoara calitatea in timp.
+
+PRINCIPIU CONSTANT: tot ce tine de AI ruleaza DOAR pe cont DEMO. $1000 va fi
+prima investitie reala — nimic nu atinge bani reali pana nu se dovedeste pe demo.
+
+================================================================================
+ Sfarsit istoric. Generat 2026-07-09.
+================================================================================

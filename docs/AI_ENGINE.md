@@ -1,6 +1,27 @@
 # AI Engine — motorul de trading autonom bazat pe AI
 
-**Versiune:** 0.1 · **Status:** experiment pe cont DEMO · **Cost de rulare:** $0 (LLM local)
+**Versiune:** 0.3 · **Status:** experiment pe cont DEMO · **Cost de rulare:** $0 (LLM local; surse API optionale)
+
+## Surse AI multiple (v0.3) — consiliul pe mai multe "creiere"
+
+Rolurile consiliului se pot distribui pe surse AI diferite, configurabile din
+tab-ul AI Engine → cardul **Surse AI**: Ollama (local, gratuit, sursa default),
+Claude (SDK oficial), Google Gemini (are free tier) si orice API compatibil
+OpenAI (ChatGPT, Groq, DeepSeek, Mistral, xAI, OpenRouter...). Detalii de
+proiectare: [PLAN_SURSE_AI_MULTI_PROVIDER.md](PLAN_SURSE_AI_MULTI_PROVIDER.md).
+
+- **Failover automat:** daca sursa unui rol pica, rolul trece pe urmatoarea
+  sursa sanatoasa, apoi pe Ollama. Pauze pe tip de eroare: quota epuizata → 6h,
+  rate limit → 60s (sau Retry-After), retea → 2min, cheie invalida → DEZACTIVAT
+  pana la retest manual. Revenirea e automata la expirarea pauzei.
+- **Testeaza** per sursa: verifica lantul complet (reachable → auth → JSON valid)
+  si afiseaza latenta sau motivul exact al esecului.
+- **Hot-reload:** schimbarile (surse, roluri, chei) se aplica la urmatorul
+  consiliu — fara restart de motor.
+- **Audit:** transcriptul fiecarui consiliu inregistreaza per rol `_provider`,
+  `_latency_s` si `_fallback_from` (daca a fost substituit).
+- **Chei API:** local in `data/ai/providers.json` (gitignored), mascate in UI,
+  trimise doar catre providerul respectiv. Cheie Gemini gratuita: aistudio.google.com.
 
 Motor complet separat de botul pe reguli: analizeaza singur pietele, isi alege
 strategia in functie de context (trend, structura, volatilitate, stiri), dezbate

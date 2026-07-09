@@ -1,6 +1,6 @@
 # Plan: Surse AI configurabile pentru Consiliu (multi-provider) — v2
 
-**Status: APROBAT, NEIMPLEMENTAT** · Plan salvat 2026-07-09 pentru implementare ulterioara.
+**Status: IMPLEMENTAT 2026-07-09 (AI Engine v0.3)** — toate punctele de mai jos sunt live.
 Contextul curent: AI Engine v0.2 ruleaza consiliul exclusiv pe Ollama local (qwen3:8b),
 4 roluri secventiale in `ai_engine/council.py`, provider unic din `ai_engine/providers.py`.
 

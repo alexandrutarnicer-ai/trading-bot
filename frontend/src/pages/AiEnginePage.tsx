@@ -5,6 +5,7 @@ import {
   useAiLogs, useAiStart, useAiStop, useAiSaveConfig,
 } from "../api/hooks";
 import type { AiDecision } from "../api/types";
+import { AiProvidersCard } from "../components/AiProvidersCard";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -150,7 +151,7 @@ function MarketsEditor() {
         <div className="space-y-2">
           <input
             value={text} onChange={e => setText(e.target.value)}
-            className="w-full bg-background border border-surface-border rounded-lg px-3 py-1.5 text-xs text-white font-mono"
+            className="w-full bg-surface-card border border-surface-border rounded-lg px-3 py-1.5 text-xs text-white font-mono"
             placeholder={currentMarkets || "EURUSD, USDJPY, GBPUSD"}
           />
           <div className="flex gap-2">
@@ -279,6 +280,8 @@ export function AiEnginePage() {
 
       <MarketsEditor />
 
+      <AiProvidersCard />
+
       {/* Decizii */}
       <div className="space-y-2">
         <h3 className="text-sm font-semibold text-white flex items-center gap-2">
@@ -344,7 +347,7 @@ export function AiEnginePage() {
           )}
         </button>
         {showLogs && (
-          <pre className="bg-background border border-surface-border rounded-xl p-3 text-[10px] text-slate-400 font-mono overflow-x-auto max-h-80 overflow-y-auto whitespace-pre-wrap">
+          <pre className="bg-surface-card border border-surface-border rounded-xl p-3 text-[10px] text-slate-400 font-mono overflow-x-auto max-h-80 overflow-y-auto whitespace-pre-wrap">
             {logs?.lines?.length ? logs.lines.join("\n") : "Log gol sau indisponibil."}
           </pre>
         )}
