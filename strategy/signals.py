@@ -33,6 +33,7 @@ def count_optional(row, direction, cfg):
 
     # Criteriu 3: corp lumânare — bara de intrare are body > min_atr_ratio * ATR
     # in directia trade-ului. Dezactivat implicit, nu afecteaza baselines.
+    # (Pastrat pentru compatibilitate cu profile vechi; UI-ul expune acum ADX D1.)
     bs = o.get("body_strength", {})
     if bs.get("enabled", False):
         min_ratio = bs.get("min_atr_ratio", 0.15)
@@ -41,6 +42,13 @@ def count_optional(row, direction, cfg):
         else:
             body = row["open"] - row["close"]
         if body > min_ratio * row["atr"]:
+            c += 1
+
+    # Criteriu 3 (nou): trend puternic pe D1 — ADX(14) zilnic > 25 (coloana
+    # f2_adx din _enrich, cu lag de 1 zi, fara lookahead). Dezactivat implicit.
+    adx = o.get("adx_d1", {})
+    if adx.get("enabled", False):
+        if int(row.get("f2_adx", 0) or 0) == 1:
             c += 1
 
     return c

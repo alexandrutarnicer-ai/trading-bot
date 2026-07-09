@@ -1,0 +1,31 @@
+{
+  "markets": [
+    "EURUSD",
+    "USDJPY",
+    "GBPUSD",
+    "AUDUSD",
+    "USDCAD",
+    "XRPUSD"
+  ],
+  "provider": "ollama",
+  "ollama_url": "http://localhost:11434",
+  "model": "qwen3:8b",
+  "model_opts": {
+    "temperature": 0.3,
+    "num_ctx": 8192
+  },
+  "bar_minutes": 15,
+  "heartbeat_hours": 24,
+  "council_cooldown_min": 120,
+  "position_review_hours": 4,
+  "mode": "demo",
+  "magic": 770015,
+  "comment_prefix": "AI",
+  "risk_pct_default": 0.005,
+  "risk_pct_max": 0.01,
+  "max_open_positions": 3,
+  "max_daily_loss_R": 3.0,
+  "min_rr": 1.0,
+  "max_sl_atr_mult": 5.0,
+  "decision_valid_bars": 8
+}

@@ -24,6 +24,7 @@ from backtest import CONFIG, DATA_DIR
 from adapters.csv_source import CsvDataSource
 from strategy.preparation import prepare_symbol_tf
 from engine.portfolio import run_portfolio
+from m0.robustness import evaluate_trades, to_result_payload
 
 router = APIRouter(prefix="/backtest", tags=["backtest"])
 
@@ -144,6 +145,9 @@ def _run_backtest_job(
             "enabled":       session_cfg.get("body_strength_enabled", False),
             "min_atr_ratio": session_cfg.get("body_strength_min_atr_ratio", 0.15),
         }
+        cfg["optional_criteria"]["adx_d1"] = {
+            "enabled": session_cfg.get("adx_d1_enabled", False),
+        }
         cfg["reward_ladder"]["threshold_mid"] = session_cfg.get("r_mid_threshold", 1)
         cfg["reward_ladder"]["threshold_top"] = session_cfg.get("r_top_threshold", 2)
         cfg["reward_ladder"]["threshold_max"] = session_cfg.get("r_max_threshold", 3)
@@ -235,6 +239,7 @@ def _run_backtest_job(
             "symbol_sessions":            {},
             "symbol_skip_hours":          {},
             "only_long":                  session_cfg["direction"] == "LONG",
+            "pullback_enabled":           session_cfg.get("pullback_enabled", True),
             "be_cfg": {
                 "enabled":         session_cfg.get("break_even_enabled", False),
                 "phase2_enabled":  session_cfg.get("be_phase2_enabled",  True),
@@ -344,6 +349,16 @@ def _run_backtest_job(
 
         final_balance = float(eq_arr[-1]) if len(eq_arr) else start_balance
 
+        # M0 — robustete statistica (verdict KEEP/OBSERVE/DEMOTE). Fail-open:
+        # daca esueaza, backtestul se salveaza normal, doar fara verdict.
+        # Vezi docs/M0_METHOD.md si m0/robustness.py (implementare comuna cu CLI).
+        robustness = None
+        try:
+            _m = evaluate_trades(df_t, split_time=split_time, n_boot=2000)
+            robustness = to_result_payload(_m)
+        except Exception:
+            _log.warning("[M0] evaluate_trades a esuat pentru job %s", job_id, exc_info=True)
+
         # Task 4: Analiza pierderi per zi a saptamanii si per ora
         _WD_NAMES = ["Luni", "Marți", "Miercuri", "Joi", "Vineri", "Sâmbătă", "Duminică"]
         weekday_stats: dict = {}
@@ -401,6 +416,7 @@ def _run_backtest_job(
                 },
                 "per_symbol":       per_symbol,
                 "direction_stats":  direction_stats,
+                "robustness":       robustness,
                 "markets":          session_cfg["markets"],
                 "skipped_markets":  skipped_markets,
                 "session_id":       session_cfg.get("id", ""),
@@ -430,7 +446,7 @@ def _build_session_snapshot(cfg: dict, frontend_snap: dict | None = None) -> dic
         # Identitate sesiune (necesara pentru Apply Config)
         "direction",
         # Strategie
-        "pullback_window", "expire_bars", "circuit_breaker",
+        "pullback_enabled", "pullback_window", "expire_bars", "circuit_breaker",
         # Ore
         "session_start", "session_end", "skip_hours", "skip_weekdays",
         # R-ladder
@@ -440,7 +456,7 @@ def _build_session_snapshot(cfg: dict, frontend_snap: dict | None = None) -> dic
         "risk_base", "risk_mid", "risk_top", "risk_max",
         # Criterii optionale
         "rsi_enabled", "rsi_buy_min", "rsi_buy_max", "rsi_sell_min", "rsi_sell_max",
-        "ema_alignment_enabled",
+        "ema_alignment_enabled", "adx_d1_enabled",
         "body_strength_enabled", "body_strength_min_atr_ratio",
         # Break-even
         "break_even_enabled", "be_trigger_pct", "be_lock1_pct", "be_lock2_pct",

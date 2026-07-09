@@ -79,6 +79,8 @@ const TIPS = {
   rsi:           "RSI filtrează entry-urile în zone de supraCumpărare/supraVânzare. Gama recomandată: buy 40–65, sell 35–60.",
   ema:           "EMA8 > EMA20 > EMA50 pe TF de intrare — confirmă că trendul de scurt termen e aliniat cu cel de mediu termen.",
   body_strength: "Corp lumânare: bara de intrare trebuie să aibă un corp (close−open) mai mare decât ATR × ratio în direcția trade-ului. Confirmă că breakout-ul are impuls. Dezactivat implicit. Ratio recomandat: 0.10–0.25.",
+  adx_d1: "Trend puternic pe Daily: ADX(14) calculat pe barele zilnice > 25 (valoarea zilei precedente — fără lookahead). Semnalele primesc +1 criteriu doar când piața e într-un trend direcțional puternic, nu în consolidare. Dezactivat implicit — nu afectează comportamentul existent.",
+  pullback_strategy: "Strategia principală pullback-in-trend: 2 maxime crescătoare → retragere (Higher Low) → prima închidere peste maximul barei de retragere. Activă implicit pe toate sesiunile — dezactiveaz-o doar dacă vrei să rulezi sesiunea exclusiv pe Flag / Inside Bar.",
   circuit_breaker: "Oprește tranzacționarea după N pierderi consecutive în aceeași zi. Repornește la miezul nopții.",
   risk_pct:      "Procentul din equity riscat per tranzacție. Equity-ul este citit din MT5 la fiecare ordin.",
   account_fraction: [
@@ -610,7 +612,7 @@ export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted,
                     {tField && (
                       <div className="border-t border-surface-border/50 pt-1">
                         <div className="text-[9px] text-slate-600 text-center">La ≥ cr.</div>
-                        <input type="number" step={1} min={1} max={3}
+                        <input type="number" step={1} min={0} max={3}
                           value={session[tField] ?? tDefault}
                           onChange={(e) => upd({ [tField]: Number(e.target.value) })}
                           className="w-full bg-transparent text-center text-[11px] text-slate-400 focus:outline-none" />
@@ -667,20 +669,13 @@ export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted,
               </div>
             </div>
 
-            {/* Criteriu 3 — Corp lumânare */}
-            <div className="border border-surface-border rounded-lg p-3 space-y-2">
+            {/* Criteriu 3 — Trend puternic D1 (ADX) — inlocuieste Corp Lumânare */}
+            <div className="border border-surface-border rounded-lg p-3">
               <div className="flex items-center gap-2">
-                <Toggle label="3. Corp Lumânare (Body Strength)" value={session.body_strength_enabled ?? false}
-                  onChange={(v) => upd({ body_strength_enabled: v })} />
-                <InfoTooltip text={TIPS.body_strength} />
+                <Toggle label="3. Trend puternic D1 (ADX > 25)" value={session.adx_d1_enabled ?? false}
+                  onChange={(v) => upd({ adx_d1_enabled: v })} />
+                <InfoTooltip text={TIPS.adx_d1} />
               </div>
-              {(session.body_strength_enabled ?? false) && (
-                <div className="pt-1 max-w-[160px]">
-                  <NumField label="ATR ratio min" step={0.05}
-                    value={session.body_strength_min_atr_ratio ?? 0.15}
-                    onChange={(v) => upd({ body_strength_min_atr_ratio: v })} />
-                </div>
-              )}
             </div>
           </Section>
 
@@ -1056,6 +1051,23 @@ export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted,
                     Notificări Telegram separate la Faza 1 și Faza 2. Se aplică în backtest și live.
                   </p>
                 </div>
+              )}
+            </div>
+          </Section>
+
+          {/* Strategia principala — Pullback-in-trend */}
+          <Section label="Strategia Pullback (principală)" tip={TIPS.pullback_strategy}>
+            <div className="space-y-2">
+              <Toggle
+                label="Activează Pullback-in-Trend"
+                value={session.pullback_enabled ?? true}
+                onChange={(v) => upd({ pullback_enabled: v })}
+              />
+              {!(session.pullback_enabled ?? true) && (
+                <p className="text-[10px] text-amber-400">
+                  ⚠ Strategia principală e dezactivată — sesiunea va genera semnale doar din
+                  Flag / Inside Bar (dacă sunt activate mai jos).
+                </p>
               )}
             </div>
           </Section>

@@ -34,6 +34,7 @@ def run_portfolio(data, cfg, params, verbose=True):
     be_cfg                  = params.get("be_cfg", None)
     flag_cfg                = params.get("flag_cfg", None)
     inside_bar_cfg          = params.get("inside_bar_cfg", None)
+    pullback_enabled        = params.get("pullback_enabled", True)
     symbol_sessions         = params.get("symbol_sessions", {})    # {symbol: (sh, eh)}
     symbol_skip_hours       = params.get("symbol_skip_hours", {})  # {symbol: tuple}
 
@@ -223,7 +224,7 @@ def run_portfolio(data, cfg, params, verbose=True):
         ib_pending = sum(1 for p in pendings[s] if p.get("signal_type") == "inside_bar")
 
         # --- Pullback-in-trend (strategie principala) ---
-        if active_pb[s] + pb_pending < max_pos_per_symbol:
+        if pullback_enabled and active_pb[s] + pb_pending < max_pos_per_symbol:
           _delay_ok = not (active_pb[s] > 0 and min_bars_between_symbol > 0
                            and jj - last_trigger_j[s] < min_bars_between_symbol)
           if _delay_ok:

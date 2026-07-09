@@ -12,6 +12,7 @@ import { EquityChart } from "../components/EquityChart";
 import { TradingStatsPanel } from "../components/TradingStatsPanel";
 import { TopMarketsWidget } from "../components/TopMarketsWidget";
 import { SourceToggle } from "../components/SourceToggle";
+import { ActiveOrdersTable } from "../components/ActiveOrdersTable";
 
 // Vedere unificata pentru randare — R pentru sursa MT5 e recalculat din SL-ul
 // original al ordinelor (vezi api/routers/mt5status.py::_fetch_closed_trades),
@@ -487,6 +488,9 @@ export function Dashboard() {
           </div>
         )}
       </div>
+
+      {/* Ordine active — sursa de adevar MT5 (pozitii + pending, Bot/AI/Manual) */}
+      <ActiveOrdersTable />
 
       {/* Bottom two columns */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
