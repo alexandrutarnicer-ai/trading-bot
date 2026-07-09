@@ -376,7 +376,8 @@ const TOC = [
   { id: "signals",       label: "8. Semnale & Ordine" },
   { id: "notifications", label: "9. Notificări" },
   { id: "reports",       label: "10. Rapoarte" },
-  { id: "live",          label: "11. Cont live" },
+  { id: "ai-engine",     label: "11. AI Engine" },
+  { id: "live",          label: "12. Cont live" },
 ];
 
 // ── Page ──────────────────────────────────────────────────────────────────────
@@ -952,6 +953,53 @@ export function GuidePage() {
                 Metrică relevantă pentru validare este <strong>Test expectancy</strong> pe date nevăzute.
               </Warn>
             </div>
+          </SubSection>
+
+          <SubSection title="Verdict de robustețe (M0)">
+            <p>
+              Fiecare backtest finalizat afișează în capul rezultatelor un <strong className="text-white">banner
+              de verdict</strong> care răspunde la o singură întrebare: <em>edge-ul e real, sau e un artefact
+              al cât de mult ai căutat?</em> Verdictul e mecanic (praguri fixe), nu o opinie.
+            </p>
+            <div className="space-y-2">
+              <div className="flex items-start gap-2">
+                <Badge color="bg-profit/20 text-profit" label="🟢 KEEP" />
+                <span className="text-xs text-slate-400">Edge distinct de zgomot ȘI stabil în timp. Candidat solid.</span>
+              </div>
+              <div className="flex items-start gap-2">
+                <Badge color="bg-amber-500/20 text-amber-300" label="🟡 OBSERVE" />
+                <span className="text-xs text-slate-400">Semnal ambiguu — rulează pe observație (execute_trades=False) și strânge mai multe date.</span>
+              </div>
+              <div className="flex items-start gap-2">
+                <Badge color="bg-loss/20 text-loss" label="🔴 DEMOTE" />
+                <span className="text-xs text-slate-400">Edge indistinct de norocul de căutare — pune pe pauză; nu mai plăti spread/comision pe un ne-edge.</span>
+              </div>
+              <div className="flex items-start gap-2">
+                <Badge color="bg-slate-700/40 text-slate-300" label="⚪ INSUFF" />
+                <span className="text-xs text-slate-400">Sub 30 de trade-uri — prea puține date pentru a concluziona.</span>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3 text-xs mt-2">
+              <div className="space-y-1">
+                <div className="text-[10px] text-slate-500 uppercase mb-1">Metrici din banner</div>
+                <KV k="P(edge>0)" v="Încrederea (bootstrap) că expectancy > 0. ≥95% = distinct de zgomot" vColor="text-profit" />
+                <KV k="Fold+" v="Fracția din 8 sub-perioade pozitive. ~100% = stabil în timp" />
+              </div>
+              <div className="space-y-1">
+                <div className="text-[10px] text-slate-500 uppercase mb-1">&nbsp;</div>
+                <KV k="N* trials" v="Câte variante ar explica edge-ul prin noroc. Mic (<10) = fragil" vColor="text-amber-400" />
+                <KV k="CI 95%" v="Interval de încredere pe expectancy. Include 0 = neconcludent" />
+              </div>
+            </div>
+            <Tip>
+              Regula: <strong>KEEP</strong> dacă expectancy &gt; 0 ȘI P(edge&gt;0) ≥ 95% ȘI ≥60% fold-uri pozitive.
+              <strong> DEMOTE</strong> dacă expectancy ≤ 0 SAU P(edge&gt;0) &lt; 75%. Detalii complete în
+              <strong className="text-white"> docs/M0_METHOD.md</strong>.
+            </Tip>
+            <Note>
+              Verdictul apare doar pe backtestele rulate după activarea M0. Pentru un audit al tuturor
+              sesiunilor deodată: <code className="text-slate-300">python -m m0.audit</code> → raport în docs/M0_RESULTS.md.
+            </Note>
           </SubSection>
 
           <SubSection title="Statistici LONG/SHORT (sesiuni BOTH)" defaultOpen={false}>
@@ -1697,8 +1745,51 @@ export function GuidePage() {
           </SubSection>
         </Section>
 
-        {/* ── 11. CONT LIVE ── */}
-        <Section id="live" title="11. Lansare cont live">
+        {/* ── 11. AI ENGINE ── */}
+        <Section id="ai-engine" title="11. AI Engine (motor autonom AI)">
+          <SubSection title="Ce este și prin ce diferă de bot">
+            <p>
+              <strong className="text-white">AI Engine</strong> este un motor de trading complet separat de botul pe reguli:
+              nu folosește strategia pullback, ci un <strong className="text-white">consiliu de 4 agenți AI</strong> care
+              rulează local pe placa video (Ollama, gratuit, nelimitat) și dezbat fiecare decizie:
+              Analist Tehnic → Analist Macro/Știri → Risk Manager (cu drept de veto absolut) → Head Trader.
+            </p>
+            <div className="space-y-2">
+              <KV k="Izolare" v="Magic 770015 + comment 'AI-' — nu vede și nu atinge pozițiile botului" />
+              <KV k="Siguranță" v="Refuză orice cont non-DEMO; risc max 1%/trade; max 3 poziții; stop zilnic -3R" />
+              <KV k="Cost" v="0 $ — modelul AI (qwen3:8b) rulează local pe GPU" />
+              <KV k="Piețe" v="EURUSD, USDJPY, GBPUSD, AUDUSD, USDCAD — dimensionate pentru cont ~$1000" />
+            </div>
+          </SubSection>
+          <SubSection title="Tab-ul AI Engine">
+            <p>
+              Din tab-ul <strong className="text-white">AI Engine</strong> poți: porni/opri motorul (buton On/Off),
+              vedea scorecard-ul (decizii, WAIT-uri, trades, R total, expectancy), edita piețele urmărite
+              (validate automat contra MT5), citi fiecare decizie cu <strong className="text-white">motivația completă
+              și transcriptul dezbaterii</strong> (click pe decizie), vedea rezultatele și log-ul motorului.
+            </p>
+            <Note>
+              Consiliul AI se convoacă doar pe evenimente (schimbare de regim, tensiune de breakout, spike de
+              volatilitate, știri High-impact, review poziție, heartbeat zilnic) — nu la fiecare bară. Multe
+              decizii vor fi WAIT: asta e disciplină, nu inactivitate.
+            </Note>
+            <Warn>
+              Rezultatele AI sunt separate de rapoartele botului (ledger propriu — data/ai/ledger.db), dar
+              P&L-ul contului MT5 din Dashboard include TOT (bot + AI + manual), fiind citit direct din equity.
+            </Warn>
+          </SubSection>
+          <SubSection title="Instalare pe alt dispozitiv (laptop)">
+            <p>
+              Rulează <code className="text-slate-300">setup_ai_engine.bat</code> — instalează automat Python,
+              Ollama și modelul AI, apoi rulează verificările. Pe laptop fără GPU dedicat folosește un model mai mic
+              (<code className="text-slate-300">qwen3:4b</code> în ai_engine/config.json). Motorul se rulează pe un
+              singur dispozitiv odată (același cont demo).
+            </p>
+          </SubSection>
+        </Section>
+
+        {/* ── 12. CONT LIVE ── */}
+        <Section id="live" title="12. Lansare cont live">
           <SubSection title="Demo vs Live — ce se schimbă">
             <p>
               Botul nu distinge între demo și live — folosește același API MT5. Singura diferință este contul activ logat în MT5.

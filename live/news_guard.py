@@ -24,6 +24,7 @@ import os
 import re
 import threading
 import time
+import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -256,6 +257,13 @@ def _fetch_forexfactory() -> list[dict]:
                     "sentiment":  _calc_sentiment(actual_s, forecast_s),
                     "_source":    "ff",
                 })
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                # nextweek.json nu e publicat mereu de FF — conditie normala,
+                # nu avertizam (thisweek.json acopera fereastra pre/post stiri).
+                log.debug(f"FF calendar ({url}): 404 (nepublicat inca)")
+            else:
+                log.warning(f"FF calendar ({url}): {exc}")
         except Exception as exc:
             log.warning(f"FF calendar ({url}): {exc}")
 

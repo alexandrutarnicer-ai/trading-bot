@@ -2,7 +2,7 @@ import { useBacktestJobs, useDownloadJobs, useNotifications } from "../api/hooks
 import { AutostartToggle } from "./AutostartToggle";
 import Mt5SyncButton from "./Mt5SyncButton";
 
-type Tab = "dashboard" | "profile" | "notifications" | "audit" | "reports" | "guide";
+type Tab = "dashboard" | "profile" | "ai" | "notifications" | "audit" | "reports" | "guide";
 
 interface Props {
   active: Tab;
@@ -12,6 +12,7 @@ interface Props {
 const TABS: { id: Tab; label: string }[] = [
   { id: "dashboard",     label: "Dashboard" },
   { id: "profile",       label: "Profile" },
+  { id: "ai",            label: "AI Engine" },
   { id: "notifications", label: "Notificări" },
   { id: "audit",         label: "Audit" },
   { id: "reports",       label: "Rapoarte" },

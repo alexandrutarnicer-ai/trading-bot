@@ -50,9 +50,23 @@ python scripts/test_profile_params.py
 python scripts/test_filling_logic.py              # unit tests + MT5 real
 python scripts/test_filling_logic.py --unit-only  # doar unit tests (fara MT5)
 python scripts/test_filling_logic.py XRPUSD       # un singur simbol
+
+# M0 — audit statistic de robustete al sesiunilor (verdict KEEP/OBSERVE/DEMOTE)
+python -m m0.audit                     # toate cele 20 sesiuni -> data/m0_audit.csv + docs/M0_RESULTS.md
+python -m m0.audit --sessions S1,S3    # doar unele
+python -m m0.audit --quick             # bootstrap redus (test rapid)
+python -m m0.selftest                  # verificari integritate M0 (rapid, fara MT5)
+
+# AI Engine — motor autonom AI, separat de botul pe reguli (MT5 DEMO + Ollama)
+start_ai_engine.bat                    # dublu-click: porneste Ollama + motorul
+setup_ai_engine.bat                    # instalare completa pe dispozitiv nou (laptop)
+python -m ai_engine                    # manual
+python -m ai_engine.selftest           # 21 verificari, include consiliu LIVE pe Ollama
+python -m ai_engine.report             # scorecard + decizii + outcomes
+python -m ai_engine.report --councils  # + transcripturile dezbaterilor AI
 ```
 
-Nu există test suite sau linter configurat. Validarea corectitudinii se face prin reproducerea numerelor baseline (vezi mai jos).
+Nu există test suite sau linter configurat. Validarea corectitudinii se face prin reproducerea numerelor baseline (vezi mai jos). Pentru M0, `python -m m0.selftest` verifica reproducerea baseline-ului (284 trade-uri) + verdictele.
 
 ---
 
@@ -121,16 +135,44 @@ def reward_R(n_optional, cfg):
     return rl["rr_if_3_criteria"]        # base (ex: 2.5R)
 ```
 
-**Criterii optionale (3 total):**
+**Criterii optionale:**
 1. `rsi` — RSI in range definit (ex: 40-65 pentru LONG)
 2. `ema_alignment` — EMA8 > EMA20 > EMA50 (LONG) sau invers (SHORT)
-3. `body_strength` — corp lumânare > `min_atr_ratio × ATR` — **dezactivat by default** (nu afecteaza baselines)
+3. `adx_d1` — trend puternic pe D1: ADX(14) zilnic > 25 (coloana `f2_adx` din `_enrich`, lag 1 zi) — **dezactivat by default**. A inlocuit `body_strength` in UI; `body_strength` ramane functional in backend pentru profile vechi (tot dezactivat by default).
 
-Pragurile sunt configurabile per sesiune via UI. Valorile default produc același comportament ca sistemul vechi cu 2 criterii și praguri fixe 1 și 2.
+Pragurile sunt configurabile per sesiune via UI, **inclusiv 0** (threshold 0 = nivelul respectiv se acorda intotdeauna). Valorile default produc același comportament ca sistemul vechi.
+
+**`pullback_enabled` (default `true`):** strategia principala pullback-in-trend poate fi dezactivata per sesiune (UI: sectiunea "Strategia Pullback (principală)"). Gate-uit in `engine/portfolio.py`, `live/signal_generator.py::_check_signals`, API backtest si m0. Cu toggle ON (default) comportamentul e identic cu inainte — baselines neschimbate (verificat: 284 trades).
 
 ### `engine/portfolio.run_portfolio()`
 
 Split train/test automat la 70%/30% din evenimente (nu din timp). `split_time` este calculat dinamic la fiecare rulare. Gestioneaza: pozitii simultane, verificare marja, circuit breaker (3 pierderi/zi), corelare perechi (EURUSD↔GBPUSD — nu deschide ambele simultan), swap overnight.
+
+### `m0/` — audit statistic de robustete (Milestone 0 din planul AI)
+
+Pachet **read-only** care determina care sesiuni au un edge real, distinct de norocul de cautare, inainte de a construi orice strat AI peste ele. Nu atinge nimic live; reutilizeaza exact `engine.portfolio.run_portfolio`. Vezi [docs/AI_ENGINE_FEASIBILITY.md](docs/AI_ENGINE_FEASIBILITY.md) (context) si [docs/M0_METHOD.md](docs/M0_METHOD.md) (metoda pe intelesul tuturor).
+
+- `m0/session_runner.py` — mapeaza o sesiune din profil → params `run_portfolio` (**copiat verbatim** din `api/routers/backtest.py`; `SPREAD_DEFAULTS` duplicat — tine-l sincronizat daca cel din API se schimba). Suporta optional fereastra de date (pentru fold-uri). Validat: reproduce baseline-ul documentat (284 trade-uri).
+- `m0/stats.py` — stationary block bootstrap (P(edge>0) + CI), Probabilistic/Deflated Sharpe cu prag de "trial-uri de breakeven" N*, consistenta pe 8 fold-uri + trend Spearman.
+- `m0/robustness.py` — **sursa unica de adevar**: `evaluate_trades(df, split_time)` + `classify()` + `to_result_payload()`. Folosit ATAT de `m0.audit` CAT si de worker-ul de backtest din API, ca sa nu diverge. Verdict: KEEP (exp>0 ȘI P(edge>0)≥95% ȘI ≥60% fold-uri pozitive) / DEMOTE (exp≤0 SAU P(edge>0)<75%) / OBSERVE / INSUFF (<30 trade-uri).
+- `m0/audit.py` — ruleaza toate cele 20 sesiuni → `data/m0_audit.csv` + `docs/M0_RESULTS.md`.
+- `m0/selftest.py`, `m0/validate_runner.py` — verificari de integritate.
+
+**Integrare in Audit tab:** `api/routers/backtest.py::_run_backtest_job` apeleaza `evaluate_trades` (n_boot=2000) pe seria de trade-uri si adauga cheia `robustness` in rezultat (fail-open — daca esueaza, backtestul se salveaza normal fara verdict). Frontend: `RobustnessResult` in `types.ts`, banner `RobustnessBanner` in capul lui `ResultsGrid` din `AuditPage.tsx` (verdict + P(edge>0) + Fold+ + N* + CI, cu tooltips), documentat in `GuidePage.tsx`. **Necesita restart API** (fara `--reload` codul vechi ramane in memorie).
+
+### `ai_engine/` — motor de trading autonom AI (separat de botul pe reguli)
+
+Motor experimental care isi alege singur strategia: perceptie numerica la fiecare bara M15 (gratuit) → consiliu de 4 agenti AI pe trigger-uri (regime flip, breakout tension, vol spike, news window, heartbeat 24h) → decizie JSON validata pe rails hard → executie DOAR pe cont DEMO. Vezi [docs/AI_ENGINE.md](docs/AI_ENGINE.md).
+
+- **LLM local gratuit:** Ollama + `qwen3:8b` pe GPU (`think:false` obligatoriu — altfel 10-15x mai lent). Provider abstractizat in `providers.py` — upgrade la alt model/Claude API = doar config.
+- **Consiliu (`council.py`):** Analist Tehnic → Analist Macro → Risk Manager (VETO absolut, aplicat in cod, nu de model) → Head Trader (JSON strict, retry cu feedback la JSON invalid). Orice eroare LLM → WAIT (fail-safe).
+- **Rails hard (`executor.py::validate_decision` + clamp in `config.py`):** geometrie SL/TP, RR≥1, SL≤5×ATR, max 3 pozitii, stop zilnic -3R, risc≤1%. LLM-ul propune, rails-urile dispun.
+- **Izolare totala:** magic 770015 + comment "AI-{id}", filtrare stricta pe magic — nu vede/atinge pozitiile sesiunilor pe reguli. `executor.connect()` refuza non-DEMO (RuntimeError).
+- **Ledger SQLite (`data/ai/ledger.db`):** snapshots, transcripturi complete de consiliu, decizii, outcomes (R/pnl via pattern hedging-safe order→position_id→deals). `python -m ai_engine.report` = scorecard.
+- **Reutilizeaza:** `strategy.preparation._enrich` (perceptie), `live.news_guard._fetch_forexfactory` (calendar, cu cache TTL 10 min in perception), `api.telegram.send_message` (notificari), `Mt5DataSource` (bare + enforcement demo).
+- Config utilizator: `ai_engine/config.json` (auto-creat la prima rulare). Mode `demo`/`shadow`. Piete default alese pentru cont ~$1000 la 1:30: EURUSD/USDJPY/GBPUSD/AUDUSD/USDCAD (XAUUSD/BTCUSD/US30 nu incap — risc lot minim $12-16 sau marja $260-310).
+- **API + UI:** router `api/routers/ai_engine.py` (`/ai/status|start|stop|decisions|council/{id}|outcomes|config|logs`), tab "AI Engine" in NavBar (`AiEnginePage.tsx`) cu buton On/Off, scorecard, editor piete (validat contra MT5), decizii cu transcript dezbatere, log viewer. Heartbeat: `data/ai/status.json` scris la fiecare iteratie. Rail suplimentar: marja ordin ≤ 40% din marja libera. Reconectare automata MT5 daca toate pietele esueaza intr-o iteratie.
+- **Instalare alt dispozitiv:** `setup_ai_engine.bat` (winget Python+Ollama, pull model, selftest). Un singur dispozitiv ruleaza motorul odata.
 
 ### `live/signal_generator.py` — engine-ul live
 
@@ -218,7 +260,8 @@ Fiecare sesiune are si propriul `session.lock` (PID file per sesiune) care previ
 - `profiles` — CRUD profile JSON din `data/profiles/`. `standard` este protejat (403 la stergere). La `PUT /{profile_id}` apeleaza `_log_profile_change()` care difuiaza sesiunile si scrie in `data/session_changes_log.json`.
 - `backtest` — `POST /backtest/run` (async job), `GET /backtest/{job_id}` (poll)
 - `backtest_history` — `GET/POST/DELETE /backtest/history` — stocheaza rezultate in `data/backtest_history.json`
-- `mt5status` — `GET /mt5/status` — conectare directa la MT5, returneaza cont/balance/equity/currency
+- `mt5status` — `GET /mt5/status` — conectare directa la MT5, returneaza cont/balance/equity/currency. `GET /mt5/orders` — pozitii deschise + ordine pending clasificate pe sursa (`bot`/`ai`/`manual` dupa magic 770015 + pattern comment) + sumar cont (marja folosita/libera, P&L flotant). Afisat in Dashboard ca tabel "Ordine Active" (`ActiveOrdersTable.tsx`).
+- `ai_engine` — `GET/POST /ai/*` — status/start/stop/decizii/transcripturi/config/loguri pentru motorul AI (vezi sectiunea `ai_engine/`)
 - `data_download` — descarca CSV-uri din MT5 via `Mt5DataSource`. Rezolva automat alias-uri de simboluri per broker (ex: GER40→DE40). Joburi persistate in `data/download_jobs.json`.
 - `markets` — lista simboluri disponibile in MT5
 - `settings` — configurare Telegram (token/chat_id in `data/telegram_config.json`). `POST /settings/telegram/test` trimite mesaj de test direct via Telegram API.

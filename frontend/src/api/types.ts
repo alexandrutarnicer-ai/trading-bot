@@ -158,6 +158,8 @@ export interface ProfileSession {
   rsi_sell_min: number;
   rsi_sell_max: number;
   ema_alignment_enabled: boolean;
+  adx_d1_enabled?: boolean;
+  pullback_enabled?: boolean;
   body_strength_enabled: boolean;
   body_strength_min_atr_ratio: number;
   atr_max_pips: Record<string, number>;
@@ -246,6 +248,22 @@ export interface HourStat {
   expectancy: number;
 }
 
+// M0 — verdict de robustete statistica (vezi docs/M0_METHOD.md).
+export interface RobustnessResult {
+  verdict: "KEEP" | "OBSERVE" | "DEMOTE" | "INSUFF";
+  notes: string[];
+  prob_positive: number | null;   // P(edge>0) din bootstrap; ≥0.95 = distinct de zgomot
+  ci_low: number | null;          // interval de incredere 95% pe expectancy (R)
+  ci_high: number | null;
+  frac_positive: number | null;   // fractia de fold-uri pozitive (stabilitate in timp)
+  breakeven_trials: number;       // N* — cate variante ar explica edge-ul prin noroc
+  psr_vs_zero: number | null;
+  sharpe: number | null;
+  trend_rho: number | null;       // trend Spearman al expectancy pe fold-uri
+  fold_exp: (number | null)[];    // expectancy per sub-perioada
+  n: number;
+}
+
 export interface BacktestResult {
   total_trades: number;
   win_rate: number;
@@ -261,6 +279,7 @@ export interface BacktestResult {
   test: { trades: number; expectancy: number };
   per_symbol: Record<string, { trades: number; win_rate: number; expectancy: number }>;
   direction_stats?: Record<string, { trades: number; wins: number; losses: number; win_rate: number; expectancy: number }>;
+  robustness?: RobustnessResult | null;
   be_lock_count?: number;
   be_lock2_count?: number;
   flag_stats?: { trades: number; win_rate: number; expectancy: number };
@@ -653,4 +672,133 @@ export interface CostsDailyResponse {
   total_commission: number;
   total_swap: number;
   total_costs: number;
+}
+
+// ── AI Engine (motor autonom AI — ai_engine/) ────────────────────────────────
+
+export interface AiScorecard {
+  decisions: number;
+  waits: number;
+  closed_trades: number;
+  total_R: number;
+  expectancy_R: number;
+  win_rate: number | null;
+}
+
+export interface AiStatus {
+  running: boolean;
+  pid: number | null;
+  ts: string | null;
+  mode: "demo" | "shadow" | null;
+  model: string | null;
+  markets: string[] | null;
+  equity: number | null;
+  scorecard: AiScorecard | null;
+  last_errors: { ts: string; where: string; error: string }[];
+}
+
+export interface AiOutcomeInfo {
+  status: string;
+  exit_price: number | null;
+  result_r: number | null;
+  pnl_usd: number | null;
+}
+
+export interface AiDecision {
+  id: number;
+  ts: string;
+  symbol: string;
+  action: "OPEN_LONG" | "OPEN_SHORT" | "CLOSE" | "WAIT";
+  order_type: "market" | "stop" | null;
+  entry: number | null;
+  sl: number | null;
+  tp: number | null;
+  risk_pct: number | null;
+  confidence: number;
+  rationale: string;
+  exec_status: string;
+  exec_detail: string;
+  ticket: number | null;
+  council_id: number;
+  outcome: AiOutcomeInfo | null;
+}
+
+export interface AiCouncilTranscript {
+  council_id: number;
+  ts: string;
+  symbol: string;
+  trigger: string;
+  duration_s: number;
+  transcript: Record<string, Record<string, unknown> | string>;
+}
+
+export interface AiConfig {
+  markets: string[];
+  mode: "demo" | "shadow";
+  model: string;
+  risk_pct_default: number;
+  risk_pct_max: number;
+  max_open_positions: number;
+  max_daily_loss_R: number;
+  heartbeat_hours: number;
+  council_cooldown_min: number;
+  [k: string]: unknown;
+}
+
+export interface AiOutcomeRow {
+  ts: string;
+  symbol: string;
+  status: string;
+  exit_price: number | null;
+  result_r: number | null;
+  pnl_usd: number | null;
+  decision_id: number;
+}
+
+// ── Ordine active MT5 (sursa de adevar: MT5) ─────────────────────────────────
+
+export interface Mt5Position {
+  ticket: number;
+  symbol: string;
+  type: "LONG" | "SHORT";
+  volume: number;
+  entry: number;
+  current: number;
+  sl: number | null;
+  tp: number | null;
+  profit: number;
+  swap: number;
+  source: "bot" | "ai" | "manual";
+  comment: string;
+  margin: number;
+}
+
+export interface Mt5PendingOrder {
+  ticket: number;
+  symbol: string;
+  type: string;
+  volume: number;
+  entry: number;
+  sl: number | null;
+  tp: number | null;
+  source: "bot" | "ai" | "manual";
+  comment: string;
+}
+
+export interface Mt5OrdersAccount {
+  equity: number;
+  balance: number;
+  margin_used: number;
+  margin_free: number;
+  margin_level: number | null;
+  currency: string;
+  floating_pnl: number;
+}
+
+export interface Mt5OrdersResponse {
+  connected: boolean;
+  error: string | null;
+  positions: Mt5Position[];
+  pending: Mt5PendingOrder[];
+  account: Mt5OrdersAccount | null;
 }

@@ -747,7 +747,7 @@ def _check_signals(df: pd.DataFrame, symbol: str, cfg: dict,
 
         # --- Pullback-in-trend ---
         _pb_found = None
-        if pb_pending_count < max_concurrent:
+        if session_cfg.get("pullback_enabled", True) and pb_pending_count < max_concurrent:
             _delay_ok = True
             if min_bars_between > 0 and pending_for_sym:
                 pb_only = {k: v for k, v in pending_for_sym.items()
@@ -2777,7 +2777,7 @@ def _apply_profile_overrides(session_cfg: dict, cfg: dict, log) -> None:
         return
 
     # --- parametri sesiune (session_cfg) ---
-    for field in ("pullback_window", "session_start", "session_end",
+    for field in ("pullback_enabled", "pullback_window", "session_start", "session_end",
                   "expire_bars", "execute_trades", "account_fraction", "risk_pct",
                   "risk_base", "risk_mid", "risk_top", "risk_max",
                   "r_mid_threshold", "r_top_threshold", "r_max_threshold",
@@ -2833,6 +2833,10 @@ def _apply_profile_overrides(session_cfg: dict, cfg: dict, log) -> None:
     if "body_strength_min_atr_ratio" in ps:
         cfg["optional_criteria"].setdefault("body_strength", {})
         cfg["optional_criteria"]["body_strength"]["min_atr_ratio"] = ps["body_strength_min_atr_ratio"]
+
+    if ps.get("adx_d1_enabled") is not None:
+        cfg["optional_criteria"].setdefault("adx_d1", {})
+        cfg["optional_criteria"]["adx_d1"]["enabled"] = ps["adx_d1_enabled"]
 
     rl = cfg["reward_ladder"]
     if "r_base" in ps: rl["rr_if_3_criteria"] = ps["r_base"]

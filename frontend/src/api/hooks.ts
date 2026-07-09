@@ -645,3 +645,97 @@ export const useDeleteBacktestHistory = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["backtest-history"] }),
   });
 };
+
+// ── AI Engine ─────────────────────────────────────────────────────────────────
+
+import type {
+  AiStatus, AiDecision, AiConfig, AiOutcomeRow, AiCouncilTranscript,
+  Mt5OrdersResponse,
+} from "./types";
+
+export const useAiStatus = () =>
+  useQuery<AiStatus>({
+    queryKey: ["ai-status"],
+    queryFn:  () => apiFetch("/ai/status"),
+    refetchInterval: 10_000,
+  });
+
+export const useAiDecisions = (limit = 30) =>
+  useQuery<AiDecision[]>({
+    queryKey: ["ai-decisions", limit],
+    queryFn:  () => apiFetch(`/ai/decisions?limit=${limit}`),
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
+    retry: false,   // 404 = ledger inca nu exista, nu insista
+  });
+
+export const useAiOutcomes = (limit = 50) =>
+  useQuery<AiOutcomeRow[]>({
+    queryKey: ["ai-outcomes", limit],
+    queryFn:  () => apiFetch(`/ai/outcomes?limit=${limit}`),
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
+    retry: false,
+  });
+
+export const useAiCouncil = (decisionId: number | null) =>
+  useQuery<AiCouncilTranscript>({
+    queryKey: ["ai-council", decisionId],
+    queryFn:  () => apiFetch(`/ai/council/${decisionId}`),
+    enabled:  decisionId != null,
+    staleTime: Infinity,
+  });
+
+export const useAiConfig = () =>
+  useQuery<AiConfig>({
+    queryKey: ["ai-config"],
+    queryFn:  () => apiFetch("/ai/config"),
+    staleTime: 30_000,
+  });
+
+export const useAiLogs = (lines = 100, enabled = true) =>
+  useQuery<{ lines: string[] }>({
+    queryKey: ["ai-logs", lines],
+    queryFn:  () => apiFetch(`/ai/logs?lines=${lines}`),
+    refetchInterval: 15_000,
+    refetchIntervalInBackground: false,
+    enabled,
+  });
+
+export const useAiStart = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiFetch("/ai/start", { method: "POST" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["ai-status"] }),
+  });
+};
+
+export const useAiStop = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiFetch("/ai/stop", { method: "POST" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["ai-status"] }),
+  });
+};
+
+export const useAiSaveConfig = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: Partial<AiConfig>) =>
+      apiFetch("/ai/config", { method: "PUT", body }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["ai-config"] });
+      qc.invalidateQueries({ queryKey: ["ai-status"] });
+    },
+  });
+};
+
+// ── Ordine active MT5 ─────────────────────────────────────────────────────────
+
+export const useMt5Orders = () =>
+  useQuery<Mt5OrdersResponse>({
+    queryKey: ["mt5-orders"],
+    queryFn:  () => apiFetch("/mt5/orders"),
+    refetchInterval: 15_000,
+    refetchIntervalInBackground: false,
+  });

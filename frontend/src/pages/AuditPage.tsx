@@ -219,6 +219,73 @@ function tradesFrequency(r: BacktestResult): { perWeek: number; perMonth: number
   };
 }
 
+// M0 — banner de verdict de robustete (vezi docs/M0_METHOD.md).
+const VERDICT_META: Record<string, { label: string; icon: string; box: string; dot: string }> = {
+  KEEP:    { label: "KEEP — edge robust",      icon: "🟢", box: "border-profit/40 bg-profit/10",   dot: "text-profit" },
+  OBSERVE: { label: "OBSERVE — ambiguu",       icon: "🟡", box: "border-amber-500/40 bg-amber-500/10", dot: "text-amber-400" },
+  DEMOTE:  { label: "DEMOTE — fara edge dovedit", icon: "🔴", box: "border-loss/40 bg-loss/10",     dot: "text-loss" },
+  INSUFF:  { label: "INSUFF — prea putine date", icon: "⚪", box: "border-slate-600/40 bg-slate-700/20", dot: "text-slate-400" },
+};
+
+const ROB_TIPS: Record<string, string> = {
+  "P(edge>0)":  "Increderea (bootstrap) ca expectancy adevarat > 0. ≥95% = edge distinct de zgomotul de esantion. Cifra cea mai bine fundamentata.",
+  "Fold+":      "Fractia din cele 8 sub-perioade in care sesiunea a fost pozitiva. Aproape de 100% = edge stabil in timp, nu dependent de un singur regim.",
+  "N* trials":  "De cate variante independente ai fi avut nevoie ca edge-ul sa fie explicat prin noroc de cautare. Mic (<10) = fragil, sensibil la multiple testing.",
+  "CI 95%":     "Intervalul de incredere 95% pe expectancy. Daca include 0 sau e negativ, edge-ul nu e inca stabilit.",
+};
+
+function RobStat({ label, value, color }: { label: string; value: string; color?: string }) {
+  const tip = ROB_TIPS[label];
+  return (
+    <div className="group relative flex items-center gap-1">
+      <span className="text-slate-500">{label}:</span>
+      <span className={`font-mono ${color ?? "text-slate-200"}`}>{value}</span>
+      {tip && (
+        <span className="relative inline-flex">
+          <span className="text-[9px] text-slate-600 hover:text-slate-400 cursor-help leading-none">ⓘ</span>
+          <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 hidden group-hover:block z-20
+            bg-slate-800 border border-slate-600 text-slate-200 text-[10px] rounded-lg px-3 py-2
+            w-56 text-left shadow-xl leading-relaxed pointer-events-none normal-case">
+            {tip}
+          </span>
+        </span>
+      )}
+    </div>
+  );
+}
+
+function RobustnessBanner({ rob }: { rob: NonNullable<BacktestResult["robustness"]> }) {
+  const meta = VERDICT_META[rob.verdict] ?? VERDICT_META.INSUFF;
+  const pPos = rob.prob_positive == null ? "—" : `${(rob.prob_positive * 100).toFixed(0)}%`;
+  const fPos = rob.frac_positive == null ? "—" : `${(rob.frac_positive * 100).toFixed(0)}%`;
+  const nStar = rob.breakeven_trials >= 100000 ? "∞" : String(rob.breakeven_trials);
+  const ci = rob.ci_low == null || rob.ci_high == null
+    ? "—" : `${rob.ci_low >= 0 ? "+" : ""}${rob.ci_low.toFixed(2)} … ${rob.ci_high >= 0 ? "+" : ""}${rob.ci_high.toFixed(2)}R`;
+  const pColor = rob.prob_positive != null && rob.prob_positive >= 0.95 ? "text-profit"
+    : rob.prob_positive != null && rob.prob_positive < 0.75 ? "text-loss" : "text-amber-400";
+
+  return (
+    <div className={`rounded-lg border p-2.5 space-y-1.5 ${meta.box}`}>
+      <div className="flex items-center gap-2">
+        <span className="text-sm">{meta.icon}</span>
+        <span className={`text-xs font-semibold uppercase tracking-wide ${meta.dot}`}>{meta.label}</span>
+        <span className="ml-auto text-[10px] text-slate-500">Robustete M0</span>
+      </div>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px]">
+        <RobStat label="P(edge>0)" value={pPos} color={pColor} />
+        <RobStat label="Fold+" value={fPos} />
+        <RobStat label="N* trials" value={nStar} color={rob.breakeven_trials < 10 ? "text-amber-400" : "text-slate-200"} />
+        <RobStat label="CI 95%" value={ci} />
+      </div>
+      {rob.notes.length > 0 && (
+        <div className="text-[10px] text-amber-400/90 leading-relaxed">
+          ⚠ {rob.notes.join(" · ")}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ResultsGrid({ r }: { r: BacktestResult }) {
   const beLock  = r.be_lock_count  ?? 0;
   const beLock2 = r.be_lock2_count ?? 0;
@@ -238,6 +305,7 @@ function ResultsGrid({ r }: { r: BacktestResult }) {
 
   return (
     <div className="space-y-2">
+      {r.robustness && <RobustnessBanner rob={r.robustness} />}
       <div className="grid grid-cols-4 gap-2">
         {cells.map(c => (
           <ResultCell key={c.label} label={c.label} value={c.value} color={c.color} />

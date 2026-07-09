@@ -7,6 +7,7 @@ import { AuditPage } from "./pages/AuditPage";
 import { GuidePage } from "./pages/GuidePage";
 import { NotificationsPage } from "./pages/NotificationsPage";
 import { ReportsPage } from "./pages/ReportsPage";
+import { AiEnginePage } from "./pages/AiEnginePage";
 import { useBacktestJobs } from "./api/hooks";
 
 const qc = new QueryClient({
@@ -20,7 +21,7 @@ const qc = new QueryClient({
   },
 });
 
-type Tab = "dashboard" | "profile" | "notifications" | "audit" | "reports" | "guide";
+type Tab = "dashboard" | "profile" | "ai" | "notifications" | "audit" | "reports" | "guide";
 
 export interface PendingApply {
   sessionId: string;
@@ -70,6 +71,13 @@ function AppInner() {
         />
       </div>
       {/* Pagini grele: montate lazy (la prima vizita) — nu polleaza pana nu sunt deschise */}
+      {visited.has("ai") && (
+        <div className={tab === "ai" ? undefined : "hidden"}>
+          <div className="max-w-6xl mx-auto px-4 py-4">
+            <AiEnginePage />
+          </div>
+        </div>
+      )}
       {visited.has("notifications") && (
         <div className={tab === "notifications" ? undefined : "hidden"}>
           <NotificationsPage />

@@ -728,3 +728,93 @@ def mt5_session_stats():
         return {"connected": False, "error": "MetaTrader5 nu este instalat", "items": []}
     except Exception as e:
         return {"connected": False, "error": str(e), "items": []}
+
+
+# ── Ordine active (pozitii deschise + pending) — sursa de adevar MT5 ─────────
+
+_AI_MAGIC = 770015   # namespace-ul motorului AI (ai_engine/config.py)
+
+
+def _classify_source(magic: int, comment: str) -> str:
+    """Clasifica originea unui ordin/pozitii: bot (sesiuni reguli) / ai / manual."""
+    if magic == _AI_MAGIC or (comment or "").startswith("AI-"):
+        return "ai"
+    c = (comment or "").strip()
+    # sesiunile pe reguli folosesc comment = sig_id, ex: "S1-M15-LONG-SIG1" (16ch)
+    if c.startswith("S") and "-" in c:
+        return "bot"
+    return "manual"
+
+
+@router.get("/orders")
+def mt5_active_orders():
+    """
+    Toate pozitiile deschise + ordinele pending din MT5, clasificate pe sursa
+    (bot / ai / manual), plus sumar de capital: equity, marja folosita/libera.
+    Sursa de adevar: exclusiv MT5 (nu CSV-urile botului).
+    """
+    try:
+        import MetaTrader5 as mt5
+        if not mt5.initialize():
+            return {"connected": False, "error": f"MT5 indisponibil: {mt5.last_error()}",
+                    "positions": [], "pending": [], "account": None}
+
+        acc = mt5.account_info()
+        positions = []
+        for p in (mt5.positions_get() or []):
+            positions.append({
+                "ticket":   p.ticket,
+                "symbol":   p.symbol,
+                "type":     "LONG" if p.type == mt5.POSITION_TYPE_BUY else "SHORT",
+                "volume":   p.volume,
+                "entry":    p.price_open,
+                "current":  p.price_current,
+                "sl":       p.sl or None,
+                "tp":       p.tp or None,
+                "profit":   round(p.profit, 2),
+                "swap":     round(p.swap, 2),
+                "source":   _classify_source(p.magic, p.comment),
+                "comment":  p.comment,
+                "margin":   round(mt5.order_calc_margin(
+                    mt5.ORDER_TYPE_BUY if p.type == mt5.POSITION_TYPE_BUY else mt5.ORDER_TYPE_SELL,
+                    p.symbol, p.volume, p.price_open) or 0, 2),
+            })
+
+        pending = []
+        for o in (mt5.orders_get() or []):
+            otype = {
+                mt5.ORDER_TYPE_BUY_STOP: "BUY_STOP", mt5.ORDER_TYPE_SELL_STOP: "SELL_STOP",
+                mt5.ORDER_TYPE_BUY_LIMIT: "BUY_LIMIT", mt5.ORDER_TYPE_SELL_LIMIT: "SELL_LIMIT",
+            }.get(o.type, str(o.type))
+            pending.append({
+                "ticket":  o.ticket,
+                "symbol":  o.symbol,
+                "type":    otype,
+                "volume":  o.volume_current,
+                "entry":   o.price_open,
+                "sl":      o.sl or None,
+                "tp":      o.tp or None,
+                "source":  _classify_source(o.magic, o.comment),
+                "comment": o.comment,
+            })
+
+        account = None
+        if acc:
+            account = {
+                "equity":       round(acc.equity, 2),
+                "balance":      round(acc.balance, 2),
+                "margin_used":  round(acc.margin, 2),
+                "margin_free":  round(acc.margin_free, 2),
+                "margin_level": round(acc.margin_level, 1) if acc.margin else None,
+                "currency":     acc.currency,
+                "floating_pnl": round(acc.equity - acc.balance, 2),
+            }
+
+        return {"connected": True, "error": None,
+                "positions": positions, "pending": pending, "account": account}
+    except ImportError:
+        return {"connected": False, "error": "MetaTrader5 nu este instalat",
+                "positions": [], "pending": [], "account": None}
+    except Exception as e:
+        return {"connected": False, "error": str(e),
+                "positions": [], "pending": [], "account": None}
