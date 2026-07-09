@@ -19,8 +19,8 @@ import logging
 from datetime import datetime, timedelta
 
 from adapters.mt5_source import Mt5DataSource
-from ai_engine.config import load_config, save_default_config, AI_DATA
-from ai_engine.providers import make_provider
+from ai_engine.config import load_config, save_default_config, load_keys, AI_DATA
+from ai_engine.providers import ProviderRegistry
 from ai_engine.ledger import Ledger
 from ai_engine import perception, triggers, council, executor
 
@@ -37,7 +37,8 @@ def _record_error(where: str, err: str) -> None:
 
 
 def _write_status(running: bool, cfg: dict | None = None,
-                  scorecard: dict | None = None, equity: float | None = None) -> None:
+                  scorecard: dict | None = None, equity: float | None = None,
+                  providers_health: dict | None = None) -> None:
     """Heartbeat pentru UI — scris la fiecare iteratie si la start/stop."""
     try:
         st = {
@@ -50,6 +51,8 @@ def _write_status(running: bool, cfg: dict | None = None,
             "equity":     equity,
             "scorecard":  scorecard,
             "last_errors": _last_errors,
+            "providers":  providers_health or {},
+            "role_assignments": (cfg or {}).get("role_assignments"),
         }
         with open(STATUS_PATH, "w", encoding="utf-8") as f:
             json.dump(st, f, ensure_ascii=False, indent=1)
@@ -106,8 +109,8 @@ def _update_outcomes(ledger: Ledger, cfg: dict) -> None:
                            f"{r_str} {pnl_str}\n(decizia #{dec['id']})")
 
 
-def _process_market(symbol: str, src: Mt5DataSource, provider, ledger: Ledger,
-                    cfg: dict, prev_snapshots: dict) -> None:
+def _process_market(symbol: str, src: Mt5DataSource, registry: ProviderRegistry,
+                    ledger: Ledger, cfg: dict, prev_snapshots: dict) -> None:
     snap = perception.build_snapshot(src, symbol)
     prev = prev_snapshots.get(symbol)
     prev_snapshots[symbol] = snap
@@ -127,12 +130,13 @@ def _process_market(symbol: str, src: Mt5DataSource, provider, ledger: Ledger,
     desk_state = {
         "open_positions": n_open,
         "daily_r": ledger.daily_loss_R(today),
+        "trigger": trig,
         "open_pos_desc": (
             f"{'LONG' if pos.type == 0 else 'SHORT'} {pos.volume} lots @ {pos.price_open}, "
             f"floating {pos.profit:+.2f}$" if pos else "none"),
     }
 
-    decision, transcript, dur = council.convene(provider, briefing, desk_state, cfg)
+    decision, transcript, dur = council.convene(registry, briefing, desk_state, cfg)
     council_id = ledger.add_council(symbol, trig, snap_id, transcript, dur)
     log.info("DECIZIE %s: %s (conf %s%%) — %s",
              symbol, decision["action"], decision["confidence"],
@@ -180,14 +184,17 @@ def run() -> None:
     save_default_config()
     cfg = load_config()
 
-    log.info("AI Engine v0.1 — mode=%s model=%s markets=%s",
-             cfg["mode"], cfg["model"], ",".join(cfg["markets"]))
+    log.info("AI Engine v0.3 — mode=%s markets=%s surse=%s roluri=%s",
+             cfg["mode"], ",".join(cfg["markets"]),
+             ",".join(cfg["providers"].keys()), cfg["role_assignments"])
 
-    provider = make_provider(cfg)
-    if not provider.available():
+    registry = ProviderRegistry(cfg["providers"], load_keys())
+    if not registry.default_available():
         raise RuntimeError(
-            f"Modelul {cfg['model']} nu e disponibil in Ollama ({cfg['ollama_url']}). "
-            f"Ruleaza: ollama pull {cfg['model']}")
+            "Sursa default (Ollama) nu e disponibila — modelul "
+            f"{cfg['providers']['ollama'].get('model')} lipseste sau serverul e oprit. "
+            "Ruleaza: ollama pull <model> / porneste Ollama. "
+            "(Ollama e safety-net-ul failover-ului; celelalte surse sunt optionale.)")
 
     acc = executor.connect()     # impune DEMO — arunca RuntimeError altfel
     log.info("MT5 conectat: cont %s (%s) equity %.2f %s — DEMO verificat",
@@ -209,6 +216,16 @@ def run() -> None:
 
     try:
         while True:
+            # Hot-reload: config + asignari de rol + registru surse (pastreaza
+            # sanatatea surselor neschimbate). Schimbarile din UI se aplica
+            # de la iteratia urmatoare, fara restart de motor.
+            try:
+                cfg = load_config()
+                registry.refresh(cfg["providers"], load_keys())
+            except Exception as e:
+                log.error("config reload: %s", e)
+                _record_error("config_reload", str(e))
+
             try:
                 _update_outcomes(ledger, cfg)
             except Exception as e:
@@ -218,7 +235,7 @@ def run() -> None:
             failures = 0
             for symbol in cfg["markets"]:
                 try:
-                    _process_market(symbol, src, provider, ledger, cfg, prev_snapshots)
+                    _process_market(symbol, src, registry, ledger, cfg, prev_snapshots)
                 except Exception as e:
                     failures += 1
                     log.error("piata %s: %s: %s", symbol, type(e).__name__, e)
@@ -242,7 +259,8 @@ def run() -> None:
 
             sc = ledger.scorecard()
             log.info("scorecard: %s", sc)
-            _write_status(True, cfg, sc, executor.equity() or None)
+            _write_status(True, cfg, sc, executor.equity() or None,
+                          providers_health=registry.snapshot())
             _sleep_to_next_bar(cfg["bar_minutes"])
     except KeyboardInterrupt:
         log.info("Oprire ceruta (Ctrl+C).")

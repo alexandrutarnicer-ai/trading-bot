@@ -802,3 +802,37 @@ export interface Mt5OrdersResponse {
   pending: Mt5PendingOrder[];
   account: Mt5OrdersAccount | null;
 }
+
+// ── Surse AI multi-provider (consiliu) ───────────────────────────────────────
+
+export interface AiProviderSpec {
+  type: "ollama" | "anthropic" | "gemini" | "openai_compatible";
+  model: string;
+  enabled: boolean;
+  base_url?: string | null;
+  url?: string | null;
+  has_key: boolean;
+  needs_key: boolean;
+  is_default: boolean;
+}
+
+export interface AiProviderHealth {
+  status: "healthy" | "paused" | "disabled_auth";
+  reason: string;
+  retry_in_s: number;
+  fails: number;
+}
+
+export interface AiProvidersResponse {
+  providers: Record<string, AiProviderSpec>;
+  role_assignments: Record<string, string>;
+  health: Record<string, AiProviderHealth>;
+  default: string;
+}
+
+export interface AiProviderTestResult {
+  ok: boolean;
+  latency_s: number;
+  detail: string;
+  kind: string | null;
+}

@@ -294,3 +294,116 @@ def ai_logs(lines: int = 100):
         return {"lines": [ln.rstrip() for ln in all_lines[-min(lines, 500):]]}
     except Exception as e:
         raise HTTPException(500, f"Nu pot citi log-ul: {e}")
+
+
+# ── Surse AI (multi-provider) — vezi docs/PLAN_SURSE_AI_MULTI_PROVIDER.md ────
+
+_ROLES = ("technical", "macro", "risk", "head_trader")
+_PROVIDER_TYPES = ("ollama", "anthropic", "gemini", "openai_compatible")
+
+
+@router.get("/providers")
+def ai_get_providers():
+    """Registrul de surse (chei mascate: doar has_key), asignari, sanatate live."""
+    from ai_engine.config import load_keys
+    cfg = load_config()
+    keys = load_keys()
+    providers = {}
+    for name, spec in cfg["providers"].items():
+        providers[name] = {
+            "type":     spec.get("type"),
+            "model":    spec.get("model"),
+            "enabled":  bool(spec.get("enabled")),
+            "base_url": spec.get("base_url"),
+            "url":      spec.get("url"),
+            "has_key":  bool(keys.get(name)),
+            "needs_key": spec.get("type") != "ollama",
+            "is_default": name == "ollama",
+        }
+    health = {}
+    try:
+        with open(STATUS_FILE, encoding="utf-8") as f:
+            health = json.load(f).get("providers") or {}
+    except Exception:
+        pass
+    return {"providers": providers,
+            "role_assignments": cfg["role_assignments"],
+            "health": health, "default": "ollama"}
+
+
+@router.put("/providers")
+def ai_put_providers(body: dict = Body(...)):
+    """
+    Actualizeaza registrul: body poate contine
+      providers: {name: {type, model, enabled, base_url?, url?, _delete?}}
+      role_assignments: {technical|macro|risk|head_trader: name}
+      keys: {name: "cheia-api"}  (stocate separat in data/ai/providers.json)
+    Ollama nu poate fi dezactivata/stearsa (safety-net-ul failover-ului).
+    """
+    from ai_engine.config import load_keys, save_key
+    save_default_config()
+    with open(CFG_PATH, encoding="utf-8") as f:
+        cfg = json.load(f)
+    provs = dict(cfg.get("providers") or load_config()["providers"])
+
+    for name, upd in (body.get("providers") or {}).items():
+        name = str(name).strip()
+        if not name:
+            continue
+        if upd.get("_delete"):
+            if name == "ollama":
+                raise HTTPException(400, "Ollama e sursa default — nu poate fi stearsa")
+            provs.pop(name, None)
+            save_key(name, "")
+            continue
+        cur = dict(provs.get(name) or {})
+        ptype = upd.get("type", cur.get("type", "openai_compatible"))
+        if ptype not in _PROVIDER_TYPES:
+            raise HTTPException(400, f"Tip necunoscut '{ptype}'. "
+                                     f"Valide: {', '.join(_PROVIDER_TYPES)}")
+        if name == "ollama" and upd.get("enabled") is False:
+            raise HTTPException(400, "Ollama e safety-net-ul failover — nu se dezactiveaza")
+        cur["type"] = ptype
+        for field in ("model", "enabled", "base_url", "url"):
+            if field in upd:
+                cur[field] = upd[field]
+        if not cur.get("model"):
+            raise HTTPException(400, f"Sursa '{name}': model lipsa")
+        provs[name] = cur
+
+    ra = dict(cfg.get("role_assignments") or {})
+    for role, target in (body.get("role_assignments") or {}).items():
+        if role not in _ROLES:
+            raise HTTPException(400, f"Rol necunoscut: {role}")
+        if target not in provs or not provs[target].get("enabled", target == "ollama"):
+            raise HTTPException(400, f"Rolul {role}: sursa '{target}' nu exista sau e dezactivata")
+        ra[role] = target
+
+    for name, key in (body.get("keys") or {}).items():
+        save_key(str(name), str(key or ""))
+
+    cfg["providers"] = provs
+    if ra:
+        cfg["role_assignments"] = ra
+    with open(CFG_PATH, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, indent=2, ensure_ascii=False)
+
+    # Motorul reciteste config-ul la fiecare iteratie — NU necesita restart.
+    return {"ok": True, "restart_needed": False, "note": "Se aplica la urmatorul consiliu"}
+
+
+@router.post("/providers/test")
+def ai_test_provider(body: dict = Body(...)):
+    """Testul de contract pentru o sursa: reachable → auth → JSON valid + latenta."""
+    from ai_engine.config import load_keys
+    from ai_engine.providers import build_provider, ProviderError
+    name = str(body.get("name") or "").strip()
+    cfg = load_config()
+    spec = cfg["providers"].get(name)
+    if spec is None:
+        raise HTTPException(404, f"Sursa '{name}' nu exista")
+    try:
+        prov = build_provider(name, spec, load_keys().get(name, ""))
+    except ProviderError as e:
+        return {"ok": False, "latency_s": 0, "detail": str(e), "kind": e.kind}
+    return prov.test()

@@ -20,7 +20,8 @@ from ai_engine.config import load_config
 from ai_engine.ledger import Ledger
 from ai_engine import triggers, council
 from ai_engine.executor import validate_decision
-from ai_engine.providers import make_provider
+from ai_engine.providers import (ProviderError, ProviderRegistry, BaseProvider,
+                                 make_provider)
 
 
 def _assert(cond, msg):
@@ -104,16 +105,124 @@ def test_rails(cfg):
             "BUY_STOP sub pret -> respins")
 
 
+class _FakeProvider(BaseProvider):
+    """Sursa falsa pentru testele de failover — raspunde sau esueaza la comanda."""
+    def __init__(self, name, fail_kind=None, answer=None):
+        self.name, self.fail_kind = name, fail_kind
+        self.answer, self.calls = answer or {"bias": "long", "confidence": 70}, 0
+
+    def chat_json(self, system, user, required_keys, retries=2):
+        self.calls += 1
+        if self.fail_kind:
+            raise ProviderError(f"{self.name}: fail simulat", kind=self.fail_kind)
+        return dict(self.answer)
+
+
+def _fake_registry(specs: dict) -> ProviderRegistry:
+    """Registru cu surse false: specs = {nume: fail_kind|None}."""
+    cfg = {n: {"enabled": True, "type": "ollama", "model": "x"} for n in specs}
+    reg = ProviderRegistry(cfg, {})
+    for n, kind in specs.items():
+        reg._instances[n] = _FakeProvider(n, fail_kind=kind)
+    return reg
+
+
+def test_failover():
+    print("[4] failover intre surse (mock)")
+    # 1. sursa asignata cade cu quota → ruleaza pe default (ollama)
+    reg = _fake_registry({"gemini": "quota", "ollama": None})
+    obj, meta = reg.call_role("technical", {"technical": "gemini"}, "s", "u", ["bias"])
+    _assert(meta["provider"] == "ollama" and meta["fallback_from"] == "gemini",
+            f"quota pe gemini -> fallback pe ollama ({meta})")
+    _assert(reg.health["gemini"]["status"] == "paused"
+            and reg.health["gemini"]["retry_at"] > 0,
+            "gemini marcat in pauza cu retry_at setat")
+    # 2. cat timp e in pauza, nu mai e apelat deloc
+    calls_before = reg._instances["gemini"].calls
+    reg.call_role("technical", {"technical": "gemini"}, "s", "u", ["bias"])
+    _assert(reg._instances["gemini"].calls == calls_before,
+            "sursa in pauza e sarita (nu se mai apeleaza)")
+    # 3. revenire lazy: expira pauza → sursa e incercata din nou si isi revine
+    reg.health["gemini"]["retry_at"] = 0
+    reg._instances["gemini"].fail_kind = None
+    obj, meta = reg.call_role("technical", {"technical": "gemini"}, "s", "u", ["bias"])
+    _assert(meta["provider"] == "gemini" and reg.health["gemini"]["status"] == "healthy",
+            "dupa expirarea pauzei sursa revine automat pe rolul ei")
+    # 4. cheie invalida → disabled_auth, fara auto-retry nici dupa timp
+    reg2 = _fake_registry({"claude": "auth", "ollama": None})
+    _, meta = reg2.call_role("risk", {"risk": "claude"}, "s", "u", ["bias"])
+    _assert(reg2.health["claude"]["status"] == "disabled_auth",
+            "401 -> sursa dezactivata (necesita interventie umana)")
+    reg2.health["claude"]["retry_at"] = 0
+    calls = reg2._instances["claude"].calls
+    reg2.call_role("risk", {"risk": "claude"}, "s", "u", ["bias"])
+    _assert(reg2._instances["claude"].calls == calls,
+            "disabled_auth NU se reincearca automat")
+    # 5. toate sursele picate → ProviderError (consiliul va decide WAIT)
+    reg3 = _fake_registry({"ollama": "network"})
+    try:
+        reg3.call_role("macro", {"macro": "ollama"}, "s", "u", ["bias"])
+        _assert(False, "toate picate ar fi trebuit sa ridice ProviderError")
+    except ProviderError:
+        _assert(True, "toate sursele picate -> ProviderError -> WAIT (fail-safe)")
+    # 6. consiliu complet pe registru mixt: risk pe sursa cazuta → fallback, decizie valida
+    reg4 = _fake_registry({"claude": "rate_limit", "ollama": None})
+    reg4._instances["ollama"].answer = {
+        "bias": "neutral", "confidence": 50, "reasoning": "t", "event_risk": "low",
+        "veto": True, "max_risk_pct": 0.005, "notes": "n",
+        "action": "WAIT", "rationale": "test"}
+    cfg_mix = load_config()
+    cfg_mix["role_assignments"] = {"technical": "ollama", "macro": "ollama",
+                                   "risk": "claude", "head_trader": "ollama"}
+    decision, transcript, _ = council.convene(reg4, "briefing",
+                                              {"open_positions": 0, "daily_r": 0.0,
+                                               "open_pos_desc": "none"}, cfg_mix)
+    _assert(decision["action"] == "WAIT" and
+            transcript["risk"].get("_fallback_from") == "claude",
+            "consiliu mixt: rolul risk a cazut pe fallback si e marcat in transcript")
+
+
+def test_veto_semantics(cfg):
+    print("[5] semantica veto (cod-enforced, anti-paralizie)")
+    head_open = {"action": "OPEN_LONG", "order_type": "stop", "entry": 1.086,
+                 "sl": 1.083, "tp": 1.092, "risk_pct": 0.005,
+                 "confidence": 70, "rationale": "setup valid"}
+    # 1. veto cu cod VALID -> WAIT (blocaj legitim)
+    d = council._sanitize(dict(head_open),
+                          {"veto": True, "veto_code": "NEWS_IMMINENT",
+                           "max_risk_pct": 0.005}, cfg)
+    _assert(d["action"] == "WAIT" and "NEWS_IMMINENT" in d["rationale"],
+            "veto cu cod valid -> WAIT")
+    # 2. veto FARA cod (prudenta generica) -> trade-ul trece cu risc minim
+    d = council._sanitize(dict(head_open),
+                          {"veto": True, "veto_code": None,
+                           "max_risk_pct": 0.005}, cfg)
+    _assert(d["action"] == "OPEN_LONG" and d["risk_pct"] == council.MIN_RISK_PCT,
+            f"veto necalificat -> OPEN cu risc minim ({d['risk_pct']})")
+    # 3. veto cu cod inventat -> tot prudenta, nu blocaj
+    d = council._sanitize(dict(head_open),
+                          {"veto": True, "veto_code": "RSI_NEUTRAL",
+                           "max_risk_pct": 0.01}, cfg)
+    _assert(d["action"] == "OPEN_LONG", "cod de veto inventat -> nu blocheaza")
+    # 4. veto ca string 'false' -> nu e veto deloc (robustete parsing)
+    d = council._sanitize(dict(head_open),
+                          {"veto": "false", "veto_code": None,
+                           "max_risk_pct": 0.005}, cfg)
+    _assert(d["action"] == "OPEN_LONG" and d["risk_pct"] == 0.005,
+            "veto='false' (string) -> nu veteaza, risc normal")
+
+
 def test_council_live(cfg):
-    print("[4] consiliu LIVE pe Ollama (poate dura ~1-2 min)")
+    print("[6] consiliu LIVE pe Ollama (poate dura ~1-2 min)")
     provider = make_provider(cfg)
     if not provider.available():
         print("  SKIP — Ollama/modelul indisponibil")
         return
+    registry = ProviderRegistry(cfg["providers"], {})
     from ai_engine.perception import render_text
     briefing = render_text(_fake_snapshot())
     desk = {"open_positions": 0, "daily_r": 0.0, "open_pos_desc": "none"}
-    decision, transcript, dur = council.convene(provider, briefing, desk, cfg)
+    decision, transcript, dur = council.convene(registry, briefing, desk, cfg)
     _assert("error" not in transcript,
             f"consiliul a rulat fara eroare ({dur:.0f}s)")
     _assert(decision["action"] in ("OPEN_LONG", "OPEN_SHORT", "CLOSE", "WAIT"),
@@ -134,6 +243,8 @@ def main():
     test_ledger()
     test_triggers(cfg)
     test_rails(cfg)
+    test_failover()
+    test_veto_semantics(cfg)
     test_council_live(cfg)
     print("\nToate verificarile AI Engine au trecut.")
 

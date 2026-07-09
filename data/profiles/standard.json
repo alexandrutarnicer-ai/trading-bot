@@ -37,7 +37,7 @@
       "rsi_buy_max": 70,
       "rsi_sell_min": 30,
       "rsi_sell_max": 65,
-      "ema_alignment_enabled": false,
+      "ema_alignment_enabled": true,
       "body_strength_enabled": false,
       "body_strength_min_atr_ratio": 0.15,
       "atr_max_pips": {},
@@ -122,7 +122,7 @@
       "rsi_buy_max": 70,
       "rsi_sell_min": 30,
       "rsi_sell_max": 65,
-      "ema_alignment_enabled": false,
+      "ema_alignment_enabled": true,
       "body_strength_enabled": false,
       "body_strength_min_atr_ratio": 0.15,
       "atr_max_pips": {},
@@ -155,7 +155,8 @@
       "flag_risk_pct": 0.01,
       "inside_bar_enabled": true,
       "inside_bar_r_ratio": 2,
-      "inside_bar_risk_pct": 0.01
+      "inside_bar_risk_pct": 0.01,
+      "adx_d1_enabled": false
     },
     {
       "id": "S3",
@@ -1607,7 +1608,7 @@
       "inside_bar_risk_pct": 0.01
     }
   ],
-  "updated_at": "2026-07-08T13:48:44",
+  "updated_at": "2026-07-09T11:08:26",
   "capital_protection_enabled": false,
   "capital_protection_threshold_pct": 80
 }

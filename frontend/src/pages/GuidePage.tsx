@@ -1768,6 +1768,14 @@ export function GuidePage() {
               (validate automat contra MT5), citi fiecare decizie cu <strong className="text-white">motivația completă
               și transcriptul dezbaterii</strong> (click pe decizie), vedea rezultatele și log-ul motorului.
             </p>
+            <p>
+              Cardul <strong className="text-white">Surse AI</strong> permite distribuirea rolurilor consiliului pe
+              surse diferite: Ollama (local, gratuit, implicit), Claude, Gemini (are free tier) sau orice API
+              compatibil OpenAI. Fiecare sursă are buton <strong className="text-white">Testează</strong> (verifică
+              cheia + răspunsul) și stare live. Dacă o sursă rămâne fără tokens/quota, rolurile ei trec
+              <strong className="text-white"> automat</strong> pe următoarea sursă sănătoasă (apoi pe Ollama) și revin
+              singure când sursa își revine. Schimbările se aplică la următorul consiliu, fără restart.
+            </p>
             <Note>
               Consiliul AI se convoacă doar pe evenimente (schimbare de regim, tensiune de breakout, spike de
               volatilitate, știri High-impact, review poziție, heartbeat zilnic) — nu la fiecare bară. Multe
