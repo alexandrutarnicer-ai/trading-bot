@@ -610,6 +610,89 @@ def _notify_signal(sig: dict, session_id: str, telegram: bool = True) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Filtru AI Pre-Trade — validarea finala a semnalului inainte de MT5
+# ---------------------------------------------------------------------------
+
+_AI_FILTER = None   # instanta TradeFilter, lazy per proces de sesiune
+
+
+def _ai_filter_check(sig: dict, session_cfg: dict, src, log) -> dict | None:
+    """
+    Evalueaza semnalul prin Filtrul AI Pre-Trade (consiliul de 4 roluri din
+    ai_engine, prompturi de revizie — vezi ai_engine/trade_filter.py).
+
+    Returneaza verdictul dict sau None cand filtrul e dezactivat / modulul e
+    indisponibil (None = comportament identic cu botul fara filtru — fail-open).
+    Nu ridica niciodata exceptii.
+    """
+    global _AI_FILTER
+    if not session_cfg.get("ai_filter_enabled", False):
+        return None
+    try:
+        from ai_engine.trade_filter import TradeFilter, build_briefing, log_verdict
+    except Exception as e:
+        log.warning(f"  [AI-FILTER] modul indisponibil ({e}) — fail-open, trade permis")
+        return None
+    try:
+        if _AI_FILTER is None:
+            _AI_FILTER = TradeFilter()
+        try:
+            briefing = build_briefing(src, sig["symbol"])
+        except Exception as e:
+            log.warning(f"  [AI-FILTER] briefing esuat ({e}) — evaluez doar pe datele semnalului")
+            briefing = ("MARKET BRIEFING: unavailable (data error). "
+                        "Judge on the proposed trade data alone; be conservative.")
+        level = session_cfg.get("ai_filter_level", "balanced")
+        log.info(f"  [AI-FILTER] {sig['signal_id']}: consiliul AI evalueaza (nivel {level})...")
+        verdict = _AI_FILTER.evaluate(sig, briefing, level, session_cfg, log)
+        log_verdict(session_cfg.get("output_dir", ""), sig, verdict)
+        conf = verdict.get("confidence")
+        log.info(
+            f"  [AI-FILTER] {sig['signal_id']}: "
+            f"{'APROBAT' if verdict.get('approved') else 'RESPINS'} — "
+            f"incredere {conf if conf is not None else '?'}% "
+            f"(prag {verdict.get('threshold')}%, {verdict.get('duration_s', 0)}s)"
+            + (f" | eroare: {verdict['error']}" if verdict.get("error") else "")
+        )
+        return verdict
+    except Exception as e:
+        log.warning(f"  [AI-FILTER] eroare neasteptata ({type(e).__name__}: {e}) "
+                    "— fail-open, trade permis")
+        return None
+
+
+def _ai_note(p: dict | None) -> str:
+    """
+    Sufix dinamic pentru notificarile Telegram cand trade-ul a trecut prin
+    Filtrul AI. Gol cand filtrul nu a participat — mesajele raman identice.
+    """
+    v = (p or {}).get("ai_filter")
+    if not v:
+        return ""
+    if v.get("error"):
+        return "\n🤖 Filtru AI: indisponibil la plasare (fail-open)"
+    conf, thr = v.get("confidence"), v.get("threshold")
+    if conf is None:
+        return "\n🤖 Filtru AI: aprobat"
+    return f"\n🤖 Filtru AI: aprobat — încredere {conf}% (prag {thr}%)"
+
+
+def _ai_pending_entry(verdict: dict | None) -> dict | None:
+    """Rezumatul verdictului stocat in pending (state.pkl) — fara transcript."""
+    if not verdict:
+        return None
+    return {"approved":   verdict.get("approved"),
+            "confidence": verdict.get("confidence"),
+            "threshold":  verdict.get("threshold"),
+            "level":      verdict.get("level"),
+            "error":      verdict.get("error")}
+
+
+def _html_esc(s: str) -> str:
+    return str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+# ---------------------------------------------------------------------------
 # Helpers timp
 # ---------------------------------------------------------------------------
 
@@ -1139,7 +1222,8 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                             f"<b>ACTIVAT{_ticket_str}: {_dir} {symbol}</b>\n"
                             f"Entry {format(p['entry'], _fmt)} | "
                             f"SL {format(p['sl'], _fmt)} | "
-                            f"TP {format(p['tp'], _fmt)} ({p['r_ratio']:.1f}R)\n"
+                            f"TP {format(p['tp'], _fmt)} ({p['r_ratio']:.1f}R)"
+                            f"{_ai_note(p)}\n"
                             f"<i>{session_id} | {sig_id}</i>"
                         )
                     break
@@ -1167,7 +1251,8 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                             f"<b>PROFIT +{mt5_res['result_r']:.2f}R: {dir_str} {symbol}</b>"
                             f"{_usd_str(mt5_res.get('pnl_usd'))}\n"
                             f"Entry {format(p['entry'], fmt)} → "
-                            f"{format(mt5_res['exit_price'], fmt)} (exit real MT5)\n"
+                            f"{format(mt5_res['exit_price'], fmt)} (exit real MT5)"
+                            f"{_ai_note(p)}\n"
                             f"<i>{session_id} | {sig_id}</i>"
                         )
                     else:
@@ -1176,7 +1261,8 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                             f"<b>PIERDERE {mt5_res['result_r']:.2f}R: {dir_str} {symbol}</b>"
                             f"{_usd_str(mt5_res.get('pnl_usd'))}\n"
                             f"Entry {format(p['entry'], fmt)} → "
-                            f"{format(mt5_res['exit_price'], fmt)} (exit real MT5)\n"
+                            f"{format(mt5_res['exit_price'], fmt)} (exit real MT5)"
+                            f"{_ai_note(p)}\n"
                             f"<i>{session_id} | {sig_id}</i>"
                         )
                 # else: pozitia inca deschisa sau pending — verificam la urmatoarea bara
@@ -1279,7 +1365,8 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                             _send_telegram(
                                 f"<b>PIERDERE -1R: {dir_str} {symbol}</b>"
                                 f"{_usd_str(_pnl_val)}\n"
-                                f"Entry {format(p['entry'], fmt)} → SL {format(p['sl'], fmt)}\n"
+                                f"Entry {format(p['entry'], fmt)} → SL {format(p['sl'], fmt)}"
+                                f"{_ai_note(p)}\n"
                                 f"<i>{session_id} | {sig_id}</i>"
                             )
                         else:
@@ -1289,7 +1376,8 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                             _send_telegram(
                                 f"<b>Break-Even {_lbl}: {dir_str} {symbol}</b>"
                                 f"{_usd_str(_pnl_val)}\n"
-                                f"Ieșire la +{_rr:.2f}R\n"
+                                f"Ieșire la +{_rr:.2f}R"
+                                f"{_ai_note(p)}\n"
                                 f"<i>{session_id} | {sig_id}</i>"
                             )
                         break
@@ -1305,7 +1393,8 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                         _send_telegram(
                             f"<b>PROFIT +{p['r_ratio']:.1f}R: {dir_str} {symbol}</b>"
                             f"{_usd_str(_pnl_tp)}\n"
-                            f"Entry {format(p['entry'], fmt)} → TP {format(p['tp'], fmt)}\n"
+                            f"Entry {format(p['entry'], fmt)} → TP {format(p['tp'], fmt)}"
+                            f"{_ai_note(p)}\n"
                             f"<i>{session_id} | {sig_id}</i>"
                         )
                         break
@@ -1954,6 +2043,17 @@ _BOT_SIG_RE = re.compile(r"^S\d+-[A-Z0-9]+-(?:[A-Z0-9]+-)?(?:SIG|IB|FLG)\d*", re
 # au mai putine cifre si sunt tratate ca partial → primesc sufixul _{ticket} pentru unicitate.
 _BOT_SIG_FULL_RE = re.compile(r"^S\d+-[A-Z0-9]+-(?:[A-Z0-9]+-)?(?:SIG|IB|FLG)\d{4,}$", re.IGNORECASE)
 
+# Namespace-ul motorului AI (ai_engine/config.py: magic 770015, comment "AI-{id}").
+# Ordinele/pozitiile AI sunt izolate de bot — nu sunt orfani, se sar la detectie.
+_AI_MAGIC = 770015
+
+
+def _is_ai_engine_order(o) -> bool:
+    """True daca ordinul/pozitia apartine motorului AI (magic sau prefix comment)."""
+    if getattr(o, "magic", 0) == _AI_MAGIC:
+        return True
+    return (getattr(o, "comment", "") or "").strip().startswith("AI-")
+
 
 def _detect_orphan_mt5_orders(
     state: dict, markets: list, session_id: str, log,
@@ -1995,6 +2095,8 @@ def _detect_orphan_mt5_orders(
         for order in (_mt5_exec.orders_get(symbol=symbol) or []):
             if order.ticket in tracked_tickets:
                 continue
+            if _is_ai_engine_order(order):
+                continue  # ordin al motorului AI (magic 770015) — izolat, nu e orfan al botului
             comment = getattr(order, "comment", "") or ""
             if _BOT_SIG_RE.match(comment.strip()):
                 c = comment.strip()
@@ -2057,6 +2159,8 @@ def _detect_orphan_mt5_orders(
         for pos in (_mt5_exec.positions_get(symbol=symbol) or []):
             if pos.ticket in tracked_tickets:
                 continue
+            if _is_ai_engine_order(pos):
+                continue  # pozitie a motorului AI (magic 770015) — izolata, nu e orfan al botului
             comment = getattr(pos, "comment", "") or ""
             if _BOT_SIG_RE.match(comment.strip()):
                 # Reconstruieste intrarea in pending din datele pozitiei MT5
@@ -2790,6 +2894,8 @@ def _apply_profile_overrides(session_cfg: dict, cfg: dict, log) -> None:
                   "flag_enabled", "flag_r_ratio", "flag_risk_pct",
                   # Inside Bar pattern
                   "inside_bar_enabled", "inside_bar_r_ratio", "inside_bar_risk_pct",
+                  # Filtru AI Pre-Trade
+                  "ai_filter_enabled", "ai_filter_level",
                   # Piete (permite profil sa specifice piata per sesiune)
                   "markets"):
         if field in ps:
@@ -3233,8 +3339,52 @@ def run_generator(session_cfg: dict):
                                 break
                     if _sig_exists:
                         continue
+
+                    # ── Filtru AI Pre-Trade — validarea FINALA inainte de MT5 ──
+                    # Dezactivat by default (ai_filter_enabled=False) → None →
+                    # comportament identic cu botul de dinainte de feature.
+                    _ai_verdict = _ai_filter_check(sig, session_cfg, src, log)
+
+                    # Semnalul detectat intra intotdeauna in signals.csv (audit),
+                    # inclusiv cand e respins de filtru.
                     pd.DataFrame([sig]).reindex(columns=_SIGNALS_COLS).to_csv(
                         signals_file, mode="a", header=False, index=False)
+
+                    if _ai_verdict is not None and not _ai_verdict.get("approved", True):
+                        # RESPINS: outcome imediat (status=ai_reject), nu intra in
+                        # pending → niciun ordin MT5, nici retry la barele urmatoare.
+                        _rej_row = {
+                            "signal_id": sig["signal_id"], "time_check": now_local(),
+                            "symbol": symbol, "direction": sig["direction"],
+                            "status": "ai_reject",
+                            "entry": sig["entry"], "sl": sig["sl"], "tp": sig["tp"],
+                            "r_ratio": sig["r_ratio"], "armed_at": sig["time"],
+                            "triggered_at": None, "exit_price": None, "exit_time": None,
+                            "result_r": 0.0, "pnl_usd": None,
+                        }
+                        pd.DataFrame([_rej_row]).reindex(columns=_OUTCOMES_COLS).to_csv(
+                            outcomes_file, mode="a", header=False, index=False)
+                        _conf = _ai_verdict.get("confidence")
+                        _conf_str = f"{_conf}%" if _conf is not None else "—"
+                        fmt = ".2f" if sig["entry"] > 100 else ".5f"
+                        _send_telegram(
+                            f"⛔ <b>Filtru AI: RESPINS — {sig['dir_str']} {sig['symbol']}</b>\n"
+                            f"Încredere: {_conf_str} (prag {_ai_verdict.get('threshold')}% "
+                            f"— nivel {_ai_verdict.get('level')})\n"
+                            f"Motiv: {_html_esc(_ai_verdict.get('reason', ''))[:400]}\n"
+                            f"Entry: <code>{format(sig['entry'], fmt)}</code>  "
+                            f"SL: <code>{format(sig['sl'], fmt)}</code>  "
+                            f"TP: <code>{format(sig['tp'], fmt)}</code> ({sig['r_ratio']:.1f}R)\n"
+                            f"<i>{session_cfg['session_id']} | {sig['signal_id']}</i>"
+                        )
+                        log.info(
+                            f"  *** SEMNAL RESPINS DE FILTRUL AI: {sig['signal_id']} "
+                            f"{symbol} {sig['dir_str']} — incredere {_conf_str} "
+                            f"< prag {_ai_verdict.get('threshold')}%"
+                        )
+                        new_sigs += 1
+                        continue
+
                     state["pending"].setdefault(symbol, {})[sig["signal_id"]] = {
                         "direction":  sig["direction"],
                         "entry":      sig["entry"],
@@ -3245,6 +3395,7 @@ def run_generator(session_cfg: dict):
                         "armed_at":   sig["time"],
                         "triggered":  False,
                         "signal_type": sig.get("signal_type", "pullback"),
+                        "ai_filter":  _ai_pending_entry(_ai_verdict),
                         "be_phase":           0,
                         "be_current_sl":      sig["sl"],
                         "be_in_zone":         False,
@@ -3300,7 +3451,8 @@ def run_generator(session_cfg: dict):
                                 f"Entry: <code>{format(sig['entry'], fmt)}</code>  "
                                 f"SL: <code>{format(sig['sl'], fmt)}</code>  "
                                 f"TP: <code>{format(sig['tp'], fmt)}</code>\n"
-                                f"Lot: {lots}  Ticket: #{ticket}\n"
+                                f"Lot: {lots}  Ticket: #{ticket}"
+                                f"{_ai_note(state['pending'][symbol][sig['signal_id']])}\n"
                                 f"<i>{session_cfg['session_id']}</i>"
                             )
                         elif ticket is None:
@@ -3399,7 +3551,8 @@ def run_generator(session_cfg: dict):
                                 f"Entry: <code>{format(_p['entry'], fmt)}</code>  "
                                 f"SL: <code>{format(_p['sl'], fmt)}</code>  "
                                 f"TP: <code>{format(_p['tp'], fmt)}</code>\n"
-                                f"Lot: {_lots}  Ticket: #{_ticket}\n"
+                                f"Lot: {_lots}  Ticket: #{_ticket}"
+                                f"{_ai_note(_p)}\n"
                                 f"<i>{session_cfg['session_id']}</i>"
                             )
                         elif _ticket is False:

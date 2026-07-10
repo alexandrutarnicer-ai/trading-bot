@@ -89,10 +89,13 @@ def ai_status():
         # scorecard disponibil si cu motorul oprit
         try:
             con = _db()
+            # Doar tranzactii activate si inchise real (TP/SL/closed) — ordinele
+            # expirate/anulate nu s-au activat niciodata, deci nu sunt tranzactii.
+            # Trebuie sa ramana sincronizat cu ledger.Ledger.scorecard().
             row = con.execute(
                 "SELECT COUNT(*), COALESCE(SUM(result_r),0), COALESCE(AVG(result_r),0), "
                 "SUM(CASE WHEN result_r>0 THEN 1 ELSE 0 END) FROM outcomes "
-                "WHERE result_r IS NOT NULL").fetchone()
+                "WHERE status IN ('TP','SL','closed') AND result_r IS NOT NULL").fetchone()
             n, tot, avg, w = row
             n_dec = con.execute("SELECT COUNT(*) FROM decisions").fetchone()[0]
             n_wait = con.execute("SELECT COUNT(*) FROM decisions WHERE action='WAIT'").fetchone()[0]
@@ -407,3 +410,46 @@ def ai_test_provider(body: dict = Body(...)):
     except ProviderError as e:
         return {"ok": False, "latency_s": 0, "detail": str(e), "kind": e.kind}
     return prov.test()
+
+
+# ─── Autostart Windows (mirror al /bot/autostart/*) ───────────────────────────
+# Task Scheduler: TradingBot-AIEngine (+ TradingBot-MT5 partajat). Scripturile
+# scripts/setup_autostart_ai.ps1 / remove_autostart_ai.ps1 fac munca; aici doar
+# le lansam cu elevare UAC, exact ca la bot.
+
+@router.get("/autostart/status")
+def ai_autostart_status():
+    try:
+        r = subprocess.run(
+            ["powershell", "-Command",
+             "if (Get-ScheduledTask -TaskName 'TradingBot-AIEngine' -ErrorAction SilentlyContinue) { 'true' } else { 'false' }"],
+            capture_output=True, text=True, timeout=10
+        )
+        enabled = r.stdout.strip().lower() == "true"
+    except Exception:
+        enabled = False
+    return {"enabled": enabled}
+
+
+@router.post("/autostart/enable")
+def ai_autostart_enable():
+    script = os.path.join(ROOT, "scripts", "setup_autostart_ai.ps1")
+    if not os.path.exists(script):
+        raise HTTPException(404, "scripts/setup_autostart_ai.ps1 nu a fost gasit")
+    subprocess.Popen([
+        "powershell", "-Command",
+        f'Start-Process powershell -Verb RunAs -ArgumentList \'-NoExit -ExecutionPolicy Bypass -File "{script}"\''
+    ])
+    return {"started": True}
+
+
+@router.post("/autostart/disable")
+def ai_autostart_disable():
+    script = os.path.join(ROOT, "scripts", "remove_autostart_ai.ps1")
+    if not os.path.exists(script):
+        raise HTTPException(404, "scripts/remove_autostart_ai.ps1 nu a fost gasit")
+    subprocess.Popen([
+        "powershell", "-Command",
+        f'Start-Process powershell -Verb RunAs -ArgumentList \'-NoExit -ExecutionPolicy Bypass -File "{script}"\''
+    ])
+    return {"started": True}

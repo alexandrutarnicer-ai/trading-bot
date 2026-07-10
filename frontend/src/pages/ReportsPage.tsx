@@ -61,20 +61,22 @@ const STATUS_LABELS: Record<string, string> = {
   invalidat:    "Invalidat",
   vineri_close: "Vineri",
   news_close:   "Știri",
+  ai_reject:    "Respins AI",
 };
 
 // ── Transactions table ────────────────────────────────────────────────────────
 
-const STATUS_FILTERS_BOT = ["Toate", "TP", "SL", "Deschis", "Expirat", "Vineri", "Știri"];
+const STATUS_FILTERS_BOT = ["Toate", "TP", "SL", "Deschis", "Expirat", "Vineri", "Știri", "Respins AI"];
 const STATUS_FILTERS_MT5 = ["Toate", "TP", "SL"];
 const STATUS_MAP: Record<string, string> = {
-  "Toate":    "",
-  "TP":       "TP",
-  "SL":       "SL",
-  "Deschis":  "open",
-  "Expirat":  "expirat",
-  "Vineri":   "vineri_close",
-  "Știri":    "news_close",
+  "Toate":      "",
+  "TP":         "TP",
+  "SL":         "SL",
+  "Deschis":    "open",
+  "Expirat":    "expirat",
+  "Vineri":     "vineri_close",
+  "Știri":      "news_close",
+  "Respins AI": "ai_reject",
 };
 
 // Vedere unificata pentru randare — Bot are sesiune/timp-check, MT5 are doar ticket.
@@ -90,18 +92,22 @@ interface ViewTxn {
   resultR: number;
   pnlUsd: number | null;
   time: string | null;
+  aiApproved: boolean | null;
+  aiConfidence: number | null;
 }
 const toViewTxn = (t: Transaction, i: number): ViewTxn => ({
   key: `${t.signal_id}-${i}`, symbol: t.symbol, sessionLabel: t.session_label.replace(/^S\d+ — /, ""),
   direction: t.direction, dirStr: t.dir_str, status: t.status, entry: t.entry,
   rRatio: t.r_ratio, resultR: t.result_r, pnlUsd: t.pnl_usd,
   time: t.exit_time ?? t.time_check ?? null,
+  aiApproved: t.ai_approved ?? null, aiConfidence: t.ai_confidence ?? null,
 });
 const toViewMt5Txn = (t: Mt5Transaction): ViewTxn => ({
   key: String(t.ticket), symbol: t.symbol, sessionLabel: null,
   direction: t.direction, dirStr: t.dir_str, status: t.status, entry: t.entry,
   rRatio: t.r_ratio, resultR: t.result_r ?? 0, pnlUsd: t.pnl_usd,
   time: t.exit_time ?? t.entry_time,
+  aiApproved: null, aiConfidence: null,
 });
 
 function TransactionsTab({ source }: { source: StatsSource }) {
@@ -219,7 +225,17 @@ function TransactionsTab({ source }: { source: StatsSource }) {
                     t.status === "TP" ? "bg-profit/4" : t.status === "SL" ? "bg-loss/4" : ""
                   }`}
                 >
-                  <td className="px-3 py-2 font-semibold text-white">{t.symbol}</td>
+                  <td className="px-3 py-2 font-semibold text-white">
+                    {t.symbol}
+                    {t.aiApproved && (
+                      <span
+                        className="ml-1.5 text-[8px] px-1 py-0.5 rounded font-bold bg-purple-500/20 text-purple-300 align-middle"
+                        title={`Validat de Filtrul AI Pre-Trade${t.aiConfidence != null ? ` — încredere ${t.aiConfidence}%` : ""}`}
+                      >
+                        AI✓
+                      </span>
+                    )}
+                  </td>
                   {!usingMt5 && <td className="px-3 py-2 text-slate-400 truncate max-w-[100px]">{t.sessionLabel}</td>}
                   <td className="px-3 py-2 text-center">
                     <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
@@ -235,6 +251,7 @@ function TransactionsTab({ source }: { source: StatsSource }) {
                     <span className={`text-[9px] font-medium ${
                       t.status === "TP" ? "text-profit"
                       : t.status === "SL" ? "text-loss"
+                      : t.status === "ai_reject" ? "text-purple-400"
                       : "text-slate-500"
                     }`}>
                       {STATUS_LABELS[t.status] ?? t.status}

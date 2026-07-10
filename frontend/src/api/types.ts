@@ -122,6 +122,8 @@ export interface Outcome {
   pnl_usd: number | null;
   commission_usd: number | null;
   swap_usd: number | null;
+  ai_approved?: boolean | null;
+  ai_confidence?: number | null;
 }
 
 export interface EquityCurvePoint {
@@ -195,6 +197,9 @@ export interface ProfileSession {
   inside_bar_enabled?: boolean;
   inside_bar_r_ratio?: number;
   inside_bar_risk_pct?: number;
+  // Filtru AI Pre-Trade (validare finala inainte de MT5)
+  ai_filter_enabled?: boolean;
+  ai_filter_level?: "permissive" | "balanced" | "strict";
 }
 
 export interface TelegramConfig {
@@ -421,7 +426,7 @@ export interface NotificationItem {
   time: string;
   text: string;
   text_plain: string;
-  category: "order" | "signal" | "news" | "session" | "bot" | "trade" | "system";
+  category: "ai" | "order" | "signal" | "news" | "session" | "bot" | "trade" | "system";
   read: boolean;
 }
 
@@ -450,6 +455,8 @@ export interface Transaction {
   exit_time: string | null;
   result_r: number;
   pnl_usd: number | null;
+  ai_approved?: boolean | null;
+  ai_confidence?: number | null;
 }
 
 export interface TransactionsResponse {
@@ -771,6 +778,9 @@ export interface Mt5Position {
   source: "bot" | "ai" | "manual";
   comment: string;
   margin: number;
+  // Filtru AI Pre-Trade — null cand ordinul nu a trecut prin filtru
+  ai_approved?: boolean | null;
+  ai_confidence?: number | null;
 }
 
 export interface Mt5PendingOrder {
@@ -783,6 +793,8 @@ export interface Mt5PendingOrder {
   tp: number | null;
   source: "bot" | "ai" | "manual";
   comment: string;
+  ai_approved?: boolean | null;
+  ai_confidence?: number | null;
 }
 
 export interface Mt5OrdersAccount {

@@ -74,6 +74,8 @@ const DEFAULT_SESSION = (id: string): ProfileSession => ({
   inside_bar_enabled:   false,
   inside_bar_r_ratio:   2.0,
   inside_bar_risk_pct:  0.01,
+  ai_filter_enabled:    false,
+  ai_filter_level:      "balanced",
 });
 
 const PROFILE_TIP =
@@ -237,9 +239,10 @@ export function ProfilePage({
       "break_even_enabled","be_phase2_enabled",
       "friday_close_enabled","news_protection_enabled","smart_news_enabled",
       "flag_enabled","inside_bar_enabled",
+      "ai_filter_enabled",
     ] as const;
     const arrFields = ["skip_hours","skip_weekdays"] as const;
-    const strFields = ["direction"] as const;
+    const strFields = ["direction","ai_filter_level"] as const;
     const updRec = updated as unknown as Record<string, unknown>;
     for (const f of numFields) {
       if (cfg[f] != null) updRec[f] = Number(cfg[f]);

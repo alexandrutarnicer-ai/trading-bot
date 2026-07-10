@@ -467,5 +467,29 @@ def mt5_active_orders():
     """
     Toate pozitiile deschise + ordinele pending din MT5, clasificate pe sursa
     (bot / ai / manual), plus sumar de capital. Sursa de adevar: exclusiv MT5.
+
+    Ordinele sursei "bot" primesc si `ai_approved`/`ai_confidence` cand semnalul
+    a trecut prin Filtrul AI Pre-Trade (join pe comment-ul MT5 = sig_id trunchiat
+    la 16 caractere → data/live_signals/*/ai_filter.jsonl). Rezultatul pool-ului
+    e cache-uit — construim copii, nu mutam dict-urile cache-uite.
     """
-    return mt5_pool.get_orders()
+    raw = mt5_pool.get_orders()
+    if not raw.get("connected"):
+        return raw
+    try:
+        from api.ai_filter_log import get_verdicts
+        _, by_16 = get_verdicts()
+    except Exception:
+        by_16 = {}
+
+    def _annotate(item: dict) -> dict:
+        out = dict(item)
+        v = by_16.get((item.get("comment") or "").strip()[:16]) \
+            if item.get("source") == "bot" else None
+        out["ai_approved"]   = bool(v.get("approved")) if v else None
+        out["ai_confidence"] = v.get("confidence") if v else None
+        return out
+
+    return {**raw,
+            "positions": [_annotate(p) for p in raw["positions"]],
+            "pending":   [_annotate(o) for o in raw["pending"]]}

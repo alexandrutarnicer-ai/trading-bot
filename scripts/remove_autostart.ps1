@@ -20,19 +20,38 @@ Write-Host ""
 
 $removed = 0
 
-foreach ($taskName in @("TradingBot-MT5", "TradingBot-RunAll")) {
-    $task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
-    if ($task) {
+# Task-ul propriu al botului pe reguli
+$task = Get-ScheduledTask -TaskName "TradingBot-RunAll" -ErrorAction SilentlyContinue
+if ($task) {
+    try {
+        Unregister-ScheduledTask -TaskName "TradingBot-RunAll" -Confirm:$false
+        Write-Host "[OK] Task TradingBot-RunAll sters" -ForegroundColor Green
+        $removed++
+    } catch {
+        Write-Host "[EROARE] Nu am putut sterge TradingBot-RunAll : $_" -ForegroundColor Red
+        Write-Host "         Incearca manual: Task Scheduler -> gaseste task-ul -> Delete" -ForegroundColor Yellow
+    }
+} else {
+    Write-Host "[--] Task TradingBot-RunAll nu exista (deja sters sau neinstalat)" -ForegroundColor Gray
+}
+
+# MT5 partajat — sterge DOAR daca motorul AI (TradingBot-AIEngine) nu-l mai
+# foloseste. Altfel autostart-ul AI ar ramane fara MT5 la pornire.
+$aiStillUsesMt5 = [bool](Get-ScheduledTask -TaskName "TradingBot-AIEngine" -ErrorAction SilentlyContinue)
+if ($aiStillUsesMt5) {
+    Write-Host "[--] Task TradingBot-MT5 pastrat (motorul AI TradingBot-AIEngine inca il foloseste)" -ForegroundColor Yellow
+} else {
+    $mt5Task = Get-ScheduledTask -TaskName "TradingBot-MT5" -ErrorAction SilentlyContinue
+    if ($mt5Task) {
         try {
-            Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
-            Write-Host "[OK] Task $taskName sters" -ForegroundColor Green
+            Unregister-ScheduledTask -TaskName "TradingBot-MT5" -Confirm:$false
+            Write-Host "[OK] Task TradingBot-MT5 sters (niciun engine nu-l mai foloseste)" -ForegroundColor Green
             $removed++
         } catch {
-            Write-Host "[EROARE] Nu am putut sterge $taskName : $_" -ForegroundColor Red
-            Write-Host "         Incearca manual: Task Scheduler -> gaseste task-ul -> Delete" -ForegroundColor Yellow
+            Write-Host "[EROARE] Nu am putut sterge TradingBot-MT5 : $_" -ForegroundColor Red
         }
     } else {
-        Write-Host "[--] Task $taskName nu exista (deja sters sau neinstalat)" -ForegroundColor Gray
+        Write-Host "[--] Task TradingBot-MT5 nu exista (deja sters sau neinstalat)" -ForegroundColor Gray
     }
 }
 

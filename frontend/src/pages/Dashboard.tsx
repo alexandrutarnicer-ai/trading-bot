@@ -495,8 +495,8 @@ export function Dashboard() {
       {/* Bottom two columns */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Signal feed */}
-        <div className="bg-surface-card rounded-xl border border-surface-border p-4">
-          <div className="flex items-center justify-between mb-4">
+        <div className="bg-surface-card rounded-xl border border-surface-border p-4 flex flex-col min-h-[320px] max-h-[520px]">
+          <div className="flex items-center justify-between mb-4 flex-shrink-0">
             <h2 className="text-sm font-semibold text-white">
               {statsSource === "mt5"
                 ? (selectedSession === "all" ? "Tranzacții MT5 — Toate sesiunile" : `Tranzacții MT5 — ${selected?.label ?? "—"}`)
@@ -528,13 +528,15 @@ export function Dashboard() {
               ))}
             </div>
           </div>
-          <SignalFeed
-            sessionId={selectedSession}
-            balanceUsd={mt5?.connected ? mt5.balance : null}
-            capitalPct={selectedSession === "all" ? undefined : selected?.capital_pct}
-            source={statsSource}
-            symbol={selectedSession === "all" ? undefined : selected?.markets[0]}
-          />
+          <div className="flex-1 min-h-0">
+            <SignalFeed
+              sessionId={selectedSession}
+              balanceUsd={mt5?.connected ? mt5.balance : null}
+              capitalPct={selectedSession === "all" ? undefined : selected?.capital_pct}
+              source={statsSource}
+              symbol={selectedSession === "all" ? undefined : selected?.markets[0]}
+            />
+          </div>
         </div>
 
         {/* Equity chart + stats */}
