@@ -204,7 +204,7 @@
       "risk_mid": 0.01,
       "risk_top": 0.012,
       "risk_max": 0.015,
-      "execute_trades": true,
+      "execute_trades": false,
       "rsi_enabled": true,
       "rsi_buy_min": 40,
       "rsi_buy_max": 65,
@@ -1566,7 +1566,7 @@
       "risk_mid": 0.01,
       "risk_top": 0.012,
       "risk_max": 0.015,
-      "execute_trades": true,
+      "execute_trades": false,
       "rsi_enabled": true,
       "rsi_buy_min": 40,
       "rsi_buy_max": 65,
@@ -1608,7 +1608,7 @@
       "inside_bar_risk_pct": 0.01
     }
   ],
-  "updated_at": "2026-07-09T11:08:26",
+  "updated_at": "2026-07-10T09:38:44",
   "capital_protection_enabled": false,
   "capital_protection_threshold_pct": 80
 }
