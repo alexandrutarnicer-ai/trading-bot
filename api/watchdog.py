@@ -92,15 +92,14 @@ def _cleanup_and_log() -> None:
 
 
 def _get_mt5_equity() -> float | None:
-    """Returneaza equity-ul contului MT5 sau None daca nu poate fi citit."""
+    """
+    Returneaza equity-ul contului MT5 sau None daca nu poate fi citit.
+    Trece prin mt5_pool (conexiune persistenta partajata) — NU face init/shutdown
+    propriu, care ar taia conexiunea calda folosita de endpointurile /mt5/*.
+    """
     try:
-        import MetaTrader5 as mt5
-        if not mt5.initialize():
-            return None
-        info = mt5.account_info()
-        eq = float(info.equity) if info else None
-        mt5.shutdown()
-        return eq
+        from api import mt5_pool
+        return mt5_pool.get_equity()
     except Exception:
         return None
 

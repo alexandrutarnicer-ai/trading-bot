@@ -66,7 +66,8 @@ DEFAULTS: dict = {
     "risk_pct_max":       0.01,    # consiliul nu poate cere mai mult de 1%
     "max_open_positions": 3,       # total pozitii AI simultane
     "max_daily_loss_R":   3.0,     # stop pe zi: dupa -3R cumulat, nu mai deschide
-    "min_rr":             1.0,     # TP/SL minim acceptat
+    "min_rr":             1.0,     # TP/SL minim acceptat (rail hard)
+    "target_rr":          2.0,     # tinta cand reparam un TP prea aproape (>= min_rr)
     "max_sl_atr_mult":    5.0,     # SL nu poate fi mai departe de 5*ATR
     "decision_valid_bars": 8,      # ordinele stop neactivate expira dupa N bare
 }
