@@ -212,8 +212,80 @@ def test_veto_semantics(cfg):
             "veto='false' (string) -> nu veteaza, risc normal")
 
 
+def test_tp_repair(cfg):
+    print("[6] reparare geometrie TP (RR sub minim -> target R)")
+    from ai_engine import executor
+    # Cazul REAL #32 XRPUSD: entry 1.0997, sl 1.0961 (risk 0.0036), tp 1.1009
+    # (reward 0.0012) -> RR 0.33, respins de executor. Dupa reparare trebuie sa treaca.
+    head = {"action": "OPEN_LONG", "order_type": "stop", "entry": 1.0997,
+            "sl": 1.0961, "tp": 1.1009, "risk_pct": 0.005, "confidence": 72,
+            "rationale": "breakout"}
+    d = council._sanitize(dict(head), {"veto": False, "max_risk_pct": 0.005}, cfg)
+    risk_dist = abs(d["entry"] - d["sl"])
+    new_rr = (d["tp"] - d["entry"]) / risk_dist
+    _assert(abs(new_rr - cfg["target_rr"]) < 1e-6,
+            f"TP reparat la {cfg['target_rr']}R (RR nou = {new_rr:.2f})")
+    _assert("recalculat" in d["rationale"], "reparatia e notata in rationale")
+    # acum trece de rail-ul din executor (care respinsese #32 pe RR).
+    # pret sub entry -> BUY_STOP valid deasupra pretului curent.
+    snap = {"symbol": "XRPUSD", "price": 1.0990, "atr": 0.01}
+    reason = executor.validate_decision(d, snap, cfg, n_open=0, daily_r=0.0)
+    _assert(reason is None, f"dupa reparare rail-ul accepta (motiv={reason})")
+
+    # SHORT: TP prea aproape sub entry -> reparat pe partea corecta
+    hs = {"action": "OPEN_SHORT", "order_type": "stop", "entry": 1.0961,
+          "sl": 1.0997, "tp": 1.0955, "risk_pct": 0.005, "confidence": 70, "rationale": "x"}
+    ds = council._sanitize(dict(hs), {"veto": False, "max_risk_pct": 0.005}, cfg)
+    _assert(ds["tp"] < ds["entry"] and (ds["entry"] - ds["tp"]) / abs(ds["entry"] - ds["sl"])
+            >= cfg["min_rr"], "SHORT: TP reparat sub entry cu RR valid")
+    # TP deja bun (>= min_rr) -> NU se atinge (respectam modelul)
+    hg = {"action": "OPEN_LONG", "order_type": "stop", "entry": 1.10,
+          "sl": 1.097, "tp": 1.109, "risk_pct": 0.005, "confidence": 70, "rationale": "x"}
+    dg = council._sanitize(dict(hg), {"veto": False, "max_risk_pct": 0.005}, cfg)
+    _assert(dg["tp"] == 1.109 and "recalculat" not in dg["rationale"],
+            "TP deja valid ramane neschimbat")
+    # SL degenerat (entry==sl) -> nu reparam, executorul respinge geometria
+    hb = {"action": "OPEN_LONG", "order_type": "stop", "entry": 1.10,
+          "sl": 1.10, "tp": 1.105, "risk_pct": 0.005, "confidence": 70, "rationale": "x"}
+    db = council._sanitize(dict(hb), {"veto": False, "max_risk_pct": 0.005}, cfg)
+    _assert(db["tp"] == 1.105, "SL degenerat: TP neschimbat (executorul va respinge)")
+
+
+def test_stop_bracket(cfg):
+    print("[7] sanitizare ordin STOP vs pret live (fix 10015)")
+    from ai_engine.executor import adjust_stop_bracket
+    dg = 5
+    # Cazul REAL #40/#41: BUY_STOP la 0.5 pip peste snapshot, dar pretul LIVE a urcat
+    # peste entry -> breakout deja atins -> skip curat (nu mai da 10015 'failed').
+    e, s, t, skip = adjust_stop_bracket(1.34152, 1.33946, 1.34564,
+                                        ref=1.34160, long_=True, buf=0.00010, digits=dg)
+    _assert(skip is not None and e is None,
+            "BUY_STOP sub pretul live -> skip curat (fara 10015)")
+    # entry pe partea corecta dar prea aproape (< buf) -> muta tot bracket-ul, R pastrat
+    e, s, t, skip = adjust_stop_bracket(1.34152, 1.33946, 1.34564,
+                                        ref=1.34148, long_=True, buf=0.00010, digits=dg)
+    _assert(skip is None and abs((e - 1.34148) - 0.00010) < 1e-9,
+            f"entry prea aproape -> mutat la ref+buf ({e})")
+    rr_before = (1.34564 - 1.34152) / (1.34152 - 1.33946)
+    rr_after = (t - e) / (e - s)
+    _assert(abs(rr_before - rr_after) < 1e-6, "geometria R pastrata dupa mutare")
+    # entry comfortabil deasupra pietei -> neschimbat
+    e, s, t, skip = adjust_stop_bracket(1.3450, 1.3420, 1.3510,
+                                        ref=1.3430, long_=True, buf=0.00010, digits=dg)
+    _assert(skip is None and e == 1.3450, "entry valid ramane neschimbat")
+    # SELL_STOP simetric: pretul live a cazut la/sub nivelul de intrare -> skip
+    # (SELL_STOP e valid sub piata; devine invalid cand bid <= entry, adica entry >= ref)
+    e, s, t, skip = adjust_stop_bracket(1.3432, 1.3460, 1.3372,
+                                        ref=1.3430, long_=False, buf=0.00010, digits=dg)
+    _assert(skip is not None, "SELL_STOP: pretul a atins deja intrarea -> skip curat")
+    # SELL_STOP valid (entry sub piata, cu distanta) -> neschimbat
+    e, s, t, skip = adjust_stop_bracket(1.3420, 1.3450, 1.3360,
+                                        ref=1.3430, long_=False, buf=0.00010, digits=dg)
+    _assert(skip is None and e == 1.3420, "SELL_STOP valid sub piata ramane neschimbat")
+
+
 def test_council_live(cfg):
-    print("[6] consiliu LIVE pe Ollama (poate dura ~1-2 min)")
+    print("[8] consiliu LIVE pe Ollama (poate dura ~1-2 min)")
     provider = make_provider(cfg)
     if not provider.available():
         print("  SKIP — Ollama/modelul indisponibil")
@@ -245,6 +317,8 @@ def main():
     test_rails(cfg)
     test_failover()
     test_veto_semantics(cfg)
+    test_tp_repair(cfg)
+    test_stop_bracket(cfg)
     test_council_live(cfg)
     print("\nToate verificarile AI Engine au trecut.")
 

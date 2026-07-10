@@ -13,6 +13,7 @@ import pandas as pd
 from fastapi import APIRouter, Query
 
 from api.config import DATA_DIR, SESSIONS, get_profile_execute_map
+from api.csv_cache import read_csv_cached
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
@@ -23,13 +24,10 @@ _CLOSED_STATUSES = ["TP", "SL", "vineri_close", "news_close", "be_lock", "be_loc
 
 
 def _read_outcomes(session_id: str) -> pd.DataFrame:
-    f = os.path.join(DATA_DIR, "live_signals", session_id, "outcomes.csv")
-    if not os.path.exists(f):
-        return pd.DataFrame()
-    try:
-        return pd.read_csv(f, on_bad_lines="skip")
-    except Exception:
-        return pd.DataFrame()
+    # Cache pe (mtime, size) partajat cu sessions.py — vezi api/csv_cache.py.
+    return read_csv_cached(
+        os.path.join(DATA_DIR, "live_signals", session_id, "outcomes.csv"),
+        on_bad_lines="skip")
 
 
 def _session_label(session_id: str) -> str:

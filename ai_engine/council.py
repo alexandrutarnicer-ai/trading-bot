@@ -103,10 +103,20 @@ _HEAD_SYS = _PREAMBLE + (
     "- Prefer order_type 'stop': a pending order placed beyond the breakout level in "
     "the trade direction. The market must reach it to trigger — an untriggered stop "
     "order costs NOTHING and expires. This is confirmation by price, so you do not "
-    "need certainty before placing it.\n"
-    "- Every trade needs entry, stop-loss and take-profit. SL goes beyond a real "
-    "structural level (swing / range edge from the briefing), not an arbitrary "
-    "distance. Risk/reward must be >= {min_rr}.\n"
+    "need certainty before placing it. Place the stop entry a few pips BEYOND the "
+    "level (past the swing high/low or range edge), never exactly at the current "
+    "price — an entry at market is invalid for a stop order.\n"
+    "- The stop-loss distance should be reasonable: roughly 1-4x the ATR from the "
+    "briefing. If the only sane structural stop is more than ~5x ATR away, the setup "
+    "is not tradeable at acceptable risk — choose WAIT instead of a huge stop.\n"
+    "- Every trade needs entry, stop-loss and take-profit. Build the geometry in "
+    "this ORDER: (1) pick the entry, (2) place the STOP beyond a real structural "
+    "level (swing / range edge from the briefing) — this fixes your risk distance R, "
+    "(3) compute the TAKE-PROFIT from that risk distance: TP must be at least "
+    "{min_rr}x R away from entry, and you should aim for about 2x R. Do NOT set TP at "
+    "the nearest chart level (e.g. right at the resistance you are breaking) — that "
+    "produces a reward smaller than the risk, which is an automatic reject. Reward "
+    "must always exceed risk.\n"
     "- If the Risk Manager vetoed WITH a valid code, the action MUST be WAIT (or "
     "CLOSE when reviewing a position that should be exited).\n"
     "- WAIT is correct only when: no directional bias at all, valid risk veto, or no "
@@ -243,9 +253,51 @@ def _sanitize(head: dict, risk: dict, cfg: dict) -> dict:
             d["rationale"] = "[Prudenta Risk Manager -> risc redus la minim] " + d["rationale"]
         if d["order_type"] not in ("market", "stop"):
             d["order_type"] = "market"
+        _repair_tp(d, cfg)
     else:
         d["order_type"] = None
     return d
+
+
+def _price_decimals(*vals) -> int:
+    """Numarul de zecimale al preturilor de intrare (pentru a rotunji TP la fel)."""
+    dec = 0
+    for v in vals:
+        if v is None:
+            continue
+        s = f"{float(v):.10f}".rstrip("0")
+        if "." in s:
+            dec = max(dec, len(s.split(".")[1]))
+    return min(dec, 6) if dec else 5
+
+
+def _repair_tp(d: dict, cfg: dict) -> None:
+    """
+    Repara geometria TP daca RR e sub minim. Modelele mici pun uneori TP prea
+    aproape (la un nivel de chart, ex. exact la rezistenta) -> reward < risk ->
+    RR < 1 -> rail-ul din executor ar respinge tot setup-ul. Aici, cand SL e deja
+    structural si valid, DUCEM TP la o tinta coerenta (target_rr) in loc sa
+    aruncam trade-ul. Nu inventam nimic: directia si SL raman ce a decis consiliul,
+    doar tinta de profit devine sanatoasa. Rail-ul RR>=min din executor ramane
+    activ ca plasa de siguranta.
+    """
+    entry, sl, tp = d.get("entry"), d.get("sl"), d.get("tp")
+    if entry is None or sl is None:
+        return   # market fara entry explicit -> validat cu pretul live in executor
+    direction = 1 if d["action"] == "OPEN_LONG" else -1
+    risk_dist = abs(entry - sl)
+    if risk_dist <= 0:
+        return   # SL degenerat -> lasam executorul sa respinga (geometrie invalida)
+    min_rr = float(cfg.get("min_rr", 1.0))
+    cur_rr = ((tp - entry) * direction / risk_dist) if tp is not None else -1.0
+    if cur_rr >= min_rr:
+        return   # TP-ul modelului e deja OK — respectam alegerea lui
+    target_rr = max(float(cfg.get("target_rr", 2.0)), min_rr)
+    new_tp = round(entry + direction * risk_dist * target_rr,
+                   _price_decimals(entry, sl))
+    d["tp"] = new_tp
+    d["rationale"] = (f"[TP recalculat la {target_rr:.1f}R "
+                      f"(propus {cur_rr:.2f}R prea aproape)] ") + d["rationale"]
 
 
 def _num(x) -> float | None:

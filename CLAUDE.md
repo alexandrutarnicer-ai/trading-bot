@@ -168,6 +168,7 @@ Motor experimental care isi alege singur strategia: perceptie numerica la fiecar
 - **LLM local gratuit:** Ollama + `qwen3:8b` pe GPU (`think:false` obligatoriu — altfel 10-15x mai lent) — sursa default a consiliului.
 - **Consiliu (`council.py`):** Analist Tehnic → Analist Macro → Risk Manager (VETO absolut, aplicat in cod, nu de model) → Head Trader (JSON strict, retry cu feedback la JSON invalid). Orice eroare LLM → WAIT (fail-safe).
 - **Rails hard (`executor.py::validate_decision` + clamp in `config.py`):** geometrie SL/TP, RR≥1, SL≤5×ATR, max 3 pozitii, stop zilnic -3R, risc≤1%. LLM-ul propune, rails-urile dispun.
+- **Veto cod-enforced + reparare TP (`council.py::_sanitize`):** veto-ul Risk Manager e onorat DOAR cu un cod de risc valid (NEWS_IMMINENT/DAILY_STOP/MAX_POSITIONS/EXTREME_VOL/WEEKEND_GAP/BAD_GEOMETRY); veto necalificat → prudenta (risc redus la 0.25%), nu blocaj (fix pentru paralizia 29/29 veto observata 2026-07-09). `_repair_tp` recalculeaza TP la `target_rr` (default 2.0R) cand modelul propune RR<min_rr (SL structural pastrat) — evita respingerea unui setup directional bun pe TP prea aproape.
 - **Izolare totala:** magic 770015 + comment "AI-{id}", filtrare stricta pe magic — nu vede/atinge pozitiile sesiunilor pe reguli. `executor.connect()` refuza non-DEMO (RuntimeError).
 - **Ledger SQLite (`data/ai/ledger.db`):** snapshots, transcripturi complete de consiliu, decizii, outcomes (R/pnl via pattern hedging-safe order→position_id→deals). `python -m ai_engine.report` = scorecard.
 - **Reutilizeaza:** `strategy.preparation._enrich` (perceptie), `live.news_guard._fetch_forexfactory` (calendar, cu cache TTL 10 min in perception), `api.telegram.send_message` (notificari), `Mt5DataSource` (bare + enforcement demo).
@@ -261,7 +262,7 @@ Fiecare sesiune are si propriul `session.lock` (PID file per sesiune) care previ
 - `profiles` — CRUD profile JSON din `data/profiles/`. `standard` este protejat (403 la stergere). La `PUT /{profile_id}` apeleaza `_log_profile_change()` care difuiaza sesiunile si scrie in `data/session_changes_log.json`.
 - `backtest` — `POST /backtest/run` (async job), `GET /backtest/{job_id}` (poll)
 - `backtest_history` — `GET/POST/DELETE /backtest/history` — stocheaza rezultate in `data/backtest_history.json`
-- `mt5status` — `GET /mt5/status` — conectare directa la MT5, returneaza cont/balance/equity/currency. `GET /mt5/orders` — pozitii deschise + ordine pending clasificate pe sursa (`bot`/`ai`/`manual` dupa magic 770015 + pattern comment) + sumar cont (marja folosita/libera, P&L flotant). Afisat in Dashboard ca tabel "Ordine Active" (`ActiveOrdersTable.tsx`).
+- `mt5status` — `GET /mt5/status` — cont/balance/equity/currency (via `api/mt5_pool.py`, cache TTL). `GET /mt5/orders` — pozitii deschise + ordine pending clasificate pe sursa (`bot`/`ai`/`manual` dupa magic 770015 + pattern comment) + sumar cont (marja folosita/libera, P&L flotant). Afisat in Dashboard ca tabel "Ordine Active" (`ActiveOrdersTable.tsx`). Toate endpointurile `/mt5/*` (stats, equity-curve, weekly-stats, top-markets, transactions, costs, costs-daily, sessions) sunt transformari peste lista de tranzactii cache-uita de pool — vezi nota `api/mt5_pool.py` mai jos.
 - `ai_engine` — `GET/POST /ai/*` — status/start/stop/decizii/transcripturi/config/loguri pentru motorul AI (vezi sectiunea `ai_engine/`)
 - `data_download` — descarca CSV-uri din MT5 via `Mt5DataSource`. Rezolva automat alias-uri de simboluri per broker (ex: GER40→DE40). Joburi persistate in `data/download_jobs.json`.
 - `markets` — lista simboluri disponibile in MT5
@@ -328,6 +329,16 @@ Pornit automat la startup API (`@app.on_event("startup")`). Ruleaza ca thread da
 
 **`api/routers/mt5status.py` — `algo_trading_enabled`:**
 Campul `algo_trading_enabled: bool | null` returnat in `GET /mt5/status`. Citit din `mt5.terminal_info().trade_allowed`. Dashboard-ul afiseaza un banner de avertizare galben cand este `false` (botul detecteaza semnale dar ordinele MT5 nu pot fi plasate).
+
+**`api/mt5_pool.py` — acces MT5 centralizat, persistent, cache-uit (procesul API):**
+Toate endpointurile `/mt5/*` trec prin acest pool. Inainte, FIECARE endpoint facea `mt5.initialize()` + `mt5.shutdown()` per request, si 9 endpointuri distincte interogau fiecare independent `history_deals_get` pe 400 zile pentru aceleasi date — Dashboard + Rapoarte declansau 6-9 astfel de interogari per ciclu de polling. Pool-ul rezolva:
+- **Conexiune persistenta** — `_ensure_mt5()` apeleaza `initialize()` la fiecare acces necache-uit (revalidare ieftina; reconecteaza automat daca alt modul din API — markets/data_download/mt5_sync — a facut `shutdown()`), dar NU face niciodata `shutdown()`. Elimina handshake-ul IPC per-request (~8ms → ~0.02ms, masurat 489x mai ieftin).
+- **Lock global (`RLock`)** — serializeaza tot accesul MT5 (modulul MetaTrader5 NU e thread-safe; endpointurile sync ruleaza in threadpool-ul FastAPI). Rezolva si un race latent: un `shutdown()` dintr-un request putea taia conexiunea altui request in curs.
+- **Cache TTL** — `get_closed_trades(days)` interogheaza MT5 pe intreaga fereastra (400 zile) O SINGURA DATA per `_TRADES_TTL` (15s) si filtreaza local la fereastra ceruta; toate cele 9 endpointuri partajeaza aceeasi lista. `get_status()` (5s), `get_orders()` (6s), offset server (30 min). `invalidate()` forteaza reinterogarea.
+- **Izolare totala fata de bot/AI:** pool-ul traieste DOAR in procesul API. Sesiunile live si motorul AI au fiecare propria conexiune MT5 in propriul proces — pool-ul nu le atinge. `mt5.initialize()` e idempotent si per-proces (mai multi clienti IPC coexista deja pe acelasi terminal). `api/watchdog.py::_get_mt5_equity` trece si el prin pool (fara `shutdown()` propriu care ar taia conexiunea calda).
+
+**`api/csv_cache.py` — cache CSV invalidat pe (mtime, size):**
+`read_csv_cached(path, **kwargs)` cache-uieste DataFrame-urile de semnale/outcomes; invalidare exacta pe `(st_mtime_ns, st_size)` — fisierele se schimba doar cand botul scrie, deci zero staleness. Folosit de `sessions.py` si `reports.py`. `GET /sessions` (poll la 15s) citea 40 CSV-uri + rula `_resolve_outcome_sig_ids` (iterrows scump) la fiecare poll; acum `_read_outcomes_resolved` cache-uieste si rezultatul fuzzy-match-ului pe cheile ambelor fisiere. Rezultat masurat: `/sessions` 2.7x mai rapid (cald). Nu copiaza frame-ul returnat — apelantii fac boolean-indexing sau `.copy()` inainte de mutatie; frame-ul cache-uit nu e mutat in loc.
 
 ### Structura unui profil JSON (`data/profiles/*.json`)
 

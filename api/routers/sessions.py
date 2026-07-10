@@ -11,6 +11,7 @@ from fastapi import APIRouter, HTTPException
 from api.config import DATA_DIR, SESSIONS, SESSION_MAP, get_profile_execute_map
 from api.models import SessionStatus, Signal, Outcome, EquityCurvePoint
 from api.telegram import send_message as _tg_send
+from api.csv_cache import read_csv_cached
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
@@ -87,23 +88,13 @@ def _session_running(session_id: str) -> tuple[bool, Optional[int]]:
 
 
 def _read_signals(session_id: str) -> pd.DataFrame:
-    f = os.path.join(_session_dir(session_id), "signals.csv")
-    if not os.path.exists(f):
-        return pd.DataFrame()
-    try:
-        return pd.read_csv(f)
-    except Exception:
-        return pd.DataFrame()
+    # Cache pe (mtime, size) — vezi api/csv_cache.py. NU muta frame-ul returnat in loc.
+    return read_csv_cached(os.path.join(_session_dir(session_id), "signals.csv"))
 
 
 def _read_outcomes(session_id: str) -> pd.DataFrame:
-    f = os.path.join(_session_dir(session_id), "outcomes.csv")
-    if not os.path.exists(f):
-        return pd.DataFrame()
-    try:
-        return pd.read_csv(f, on_bad_lines="skip")
-    except Exception:
-        return pd.DataFrame()
+    return read_csv_cached(
+        os.path.join(_session_dir(session_id), "outcomes.csv"), on_bad_lines="skip")
 
 
 def _pip_for_symbol(symbol: str) -> float:
@@ -175,15 +166,46 @@ def _resolve_outcome_sig_ids(outcomes_df: pd.DataFrame, signals_df: pd.DataFrame
     return outcomes_df
 
 
+# Cache pentru rezultatul fuzzy-match-ului (iterrows scump) — invalidat cand
+# se schimba oricare din cele doua fisiere. Vezi _resolve_outcome_sig_ids.
+_resolved_lock = threading.Lock()
+_resolved_cache: dict[str, tuple] = {}   # session_id -> (out_key, sig_key, df)
+
+
+def _file_key(path: str):
+    try:
+        st = os.stat(path)
+        return (st.st_mtime_ns, st.st_size)
+    except OSError:
+        return None
+
+
 def _read_outcomes_resolved(session_id: str) -> pd.DataFrame:
-    """Citeste outcomes.csv si rezolva sig_id-urile trunchiate folosind signals.csv."""
+    """
+    Citeste outcomes.csv si rezolva sig_id-urile trunchiate folosind signals.csv.
+    Rezultatul (produs de un iterrows scump) e cache-uit pe (mtime,size) al
+    ambelor fisiere — recalculat doar cand botul scrie efectiv.
+    """
+    out_key = _file_key(os.path.join(_session_dir(session_id), "outcomes.csv"))
+    sig_key = _file_key(os.path.join(_session_dir(session_id), "signals.csv"))
+    if out_key is None:
+        return pd.DataFrame()
+
+    with _resolved_lock:
+        hit = _resolved_cache.get(session_id)
+        if hit is not None and hit[0] == out_key and hit[1] == sig_key:
+            return hit[2]
+
     df = _read_outcomes(session_id)
     if df.empty:
-        return df
-    sigs = _read_signals(session_id)
-    if not sigs.empty:
-        df = _resolve_outcome_sig_ids(df, sigs)
-    return df
+        result = df
+    else:
+        sigs = _read_signals(session_id)
+        result = _resolve_outcome_sig_ids(df, sigs) if not sigs.empty else df
+
+    with _resolved_lock:
+        _resolved_cache[session_id] = (out_key, sig_key, result)
+    return result
 
 
 def _sig_stats(session_id: str) -> dict:

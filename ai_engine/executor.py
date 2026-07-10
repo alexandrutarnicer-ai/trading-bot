@@ -125,6 +125,47 @@ def calc_lots(symbol: str, entry: float, sl: float,
     return lot, risk_usd
 
 
+# ── Sanitizare pret ordin STOP (pur, testabil fara MT5) ─────────────────────
+
+def adjust_stop_bracket(entry: float, sl: float, tp: float, ref: float,
+                        long_: bool, buf: float, digits: int) -> tuple:
+    """
+    Ajusteaza un bracket de ordin STOP fata de pretul LIVE `ref` (ask pt BUY,
+    bid pt SELL). Motivul: brokerii ECN (ICMarketsEU) au trade_stops_level=0,
+    deci nu exista un prag minim de distanta impus de broker — iar modelul pune
+    adesea intrarea la ~0.5 pip de pretul din snapshot (invechit, bara inchisa).
+    Intre snapshot si trimitere pretul se misca -> BUY_STOP ajunge sub/la piata
+    -> serverul respinge cu 10015 "Invalid price" (aparea ca 'failed').
+
+    Reguli:
+    - daca pretul LIVE a atins deja nivelul de intrare (BUY_STOP: ref>=entry) ->
+      breakout-ul s-a intamplat deja, NU urmarim -> (None, motiv).
+    - daca intrarea e pe partea corecta dar mai aproape de `buf` -> muta TOT
+      bracket-ul (entry+sl+tp) cu acelasi delta ca sa devina un stop valid,
+      pastrand geometria R (risc/reward neschimbate).
+    - normalizeaza toate preturile la `digits`.
+
+    Returneaza (entry, sl, tp, None) sau (None, None, None, motiv_skip).
+    """
+    if long_:
+        if entry <= ref:
+            return None, None, None, (f"pretul curent {ref} a atins deja intrarea "
+                                      f"{entry} — breakout ratat, nu urmarim")
+        gap = entry - ref
+        if gap < buf:
+            delta = buf - gap
+            entry += delta; sl += delta; tp += delta
+    else:
+        if entry >= ref:
+            return None, None, None, (f"pretul curent {ref} a atins deja intrarea "
+                                      f"{entry} — breakout ratat, nu urmarim")
+        gap = ref - entry
+        if gap < buf:
+            delta = buf - gap
+            entry -= delta; sl -= delta; tp -= delta
+    return round(entry, digits), round(sl, digits), round(tp, digits), None
+
+
 # ── Executie ─────────────────────────────────────────────────────────────────
 
 def _send_with_fillings(req: dict):
@@ -178,6 +219,9 @@ def place(d: dict, snapshot: dict, cfg: dict, decision_id: int) -> tuple[str, st
 
     if d["order_type"] == "market":
         entry = tick.ask if long_ else tick.bid
+        # normalizeaza SL/TP la precizia simbolului (evita 10015 pe precizie)
+        d["sl"] = round(d["sl"], info.digits)
+        d["tp"] = round(d["tp"], info.digits)
         lots, risk_usd = calc_lots(symbol, entry, d["sl"], equity(), d["risk_pct"])
         if lots <= 0:
             return "rejected", "lot calculat 0 (capital insuficient?)", None
@@ -198,17 +242,28 @@ def place(d: dict, snapshot: dict, cfg: dict, decision_id: int) -> tuple[str, st
             "type_time": mt5.ORDER_TIME_GTC,
         }
     else:
+        # Sanitizeaza intrarea STOP fata de pretul LIVE (nu cel din snapshot).
+        # Buffer minim REAL chiar si cand brokerul are stops_level=0 (ICMarkets):
+        # cel putin 2x spread-ul curent si un plafon absolut de 10 puncte.
+        ref    = tick.ask if long_ else tick.bid
+        spread = abs(tick.ask - tick.bid)
+        buf    = max((info.trade_stops_level or 0) * info.point,
+                     2 * spread, 10 * info.point)
+        n_entry, n_sl, n_tp, skip = adjust_stop_bracket(
+            d["entry"], d["sl"], d["tp"], ref, long_, buf, info.digits)
+        if skip:
+            return "rejected", skip, None
+        if n_entry != d["entry"]:
+            log.info("STOP %s intrare ajustata la piata: %s -> %s (ref %s, buf %s)",
+                     symbol, d["entry"], n_entry, ref, round(buf, info.digits))
+        d["entry"], d["sl"], d["tp"] = n_entry, n_sl, n_tp
+
         lots, risk_usd = calc_lots(symbol, d["entry"], d["sl"], equity(), d["risk_pct"])
         if lots <= 0:
             return "rejected", "lot calculat 0 (capital insuficient?)", None
         m_err = _margin_ok(lots, d["entry"])
         if m_err:
             return "rejected", m_err, None
-        # distanta minima de stops
-        min_dist = (info.trade_stops_level or 0) * info.point
-        ref = tick.ask if long_ else tick.bid
-        if min_dist and abs(d["entry"] - ref) < min_dist:
-            return "rejected", f"entry prea aproape de pret (min {min_dist})", None
         req = {
             "action":  mt5.TRADE_ACTION_PENDING,
             "symbol":  symbol,
