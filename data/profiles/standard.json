@@ -70,7 +70,9 @@
       "flag_risk_pct": 0.01,
       "inside_bar_enabled": true,
       "inside_bar_r_ratio": 2,
-      "inside_bar_risk_pct": 0.01
+      "inside_bar_risk_pct": 0.01,
+      "ai_filter_enabled": true,
+      "ai_filter_level": "balanced"
     },
     {
       "id": "S2",
@@ -156,6 +158,8 @@
       "inside_bar_enabled": true,
       "inside_bar_r_ratio": 2,
       "inside_bar_risk_pct": 0.01,
+      "ai_filter_enabled": false,
+      "ai_filter_level": "balanced",
       "adx_d1_enabled": false
     },
     {
@@ -243,7 +247,9 @@
       "flag_risk_pct": 0.01,
       "inside_bar_enabled": true,
       "inside_bar_r_ratio": 2,
-      "inside_bar_risk_pct": 0.01
+      "inside_bar_risk_pct": 0.01,
+      "ai_filter_enabled": true,
+      "ai_filter_level": "balanced"
     },
     {
       "id": "S4",
@@ -312,7 +318,9 @@
       "flag_risk_pct": 0.01,
       "inside_bar_enabled": true,
       "inside_bar_r_ratio": 2,
-      "inside_bar_risk_pct": 0.01
+      "inside_bar_risk_pct": 0.01,
+      "ai_filter_enabled": false,
+      "ai_filter_level": "balanced"
     },
     {
       "id": "S5",
@@ -385,7 +393,9 @@
       "flag_risk_pct": 0.01,
       "inside_bar_enabled": true,
       "inside_bar_r_ratio": 2,
-      "inside_bar_risk_pct": 0.01
+      "inside_bar_risk_pct": 0.01,
+      "ai_filter_enabled": false,
+      "ai_filter_level": "balanced"
     },
     {
       "id": "S6",
@@ -457,7 +467,9 @@
       "flag_risk_pct": 0.01,
       "inside_bar_enabled": true,
       "inside_bar_r_ratio": 2,
-      "inside_bar_risk_pct": 0.01
+      "inside_bar_risk_pct": 0.01,
+      "ai_filter_enabled": false,
+      "ai_filter_level": "balanced"
     },
     {
       "id": "S7",
@@ -527,7 +539,9 @@
       "flag_risk_pct": 0.01,
       "inside_bar_enabled": true,
       "inside_bar_r_ratio": 2,
-      "inside_bar_risk_pct": 0.01
+      "inside_bar_risk_pct": 0.01,
+      "ai_filter_enabled": true,
+      "ai_filter_level": "balanced"
     },
     {
       "id": "S8",
@@ -605,7 +619,9 @@
       "flag_risk_pct": 0.01,
       "inside_bar_enabled": true,
       "inside_bar_r_ratio": 2,
-      "inside_bar_risk_pct": 0.01
+      "inside_bar_risk_pct": 0.01,
+      "ai_filter_enabled": true,
+      "ai_filter_level": "balanced"
     },
     {
       "id": "S9",
@@ -688,7 +704,9 @@
       "flag_risk_pct": 0.01,
       "inside_bar_enabled": true,
       "inside_bar_r_ratio": 2,
-      "inside_bar_risk_pct": 0.01
+      "inside_bar_risk_pct": 0.01,
+      "ai_filter_enabled": true,
+      "ai_filter_level": "balanced"
     },
     {
       "id": "S10",
@@ -772,7 +790,9 @@
       "flag_risk_pct": 0.01,
       "inside_bar_enabled": true,
       "inside_bar_r_ratio": 2,
-      "inside_bar_risk_pct": 0.01
+      "inside_bar_risk_pct": 0.01,
+      "ai_filter_enabled": true,
+      "ai_filter_level": "balanced"
     },
     {
       "id": "S11",
@@ -858,7 +878,9 @@
       "flag_risk_pct": 0.01,
       "inside_bar_enabled": true,
       "inside_bar_r_ratio": 2,
-      "inside_bar_risk_pct": 0.01
+      "inside_bar_risk_pct": 0.01,
+      "ai_filter_enabled": false,
+      "ai_filter_level": "balanced"
     },
     {
       "id": "S12",
@@ -939,7 +961,9 @@
       "flag_risk_pct": 0.01,
       "inside_bar_enabled": true,
       "inside_bar_r_ratio": 2,
-      "inside_bar_risk_pct": 0.01
+      "inside_bar_risk_pct": 0.01,
+      "ai_filter_enabled": false,
+      "ai_filter_level": "balanced"
     },
     {
       "id": "S13",
@@ -1026,7 +1050,9 @@
       "flag_risk_pct": 0.01,
       "inside_bar_enabled": true,
       "inside_bar_r_ratio": 2,
-      "inside_bar_risk_pct": 0.01
+      "inside_bar_risk_pct": 0.01,
+      "ai_filter_enabled": true,
+      "ai_filter_level": "balanced"
     },
     {
       "id": "S14",
@@ -1108,7 +1134,9 @@
       "flag_risk_pct": 0.01,
       "inside_bar_enabled": true,
       "inside_bar_r_ratio": 2,
-      "inside_bar_risk_pct": 0.01
+      "inside_bar_risk_pct": 0.01,
+      "ai_filter_enabled": true,
+      "ai_filter_level": "balanced"
     },
     {
       "id": "S15",
@@ -1197,7 +1225,9 @@
       "flag_risk_pct": 0.01,
       "inside_bar_enabled": true,
       "inside_bar_r_ratio": 2,
-      "inside_bar_risk_pct": 0.01
+      "inside_bar_risk_pct": 0.01,
+      "ai_filter_enabled": true,
+      "ai_filter_level": "balanced"
     },
     {
       "id": "S16",
@@ -1277,7 +1307,9 @@
       "flag_risk_pct": 0.01,
       "inside_bar_enabled": true,
       "inside_bar_r_ratio": 2,
-      "inside_bar_risk_pct": 0.01
+      "inside_bar_risk_pct": 0.01,
+      "ai_filter_enabled": false,
+      "ai_filter_level": "balanced"
     },
     {
       "id": "S17",
@@ -1361,7 +1393,9 @@
       "flag_risk_pct": 0.01,
       "inside_bar_enabled": true,
       "inside_bar_r_ratio": 2,
-      "inside_bar_risk_pct": 0.01
+      "inside_bar_risk_pct": 0.01,
+      "ai_filter_enabled": true,
+      "ai_filter_level": "balanced"
     },
     {
       "id": "S18",
@@ -1440,7 +1474,9 @@
       "flag_risk_pct": 0.01,
       "inside_bar_enabled": true,
       "inside_bar_r_ratio": 2,
-      "inside_bar_risk_pct": 0.01
+      "inside_bar_risk_pct": 0.01,
+      "ai_filter_enabled": true,
+      "ai_filter_level": "balanced"
     },
     {
       "id": "S19",
@@ -1527,7 +1563,9 @@
       "flag_risk_pct": 0.01,
       "inside_bar_enabled": true,
       "inside_bar_r_ratio": 2,
-      "inside_bar_risk_pct": 0.01
+      "inside_bar_risk_pct": 0.01,
+      "ai_filter_enabled": false,
+      "ai_filter_level": "balanced"
     },
     {
       "id": "S20",
@@ -1605,7 +1643,9 @@
       "flag_risk_pct": 0.01,
       "inside_bar_enabled": true,
       "inside_bar_r_ratio": 2,
-      "inside_bar_risk_pct": 0.01
+      "inside_bar_risk_pct": 0.01,
+      "ai_filter_enabled": true,
+      "ai_filter_level": "balanced"
     }
   ],
   "updated_at": "2026-07-09T11:08:26",
