@@ -53,8 +53,8 @@
     }
   },
   "role_assignments": {
-    "macro": "gemini",
-    "risk": "gemini",
+    "macro": "ollama",
+    "risk": "ollama",
     "technical": "ollama"
   }
 }

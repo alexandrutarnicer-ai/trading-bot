@@ -109,6 +109,22 @@ const TIPS = {
     "Pre-știre: minute înainte de eveniment — sesiunea intră pe pauză preventiv.",
     "Post-știre: minute după eveniment — sesiunea rămâne pe pauză pentru a lăsa volatilitatea să se calmeze.",
   ].join("\n"),
+  ai_filter: [
+    "Validarea FINALĂ a fiecărui semnal, înainte ca ordinul să fie trimis în MT5.",
+    "Consiliul AI (aceleași 4 roluri și aceleași surse AI ca motorul AI Engine) analizează trade-ul propus și emite un scor de încredere 0–100.",
+    "",
+    "Dacă încrederea e sub pragul nivelului ales, ordinul este RESPINS (status ai_reject, notificare cu motivul). Altfel, ordinul merge normal în MT5 și primește badge-ul BOT-AI.",
+    "",
+    "Configurația AI e moștenită automat din tab-ul AI Engine (surse, role assignments) — nicio setare duplicată. Schimbările de acolo se aplică imediat.",
+    "FAIL-OPEN: dacă AI-ul e indisponibil (Ollama oprit etc.), trade-ul e PERMIS — botul nu se blochează niciodată din cauza filtrului.",
+    "Latență: evaluarea durează tipic 10–60s (4 apeluri LLM) — irelevant pentru ordinele pending pe M15/H1.",
+  ].join("\n"),
+  ai_filter_level: [
+    "Pragul minim de încredere al consiliului AI pentru a permite trade-ul:",
+    "• Permisiv ≥50% — blochează doar setup-urile considerate clar slabe.",
+    "• Echilibrat ≥70% — recomandat: peste nivelul 55 pe care motorul AI îl tratează ca acționabil.",
+    "• Strict ≥85% — doar setup-urile cu convingere reală. Atenție: modelele raportează rar >85 — puține trade-uri vor trece.",
+  ].join("\n"),
   news_impact:    "Nivelul minim de impact pentru a declanșa pauza. 1=Scăzut, 2=Mediu, 3=Ridicat (recomandat). Sursa principală: ForexFactory. Backup: MT5 calendar built-in.",
   news_pre:       "Minute înainte de eveniment în care sesiunea intră pe pauză preventiv. Recomandat: 15–30 min.",
   news_post:      "Minute după eveniment cât sesiunea rămâne pe pauză. Recomandat: 15–30 min pentru a lăsa volatilitatea să se calmeze.",
@@ -959,6 +975,50 @@ export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted,
                   </div>
                   <p className="text-[10px] text-slate-600">
                     Sursa principală: ForexFactory (fără cheie API). Backup: MT5 calendar built-in. Verificare la fiecare 5 min.
+                  </p>
+                </div>
+              )}
+            </div>
+          </Section>
+
+          {/* Filtru AI Pre-Trade */}
+          <Section label="Filtru AI Pre-Trade" tip={TIPS.ai_filter}>
+            <div className="space-y-2">
+              <Toggle
+                label="Validare AI înainte de fiecare ordin"
+                value={session.ai_filter_enabled ?? false}
+                onChange={(v) => upd({ ai_filter_enabled: v })}
+              />
+              {(session.ai_filter_enabled ?? false) && (
+                <div className="space-y-3 pt-1">
+                  <div className="space-y-1.5">
+                    <div className="text-xs text-slate-500">
+                      Nivel de încredere minim <InfoTooltip text={TIPS.ai_filter_level} />
+                    </div>
+                    <div className="flex gap-1 flex-wrap">
+                      {([
+                        { v: "permissive", label: "Permisiv",    pct: "≥50%" },
+                        { v: "balanced",   label: "Echilibrat",  pct: "≥70%" },
+                        { v: "strict",     label: "Strict",      pct: "≥85%" },
+                      ] as const).map(({ v, label, pct }) => (
+                        <button
+                          key={v}
+                          onClick={() => upd({ ai_filter_level: v })}
+                          className={`text-xs px-2.5 py-1 rounded border transition-colors ${
+                            (session.ai_filter_level ?? "balanced") === v
+                              ? "bg-purple-600/80 border-purple-500 text-white"
+                              : "bg-transparent border-surface-border text-slate-400 hover:border-slate-500"
+                          }`}
+                        >
+                          {label} <span className="opacity-70">{pct}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-purple-300/70 leading-relaxed">
+                    Consiliul AI (Analist Tehnic → Analist Macro → Risk Manager → Head Trader) analizează
+                    fiecare semnal cu sursele configurate în tab-ul AI Engine. Sub prag → ordinul e respins
+                    (notificare cu motivul). AI indisponibil → trade permis (fail-open, botul nu se blochează).
                   </p>
                 </div>
               )}

@@ -63,6 +63,9 @@ class Outcome(BaseModel):
     exit_time: Optional[str]
     result_r: float
     pnl_usd: Optional[float] = None
+    # Filtru AI Pre-Trade — None cand filtrul nu a participat la acest semnal
+    ai_approved: Optional[bool] = None
+    ai_confidence: Optional[float] = None
 
 
 class BotStatus(BaseModel):

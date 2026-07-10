@@ -13,7 +13,22 @@ const SOURCE_BADGE: Record<string, { label: string; cls: string }> = {
   manual: { label: "MANUAL", cls: "bg-slate-600/40 text-slate-300" },
 };
 
-function Src({ s }: { s: string }) {
+function Src({ s, aiApproved, aiConfidence }: {
+  s: string;
+  aiApproved?: boolean | null;
+  aiConfidence?: number | null;
+}) {
+  // Ordin BOT validat de Filtrul AI Pre-Trade → badge combinat BOT·AI
+  if (s === "bot" && aiApproved) {
+    return (
+      <span
+        className="text-[9px] px-1.5 py-0.5 rounded font-semibold bg-gradient-to-r from-blue-500/20 to-purple-500/20 text-indigo-300"
+        title={`Validat de Filtrul AI Pre-Trade${aiConfidence != null ? ` — încredere ${aiConfidence}%` : ""}`}
+      >
+        BOT·AI
+      </span>
+    );
+  }
   const b = SOURCE_BADGE[s] ?? SOURCE_BADGE.manual;
   return <span className={`text-[9px] px-1.5 py-0.5 rounded font-semibold ${b.cls}`}>{b.label}</span>;
 }
@@ -83,7 +98,7 @@ export function ActiveOrdersTable() {
             <tbody>
               {data.positions.map(p => (
                 <tr key={`p${p.ticket}`} className="border-b border-surface-border/40">
-                  <td className="px-2 py-1.5"><Src s={p.source} /></td>
+                  <td className="px-2 py-1.5"><Src s={p.source} aiApproved={p.ai_approved} aiConfidence={p.ai_confidence} /></td>
                   <td className="px-2 py-1.5 text-white font-medium">{p.symbol}</td>
                   <td className={`px-2 py-1.5 font-semibold ${p.type === "LONG" ? "text-profit" : "text-loss"}`}>
                     {p.type}
@@ -101,7 +116,7 @@ export function ActiveOrdersTable() {
               ))}
               {data.pending.map(o => (
                 <tr key={`o${o.ticket}`} className="border-b border-surface-border/40 opacity-70">
-                  <td className="px-2 py-1.5"><Src s={o.source} /></td>
+                  <td className="px-2 py-1.5"><Src s={o.source} aiApproved={o.ai_approved} aiConfidence={o.ai_confidence} /></td>
                   <td className="px-2 py-1.5 text-white font-medium">{o.symbol}</td>
                   <td className="px-2 py-1.5 text-slate-400">{o.type}</td>
                   <td className="px-2 py-1.5 text-right font-mono text-slate-300">{o.volume}</td>

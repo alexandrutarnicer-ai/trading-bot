@@ -12,6 +12,7 @@ const CATEGORY_META: Record<
   NotificationItem["category"],
   { label: string; icon: React.ReactNode; dot: string; bg: string; border: string }
 > = {
+  ai:      { label: "Filtru AI",   icon: <Bot        size={13} />,   dot: "bg-purple-400", bg: "bg-purple-500/10", border: "border-purple-500/20" },
   order:   { label: "Ordine",      icon: <TrendingUp size={13} />,   dot: "bg-profit",     bg: "bg-profit/10",  border: "border-profit/20"   },
   trade:   { label: "Tranzacții",  icon: <BarChart2  size={13} />,   dot: "bg-profit/70",  bg: "bg-profit/8",   border: "border-profit/15"   },
   signal:  { label: "Semnale",     icon: <Bell       size={13} />,   dot: "bg-blue-400",   bg: "bg-blue-500/10",border: "border-blue-500/20"  },
@@ -21,7 +22,7 @@ const CATEGORY_META: Record<
   system:  { label: "Sistem",      icon: <Info       size={13} />,   dot: "bg-slate-500",  bg: "bg-surface-border/20",border: "border-surface-border" },
 };
 
-const ALL_CATEGORIES = ["order", "trade", "signal", "news", "session", "bot", "system"] as const;
+const ALL_CATEGORIES = ["ai", "order", "trade", "signal", "news", "session", "bot", "system"] as const;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

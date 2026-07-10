@@ -52,6 +52,16 @@ function statusBadge(o: Outcome, riskUsd: number | null) {
   }
   if (o.status === "expirat")  return <span className="text-[10px] text-slate-500">expirat</span>;
   if (o.status === "invalidat") return <span className="text-[10px] text-warn">invalidat</span>;
+  if (o.status === "ai_reject") {
+    return (
+      <span
+        className="text-[10px] font-bold text-purple-400"
+        title={`Respins de Filtrul AI Pre-Trade${o.ai_confidence != null ? ` — încredere ${o.ai_confidence}%` : ""}`}
+      >
+        ⛔ respins AI{o.ai_confidence != null ? <span className="font-normal opacity-75"> ({o.ai_confidence}%)</span> : null}
+      </span>
+    );
+  }
   return <span className="text-[10px] text-slate-500">{o.status}</span>;
 }
 
@@ -97,7 +107,7 @@ function BotSignalFeed({ sessionId, balanceUsd, capitalPct }: { sessionId: strin
   }
 
   return (
-    <div className="space-y-1.5 max-h-[420px] overflow-y-auto pr-1">
+    <div className="space-y-1.5 h-full overflow-y-auto pr-1">
       {signals.map(sig => {
         const outcome = outcomeMap.get(sig.signal_id);
         const fmt = sig.entry > 100 ? 2 : 5;
@@ -171,7 +181,7 @@ function Mt5SignalFeed({ symbol }: { symbol?: string }) {
   }
 
   return (
-    <div className="space-y-1.5 max-h-[420px] overflow-y-auto pr-1">
+    <div className="space-y-1.5 h-full overflow-y-auto pr-1">
       {items.map(t => {
         const fmt = t.entry > 100 ? 2 : 5;
         const isLong = t.direction === 1;

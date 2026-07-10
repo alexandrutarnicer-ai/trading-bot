@@ -23,6 +23,16 @@ def _notify(text: str) -> None:
     threading.Thread(target=_tg_send, args=(text,), daemon=True).start()
 
 
+def _ai_verdicts_by_id() -> dict:
+    """Verdictele Filtrului AI Pre-Trade, indexate pe sig_id (cache pe mtime)."""
+    try:
+        from api.ai_filter_log import get_verdicts
+        by_id, _ = get_verdicts()
+        return by_id
+    except Exception:
+        return {}
+
+
 def _load_paused() -> set[str]:
     try:
         if os.path.exists(PAUSED_FILE):
@@ -550,9 +560,11 @@ def get_all_outcomes(limit: int = 200):
     except Exception:
         pass
     combined = combined.head(limit)
+    ai_by_id = _ai_verdicts_by_id()
     result = []
     for _, row in combined.iterrows():
         try:
+            _v = ai_by_id.get(str(row.get("signal_id", "")))
             result.append(Outcome(
                 signal_id=str(row.get("signal_id", "")),
                 time_check=str(row.get("time_check", "")),
@@ -568,6 +580,8 @@ def get_all_outcomes(limit: int = 200):
                 exit_time=str(row["exit_time"]) if pd.notna(row.get("exit_time")) else None,
                 result_r=float(row.get("result_r", 0)),
                 pnl_usd=float(row["pnl_usd"]) if pd.notna(row.get("pnl_usd")) else None,
+                ai_approved=bool(_v["approved"]) if _v and _v.get("approved") is not None else None,
+                ai_confidence=_v.get("confidence") if _v else None,
             ))
         except Exception:
             pass
@@ -772,8 +786,10 @@ def get_outcomes(session_id: str, limit: int = 100):
     if df.empty:
         return []
     df = df.tail(limit).iloc[::-1]
+    ai_by_id = _ai_verdicts_by_id()
     result = []
     for _, row in df.iterrows():
+        _v = ai_by_id.get(str(row.get("signal_id", "")))
         result.append(Outcome(
             signal_id=str(row.get("signal_id", "")),
             time_check=str(row.get("time_check", "")),
@@ -789,6 +805,8 @@ def get_outcomes(session_id: str, limit: int = 100):
             exit_time=str(row["exit_time"]) if pd.notna(row.get("exit_time")) else None,
             result_r=float(row.get("result_r", 0)),
             pnl_usd=float(row["pnl_usd"]) if pd.notna(row.get("pnl_usd")) else None,
+            ai_approved=bool(_v["approved"]) if _v and _v.get("approved") is not None else None,
+            ai_confidence=_v.get("confidence") if _v else None,
         ))
     return result
 

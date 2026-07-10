@@ -262,6 +262,31 @@ export const useAutostartDisable = () => {
   });
 };
 
+// ── Autostart AI Engine (mirror al autostart bot) ────────────────────────────
+
+export const useAiAutostartStatus = () =>
+  useQuery<{ enabled: boolean }>({
+    queryKey: ["ai-autostart-status"],
+    queryFn:  () => apiFetch("/ai/autostart/status"),
+    refetchInterval: 30_000,
+  });
+
+export const useAiAutostartEnable = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiFetch("/ai/autostart/enable", { method: "POST" }),
+    onSuccess: () => { setTimeout(() => qc.invalidateQueries({ queryKey: ["ai-autostart-status"] }), 4000); },
+  });
+};
+
+export const useAiAutostartDisable = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiFetch("/ai/autostart/disable", { method: "POST" }),
+    onSuccess: () => { setTimeout(() => qc.invalidateQueries({ queryKey: ["ai-autostart-status"] }), 4000); },
+  });
+};
+
 // ── Bot start/stop ──────────────────────────────────────────────────────────
 
 export const useStartBot = () => {

@@ -162,12 +162,21 @@ class Ledger:
             "WHERE ts LIKE ? AND result_r IS NOT NULL", (day_iso + "%",)).fetchone()
         return float(row[0])
 
+    # Statusuri care reprezinta o tranzactie REALA (ordin activat → pozitie
+    # deschisa → inchisa). 'expired'/'cancelled' = ordin plasat care nu s-a
+    # activat niciodata → NU e o tranzactie, nu intra in closed_trades/win/exp.
+    _CLOSED_STATUSES = ("TP", "SL", "closed")
+
     def scorecard(self) -> dict:
-        """Statistici agregate pentru evaluarea creierului."""
+        """Statistici agregate pentru evaluarea creierului.
+
+        closed_trades numara DOAR tranzactiile care s-au activat si s-au inchis
+        real (TP/SL/closed). Ordinele expirate sau anulate (niciodata triggerate)
+        sunt excluse din toate statisticile — nu au fost tranzactii."""
         row = self.con.execute(
             "SELECT COUNT(*), COALESCE(SUM(result_r),0), COALESCE(AVG(result_r),0), "
             "SUM(CASE WHEN result_r > 0 THEN 1 ELSE 0 END) "
-            "FROM outcomes WHERE result_r IS NOT NULL").fetchone()
+            "FROM outcomes WHERE status IN ('TP','SL','closed') AND result_r IS NOT NULL").fetchone()
         n, total_r, avg_r, wins = row
         n_dec = self.con.execute("SELECT COUNT(*) FROM decisions").fetchone()[0]
         n_wait = self.con.execute(

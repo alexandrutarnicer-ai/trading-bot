@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Loader2 } from "lucide-react";
 import { useBotStatus, useStartBot, useStopBot } from "../api/hooks";
 import { InfoTooltip } from "./InfoTooltip";
 
@@ -125,13 +126,17 @@ export function BotControl({ profileId, profileName }: Props) {
 
         {running ? (
           <button onClick={() => stop.mutate()} disabled={pending}
-            className="text-xs px-4 py-1.5 rounded-lg bg-loss/80 hover:bg-loss disabled:opacity-50 text-white font-medium transition-colors">
-            {stop.isPending ? "Se oprește..." : "■ Oprește Bot"}
+            className="inline-flex items-center gap-1.5 text-xs px-4 py-1.5 rounded-lg bg-loss/80 hover:bg-loss disabled:opacity-50 text-white font-medium transition-colors">
+            {stop.isPending
+              ? <><Loader2 size={12} className="animate-spin" /> Se oprește...</>
+              : "■ Oprește Bot"}
           </button>
         ) : (
           <button onClick={handleStart} disabled={pending || isLoading}
-            className="text-xs px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-medium transition-colors">
-            {start.isPending ? "Se pornește..." : "▶ Pornește Bot"}
+            className="inline-flex items-center gap-1.5 text-xs px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-medium transition-colors">
+            {start.isPending
+              ? <><Loader2 size={12} className="animate-spin" /> Se pornește...</>
+              : "▶ Pornește Bot"}
           </button>
         )}
       </div>
@@ -142,8 +147,10 @@ export function BotControl({ profileId, profileName }: Props) {
             Bot-ul rulează pe „{activeProfileName ?? activeProfileId}". Pornind, vei opri profilul curent și vei activa „{profileName ?? profileId}".
           </span>
           <button onClick={handleConfirmSwitch} disabled={pending}
-            className="text-xs px-3 py-1 rounded bg-warn/80 hover:bg-warn text-white font-medium transition-colors disabled:opacity-50">
-            {start.isPending ? "..." : "Da, schimbă profilul"}
+            className="inline-flex items-center gap-1.5 text-xs px-3 py-1 rounded bg-warn/80 hover:bg-warn text-white font-medium transition-colors disabled:opacity-50">
+            {start.isPending
+              ? <><Loader2 size={12} className="animate-spin" /> Se pornește...</>
+              : "Da, schimbă profilul"}
           </button>
           <button onClick={() => setConfirmSwitch(false)}
             className="text-xs px-3 py-1 rounded border border-surface-border text-slate-400 hover:text-white transition-colors">

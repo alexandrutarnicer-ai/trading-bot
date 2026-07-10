@@ -848,6 +848,38 @@ export function GuidePage() {
             </Note>
           </SubSection>
 
+          <SubSection title="Filtru AI Pre-Trade" defaultOpen={false}>
+            <p>
+              Validarea <strong>finală</strong> a fiecărui semnal, înainte ca ordinul să fie trimis în MT5.
+              Consiliul AI — aceleași 4 roluri ca motorul AI Engine (Analist Tehnic → Analist Macro →
+              Risk Manager → Head Trader), cu aceleași surse AI configurate în tab-ul AI Engine —
+              analizează trade-ul propus de bot și emite un scor de încredere 0–100.
+            </p>
+            <div className="grid grid-cols-2 gap-1.5 text-xs">
+              <KV k="Implicit" v="Dezactivat — botul funcționează identic ca înainte" />
+              <KV k="Permisiv" v="≥50% — blochează doar setup-urile clar slabe" />
+              <KV k="Echilibrat" v="≥70% — recomandat" />
+              <KV k="Strict" v="≥85% — doar setup-uri cu convingere reală (puține trec)" />
+            </div>
+            <div className="space-y-1 text-xs mt-2">
+              <p className="font-medium text-white">Fluxul ordinului cu filtrul activat:</p>
+              <p className="text-slate-300">
+                1. Botul detectează semnalul (pullback/flag/inside bar) → 2. Consiliul AI evaluează
+                (10–60s) → 3. Încredere ≥ prag → ordinul merge în MT5 (badge <span className="text-indigo-300 font-semibold">BOT·AI</span> în
+                Ordine Active, „AI✓" în Rapoarte) · Încredere &lt; prag sau veto de risc → ordinul e
+                <span className="text-purple-400 font-semibold"> respins</span> (status <code>ai_reject</code>,
+                notificare cu motivul și scorul, vizibil în Semnale și Rapoarte/Tranzacții).
+              </p>
+            </div>
+            <Note>
+              Configurația AI e moștenită automat din tab-ul AI Engine — surse, chei API, role assignments.
+              Nicio setare duplicată; schimbările de acolo se aplică imediat. FAIL-OPEN: dacă AI-ul e
+              indisponibil (Ollama oprit, toate sursele picate), trade-ul este PERMIS și notificat ca atare —
+              filtrul nu poate bloca niciodată botul. Verdictele complete (cu transcriptul dezbaterii) se
+              salvează în data/live_signals/&lt;sesiune&gt;/ai_filter.jsonl.
+            </Note>
+          </SubSection>
+
           <SubSection title="Protecție Capital (la nivel de profil)" defaultOpen={false}>
             <p>
               Funcție de protecție automată a contului, configurată la nivel de profil (nu per sesiune).

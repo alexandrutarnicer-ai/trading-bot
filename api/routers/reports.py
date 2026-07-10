@@ -155,9 +155,18 @@ def get_transactions(
     total = len(all_df)
     page  = all_df.iloc[offset: offset + limit]
 
+    try:
+        from api.ai_filter_log import get_verdicts
+        _ai_by_id, _ = get_verdicts()
+    except Exception:
+        _ai_by_id = {}
+
     items = []
     for _, row in page.iterrows():
+        _v = _ai_by_id.get(str(row.get("signal_id", "")))
         items.append({
+            "ai_approved":   (bool(_v["approved"]) if _v and _v.get("approved") is not None else None),
+            "ai_confidence": (_v.get("confidence") if _v else None),
             "signal_id":     str(row.get("signal_id", "")),
             "session_id":    str(row.get("session_id", "")),
             "session_label": str(row.get("session_label", "")),

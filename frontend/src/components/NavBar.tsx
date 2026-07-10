@@ -1,5 +1,6 @@
 import { useBacktestJobs, useDownloadJobs, useNotifications } from "../api/hooks";
 import { AutostartToggle } from "./AutostartToggle";
+import { AiAutostartToggle } from "./AiAutostartToggle";
 import Mt5SyncButton from "./Mt5SyncButton";
 
 type Tab = "dashboard" | "profile" | "ai" | "notifications" | "audit" | "reports" | "guide";
@@ -79,6 +80,7 @@ export function NavBar({ active, onChange }: Props) {
       <div className="ml-auto flex items-center gap-2">
         <Mt5SyncButton />
         <AutostartToggle />
+        <AiAutostartToggle />
       </div>
     </header>
   );

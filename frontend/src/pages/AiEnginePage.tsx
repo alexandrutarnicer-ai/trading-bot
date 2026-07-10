@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Bot, Play, Square, Brain, AlertTriangle, ChevronDown, ChevronRight, RefreshCw } from "lucide-react";
+import { Bot, Play, Square, Brain, AlertTriangle, ChevronDown, ChevronRight, RefreshCw, Loader2 } from "lucide-react";
 import {
   useAiStatus, useAiDecisions, useAiOutcomes, useAiCouncil, useAiConfig,
   useAiLogs, useAiStart, useAiStop, useAiSaveConfig,
@@ -225,17 +225,21 @@ export function AiEnginePage() {
             <button
               onClick={() => stop.mutate()}
               disabled={stop.isPending}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-loss/20 text-loss hover:bg-loss/30 text-sm font-semibold"
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-loss/20 text-loss hover:bg-loss/30 disabled:opacity-50 text-sm font-semibold"
             >
-              <Square size={14} /> {stop.isPending ? "Se oprește..." : "Oprește"}
+              {stop.isPending
+                ? <><Loader2 size={14} className="animate-spin" /> Se oprește...</>
+                : <><Square size={14} /> Oprește</>}
             </button>
           ) : (
             <button
               onClick={() => start.mutate()}
               disabled={start.isPending}
-              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-profit/20 text-profit hover:bg-profit/30 text-sm font-semibold"
+              className="flex items-center gap-2 px-4 py-2 rounded-lg bg-profit/20 text-profit hover:bg-profit/30 disabled:opacity-50 text-sm font-semibold"
             >
-              <Play size={14} /> {start.isPending ? "Pornește..." : "Pornește"}
+              {start.isPending
+                ? <><Loader2 size={14} className="animate-spin" /> Se pornește...</>
+                : <><Play size={14} /> Pornește</>}
             </button>
           )}
         </div>

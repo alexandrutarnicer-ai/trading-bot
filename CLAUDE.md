@@ -171,10 +171,22 @@ Motor experimental care isi alege singur strategia: perceptie numerica la fiecar
 - **Veto cod-enforced + reparare TP (`council.py::_sanitize`):** veto-ul Risk Manager e onorat DOAR cu un cod de risc valid (NEWS_IMMINENT/DAILY_STOP/MAX_POSITIONS/EXTREME_VOL/WEEKEND_GAP/BAD_GEOMETRY); veto necalificat → prudenta (risc redus la 0.25%), nu blocaj (fix pentru paralizia 29/29 veto observata 2026-07-09). `_repair_tp` recalculeaza TP la `target_rr` (default 2.0R) cand modelul propune RR<min_rr (SL structural pastrat) — evita respingerea unui setup directional bun pe TP prea aproape.
 - **Izolare totala:** magic 770015 + comment "AI-{id}", filtrare stricta pe magic — nu vede/atinge pozitiile sesiunilor pe reguli. `executor.connect()` refuza non-DEMO (RuntimeError).
 - **Ledger SQLite (`data/ai/ledger.db`):** snapshots, transcripturi complete de consiliu, decizii, outcomes (R/pnl via pattern hedging-safe order→position_id→deals). `python -m ai_engine.report` = scorecard.
+  - **`scorecard()` — closed_trades numara DOAR tranzactii reale** (`status IN ('TP','SL','closed')`). Ordinele `expired`/`cancelled` (plasate dar niciodata activate) au `result_r=0.0` (NU None) in outcome, deci un filtru naiv `WHERE result_r IS NOT NULL` le numara gresit ca tranzactii — inflateaza closed_trades si trage expectancy spre 0. Fix in `ledger.scorecard()` SI in fallback-ul din `api/routers/ai_engine.py::ai_status` (trebuie sincronizate). Outcomes-urile expirate raman vizibile in lista `/ai/outcomes` (transparenta), doar nu se numara. Necesita **restart motor** (scorecard-ul e calculat in proces si scris in status.json la fiecare iteratie).
 - **Reutilizeaza:** `strategy.preparation._enrich` (perceptie), `live.news_guard._fetch_forexfactory` (calendar, cu cache TTL 10 min in perception), `api.telegram.send_message` (notificari), `Mt5DataSource` (bare + enforcement demo).
 - Config utilizator: `ai_engine/config.json` (auto-creat la prima rulare). Mode `demo`/`shadow`. Piete default alese pentru cont ~$1000 la 1:30: EURUSD/USDJPY/GBPUSD/AUDUSD/USDCAD (XAUUSD/BTCUSD/US30 nu incap — risc lot minim $12-16 sau marja $260-310).
 - **API + UI:** router `api/routers/ai_engine.py` (`/ai/status|start|stop|decisions|council/{id}|outcomes|config|logs`), tab "AI Engine" in NavBar (`AiEnginePage.tsx`) cu buton On/Off, scorecard, editor piete (validat contra MT5), decizii cu transcript dezbatere, log viewer. Heartbeat: `data/ai/status.json` scris la fiecare iteratie. Rail suplimentar: marja ordin ≤ 40% din marja libera. Reconectare automata MT5 daca toate pietele esueaza intr-o iteratie.
 - **Instalare alt dispozitiv:** `setup_ai_engine.bat` (winget Python+Ollama, pull model, selftest). Un singur dispozitiv ruleaza motorul odata.
+
+### Filtru AI Pre-Trade (`ai_engine/trade_filter.py`) — validare finala optionala per sesiune
+
+Strat de "second opinion" AI peste botul pe reguli — **dezactivat by default** (`ai_filter_enabled: false` per sesiune; cu filtrul oprit comportamentul botului e identic cu inainte). Cand e activat, FIECARE semnal detectat trece prin consiliul AI de revizie (aceleasi 4 roluri + acelasi `ProviderRegistry`/`role_assignments` ca motorul AI, prompturi specifice de revizie — trade-ul e deja format, consiliul doar aproba/respinge) INAINTE de `_place_order`. Vezi [docs/AI_TRADE_FILTER.md](docs/AI_TRADE_FILTER.md).
+
+- **Praguri:** `FILTER_LEVELS = {permissive: 50, balanced: 70, strict: 85}` — NU 90+ (modelele mici raporteaza rar confidence >85; paralizie garantata).
+- **Reguli in cod:** veto Risk Manager cu cod valid (NEWS_IMMINENT/EXTREME_VOL/WEEKEND_GAP/BAD_GEOMETRY) → respins; head `approve=false` → respins; `confidence < prag` → respins; veto necalificat NU respinge (anti-paralizie, ca in `council._sanitize`).
+- **FAIL-OPEN (invers fata de motorul autonom):** orice eroare AI (Ollama picat, buget de timp 240s depasit, JSON invalid) → trade PERMIS cu `error` notat. Motorul autonom face WAIT la erori pentru ca acolo AI-ul e strategia; aici edge-ul e al botului pe reguli.
+- **Integrare in `signal_generator.py`:** `_ai_filter_check()` (dupa dedup, inainte de pending/plasare). Respins → semnal scris in signals.csv (audit) + outcome `status=ai_reject, result_r=0` + Telegram "⛔ Filtru AI: RESPINS" + NU intra in pending (zero retry). Aprobat → verdict stocat in pending entry (`ai_filter` key) → sufix dinamic `_ai_note(p)` pe notificarile Ordin plasat/ACTIVAT/PROFIT/PIERDERE. `ai_reject` NU e in `_CLOSED_STATUSES` (nu intra in statistici, ca expirat).
+- **Jurnal:** `data/live_signals/<sesiune>/ai_filter.jsonl` (verdict + transcript complet). API: `api/ai_filter_log.py` (cache mtime) → badge BOT·AI in `/mt5/orders` (join pe comment[:16] — truncation ICMarketsEU), campuri `ai_approved`/`ai_confidence` pe `/reports/transactions` si outcomes. UI: SessionEditor sectiunea "Filtru AI Pre-Trade", SignalFeed "⛔ respins AI", ReportsPage filtrul "Respins AI" + badge AI✓, NotificationsPage categoria "Filtru AI".
+- **Config mostenita:** filtrul reincarca `ai_engine/config.json` + `data/ai/providers.json` la fiecare evaluare (`registry.refresh`) — schimbarile din tab-ul AI Engine se aplica imediat, zero configurare duplicata. Nu scrie in ledger-ul motorului (jurnal propriu JSONL). Teste: `python scripts/test_ai_filter.py`.
 
 ### `live/signal_generator.py` — engine-ul live
 
@@ -568,15 +580,24 @@ Prinde duplicate unde exit_time difera intre inregistrarea bot (vineri_close la 
 
 ```powershell
 # Necesita Administrator — creeaza doua task-uri in Task Scheduler:
-# TradingBot-MT5 (MT5 la login) + TradingBot-RunAll (run_all.py + 45s delay)
+# TradingBot-MT5 (MT5 la login) + TradingBot-RunAll (run_all.py + 90s delay)
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 & "c:\trading-bot\scripts\setup_autostart.ps1"
 
-# Dezactivare autostart (sterge ambele task-uri):
+# Dezactivare autostart bot (sterge TradingBot-RunAll; MT5 doar daca AI nu-l foloseste):
 & "c:\trading-bot\scripts\remove_autostart.ps1"
+
+# Autostart MOTOR AI (separat de bot) — TradingBot-MT5 (partajat) + TradingBot-AIEngine:
+& "c:\trading-bot\scripts\setup_autostart_ai.ps1"
+& "c:\trading-bot\scripts\remove_autostart_ai.ps1"
 ```
 
-Autostart-ul poate fi activat/dezactivat si din NavBar-ul din UI (toggle cu UAC elevation automat — necesita acceptarea promptului de Administrator).
+Ambele autostart-uri se pot activa/dezactiva si din NavBar-ul din UI (doua toggle-uri: "Autostart" pentru bot + "Autostart AI" pentru motor, fiecare cu UAC elevation automat).
+
+**Autostart AI Engine (`scripts/setup_autostart_ai.ps1` / `remove_autostart_ai.ps1`) — aliniat cu botul:**
+- Genereaza `ai_engine/start_ai_engine_auto.bat` (analog cu `live/start_bot.bat`): incarca Telegram din registry → porneste Ollama daca nu ruleaza → **asteapta 120s** (dupa botul cu 90s, ca MT5 sa fie conectat) → lanseaza watchdog-ul (`ai_engine.watchdog`, fereastra minimizata, supervizor anti-crash) → ruleaza `python -m ai_engine` in foreground. **Critic:** `engine.run()` iese imediat daca Ollama SAU MT5-DEMO nu sunt gata (nu are retry propriu) — asteptarea de 120s acopera cazul normal, watchdog-ul (max 5 restarturi/5 min) acopera conectarea lenta.
+- **TradingBot-MT5 e PARTAJAT** intre cele doua autostart-uri. Ambele setup-uri il (re)creeaza idempotent (`-Force`). La stergere, fiecare remove-script sterge MT5 **doar daca celalalt engine nu-l mai foloseste** (`remove_autostart.ps1` verifica `TradingBot-AIEngine`; `remove_autostart_ai.ps1` verifica `TradingBot-RunAll`) — dezactivarea unui autostart nu lasa niciodata celalalt fara MT5.
+- API: `GET/POST /ai/autostart/{status,enable,disable}` in `api/routers/ai_engine.py` (mirror exact al `/bot/autostart/*`). UI: `AiAutostartToggle.tsx` langa `AutostartToggle.tsx` in NavBar. Scripturile sunt **pur ASCII** (fara em-dash) — Windows PowerShell 5.1 le citeste ca CP1252 fara BOM, deci non-ASCII strica parsarea.
 
 **`scripts/setup_autostart.ps1` — detectare Python in sesiuni elevate:** Foloseste `py.exe` (Python Launcher, `C:\Windows\py.exe`) in loc de `python` pentru a gasi Python. `python` nu este disponibil in sesiuni elevate (UAC) cand e instalat ca Windows Store alias — `py.exe` este system-wide si functioneaza intotdeauna. API-ul adauga `-NoExit` la `Start-Process` pentru a tine fereastra deschisa dupa terminarea scriptului (vizibil si la erori).
 

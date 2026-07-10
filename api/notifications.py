@@ -28,6 +28,10 @@ _lock = Lock()
 def _categorize(text: str) -> str:
     """Detecteaza categoria dupa continutul textului."""
     t = text.lower()
+    # Doar respingerile filtrului si sanatatea surselor AI — mesajele de ordine
+    # care contin sufixul "Filtru AI: aprobat" raman in categoria "order".
+    if any(x in t for x in ["filtru ai: respins", "ai filter rejected", "sursa ai"]):
+        return "ai"
     if any(x in t for x in ["activat #", "buy_stop", "sell_stop", "ordin activat", "ordin plasat"]):
         return "order"
     if any(x in t for x in ["semnal", "signal", "setup", "detectat"]):
