@@ -5,7 +5,8 @@
     "GBPUSD",
     "AUDUSD",
     "USDCAD",
-    "XRPUSD"
+    "XRPUSD",
+    "USDCHF"
   ],
   "provider": "ollama",
   "ollama_url": "http://localhost:11434",
@@ -54,7 +55,7 @@
   },
   "role_assignments": {
     "macro": "ollama",
-    "risk": "ollama",
+    "risk": "gemini",
     "technical": "ollama"
   }
 }
