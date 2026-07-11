@@ -63,8 +63,9 @@ la fiecare bara M15 (gratuit, local, fara AI):
                  3. Risk Manager      — provocatorul; VETO absolut pe deschideri
                  4. Head Trader       — decizia finala, strict JSON
        │
-  RAILS HARD — geometria SL/TP corecta · RR ≥ 1 · SL ≤ 5×ATR · max 3 pozitii
-               · stop zilnic -3R · risc ≤ 1% (orice ar cere LLM-ul)
+  RAILS HARD — geometria SL/TP corecta · RR ≥ 1 · SL ≤ 5×ATR · stop zilnic -3R
+               · risc ≤ 1% · expunere ANGAJATA ≤ 3 (pozitii + ordine pending, nu
+                 doar pozitii — vezi mai jos) (orice ar cere LLM-ul)
        │
   EXECUTIE   — ordine market/stop pe MT5, DOAR cont DEMO (verificat la conectare),
                magic 770015 + comment "AI-{id}" — invizibil pentru botul pe reguli
@@ -76,6 +77,48 @@ la fiecare bara M15 (gratuit, local, fara AI):
 **De ce trigger-uri, nu consiliu la fiecare bara:** un trader profesionist
 monitorizeaza continuu dar isi reface teza doar pe evenimente. Asa obtinem
 reactivitate M15 cu volum LLM de ~cateva consilii/zi/piata — gratuit si fara zgomot.
+
+## Cadenta si timing
+
+- **Bucla:** motorul se trezeste la fiecare inchidere de bara M15 (`:00:05, :15:05,
+  :30:05, :45:05`). Perceptia foloseste ultima bara INCHISA (offset -2), deci datele
+  sunt proaspete. Intre bare doarme (`_sleep_to_next_bar`).
+- **Per bara:** proceseaza pietele SECVENTIAL. Fiecare piata: perceptie (gratuit) →
+  triggers → daca s-a declansat, consiliu (LLM). Cooldown 120 min/piata limiteaza la
+  ~cateva consilii/zi/piata. Un ciclu tipic cu 0-2 consilii dureaza < 2 min.
+- **Buget de timp consiliu (240s):** o sursa cloud lenta nu poate bloca bucla — la
+  depasire, consiliul returneaza WAIT si motorul trece mai departe. Daca un ciclu
+  depaseste totusi 15 min, `_sleep_to_next_bar` se auto-corecteaza (sare la urmatoarea
+  bara, fara drift permanent).
+- **Ordinele:** intrarea STOP e calculata din bara inchisa, apoi ajustata la pretul
+  LIVE inainte de trimitere (`adjust_stop_bracket`). Ordinele stop neactivate expira
+  dupa `decision_valid_bars` (8 bare = 2h M15).
+- **Cati markets?** perceptia e gratuita, deci limita e data de timpul de consiliu.
+  5-7 piete sunt confortabile pe Ollama local (worst-case toate convoaca odata =
+  ~7 × 60s = 7 min < bara de 15 min, cu bugetul de 240s ca plasa). Peste ~10 piete pe
+  o singura sursa locala, riscul de a depasi bara creste — distribuie rolurile pe mai
+  multe surse (cloud) sau creste `council_cooldown_min`.
+
+## Inchidere weekend (piete FX/indici)
+
+Pentru pietele FX/indici (cripto exceptat), motorul se opreste pentru weekend automat,
+DETERMINIST (nu depinde de LLM):
+- **Vineri** de la `weekend_close_hour` (default 22:00, ora RO) + toata Sambata si
+  Duminica: motorul inchide pozitia AI + anuleaza ordinele pending pe acel simbol si
+  NU deschide nimic (sare consiliul).
+- **Luni** deschiderea se reia automat.
+- **Cripto** (XRPUSD, BTCUSD...) ruleaza non-stop — `executor.is_crypto` le detecteaza
+  dupa nume si le exclude de la inchiderea de weekend.
+- Config: `weekend_close_enabled` (default true), `weekend_close_hour` (default 22).
+  Foloseste ora Romaniei (`now_local`), deci e corect indiferent de fusul masinii.
+
+## Expunere angajata (cold-start)
+
+Rail-ul `max_open_positions` (default 3) numara pozitii deschise **+ ordine pending**
+(`n_committed`). La prima pornire (ledger gol) heartbeat-ul convoaca TOATE pietele
+deodata; fara acest contor, s-ar plasa cate un ordin stop per piata (ex: 5 ordine),
+toate cu 0 pozitii deschise. Numarand si pending-urile, expunerea totala e plafonata la
+3, iar ordinele se plaseaza secvential (contorul creste pe masura ce se plaseaza).
 
 ## Dashboard — tab-ul AI Engine
 
@@ -92,8 +135,20 @@ setup_ai_engine.bat    # instaleaza Python + Ollama + model + ruleaza verificari
 ```
 
 Pe laptop fara GPU dedicat: `"model": "qwen3:4b"` in config + `ollama pull qwen3:4b`.
-**Un singur dispozitiv ruleaza motorul la un moment dat** (acelasi cont demo — doua
-instante s-ar calca pe pozitii).
+
+**⚠ Un singur dispozitiv ruleaza motorul la un moment dat.** Daca ambele PC-uri se
+conecteaza la ACELASI cont MT5 demo si ruleaza motorul simultan:
+- fiecare instanta plaseaza ordinele ei → expunere dublata, pozitii care se calca;
+- ambele partajeaza acelasi namespace magic (770015), deci fiecare vede si poate
+  inchide pozitiile celeilalte → haos.
+Inainte de a porni motorul pe PC-ul nou, **opreste-l pe cel vechi** (tab AI Engine →
+Oprește, sau `python -m ai_engine` inchis). Config-ul (`ai_engine/config.json` +
+`data/ai/providers.json` cu cheile) se copiaza intre PC-uri — asa se "mostenesc"
+sursele AI; e normal si corect. Doar rularea simultana e problema.
+
+**Nota "5 ordine deodata la prima pornire":** e comportament asteptat — la ledger gol,
+heartbeat-ul convoaca toate pietele in prima bara. Expunerea e totusi plafonata la
+`max_open_positions` (3) prin contorul de expunere angajata (pozitii + pending).
 
 ## Configurare — `ai_engine/config.json`
 

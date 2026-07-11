@@ -59,16 +59,55 @@ def open_position_for(symbol: str, magic: int):
     return pos[0] if pos else None
 
 
+# ── Stare piata: weekend (FX inchis) vs cripto (non-stop) ────────────────────
+
+# Tokeni de cripto — aceste piete tranzactioneaza si in weekend (fara Vineri-close).
+_CRYPTO_TOKENS = ("BTC", "ETH", "XRP", "LTC", "DOGE", "ADA", "SOL", "BNB", "DOT",
+                  "AVAX", "MATIC", "LINK", "BCH", "XLM", "TRX")
+
+
+def is_crypto(symbol: str) -> bool:
+    """True daca simbolul e cripto (deschis in weekend, exceptat de la Vineri-close)."""
+    s = symbol.upper()
+    return any(tok in s for tok in _CRYPTO_TOKENS)
+
+
+def is_market_weekend_closed(symbol: str, now, friday_close_hour: int = 22) -> bool:
+    """
+    True daca piata `symbol` e inchisa pentru weekend la `now` (ora RO, naiv).
+
+    FX/indici: inchis Vineri de la `friday_close_hour`, tot Sambata si toata Duminica
+    (redeschide Luni 00:00 — conservator, evita gap-ul volatil de duminica seara).
+    Cripto: mereu deschis -> intoarce mereu False.
+
+    Alinierea cu botul pe reguli: aceeasi logica ca skip_weekdays {5,6} + friday_close.
+    """
+    if is_crypto(symbol):
+        return False
+    wd = now.weekday()   # 0=Luni ... 4=Vineri, 5=Sambata, 6=Duminica
+    if wd == 4 and now.hour >= friday_close_hour:
+        return True
+    if wd in (5, 6):
+        return True
+    return False
+
+
 # ── Validare decizie (rails) ─────────────────────────────────────────────────
 
 def validate_decision(d: dict, snapshot: dict, cfg: dict,
-                      n_open: int, daily_r: float) -> str | None:
-    """Returneaza motivul respingerii sau None daca decizia e executabila."""
+                      n_committed: int, daily_r: float) -> str | None:
+    """
+    Returneaza motivul respingerii sau None daca decizia e executabila.
+
+    `n_committed` = expunerea angajata (pozitii deschise + ordine pending). Se
+    numara si pending-urile pentru ca fiecare stop poate deveni pozitie — altfel
+    la cold-start s-ar plasa mai multe ordine decat max_open_positions.
+    """
     if d["action"] not in ("OPEN_LONG", "OPEN_SHORT"):
         return None   # CLOSE/WAIT nu au geometrie de validat aici
 
-    if n_open >= cfg["max_open_positions"]:
-        return f"max_open_positions atins ({n_open})"
+    if n_committed >= cfg["max_open_positions"]:
+        return f"expunere maxima atinsa ({n_committed} pozitii+pending, max {cfg['max_open_positions']})"
     if daily_r <= -cfg["max_daily_loss_R"]:
         return f"stop zilnic de pierdere atins ({daily_r:+.1f}R)"
 

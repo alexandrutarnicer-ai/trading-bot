@@ -19,6 +19,12 @@ import time
 
 from ai_engine.providers import ProviderError
 
+# Buget de timp implicit pentru un consiliu complet (4 roluri). Peste asta,
+# convocarea e abandonata cu WAIT ca sa nu blocheze bucla motorului la fiecare
+# bara. Aliniat cu ai_engine.trade_filter.TIME_BUDGET_S. Suprascriere: config
+# cheia "council_time_budget_s".
+COUNCIL_TIME_BUDGET_S = 240
+
 _PREAMBLE = (
     "You are part of a professional trading desk making decisions on a DEMO account "
     "for research. Be rigorous, skeptical and concise. Base every statement ONLY on "
@@ -106,6 +112,11 @@ _HEAD_SYS = _PREAMBLE + (
     "need certainty before placing it. Place the stop entry a few pips BEYOND the "
     "level (past the swing high/low or range edge), never exactly at the current "
     "price — an entry at market is invalid for a stop order.\n"
+    "- CRITICAL STOP DIRECTION (a wrong-side entry is auto-rejected by the desk): "
+    "OPEN_LONG uses a BUY_STOP placed strictly ABOVE the current price (you buy the "
+    "upside breakout). OPEN_SHORT uses a SELL_STOP placed strictly BELOW the current "
+    "price (you sell the downside breakdown). Never put a SELL_STOP above price or a "
+    "BUY_STOP below price — that is a limit order, not a stop, and will be rejected.\n"
     "- The stop-loss distance should be reasonable: roughly 1-4x the ATR from the "
     "briefing. If the only sane structural stop is more than ~5x ATR away, the setup "
     "is not tradeable at acceptable risk — choose WAIT instead of a huge stop.\n"
@@ -148,8 +159,16 @@ def convene(registry, briefing: str, desk_state: dict, cfg: dict) -> tuple[dict,
     t0 = time.time()
     assignments = cfg.get("role_assignments", {})
     transcript: dict = {}
+    budget = float(cfg.get("council_time_budget_s", COUNCIL_TIME_BUDGET_S))
 
     def _ask(role: str, system: str, user: str, required: list[str]) -> dict:
+        # Buget de timp verificat INTRE roluri: o sursa lenta (cloud, rate-limit)
+        # nu poate bloca bucla motorului dincolo de o bara. Depasit → ProviderError
+        # → decizie WAIT (fail-safe), motorul continua la bara urmatoare.
+        if time.time() - t0 > budget:
+            raise ProviderError(
+                f"buget de timp consiliu depasit ({budget:.0f}s la rolul {role})",
+                kind="network")
         view, meta = registry.call_role(role, assignments, system, user, required)
         # metadata de audit in transcript (prefix _ → nu intra in prompturi)
         view["_provider"]  = meta["provider"]

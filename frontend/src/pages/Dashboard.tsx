@@ -6,6 +6,7 @@ import { useSessions, useBotStatus, useMt5Status, useWeeklyStats, useMt5WeeklySt
 import { useStatsSource, type StatsSource } from "../hooks/useStatsSource";
 import type { PeriodStats, Mt5PeriodStats, SessionStatus, Mt5SessionStat } from "../api/types";
 import { BotStatusBar } from "../components/BotStatusBar";
+import { AiStatusBar } from "../components/AiStatusBar";
 import { SessionCard } from "../components/SessionCard";
 import { SignalFeed } from "../components/SignalFeed";
 import { EquityChart } from "../components/EquityChart";
@@ -345,6 +346,7 @@ export function Dashboard() {
         {/* Dreapta: bot status + timer + refresh */}
         <div className="flex items-center gap-3 flex-shrink-0">
           <BotStatusBar />
+          <AiStatusBar />
           {updateLabel && (
             <span className="text-[10px] text-slate-600 tabular-nums">
               actualizat {updateLabel}
