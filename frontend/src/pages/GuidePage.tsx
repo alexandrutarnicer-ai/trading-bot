@@ -1413,10 +1413,17 @@ export function GuidePage() {
           <SubSection title="Vineri Close" defaultOpen={false}>
             <p>
               Vineri la ora configurată (<code className="text-blue-300">friday_close_hour</code>, default 20:00),
-              toate pozițiile triggerate deschise sunt închise via <code className="text-blue-300">TRADE_ACTION_DEAL</code>.
-              Ordinele pending neactivate rămân — vor expira natural sau la bara următoare.
+              sesiunea închide <strong>TOATE ordinele</strong> înainte de weekend — nu doar pozițiile active:
             </p>
-            <Note>Sesiunea BTC (BTCUSD) are vineri_close dezactivat — piața e deschisă în weekend.</Note>
+            <div className="grid grid-cols-1 gap-1 text-xs mt-1">
+              <KV k="Ordine pending (placed)" v="Anulate din MT5 (TRADE_ACTION_REMOVE) → status vineri_cancel" />
+              <KV k="Poziții triggerate (active)" v="Închise la piață (TRADE_ACTION_DEAL) → status vineri_close" />
+              <KV k="Sweep MT5" v="Scanează direct piața sesiunii și curăță orice ordin al botului rămas fără corespondent în state (după crash/desync)" />
+            </div>
+            <Note>
+              Sweep-ul nu atinge ordinele Motorului AI (magic 770015) sau cele manuale — doar ordinele
+              botului pe reguli. Sesiunea BTC (BTCUSD) are vineri_close dezactivat — piața e deschisă în weekend.
+            </Note>
           </SubSection>
         </Section>
 

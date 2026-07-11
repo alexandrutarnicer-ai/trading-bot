@@ -2310,10 +2310,18 @@ def _friday_close_check(
     execute_trades: bool = False,
     friday_close_enabled: bool = True,
     friday_close_hour: int = 20,
+    markets: list | None = None,
 ) -> None:
     """
-    Vineri la ora configurata, inchide toate pozitiile triggerate deschise.
-    Executa o singura data per saptamana (evita re-rulari la fiecare bara).
+    Vineri la ora configurata, inchide TOATE ordinele sesiunii inainte de weekend:
+      1. anuleaza ordinele pending (BUY_STOP/SELL_STOP neactivate) din state
+      2. inchide pozitiile triggerate (deschise) din state
+      3. SWEEP MT5 direct pe simbolurile sesiunii — plasa de siguranta care prinde
+         orice ordin/pozitie a botului scapat din state (crash, ticket nesincronizat),
+         garantand ca NIMIC (pending sau activ) nu trece in weekend. Nu atinge
+         ordinele motorului AI (magic 770015) sau cele manuale.
+
+    Executa o singura data per saptamana (tracking state["friday_close_date"]).
     """
     if not friday_close_enabled:
         return
@@ -2374,6 +2382,11 @@ def _friday_close_check(
             elif not execute_trades:
                 sigs_to_remove.append((symbol, sig_id))
                 log.info(f"  [VINERI] {sig_id} {symbol} pending scos din state (OBS, vineri_cancel)")
+            else:
+                # execute_trades=True dar fara ticket MT5 — niciun ordin real de anulat,
+                # doar curatam intrarea din state (sweep-ul de mai jos prinde MT5-ul).
+                sigs_to_remove.append((symbol, sig_id))
+                log.info(f"  [VINERI] {sig_id} {symbol} pending fara ticket MT5 — scos din state")
 
     # 2. Inchide pozitiile triggerate (open)
     for symbol, pending in list(state["pending"].items()):
@@ -2466,6 +2479,53 @@ def _friday_close_check(
 
     for symbol, sig_id in sigs_to_remove:
         state["pending"].get(symbol, {}).pop(sig_id, None)
+
+    # 3. SWEEP MT5 direct — plasa de siguranta. Prinde ordine/pozitii ale botului
+    #    pe simbolurile sesiunii care nu mai sunt in state (crash intre order_send
+    #    si pickle.dump, ticket nesincronizat etc.). Fara asta, un ordin pierdut
+    #    din tracking ar trece in weekend. Nu atinge AI (magic 770015) sau manual.
+    if execute_trades and _mt5_exec is not None and markets:
+        swept = 0
+        for symbol in markets:
+            try:
+                for o in (_mt5_exec.orders_get(symbol=symbol) or []):
+                    if _is_ai_engine_order(o):
+                        continue
+                    if not _BOT_SIG_RE.match((getattr(o, "comment", "") or "").strip()):
+                        continue   # manual/necunoscut — nu-l atingem
+                    r = _mt5_exec.order_send({
+                        "action": _mt5_exec.TRADE_ACTION_REMOVE, "order": o.ticket})
+                    if r and r.retcode == _mt5_exec.TRADE_RETCODE_DONE:
+                        swept += 1
+                        log.warning(f"  [VINERI-SWEEP] ordin pending #{o.ticket} {symbol} "
+                                    f"anulat (netrackuit in state)")
+
+                for pos in (_mt5_exec.positions_get(symbol=symbol) or []):
+                    if _is_ai_engine_order(pos):
+                        continue
+                    if not _BOT_SIG_RE.match((getattr(pos, "comment", "") or "").strip()):
+                        continue
+                    tick = _mt5_exec.symbol_info_tick(symbol)
+                    if tick is None:
+                        continue
+                    is_buy = pos.type == _mt5_exec.POSITION_TYPE_BUY
+                    close_type = _mt5_exec.ORDER_TYPE_SELL if is_buy else _mt5_exec.ORDER_TYPE_BUY
+                    price = tick.bid if is_buy else tick.ask
+                    result = _close_position_robust(
+                        symbol, pos.volume, close_type, pos.ticket, price, "vineri_close", log)
+                    if result and result.retcode == _mt5_exec.TRADE_RETCODE_DONE:
+                        swept += 1
+                        log.warning(f"  [VINERI-SWEEP] pozitie #{pos.ticket} {symbol} "
+                                    f"inchisa (netrackuit in state)")
+            except Exception as e:
+                log.warning(f"  [VINERI-SWEEP] eroare pe {symbol}: {e}")
+        if swept:
+            _send_telegram(
+                f"🧹 <b>[Vineri sweep] {session_id}</b>\n"
+                f"{swept} ordine/pozitii netrackuite inchise/anulate inainte de weekend.\n"
+                f"<i>Plasa de siguranta MT5 — state era desincronizat.</i>"
+            )
+            log.warning(f"  [VINERI-SWEEP] {swept} ordine/pozitii netrackuite curatate pe {markets}")
 
 
 def _smart_news_place_order(
@@ -3562,7 +3622,7 @@ def run_generator(session_cfg: dict):
                 if len(df) > 2:
                     state["last_checked"][symbol] = pd.Timestamp(df.iloc[-2]["time"])
 
-            # Vineri close — inchide pozitii triggerate la ora configurata
+            # Vineri close — inchide TOATE ordinele sesiunii (pending + pozitii) + sweep MT5
             _friday_close_check(
                 state=state,
                 outcomes_file=outcomes_file,
@@ -3571,6 +3631,7 @@ def run_generator(session_cfg: dict):
                 execute_trades=session_cfg.get("execute_trades", False),
                 friday_close_enabled=session_cfg.get("friday_close_enabled", True),
                 friday_close_hour=session_cfg.get("friday_close_hour", 20),
+                markets=list(resolved.values()),
             )
 
             pending_n = sum(len(v) for v in state["pending"].values())

@@ -229,7 +229,7 @@ def test_tp_repair(cfg):
     # acum trece de rail-ul din executor (care respinsese #32 pe RR).
     # pret sub entry -> BUY_STOP valid deasupra pretului curent.
     snap = {"symbol": "XRPUSD", "price": 1.0990, "atr": 0.01}
-    reason = executor.validate_decision(d, snap, cfg, n_open=0, daily_r=0.0)
+    reason = executor.validate_decision(d, snap, cfg, n_committed=0, daily_r=0.0)
     _assert(reason is None, f"dupa reparare rail-ul accepta (motiv={reason})")
 
     # SHORT: TP prea aproape sub entry -> reparat pe partea corecta

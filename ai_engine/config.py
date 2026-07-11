@@ -70,6 +70,10 @@ DEFAULTS: dict = {
     "target_rr":          2.0,     # tinta cand reparam un TP prea aproape (>= min_rr)
     "max_sl_atr_mult":    5.0,     # SL nu poate fi mai departe de 5*ATR
     "decision_valid_bars": 8,      # ordinele stop neactivate expira dupa N bare
+
+    # Inchidere weekend (piete FX/indici) — cripto (XRP/BTC...) e exceptat, ruleaza non-stop.
+    "weekend_close_enabled": True, # Vineri: inchide pozitiile + anuleaza pending; nu deschide Sam/Dum
+    "weekend_close_hour":    22,   # Vineri, ora RO (Europe/Bucharest), de la care FX e "inchis"
 }
 
 

@@ -23,6 +23,7 @@ from ai_engine.config import load_config, save_default_config, load_keys, AI_DAT
 from ai_engine.providers import ProviderRegistry
 from ai_engine.ledger import Ledger
 from ai_engine import perception, triggers, council, executor
+from tz_helper import now_local
 
 log = logging.getLogger("ai_engine")
 
@@ -109,6 +110,44 @@ def _update_outcomes(ledger: Ledger, cfg: dict) -> None:
                            f"{r_str} {pnl_str}\n(decizia #{dec['id']})")
 
 
+def _weekend_guard(symbol: str, cfg: dict) -> bool:
+    """
+    Automatizarea de weekend pentru pietele FX/indici (cripto exceptat).
+
+    Daca piata `symbol` e inchisa pentru weekend (Vineri de la weekend_close_hour,
+    tot Sambata + Duminica — ora RO), atunci:
+      - inchide pozitia AI deschisa pe acel simbol (nu o lasa sa treaca gap-ul),
+      - anuleaza ordinele pending AI pe acel simbol,
+      - intoarce True -> motorul SARE consiliul pentru simbol (nu deschide nimic).
+
+    Deschiderea se reia AUTOMAT Luni: guard-ul intoarce iar False, iar consiliul
+    isi reia analiza normala. Cripto (XRPUSD, BTCUSD...) nu e afectat niciodata.
+    Outcome-urile inchiderii/anularii sunt inregistrate de _update_outcomes la
+    urmatoarea iteratie (pattern-ul standard order->position->deals).
+    """
+    if not cfg.get("weekend_close_enabled", True):
+        return False
+    now_ro = now_local()
+    if not executor.is_market_weekend_closed(symbol, now_ro, cfg.get("weekend_close_hour", 22)):
+        return False
+
+    # Piata inchisa pentru weekend -> curata expunerea AI pe acest simbol.
+    if executor.open_position_for(symbol, cfg["magic"]) is not None:
+        status, detail = executor.close_position(symbol, cfg)
+        if status == "placed":
+            log.info("WEEKEND %s: pozitie inchisa inainte de weekend (%s)", symbol, detail)
+            _send_telegram(f"🤖📅 AI Engine — {symbol}: pozitie inchisa pentru weekend "
+                           f"(piata FX se inchide, se redeschide Luni).")
+        elif status == "failed":
+            log.warning("WEEKEND %s: inchidere esuata (%s) — reincerc la bara urmatoare",
+                        symbol, detail)
+    for o in executor.ai_pending_orders(cfg["magic"]):
+        if o.symbol == symbol and executor.cancel_order(o.ticket, cfg):
+            log.info("WEEKEND %s: ordin pending #%s anulat inainte de weekend", symbol, o.ticket)
+            _send_telegram(f"🤖📅 AI Engine — {symbol} #{o.ticket}: ordin pending anulat pentru weekend.")
+    return True
+
+
 def _process_market(symbol: str, src: Mt5DataSource, registry: ProviderRegistry,
                     ledger: Ledger, cfg: dict, prev_snapshots: dict) -> None:
     snap = perception.build_snapshot(src, symbol)
@@ -127,8 +166,13 @@ def _process_market(symbol: str, src: Mt5DataSource, registry: ProviderRegistry,
 
     today = datetime.now().date().isoformat()
     n_open = len(executor.ai_positions(cfg["magic"]))
+    # Expunere ANGAJATA = pozitii deschise + ordine pending (fiecare stop poate
+    # deveni pozitie). Rail-ul foloseste asta ca sa nu depaseasca max_open_positions
+    # la cold-start, cand heartbeat-ul convoaca toate pietele deodata (ledger gol).
+    n_committed = n_open + len(executor.ai_pending_orders(cfg["magic"]))
     desk_state = {
         "open_positions": n_open,
+        "committed": n_committed,
         "daily_r": ledger.daily_loss_R(today),
         "trigger": trig,
         "open_pos_desc": (
@@ -155,8 +199,8 @@ def _process_market(symbol: str, src: Mt5DataSource, registry: ProviderRegistry,
             _send_telegram(f"🤖 AI Engine — CLOSE {symbol}\nMotiv: {decision['rationale'][:300]}")
         return
 
-    # OPEN_LONG / OPEN_SHORT
-    reason = executor.validate_decision(decision, snap, cfg, n_open,
+    # OPEN_LONG / OPEN_SHORT — rail-ul foloseste expunerea ANGAJATA (pozitii+pending)
+    reason = executor.validate_decision(decision, snap, cfg, n_committed,
                                         desk_state["daily_r"])
     if reason:
         ledger.add_decision(symbol, council_id, decision, "rejected", reason)
@@ -233,16 +277,23 @@ def run() -> None:
                 _record_error("outcomes", str(e))
 
             failures = 0
+            processed = 0
             for symbol in cfg["markets"]:
                 try:
+                    # Weekend: FX inchis -> curata expunerea + sare consiliul (cripto ruleaza).
+                    if _weekend_guard(symbol, cfg):
+                        continue
+                    processed += 1
                     _process_market(symbol, src, registry, ledger, cfg, prev_snapshots)
                 except Exception as e:
                     failures += 1
                     log.error("piata %s: %s: %s", symbol, type(e).__name__, e)
                     _record_error(symbol, f"{type(e).__name__}: {e}")
 
-            # Toate pietele au esuat → probabil MT5 cazut. Reconectare.
-            if failures == len(cfg["markets"]) and failures > 0:
+            # Toate pietele PROCESATE au esuat → probabil MT5 cazut. Reconectare.
+            # (pietele sarite pentru weekend nu se numara — altfel n-am reconecta
+            #  niciodata intr-un weekend cu doar FX in lista.)
+            if processed > 0 and failures == processed:
                 log.warning("Toate pietele au esuat — reconectez MT5...")
                 _send_telegram("🤖 AI Engine — conexiune MT5 pierduta, reconectez...")
                 try:
