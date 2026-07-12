@@ -683,6 +683,7 @@ export const useAiStatus = () =>
     queryKey: ["ai-status"],
     queryFn:  () => apiFetch("/ai/status"),
     refetchInterval: 10_000,
+    refetchIntervalInBackground: false,   // nu polui cand fereastra e in fundal
   });
 
 export const useAiDecisions = (limit = 30) =>
@@ -769,11 +770,16 @@ export const useMt5Orders = () =>
 
 import type { AiProvidersResponse, AiProviderTestResult } from "./types";
 
-export const useAiProviders = () =>
+// `poll=true` (AI Engine tab): reimprospatare la 15s pentru sanatatea live a
+// surselor. `poll=false` (SessionEditor, montat permanent in tab-ul Profile):
+// FARA interval — altfel /ai/providers ar fi cerut la nesfarsit chiar si cand
+// esti pe Dashboard. React Query partajeaza query-ul pe cheie, deci polling-ul
+// se face doar cat timp cardul cu poll=true e montat (AI tab vizitat).
+export const useAiProviders = (poll = true) =>
   useQuery<AiProvidersResponse>({
     queryKey: ["ai-providers"],
     queryFn:  () => apiFetch("/ai/providers"),
-    refetchInterval: 15_000,
+    refetchInterval: poll ? 15_000 : false,
     refetchIntervalInBackground: false,
   });
 

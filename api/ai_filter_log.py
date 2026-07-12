@@ -50,6 +50,10 @@ def _read_jsonl_cached(path: str) -> list[dict]:
                         "level":      e.get("level"),
                         "reason":     str(e.get("reason", ""))[:300],
                         "error":      e.get("error"),
+                        # Multi-Council Consensus (None/gol pentru verdictele vechi)
+                        "n_councils":            e.get("n_councils"),
+                        "consensus_confidence":  e.get("consensus_confidence"),
+                        "sources":               e.get("sources") or [],
                     })
                 except Exception:
                     pass   # linie partiala (crash la scriere) — ignora

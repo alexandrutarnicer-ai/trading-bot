@@ -672,9 +672,15 @@ def _ai_note(p: dict | None) -> str:
     if v.get("error"):
         return "\n🤖 Filtru AI: indisponibil la plasare (fail-open)"
     conf, thr = v.get("confidence"), v.get("threshold")
+    n = v.get("n_councils")
+    # Sufix consens cand au participat mai multe consilii AI (Multi-Council).
+    tail = ""
+    if n and n > 1:
+        srcs = v.get("sources") or []
+        tail = f" · consens {n} consilii" + (f" ({', '.join(srcs)})" if srcs else "")
     if conf is None:
-        return "\n🤖 Filtru AI: aprobat"
-    return f"\n🤖 Filtru AI: aprobat — încredere {conf}% (prag {thr}%)"
+        return "\n🤖 Filtru AI: aprobat" + tail
+    return f"\n🤖 Filtru AI: aprobat — încredere {conf}% (prag {thr}%){tail}"
 
 
 def _ai_pending_entry(verdict: dict | None) -> dict | None:
@@ -685,7 +691,9 @@ def _ai_pending_entry(verdict: dict | None) -> dict | None:
             "confidence": verdict.get("confidence"),
             "threshold":  verdict.get("threshold"),
             "level":      verdict.get("level"),
-            "error":      verdict.get("error")}
+            "error":      verdict.get("error"),
+            "n_councils": verdict.get("n_councils"),
+            "sources":    verdict.get("sources") or []}
 
 
 def _html_esc(s: str) -> str:
@@ -2956,6 +2964,10 @@ def _apply_profile_overrides(session_cfg: dict, cfg: dict, log) -> None:
                   "inside_bar_enabled", "inside_bar_r_ratio", "inside_bar_risk_pct",
                   # Filtru AI Pre-Trade
                   "ai_filter_enabled", "ai_filter_level",
+                  # Filtru AI — consiliu multiplu (consens) + roluri optionale
+                  "ai_filter_primary_source", "ai_filter_secondary_source",
+                  "ai_filter_tertiary_source",
+                  "ai_role_quant_enabled", "ai_role_devils_advocate_enabled",
                   # Piete (permite profil sa specifice piata per sesiune)
                   "markets"):
         if field in ps:

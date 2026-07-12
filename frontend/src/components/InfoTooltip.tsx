@@ -24,7 +24,7 @@ export function InfoTooltip({ text, wide, position = "above", align = "center" }
           ${above ? "bottom-full mb-2" : "top-full mt-2"}
           ${wide ? "w-72" : "w-56"}
           bg-slate-900 border border-slate-600 text-xs text-slate-300
-          rounded-lg px-3 py-2 shadow-xl z-50
+          rounded-lg px-3 py-2 shadow-xl z-50 whitespace-pre-line
           invisible group-hover:visible opacity-0 group-hover:opacity-100
           transition-opacity pointer-events-none
         `}

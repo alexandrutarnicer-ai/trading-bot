@@ -76,6 +76,11 @@ const DEFAULT_SESSION = (id: string): ProfileSession => ({
   inside_bar_risk_pct:  0.01,
   ai_filter_enabled:    false,
   ai_filter_level:      "balanced",
+  ai_filter_primary_source:   null,
+  ai_filter_secondary_source: null,
+  ai_filter_tertiary_source:  null,
+  ai_role_quant_enabled:          false,
+  ai_role_devils_advocate_enabled: false,
 });
 
 const PROFILE_TIP =
@@ -240,9 +245,13 @@ export function ProfilePage({
       "friday_close_enabled","news_protection_enabled","smart_news_enabled",
       "flag_enabled","inside_bar_enabled",
       "ai_filter_enabled",
+      "ai_role_quant_enabled","ai_role_devils_advocate_enabled",
     ] as const;
     const arrFields = ["skip_hours","skip_weekdays"] as const;
     const strFields = ["direction","ai_filter_level"] as const;
+    // surse consiliu: string SAU null (null = dezactivat) — pastram null explicit
+    const strNullFields = ["ai_filter_primary_source","ai_filter_secondary_source",
+      "ai_filter_tertiary_source"] as const;
     const updRec = updated as unknown as Record<string, unknown>;
     for (const f of numFields) {
       if (cfg[f] != null) updRec[f] = Number(cfg[f]);
@@ -255,6 +264,9 @@ export function ProfilePage({
     }
     for (const f of strFields) {
       if (cfg[f] != null) updRec[f] = String(cfg[f]);
+    }
+    for (const f of strNullFields) {
+      if (f in cfg) updRec[f] = cfg[f] == null ? null : String(cfg[f]);
     }
     const sessions = [...draft.sessions];
     sessions[idx] = updated;

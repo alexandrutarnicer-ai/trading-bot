@@ -139,6 +139,7 @@ _HEAD_USER = (
     "TECHNICAL ANALYST: {tech_view}\n"
     "MACRO ANALYST: {macro_view}\n"
     "RISK MANAGER: {risk_view}\n"
+    "{extra}"
     "OPEN POSITION ON THIS MARKET: {open_pos_desc}\n\n"
     "Make the final decision. Respond ONLY with JSON:\n"
     '{{"action": "OPEN_LONG"|"OPEN_SHORT"|"CLOSE"|"WAIT", '
@@ -148,62 +149,171 @@ _HEAD_USER = (
     '"rationale": "2-4 sentences summarizing the desk consensus"}}'
 )
 
+# ── Roluri OPTIONALE (dezactivate by default) ────────────────────────────────
+# Se insereaza inaintea Head Trader-ului, care le vede in prompt. Cand ambele
+# sunt oprite, secventa e EXACT cea de dinainte (4 roluri) si prompt-ul Head
+# Trader e neschimbat (_format_extra intoarce "").
 
-def convene(registry, briefing: str, desk_state: dict, cfg: dict) -> tuple[dict, dict, float]:
-    """
-    Ruleaza consiliul complet. `registry` este ProviderRegistry — fiecare rol
-    isi ia sursa din cfg["role_assignments"], cu failover automat (vezi
-    providers.ProviderRegistry.call_role). Returneaza (decision, transcript,
-    duration_s). Orice ProviderError (toate sursele picate) → decizie WAIT.
-    """
-    t0 = time.time()
-    assignments = cfg.get("role_assignments", {})
-    transcript: dict = {}
-    budget = float(cfg.get("council_time_budget_s", COUNCIL_TIME_BUDGET_S))
+_QUANT_SYS = _PREAMBLE + (
+    "\nROLE: Quantitative / Volatility Analyst. You do NOT call direction — the "
+    "technical desk owns that. You pressure-test the NUMBERS behind the setup: is "
+    "the reward/risk justified by a realistic win probability, is the stop distance "
+    "sane relative to ATR and its percentile, is the expected value positive? A 3R "
+    "target means little if the win probability is 20%. Flag setups whose geometry "
+    "only works on optimistic assumptions.\n"
+    "GUIDANCE: estimate an HONEST win probability from structure quality and "
+    "volatility state; expected value is roughly win_prob*R - (1-win_prob). Favor "
+    "positive-EV setups with stops that are neither absurdly tight (noise-stopped) "
+    "nor absurdly wide (>4-5x ATR)."
+)
+_QUANT_USER = (
+    "{briefing}\n\n"
+    "TECHNICAL ANALYST: {tech_view}\n"
+    "MACRO ANALYST: {macro_view}\n\n"
+    "Assess the quantitative quality of a trade in the technical direction. "
+    "Respond ONLY with JSON:\n"
+    '{{"assessment": "favorable"|"marginal"|"unfavorable", "confidence": 0-100, '
+    '"est_win_prob": 0-100|null, "reasoning": "2-4 sentences"}}'
+)
 
-    def _ask(role: str, system: str, user: str, required: list[str]) -> dict:
-        # Buget de timp verificat INTRE roluri: o sursa lenta (cloud, rate-limit)
-        # nu poate bloca bucla motorului dincolo de o bara. Depasit → ProviderError
-        # → decizie WAIT (fail-safe), motorul continua la bara urmatoare.
-        if time.time() - t0 > budget:
+_DEVIL_SYS = _PREAMBLE + (
+    "\nROLE: Devil's Advocate. Your ONLY job is to argue AGAINST the trade the desk "
+    "is leaning toward — build the strongest bear case (if they lean long) or bull "
+    "case (if they lean short), and run a PRE-MORTEM: assume the trade has already "
+    "hit its stop, then explain what most likely killed it. You are not negative for "
+    "its own sake; you exist to surface the blind spot the desk ignores because of "
+    "confirmation bias. If, after genuinely trying, you find no serious objection, "
+    "say so plainly (severity 'low')."
+)
+_DEVIL_USER = (
+    "{briefing}\n\n"
+    "TECHNICAL ANALYST: {tech_view}\n"
+    "MACRO ANALYST: {macro_view}\n\n"
+    "Argue against the desk's leaning direction and run the pre-mortem. "
+    "Respond ONLY with JSON:\n"
+    '{{"strongest_objection": "1-2 sentences", "failure_mode": "what most likely '
+    'stops the trade out", "severity": "low"|"medium"|"high", '
+    '"reasoning": "2-4 sentences"}}'
+)
+
+
+def _format_extra(views: dict) -> str:
+    """
+    Blocul optional cu rolurile suplimentare, pentru prompt-ul Head Trader. Gol
+    cand niciun rol suplimentar nu e activ → prompt IDENTIC cu cel de dinainte.
+    """
+    if not views:
+        return ""
+    lines = ["ADDITIONAL SPECIALISTS (weigh their input; they inform, they do not "
+             "override the desk):"]
+    if "quant" in views:
+        lines.append(f"  QUANT/VOLATILITY: {_short(views['quant'])}")
+    if "devils_advocate" in views:
+        lines.append(f"  DEVIL'S ADVOCATE: {_short(views['devils_advocate'])}")
+    return "\n".join(lines) + "\n"
+
+
+class DebateRunner:
+    """
+    Ruleaza rolurile unui consiliu secvential, cu buget de timp comun, adunand
+    transcriptul. Ruteaza fiecare rol fie catre o sursa PINNED (fara failover —
+    consiliile de consens raman independente, nu se prabusesc unele in altele),
+    fie via `assignments` cu failover (un singur consiliu, comportamentul de
+    dinainte de feature). Reutilizat de consiliul autonom (convene) SI de
+    consiliul de revizie din trade_filter.
+    """
+
+    def __init__(self, registry, cfg: dict, source: str | None = None,
+                 assignments: dict | None = None, deadline: float | None = None):
+        self.registry = registry
+        self.source = source
+        self.assignments = assignments or {}
+        self.transcript: dict = {}
+        self.fallback_from: str | None = None
+        self.t0 = time.time()
+        budget = float(cfg.get("council_time_budget_s", COUNCIL_TIME_BUDGET_S))
+        self.deadline = deadline if deadline is not None else self.t0 + budget
+
+    def ask(self, role: str, system: str, user: str, required: list[str]) -> dict:
+        # Buget verificat INTRE roluri: o sursa lenta nu poate bloca bucla peste o bara.
+        if time.time() > self.deadline:
             raise ProviderError(
-                f"buget de timp consiliu depasit ({budget:.0f}s la rolul {role})",
-                kind="network")
-        view, meta = registry.call_role(role, assignments, system, user, required)
+                f"buget de timp consiliu depasit (la rolul {role})", kind="network")
+        if self.source is not None:
+            view, meta = self.registry.call_role_pinned(self.source, system, user, required)
+        else:
+            view, meta = self.registry.call_role(role, self.assignments, system, user, required)
         # metadata de audit in transcript (prefix _ → nu intra in prompturi)
         view["_provider"]  = meta["provider"]
         view["_latency_s"] = meta["latency_s"]
-        if "fallback_from" in meta:
+        if meta.get("fallback_from"):
             view["_fallback_from"] = meta["fallback_from"]
-        transcript[role] = view
+            self.fallback_from = meta["fallback_from"]
+        self.transcript[role] = view
         return view
 
+    def elapsed(self) -> float:
+        return time.time() - self.t0
+
+
+def convene(registry, briefing: str, desk_state: dict, cfg: dict,
+            source: str | None = None) -> tuple[dict, dict, float]:
+    """
+    Ruleaza consiliul complet si returneaza (decision, transcript, duration_s).
+
+    `source=None` (implicit): fiecare rol isi ia sursa din cfg["role_assignments"]
+    cu failover automat — IDENTIC cu comportamentul de dinainte de feature.
+    `source="nume"`: TOATE rolurile ruleaza pinned pe acea sursa, fara failover —
+    folosit de consensul multi-council ca sa fie o opinie independenta.
+
+    Rolurile Quant / Devil's Advocate ruleaza doar daca cfg["role_quant_enabled"] /
+    cfg["role_devils_advocate_enabled"] sunt True (ambele False by default).
+
+    Orice ProviderError (sursa picata / buget depasit) → decizie WAIT (fail-safe).
+    """
+    runner = DebateRunner(registry, cfg, source=source,
+                          assignments=cfg.get("role_assignments", {}))
+    transcript = runner.transcript
     trigger = desk_state.get("trigger", "scheduled review")
     try:
-        tech = _ask("technical", _TECH_SYS,
-                    _TECH_USER.format(briefing=briefing, trigger=trigger),
-                    ["bias", "confidence", "reasoning"])
+        tech = runner.ask("technical", _TECH_SYS,
+                          _TECH_USER.format(briefing=briefing, trigger=trigger),
+                          ["bias", "confidence", "reasoning"])
 
-        macro = _ask("macro", _MACRO_SYS,
-                     _MACRO_USER.format(briefing=briefing, tech_view=_short(tech)),
-                     ["bias", "confidence", "event_risk", "reasoning"])
+        macro = runner.ask("macro", _MACRO_SYS,
+                           _MACRO_USER.format(briefing=briefing, tech_view=_short(tech)),
+                           ["bias", "confidence", "event_risk", "reasoning"])
 
-        risk = _ask("risk", _RISK_SYS,
-                    _RISK_USER.format(
-                        briefing=briefing, tech_view=_short(tech), macro_view=_short(macro),
-                        open_positions=desk_state.get("open_positions", 0),
-                        max_positions=cfg["max_open_positions"],
-                        daily_r=desk_state.get("daily_r", 0.0),
-                        max_daily_loss=cfg["max_daily_loss_R"]),
-                    ["veto", "max_risk_pct", "notes"])
+        risk = runner.ask("risk", _RISK_SYS,
+                          _RISK_USER.format(
+                              briefing=briefing, tech_view=_short(tech), macro_view=_short(macro),
+                              open_positions=desk_state.get("open_positions", 0),
+                              max_positions=cfg["max_open_positions"],
+                              daily_r=desk_state.get("daily_r", 0.0),
+                              max_daily_loss=cfg["max_daily_loss_R"]),
+                          ["veto", "max_risk_pct", "notes"])
 
-        head = _ask("head_trader", _HEAD_SYS.format(min_rr=cfg["min_rr"]),
-                    _HEAD_USER.format(
-                        briefing=briefing, trigger=trigger,
-                        tech_view=_short(tech), macro_view=_short(macro),
-                        risk_view=_short(risk),
-                        open_pos_desc=desk_state.get("open_pos_desc", "none")),
-                    ["action", "confidence", "rationale"])
+        extra_views: dict = {}
+        if cfg.get("role_quant_enabled"):
+            extra_views["quant"] = runner.ask(
+                "quant", _QUANT_SYS,
+                _QUANT_USER.format(briefing=briefing, tech_view=_short(tech),
+                                   macro_view=_short(macro)),
+                ["assessment", "confidence", "reasoning"])
+        if cfg.get("role_devils_advocate_enabled"):
+            extra_views["devils_advocate"] = runner.ask(
+                "devils_advocate", _DEVIL_SYS,
+                _DEVIL_USER.format(briefing=briefing, tech_view=_short(tech),
+                                   macro_view=_short(macro)),
+                ["strongest_objection", "severity", "reasoning"])
+
+        head = runner.ask("head_trader", _HEAD_SYS.format(min_rr=cfg["min_rr"]),
+                          _HEAD_USER.format(
+                              briefing=briefing, trigger=trigger,
+                              tech_view=_short(tech), macro_view=_short(macro),
+                              risk_view=_short(risk), extra=_format_extra(extra_views),
+                              open_pos_desc=desk_state.get("open_pos_desc", "none")),
+                          ["action", "confidence", "rationale"])
 
         decision = _sanitize(head, risk, cfg)
     except ProviderError as e:
@@ -211,7 +321,7 @@ def convene(registry, briefing: str, desk_state: dict, cfg: dict) -> tuple[dict,
                     "tp": None, "risk_pct": None, "confidence": 0,
                     "rationale": f"Consiliu esuat (LLM): {e}"}
         transcript["error"] = str(e)
-    return decision, transcript, time.time() - t0
+    return decision, transcript, runner.elapsed()
 
 
 def _short(view: dict) -> str:
@@ -317,6 +427,32 @@ def _repair_tp(d: dict, cfg: dict) -> None:
     d["tp"] = new_tp
     d["rationale"] = (f"[TP recalculat la {target_rr:.1f}R "
                       f"(propus {cur_rr:.2f}R prea aproape)] ") + d["rationale"]
+
+
+def clamp_tp_to_max_rr(d: dict, max_rr: float | None) -> bool:
+    """
+    Oglinda lui _repair_tp, pentru plafonul PER PIATA (market_overrides.max_rr):
+    daca TP-ul propus depaseste max_rr, il ADUCEM la max_rr (directia si SL raman
+    ale consiliului — doar tinta de profit e plafonata la politica pietei).
+    Returneaza True daca a modificat TP-ul. max_rr=None → nimic (comportament vechi).
+    """
+    if max_rr is None or d.get("action") not in ("OPEN_LONG", "OPEN_SHORT"):
+        return False
+    entry, sl, tp = d.get("entry"), d.get("sl"), d.get("tp")
+    if entry is None or sl is None or tp is None:
+        return False
+    direction = 1 if d["action"] == "OPEN_LONG" else -1
+    risk_dist = abs(entry - sl)
+    if risk_dist <= 0:
+        return False
+    cur_rr = (tp - entry) * direction / risk_dist
+    if cur_rr <= float(max_rr):
+        return False
+    d["tp"] = round(entry + direction * risk_dist * float(max_rr),
+                    _price_decimals(entry, sl))
+    d["rationale"] = (f"[TP plafonat la {float(max_rr):.1f}R "
+                      f"(limita pietei; propus {cur_rr:.2f}R)] ") + d.get("rationale", "")
+    return True
 
 
 def _num(x) -> float | None:

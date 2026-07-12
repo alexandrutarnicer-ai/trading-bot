@@ -32,7 +32,26 @@ _COOLDOWNS = {
     "rate_limit":   60,
     "network":      120,
     "bad_response": 120,
+    # backend defect (Ollama fara runner) — persistent, necesita interventie umana;
+    # pauza mai lunga ca sa nu intram in loop strans de retry, dar tot 'paused'
+    # (nu 'disabled') ca sa se auto-repare in ≤5 min dupa ce utilizatorul repara Ollama.
+    "server_error": 300,
 }
+
+# Semnaturi de backend Ollama defect: serverul raspunde la /api/tags (200) dar da
+# 500 la /api/chat pentru ca runner-ul 'llama-server' lipseste / nu porneste. NU e
+# un blip de retea — e o instalare corupta/partiala (update intrerupt) sau binarul
+# a fost pus in carantina de antivirus. Il tratam distinct ca sa dam un mesaj
+# ACTIONABIL, nu un "network" generic care se retry-uieste la nesfarsit.
+_OLLAMA_BACKEND_BROKEN_SIGNS = (
+    "llama-server", "binary not found", "error starting", "failed to start",
+    "no compatible", "cmake",
+)
+
+
+def is_ollama_backend_broken(msg: str) -> bool:
+    low = (msg or "").lower()
+    return any(s in low for s in _OLLAMA_BACKEND_BROKEN_SIGNS)
 
 
 class ProviderError(RuntimeError):
@@ -41,7 +60,8 @@ class ProviderError(RuntimeError):
     def __init__(self, message: str, kind: str = "network",
                  retry_after_s: float | None = None):
         super().__init__(message)
-        self.kind = kind                    # quota | rate_limit | auth | network | bad_response
+        # quota | rate_limit | auth | network | bad_response | server_error
+        self.kind = kind
         self.retry_after_s = retry_after_s  # din header Retry-After, daca exista
 
 
@@ -159,6 +179,12 @@ class OllamaProvider(BaseProvider):
         self.timeout = timeout
 
     def available(self) -> bool:
+        """Reachability ieftina: serverul raspunde SI modelul e instalat.
+
+        ATENTIE: NU garanteaza ca inferenta merge — o instalare Ollama corupta
+        (runner llama-server lipsa) trece de aici dar da 500 la /api/chat. Pentru
+        garantia reala foloseste probe(). available() ramane cheap (fara inferenta)
+        pentru ca e apelata des; probe() e apelata la pornire / in doctor."""
         try:
             req = urllib.request.Request(f"{self.url}/api/tags")
             with urllib.request.urlopen(req, timeout=5) as r:
@@ -167,6 +193,15 @@ class OllamaProvider(BaseProvider):
             return any(n.startswith(self.model.split(":")[0]) for n in names)
         except Exception:
             return False
+
+    def _broken_backend_error(self, detail: str) -> ProviderError:
+        return ProviderError(
+            f"{self.name}: backend Ollama DEFECT — runner-ul 'llama-server' lipseste "
+            "sau nu porneste. Instalare Ollama corupta/partiala (update intrerupt) "
+            "sau binarul a fost pus in carantina de antivirus. Reinstaleaza/actualizeaza "
+            "Ollama de pe ollama.com/download si reporneste-l. Diagnostic: "
+            "python -m ai_engine.doctor. Detaliu: " + str(detail)[:150],
+            kind="server_error")
 
     def chat(self, system: str, user: str, json_mode: bool = False) -> str:
         payload = {
@@ -178,12 +213,44 @@ class OllamaProvider(BaseProvider):
         }
         if json_mode:
             payload["format"] = "json"
-        out = _http_json(f"{self.url}/api/chat", payload, {}, self.timeout, self.name)
+        try:
+            out = _http_json(f"{self.url}/api/chat", payload, {}, self.timeout, self.name)
+        except ProviderError as e:
+            # 500 "llama-server binary not found" ajunge aici clasificat drept
+            # 'network'; il reclasificam ca 'server_error' cu mesaj actionabil.
+            if is_ollama_backend_broken(str(e)):
+                raise self._broken_backend_error(e) from e
+            raise
+        # Unele versiuni Ollama raporteaza esecul runner-ului ca 200 + {"error": ...}
+        # in loc de 500 — il prindem si aici (altfel ar aparea drept "raspuns gol").
+        if isinstance(out, dict) and out.get("error"):
+            err_msg = str(out["error"])
+            if is_ollama_backend_broken(err_msg):
+                raise self._broken_backend_error(err_msg)
+            raise ProviderError(f"{self.name}: {err_msg[:200]}", kind="server_error")
         content = (out.get("message") or {}).get("content", "")
         content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL).strip()
         if not content:
             raise ProviderError(f"{self.name}: raspuns gol de la model", kind="bad_response")
         return content
+
+    def probe(self) -> tuple[bool, str]:
+        """
+        Verificare PROFUNDA: nu doar ca serverul raspunde (/api/tags) ci ca poate
+        RULA inferenta (/api/chat). Instalarile Ollama corupte trec de available()
+        dar dau 500 la inferenta — de aceea available() singur e un fals-pozitiv la
+        pornire. Returneaza (ok, detaliu_actionabil). Costul: un singur apel mic
+        (o data, la pornire / in doctor); pe un model deja incarcat e ~1-3s.
+        """
+        if not self.available():
+            return False, (f"serverul Ollama nu raspunde la {self.url} sau modelul "
+                           f"'{self.model}' nu e instalat. Porneste Ollama si ruleaza: "
+                           f"ollama pull {self.model}")
+        try:
+            self.chat("You reply with exactly one word.", "Reply with: ok")
+            return True, ""
+        except ProviderError as e:
+            return False, str(e)[:280]
 
 
 class AnthropicProvider(BaseProvider):
@@ -402,9 +469,18 @@ class ProviderRegistry:
             h.update({"status": "paused", "reason": str(err)[:200],
                       "retry_at": time.time() + wait})
             if first_pause:
-                mins = int(wait / 60)
-                self._notify(f"⚠ Sursa AI «{name}» in pauza ({err.kind}, ~{mins} min) — "
-                             f"rolurile ei trec temporar pe alta sursa.")
+                if err.kind == "server_error" and name == self.DEFAULT:
+                    # Ollama e safety-net-ul failover-ului: daca backend-ul lui e
+                    # defect, e o problema de infrastructura (nu se auto-repara).
+                    self._notify(
+                        f"🛑 SAFETY-NET «{name}» DEFECT — {str(err)[:190]} "
+                        "Motorul ramane fara plasa de failover pana repari Ollama.")
+                elif err.kind == "server_error":
+                    self._notify(f"🛑 Sursa AI «{name}» defecta (server) — {str(err)[:170]}")
+                else:
+                    mins = int(wait / 60)
+                    self._notify(f"⚠ Sursa AI «{name}» in pauza ({err.kind}, ~{mins} min) — "
+                                 f"rolurile ei trec temporar pe alta sursa.")
 
     @staticmethod
     def _notify(text: str) -> None:
@@ -457,6 +533,37 @@ class ProviderRegistry:
             return obj, meta
         raise last_err or ProviderError("nicio sursa AI disponibila", kind="network")
 
+    def call_role_pinned(self, source: str, system: str, user: str,
+                         required_keys: list[str]) -> tuple[dict, dict]:
+        """
+        Executa un rol pe EXACT sursa `source`, FARA failover. Ridica ProviderError
+        daca sursa e necunoscuta/indisponibila/esueaza.
+
+        Folosit de consiliile multi-council: fiecare consiliu trebuie sa ramana pe
+        propriul model — un failover pe alta sursa ar transforma consiliul intr-un
+        duplicat al altui consiliu, distrugand independenta opiniilor. Daca sursa
+        pinned pica, consiliul respectiv iese din joc (dropped), restul continua.
+        """
+        if source not in self._instances:
+            raise ProviderError(f"sursa '{source}' nu exista in registru", kind="network")
+        if not self._usable(source):
+            h = self.health.get(source) or {}
+            raise ProviderError(f"sursa '{source}' indisponibila ({h.get('status', '?')})",
+                                kind="network")
+        t0 = time.time()
+        try:
+            obj = self._instances[source].chat_json(system, user, required_keys)
+        except ProviderError as e:
+            self.report_failure(source, e)
+            raise
+        self.report_success(source)
+        return obj, {"provider": source, "latency_s": round(time.time() - t0, 1),
+                     "pinned": True}
+
+    def usable_sources(self) -> list[str]:
+        """Numele surselor enabled + sanatoase acum (pentru planificarea consiliilor)."""
+        return [n for n in self._instances if self._usable(n)]
+
     # -- introspectie --
 
     def snapshot(self) -> dict:
@@ -470,8 +577,20 @@ class ProviderRegistry:
         return out
 
     def default_available(self) -> bool:
+        """Reachability ieftina a safety-net-ului (Ollama raspunde + model prezent)."""
         inst = self._instances.get(self.DEFAULT)
         return bool(inst and isinstance(inst, OllamaProvider) and inst.available())
+
+    def default_probe(self) -> tuple[bool, str]:
+        """
+        Verificare PROFUNDA a safety-net-ului: poate rula inferenta, nu doar raspunde.
+        Prinde cazul „reachable dar backend defect" (llama-server lipsa) pe care
+        default_available() il rateaza. Returneaza (ok, detaliu_actionabil).
+        """
+        inst = self._instances.get(self.DEFAULT)
+        if not (inst and isinstance(inst, OllamaProvider)):
+            return False, "sursa default (ollama) nu e configurata in registru"
+        return inst.probe()
 
 
 # ── Compatibilitate (selftest / cod vechi) ───────────────────────────────────

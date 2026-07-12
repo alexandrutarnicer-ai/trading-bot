@@ -167,6 +167,8 @@ def get_transactions(
         items.append({
             "ai_approved":   (bool(_v["approved"]) if _v and _v.get("approved") is not None else None),
             "ai_confidence": (_v.get("confidence") if _v else None),
+            "ai_n_councils": (_v.get("n_councils") if _v else None),
+            "ai_consensus":  (_v.get("consensus_confidence") if _v else None),
             "signal_id":     str(row.get("signal_id", "")),
             "session_id":    str(row.get("session_id", "")),
             "session_label": str(row.get("session_label", "")),

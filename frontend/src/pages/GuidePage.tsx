@@ -878,6 +878,40 @@ export function GuidePage() {
               filtrul nu poate bloca niciodată botul. Verdictele complete (cu transcriptul dezbaterii) se
               salvează în data/live_signals/&lt;sesiune&gt;/ai_filter.jsonl.
             </Note>
+
+            <div className="space-y-1 text-xs mt-3">
+              <p className="font-medium text-white">Consiliu multiplu (consens) — opțional</p>
+              <p className="text-slate-300">
+                Poți cere până la <strong>3 consilii independente</strong>, fiecare pe o
+                <strong> sursă AI diferită</strong> (ex: Ollama + Claude + Gemini), care analizează același
+                semnal. Increderile lor se combină prin <strong>medie</strong>: dacă media ≥ pragul ales,
+                ordinul e permis; un consiliu care respinge contribuie cu 0 (trage media în jos). Orice
+                <strong> veto valid</strong> de la un consiliu respinge oricum trade-ul. Scopul: o a doua/a
+                treia opinie cu adevărat independentă — de aceea fiecare consiliu <em>trebuie</em> să
+                folosească altă sursă (cu o singură sursă activă, consiliile 2/3 nu apar).
+              </p>
+              <p className="text-slate-400">
+                Toleranță la erori: dacă un consiliu opțional pică, restul decid; se blochează doar dacă
+                niciun consiliu nu e disponibil (fail-open). Notificarea „Ordin plasat" arată câte consilii
+                au participat și pe ce surse; Rapoarte/Tranzacții arată numărul de consilii și încrederea de
+                consens.
+              </p>
+            </div>
+
+            <div className="space-y-1 text-xs mt-2">
+              <p className="font-medium text-white">Roluri AI suplimentare — opționale</p>
+              <p className="text-slate-300">
+                Pe lângă cele 4 roluri, poți activa (per sesiune, implicit oprite):
+              </p>
+              <div className="grid grid-cols-1 gap-1 mt-1">
+                <KV k="🧮 Analist Cantitativ" v="Verifică dacă R/R e justificat de o probabilitate de câștig realistă, dacă SL e sensibil vs ATR și dacă EV e pozitiv." />
+                <KV k="😈 Avocatul Diavolului" v="Construiește argumentul CONTRA + pre-mortem (ce l-a omorât?) ca să contracareze biasul de confirmare." />
+              </div>
+              <p className="text-slate-400 mt-1">
+                Se aplică tuturor consiliilor și îmbunătățesc calitatea deciziei fără să dubleze rolurile
+                existente. Costă câte un apel LLM în plus per consiliu.
+              </p>
+            </div>
           </SubSection>
 
           <SubSection title="Protecție Capital (la nivel de profil)" defaultOpen={false}>
@@ -1815,10 +1849,20 @@ export function GuidePage() {
               <strong className="text-white"> automat</strong> pe următoarea sursă sănătoasă (apoi pe Ollama) și revin
               singure când sursa își revine. Schimbările se aplică la următorul consiliu, fără restart.
             </p>
+            <p>
+              Cardul <strong className="text-white">Consiliu multiplu + roluri (consens)</strong> adaugă, opțional,
+              confirmarea prin consens: consiliul <strong>primar</strong> propune trade-ul, iar 1–2 consilii pe
+              <strong> alte surse</strong> îl <strong>revizuiesc</strong>. Media încrederilor ≥ pragul ales (implicit
+              70%) → se execută; un veto valid de la orice consiliu blochează; dacă revizorii pică, decide singur
+              primarul (nu blochează). Tot de aici activezi rolurile <strong>🧮 Analist Cantitativ</strong> și
+              <strong> 😈 Avocatul Diavolului</strong> (implicit oprite). Transcriptul deciziei arată blocul de
+              consens și opinia fiecărui consiliu.
+            </p>
             <Note>
               Consiliul AI se convoacă doar pe evenimente (schimbare de regim, tensiune de breakout, spike de
               volatilitate, știri High-impact, review poziție, heartbeat zilnic) — nu la fiecare bară. Multe
-              decizii vor fi WAIT: asta e disciplină, nu inactivitate.
+              decizii vor fi WAIT: asta e disciplină, nu inactivitate. Fără surse secundare/terțiare configurate,
+              motorul rulează un singur consiliu, exact ca înainte.
             </Note>
             <Warn>
               Rezultatele AI sunt separate de rapoartele botului (ledger propriu — data/ai/ledger.db), dar

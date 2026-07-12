@@ -95,21 +95,48 @@ def is_market_weekend_closed(symbol: str, now, friday_close_hour: int = 22) -> b
 # ── Validare decizie (rails) ─────────────────────────────────────────────────
 
 def validate_decision(d: dict, snapshot: dict, cfg: dict,
-                      n_committed: int, daily_r: float) -> str | None:
+                      n_committed: int, daily_r: float,
+                      symbol_committed: bool = False,
+                      market_state: dict | None = None) -> str | None:
     """
     Returneaza motivul respingerii sau None daca decizia e executabila.
 
     `n_committed` = expunerea angajata (pozitii deschise + ordine pending). Se
     numara si pending-urile pentru ca fiecare stop poate deveni pozitie — altfel
     la cold-start s-ar plasa mai multe ordine decat max_open_positions.
+
+    `symbol_committed` = exista deja o pozitie SAU un ordin pending AI pe ACEST
+    simbol. Motorul nu face pyramiding — un al doilea ordin pe acelasi setup e
+    doar expunere dublata (vezi bug-ul 3x XRPUSD din instante multiple). Chiar cu
+    o singura instanta, plafonul global (max_open_positions) nu impiedica stivuirea
+    pe acelasi simbol; acest gate o interzice explicit.
+
+    `market_state` (optional, din market_overrides): limitele PER PIATA —
+      {symbol, daily_r, trades_today, max_daily_loss_R, max_trades_per_day}.
+    None → comportament identic cu inainte (doar rails globale).
     """
     if d["action"] not in ("OPEN_LONG", "OPEN_SHORT"):
         return None   # CLOSE/WAIT nu au geometrie de validat aici
 
+    if symbol_committed:
+        return (f"exista deja o pozitie/ordin AI pe {snapshot.get('symbol', '?')} "
+                "— fara pyramiding (o singura expunere per simbol)")
     if n_committed >= cfg["max_open_positions"]:
         return f"expunere maxima atinsa ({n_committed} pozitii+pending, max {cfg['max_open_positions']})"
     if daily_r <= -cfg["max_daily_loss_R"]:
         return f"stop zilnic de pierdere atins ({daily_r:+.1f}R)"
+
+    # ── Rails PER PIATA (market_overrides) — active doar daca sunt configurate ──
+    if market_state:
+        ms = market_state
+        mdl = ms.get("max_daily_loss_R")
+        if mdl is not None and ms.get("daily_r", 0.0) <= -float(mdl):
+            return (f"stop zilnic PE PIATA atins pe {ms.get('symbol', '?')} "
+                    f"({ms.get('daily_r', 0.0):+.2f}R, limita -{float(mdl):.1f}R)")
+        mtd = ms.get("max_trades_per_day")
+        if mtd is not None and ms.get("trades_today", 0) >= int(mtd):
+            return (f"anti-overtrading pe {ms.get('symbol', '?')}: "
+                    f"{ms.get('trades_today', 0)} ordine plasate azi (max {int(mtd)}/zi)")
 
     price = snapshot["price"]
     atr   = snapshot["atr"] or 0
@@ -225,12 +252,18 @@ def _send_with_fillings(req: dict):
     return res if res is not None else last
 
 
-def place(d: dict, snapshot: dict, cfg: dict, decision_id: int) -> tuple[str, str, int | None]:
+def place(d: dict, snapshot: dict, cfg: dict, decision_id: int,
+          capital_fraction: float = 1.0) -> tuple[str, str, int | None]:
     """
     Executa o decizie OPEN_*. Returneaza (status, detail, ticket):
       status: "placed" | "rejected" | "failed" | "shadow"
+
+    `capital_fraction` (market_overrides): fractia din equity folosita ca baza de
+    sizing pe aceasta piata (risc $ = equity * fraction * risk_pct). Default 1.0
+    = tot equity-ul, identic cu comportamentul de dinainte.
     """
     symbol = snapshot["symbol"]
+    capital_fraction = max(0.05, min(1.0, float(capital_fraction or 1.0)))
     if cfg["mode"] == "shadow":
         return "shadow", "mode=shadow, ordin nesimulat in MT5", None
 
@@ -261,7 +294,8 @@ def place(d: dict, snapshot: dict, cfg: dict, decision_id: int) -> tuple[str, st
         # normalizeaza SL/TP la precizia simbolului (evita 10015 pe precizie)
         d["sl"] = round(d["sl"], info.digits)
         d["tp"] = round(d["tp"], info.digits)
-        lots, risk_usd = calc_lots(symbol, entry, d["sl"], equity(), d["risk_pct"])
+        lots, risk_usd = calc_lots(symbol, entry, d["sl"],
+                                   equity() * capital_fraction, d["risk_pct"])
         if lots <= 0:
             return "rejected", "lot calculat 0 (capital insuficient?)", None
         m_err = _margin_ok(lots, entry)
@@ -297,7 +331,8 @@ def place(d: dict, snapshot: dict, cfg: dict, decision_id: int) -> tuple[str, st
                      symbol, d["entry"], n_entry, ref, round(buf, info.digits))
         d["entry"], d["sl"], d["tp"] = n_entry, n_sl, n_tp
 
-        lots, risk_usd = calc_lots(symbol, d["entry"], d["sl"], equity(), d["risk_pct"])
+        lots, risk_usd = calc_lots(symbol, d["entry"], d["sl"],
+                                   equity() * capital_fraction, d["risk_pct"])
         if lots <= 0:
             return "rejected", "lot calculat 0 (capital insuficient?)", None
         m_err = _margin_ok(lots, d["entry"])
@@ -361,18 +396,29 @@ def cancel_order(ticket: int, cfg: dict) -> bool:
 
 # ── Urmarire outcomes ────────────────────────────────────────────────────────
 
-def check_decision_outcome(dec: dict, cfg: dict) -> dict | None:
+def check_decision_outcome(dec: dict, cfg: dict,
+                           positions: list | None = None,
+                           pending: list | None = None) -> dict | None:
     """
     Verifica o decizie 'placed' fara outcome. Returneaza dict outcome sau None
     daca e inca activa. Foloseste pattern-ul hedging-safe: order → position_id →
     deals (acelasi ca in signal_generator).
+
+    `positions`/`pending`: listele deja citite din MT5 (magic-filtered). Cand mai
+    multe decizii se verifica in aceeasi iteratie, apelantul le citeste O SINGURA
+    DATA si le paseaza — altfel fiecare decizie ar reface `positions_get`/`orders_get`
+    (N interogari MT5 identice per bara). Daca lipsesc, le citeste el (compat).
     """
     ticket = dec.get("ticket")
     if not ticket:
         return None
+    if pending is None:
+        pending = ai_pending_orders(cfg["magic"])
+    if positions is None:
+        positions = ai_positions(cfg["magic"])
 
     # inca pending?
-    if any(o.ticket == ticket for o in ai_pending_orders(cfg["magic"])):
+    if any(o.ticket == ticket for o in pending):
         # expira ordinele stop neactivate dupa decision_valid_bars
         try:
             placed = datetime.fromisoformat(dec["ts"])
@@ -386,7 +432,7 @@ def check_decision_outcome(dec: dict, cfg: dict) -> dict | None:
         return None
 
     # pozitie deschisa?
-    if any(p.ticket == ticket or p.identifier == ticket for p in ai_positions(cfg["magic"])):
+    if any(p.ticket == ticket or p.identifier == ticket for p in positions):
         return None
 
     # cauta in istorie: order → position_id → deals

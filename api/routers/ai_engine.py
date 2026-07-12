@@ -22,6 +22,7 @@ import json
 import sqlite3
 import subprocess
 import threading
+import contextlib
 from datetime import datetime
 
 from fastapi import APIRouter, HTTPException, Body
@@ -88,24 +89,29 @@ def ai_status():
     if not running and status.get("scorecard") is None and os.path.isfile(DB_FILE):
         # scorecard disponibil si cu motorul oprit
         try:
-            con = _db()
-            # Doar tranzactii activate si inchise real (TP/SL/closed) — ordinele
-            # expirate/anulate nu s-au activat niciodata, deci nu sunt tranzactii.
-            # Trebuie sa ramana sincronizat cu ledger.Ledger.scorecard().
-            row = con.execute(
-                "SELECT COUNT(*), COALESCE(SUM(result_r),0), COALESCE(AVG(result_r),0), "
-                "SUM(CASE WHEN result_r>0 THEN 1 ELSE 0 END) FROM outcomes "
-                "WHERE status IN ('TP','SL','closed') AND result_r IS NOT NULL").fetchone()
-            n, tot, avg, w = row
-            n_dec = con.execute("SELECT COUNT(*) FROM decisions").fetchone()[0]
-            n_wait = con.execute("SELECT COUNT(*) FROM decisions WHERE action='WAIT'").fetchone()[0]
-            status["scorecard"] = {
-                "decisions": n_dec, "waits": n_wait, "closed_trades": n,
-                "total_R": round(tot, 2), "expectancy_R": round(avg, 3),
-                "win_rate": round(w / n, 3) if n else None}
-            con.close()
-        except HTTPException:
-            pass
+            # Pietele izolate (market_overrides.isolated) sunt excluse — sincron cu
+            # motorul (aceeasi functie: config.isolated_markets, derivat din overrides).
+            from ai_engine.config import isolated_markets
+            _iso = isolated_markets(load_config())
+            _ex = f" AND symbol NOT IN ({','.join('?' * len(_iso))})" if _iso else ""
+            with contextlib.closing(_db()) as con:   # inchidere garantata (fara leak)
+                # Doar tranzactii activate si inchise real (TP/SL/closed) — ordinele
+                # expirate/anulate nu s-au activat niciodata, deci nu sunt tranzactii.
+                # Trebuie sa ramana sincronizat cu ledger.Ledger.scorecard().
+                row = con.execute(
+                    "SELECT COUNT(*), COALESCE(SUM(result_r),0), COALESCE(AVG(result_r),0), "
+                    "SUM(CASE WHEN result_r>0 THEN 1 ELSE 0 END) FROM outcomes "
+                    "WHERE status IN ('TP','SL','closed') AND result_r IS NOT NULL"
+                    + _ex, _iso).fetchone()
+                n, tot, avg, w = row
+                n_dec = con.execute("SELECT COUNT(*) FROM decisions WHERE 1=1" + _ex, _iso).fetchone()[0]
+                n_wait = con.execute("SELECT COUNT(*) FROM decisions WHERE action='WAIT'" + _ex, _iso).fetchone()[0]
+                status["scorecard"] = {
+                    "decisions": n_dec, "waits": n_wait, "closed_trades": n,
+                    "total_R": round(tot, 2), "expectancy_R": round(avg, 3),
+                    "win_rate": round(w / n, 3) if n else None}
+        except Exception:
+            pass   # DB corupt/absent → scorecard ramane None (nu 500-uim status-ul)
     return status
 
 
@@ -182,35 +188,43 @@ def ai_stop():
 # ── Date din ledger ───────────────────────────────────────────────────────────
 
 @router.get("/decisions")
-def ai_decisions(limit: int = 30):
-    con = _db()
-    rows = con.execute(
-        "SELECT id, ts, symbol, action, order_type, entry, sl, tp, risk_pct, "
-        "confidence, rationale, exec_status, exec_detail, ticket, council_id "
-        "FROM decisions ORDER BY id DESC LIMIT ?", (min(limit, 200),)).fetchall()
+def ai_decisions(limit: int = 30, symbol: str | None = None):
     cols = ["id", "ts", "symbol", "action", "order_type", "entry", "sl", "tp",
             "risk_pct", "confidence", "rationale", "exec_status", "exec_detail",
             "ticket", "council_id"]
-    out = [dict(zip(cols, r)) for r in rows]
-    # ataseaza outcome-ul daca exista
-    for d in out:
-        o = con.execute(
-            "SELECT status, exit_price, result_r, pnl_usd FROM outcomes "
-            "WHERE decision_id=? ORDER BY id DESC LIMIT 1", (d["id"],)).fetchone()
-        d["outcome"] = (dict(zip(["status", "exit_price", "result_r", "pnl_usd"], o))
-                        if o else None)
-    con.close()
+    where, params = "", []
+    if symbol:   # vizualizare SEPARATA per piata (market_overrides / izolare)
+        where, params = " WHERE symbol=?", [symbol.strip().upper()]
+    with contextlib.closing(_db()) as con:   # inchidere garantata (fara leak)
+        rows = con.execute(
+            "SELECT id, ts, symbol, action, order_type, entry, sl, tp, risk_pct, "
+            "confidence, rationale, exec_status, exec_detail, ticket, council_id "
+            f"FROM decisions{where} ORDER BY id DESC LIMIT ?",
+            (*params, min(limit, 200))).fetchall()
+        out = [dict(zip(cols, r)) for r in rows]
+        # Outcome-urile pentru TOATE deciziile intr-o SINGURA interogare (nu N+1).
+        if out:
+            ids = [d["id"] for d in out]
+            ph = ",".join("?" * len(ids))
+            omap: dict = {}
+            for r in con.execute(
+                    "SELECT decision_id, status, exit_price, result_r, pnl_usd FROM outcomes "
+                    f"WHERE decision_id IN ({ph}) ORDER BY id", ids):
+                omap[r[0]] = r   # ORDER BY id asc → ultimul (cel mai recent) ramane
+            for d in out:
+                r = omap.get(d["id"])
+                d["outcome"] = (dict(zip(["status", "exit_price", "result_r", "pnl_usd"], r[1:]))
+                                if r else None)
     return out
 
 
 @router.get("/council/{decision_id}")
 def ai_council(decision_id: int):
-    con = _db()
-    row = con.execute(
-        "SELECT c.id, c.ts, c.symbol, c.trigger, c.transcript, c.duration_s "
-        "FROM councils c JOIN decisions d ON d.council_id = c.id WHERE d.id=?",
-        (decision_id,)).fetchone()
-    con.close()
+    with contextlib.closing(_db()) as con:   # inchidere garantata (fara leak)
+        row = con.execute(
+            "SELECT c.id, c.ts, c.symbol, c.trigger, c.transcript, c.duration_s "
+            "FROM councils c JOIN decisions d ON d.council_id = c.id WHERE d.id=?",
+            (decision_id,)).fetchone()
     if not row:
         raise HTTPException(404, "Consiliu negasit pentru decizia data")
     cid, ts, sym, trig, transcript, dur = row
@@ -223,13 +237,15 @@ def ai_council(decision_id: int):
 
 
 @router.get("/outcomes")
-def ai_outcomes(limit: int = 50):
-    con = _db()
-    rows = con.execute(
-        "SELECT o.ts, o.symbol, o.status, o.exit_price, o.result_r, o.pnl_usd, "
-        "o.decision_id FROM outcomes o ORDER BY o.id DESC LIMIT ?",
-        (min(limit, 200),)).fetchall()
-    con.close()
+def ai_outcomes(limit: int = 50, symbol: str | None = None):
+    where, params = "", []
+    if symbol:   # vizualizare SEPARATA per piata
+        where, params = " WHERE o.symbol=?", [symbol.strip().upper()]
+    with contextlib.closing(_db()) as con:   # inchidere garantata (fara leak)
+        rows = con.execute(
+            "SELECT o.ts, o.symbol, o.status, o.exit_price, o.result_r, o.pnl_usd, "
+            f"o.decision_id FROM outcomes o{where} ORDER BY o.id DESC LIMIT ?",
+            (*params, min(limit, 200))).fetchall()
     cols = ["ts", "symbol", "status", "exit_price", "result_r", "pnl_usd", "decision_id"]
     return [dict(zip(cols, r)) for r in rows]
 
@@ -245,10 +261,53 @@ def ai_get_config():
 def ai_put_config(body: dict = Body(...)):
     """Actualizeaza doar campurile editabile din UI. Pietele se valideaza in MT5."""
     editable = {"markets", "mode", "model", "risk_pct_default",
-                "heartbeat_hours", "council_cooldown_min"}
+                "heartbeat_hours", "council_cooldown_min",
+                # Roluri optionale de consiliu (Additional AI Roles)
+                "role_quant_enabled", "role_devils_advocate_enabled",
+                # Consiliu multiplu (Multi-Council Consensus)
+                "council_primary_source", "council_secondary_source",
+                "council_tertiary_source", "consensus_threshold",
+                # Config per piata (capital fraction, max RR, stop zilnic, overtrading, izolare)
+                "market_overrides"}
     updates = {k: v for k, v in (body or {}).items() if k in editable}
     if not updates:
         raise HTTPException(400, "Niciun camp editabil in body")
+
+    # Normalizeaza surse goale ("" din UI) → None fara a atinge cheile absente din body.
+    _CSRC = ("council_primary_source", "council_secondary_source", "council_tertiary_source")
+    for _key in _CSRC:
+        if _key in updates and updates[_key] in ("", None):
+            updates[_key] = None
+
+    # Validare surse de consiliu: trebuie sa existe, sa fie enabled si DISTINCTE.
+    # Validam pe config-ul REZULTAT (valori din body suprascrise peste cele curente).
+    _cur = load_config()
+    _provs = _cur["providers"]
+    _eff = {_k: (updates[_k] if _k in updates else _cur.get(_k)) for _k in _CSRC}
+    _srcs = [v for v in _eff.values() if v]
+    for _val in _srcs:
+        if not (isinstance(_provs.get(_val), dict) and _provs[_val].get("enabled")):
+            raise HTTPException(400, f"Sursa consiliu '{_val}' nu exista sau e dezactivata")
+    if len(set(_srcs)) != len(_srcs):
+        raise HTTPException(400, "Consiliile trebuie sa foloseasca surse AI DISTINCTE "
+                                 "(scopul e sa obtii opinii independente)")
+    if (_eff["council_secondary_source"] or _eff["council_tertiary_source"]) \
+            and len({n for n, s in _provs.items() if s.get("enabled")}) < 2:
+        raise HTTPException(400, "Consiliu multiplu necesita cel putin 2 surse AI active")
+    if "consensus_threshold" in updates:
+        try:
+            th = int(updates["consensus_threshold"])
+        except (TypeError, ValueError):
+            raise HTTPException(400, "consensus_threshold: numar intreg (50-90)")
+        updates["consensus_threshold"] = max(50, min(90, th))
+
+    if "market_overrides" in updates:
+        from ai_engine.config import sanitize_market_overrides
+        if not isinstance(updates["market_overrides"], dict):
+            raise HTTPException(400, "market_overrides: obiect {SIMBOL: {campuri}}")
+        # aceeasi curatare + clamp ca load_config — o singura sursa de adevar
+        updates["market_overrides"] = sanitize_market_overrides(
+            updates["market_overrides"], _cur["risk_pct_max"])
 
     if "markets" in updates:
         mkts = updates["markets"]
@@ -301,7 +360,7 @@ def ai_logs(lines: int = 100):
 
 # ── Surse AI (multi-provider) — vezi docs/PLAN_SURSE_AI_MULTI_PROVIDER.md ────
 
-_ROLES = ("technical", "macro", "risk", "head_trader")
+_ROLES = ("technical", "macro", "risk", "quant", "devils_advocate", "head_trader")
 _PROVIDER_TYPES = ("ollama", "anthropic", "gemini", "openai_compatible")
 
 

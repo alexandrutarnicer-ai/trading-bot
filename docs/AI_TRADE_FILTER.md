@@ -7,6 +7,12 @@ existent, construit integral pe infrastructura motorului AI (`ai_engine/`).
 **Dezactivat by default.** Cu filtrul oprit, botul se comportă identic byte-cu-byte cu
 versiunea dinaintea acestui feature (verificat prin teste de regresie — vezi mai jos).
 
+> **Consiliu multiplu (consens) + roluri suplimentare** — optional, per sesiune:
+> filtrul poate rula **până la 3 consilii** pe surse AI distincte, combinând
+> încrederile prin medie (un veto valid respinge oricum), și poate activa rolurile
+> **Analist Cantitativ** și **Avocatul Diavolului**. Un singur consiliu (default) →
+> comportament identic. Detalii: [MULTI_COUNCIL_CONSENSUS.md](MULTI_COUNCIL_CONSENSUS.md).
+
 ---
 
 ## Fluxul ordinului
