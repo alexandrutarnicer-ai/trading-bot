@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { Pause, Play } from "lucide-react";
 import type { ProfileSession, Meta } from "../api/types";
-import { useMt5Markets, useMt5Status, useMarketAtr } from "../api/hooks";
+import { useMt5Markets, useMt5Status, useMarketAtr, useAiProviders } from "../api/hooks";
 import { BacktestPanel } from "./BacktestPanel";
 import { InfoTooltip } from "./InfoTooltip";
 import { ImageTooltip } from "./ImageTooltip";
@@ -124,6 +124,23 @@ const TIPS = {
     "• Permisiv ≥50% — blochează doar setup-urile considerate clar slabe.",
     "• Echilibrat ≥70% — recomandat: peste nivelul 55 pe care motorul AI îl tratează ca acționabil.",
     "• Strict ≥85% — doar setup-urile cu convingere reală. Atenție: modelele raportează rar >85 — puține trade-uri vor trece.",
+  ].join("\n"),
+  ai_councils: [
+    "Consiliu multiplu (consens): până la 3 consilii AI independente, fiecare pe o SURSĂ AI DIFERITĂ, analizează același semnal.",
+    "",
+    "Increderea fiecărui consiliu se combină prin MEDIE; dacă media ≥ pragul de încredere, ordinul e permis. Un consiliu care respinge contribuie cu 0 (trage media în jos).",
+    "Orice VETO valid (știre iminentă, volatilitate extremă etc.) de la un consiliu respinge trade-ul, indiferent de medie.",
+    "",
+    "Fiecare consiliu TREBUIE să folosească altă sursă — scopul e o a doua/a treia opinie independentă, nu aceeași analiză de mai multe ori. Cu o singură sursă activă, consiliile 2/3 nu sunt disponibile.",
+    "Toleranță la erori: dacă un consiliu opțional pică, restul decid; se blochează doar dacă niciun consiliu nu e disponibil (fail-open).",
+  ].join("\n"),
+  ai_roles: [
+    "Roluri AI suplimentare (opționale, dezactivate implicit) adăugate consiliului înainte de Head Trader:",
+    "",
+    "• Analist Cantitativ / Volatilitate — verifică dacă R/R e justificat de o probabilitate de câștig realistă, dacă SL e sensibil față de ATR și dacă valoarea așteptată (EV) e pozitivă.",
+    "• Avocatul Diavolului — construiește argumentul CONTRA trade-ului și face un pre-mortem (presupune că a atins SL — ce l-a omorât?), pentru a contracara biasul de confirmare.",
+    "",
+    "Ambele îmbunătățesc calitatea deciziei fără să dubleze rolurile existente. Costă câte un apel LLM în plus per consiliu.",
   ].join("\n"),
   news_impact:    "Nivelul minim de impact pentru a declanșa pauza. 1=Scăzut, 2=Mediu, 3=Ridicat (recomandat). Sursa principală: ForexFactory. Backup: MT5 calendar built-in.",
   news_pre:       "Minute înainte de eveniment în care sesiunea intră pe pauză preventiv. Recomandat: 15–30 min.",
@@ -319,6 +336,7 @@ export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted,
 
   const { data: mt5Data, isLoading: loadingMt5 } = useMt5Markets();
   const { data: mt5Status } = useMt5Status();
+  const { data: aiProviders } = useAiProviders(false);   // fara polling (montat in Profile permanent)
 
   const mt5Filtered = useMemo(() => {
     if (!mt5Data?.symbols) return [];
@@ -328,6 +346,13 @@ export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted,
   }, [mt5Data, mt5Query]);
 
   const upd = (patch: Partial<ProfileSession>) => onChange({ ...session, ...patch });
+
+  const aiEnabledSources = useMemo(
+    () => Object.entries(aiProviders?.providers ?? {})
+      .filter(([, p]) => p.enabled)
+      .map(([n]) => n),
+    [aiProviders],
+  );
 
   const toggleMarket = (m: string) => {
     const arr = session.markets.includes(m)
@@ -1020,6 +1045,33 @@ export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted,
                     fiecare semnal cu sursele configurate în tab-ul AI Engine. Sub prag → ordinul e respins
                     (notificare cu motivul). AI indisponibil → trade permis (fail-open, botul nu se blochează).
                   </p>
+
+                  {/* Consiliu multiplu (Multi-Council Consensus) */}
+                  <MultiCouncilConfig
+                    session={session}
+                    upd={upd}
+                    enabledSources={aiEnabledSources}
+                  />
+
+                  {/* Roluri AI suplimentare (Additional AI Roles) */}
+                  <div className="space-y-1.5 border-t border-surface-border/40 pt-2">
+                    <div className="text-xs text-slate-500">
+                      Roluri AI suplimentare <InfoTooltip text={TIPS.ai_roles} />
+                    </div>
+                    <Toggle
+                      label="Analist Cantitativ (EV / probabilitate de câștig)"
+                      value={session.ai_role_quant_enabled ?? false}
+                      onChange={(v) => upd({ ai_role_quant_enabled: v })}
+                    />
+                    <Toggle
+                      label="Avocatul Diavolului (pre-mortem, contra-teză)"
+                      value={session.ai_role_devils_advocate_enabled ?? false}
+                      onChange={(v) => upd({ ai_role_devils_advocate_enabled: v })}
+                    />
+                    <p className="text-[10px] text-slate-600">
+                      Fiecare rol activ = un apel LLM în plus per consiliu. Se aplică tuturor consiliilor.
+                    </p>
+                  </div>
                 </div>
               )}
             </div>
@@ -1233,6 +1285,98 @@ function Section({ label, tip, children }: {
         {label}{tip && <InfoTooltip text={tip} />}
       </div>
       {children}
+    </div>
+  );
+}
+
+// ── Consiliu multiplu (Multi-Council Consensus) ──────────────────────────────
+
+function MultiCouncilConfig({ session, upd, enabledSources }: {
+  session: ProfileSession;
+  upd: (patch: Partial<ProfileSession>) => void;
+  enabledSources: string[];
+}) {
+  const primary   = session.ai_filter_primary_source ?? null;
+  const secondary = session.ai_filter_secondary_source ?? null;
+  const tertiary  = session.ai_filter_tertiary_source ?? null;
+  const multiAvailable = enabledSources.length >= 2;
+  const chosen = [primary, secondary, tertiary].filter(Boolean) as string[];
+  const nCouncils = 1 + (secondary ? 1 : 0) + (tertiary ? 1 : 0);
+
+  // Optiunile unui slot: sursele active, mai putin cele deja alese in ALTE sloturi.
+  const optionsFor = (current: string | null) =>
+    enabledSources.filter((s) => s === current || !chosen.includes(s));
+
+  return (
+    <div className="space-y-2 border-t border-surface-border/40 pt-2">
+      <div className="text-xs text-slate-500">
+        Consiliu multiplu (consens) <InfoTooltip text={TIPS.ai_councils} />
+      </div>
+      {!multiAvailable ? (
+        <p className="text-[10px] text-slate-600">
+          Necesită cel puțin 2 surse AI active (tab-ul <span className="text-slate-400">AI Engine → Surse AI</span>).
+          Momentan active: {enabledSources.length || 0}. Cu o singură sursă rulează un singur consiliu (ca până acum).
+        </p>
+      ) : (
+        <div className="space-y-1.5">
+          <CouncilSlot
+            label="Consiliu 1 (primar)" value={primary}
+            options={optionsFor(primary)} defaultLabel="distribuit pe roluri"
+            onChange={(v) => upd({ ai_filter_primary_source: v })}
+          />
+          <CouncilSlot
+            label="Consiliu 2" value={secondary}
+            options={optionsFor(secondary)}
+            onChange={(v) => upd({
+              ai_filter_secondary_source: v,
+              ...(v ? {} : { ai_filter_tertiary_source: null }),
+            })}
+          />
+          <CouncilSlot
+            label="Consiliu 3" value={tertiary} disabled={!secondary}
+            options={optionsFor(tertiary)}
+            onChange={(v) => upd({ ai_filter_tertiary_source: v })}
+          />
+          {nCouncils > 1 ? (
+            <p className="text-[10px] text-purple-300/70">
+              {nCouncils} consilii pe surse distincte — media încrederilor decide (pragul de mai sus);
+              un veto valid respinge oricum. Dacă un consiliu opțional pică, restul decid.
+              {primary === null && (
+                <span className="text-amber-300/80"> Consiliul primar e distribuit pe roluri — alege o sursă
+                explicită dacă vrei o a doua opinie complet independentă.</span>
+              )}
+            </p>
+          ) : (
+            <p className="text-[10px] text-slate-600">
+              Un singur consiliu (implicit). Adaugă Consiliu 2/3 pe alte surse pentru consens.
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CouncilSlot({ label, value, options, onChange, disabled, defaultLabel }: {
+  label: string;
+  value: string | null;
+  options: string[];
+  onChange: (v: string | null) => void;
+  disabled?: boolean;
+  defaultLabel?: string;
+}) {
+  return (
+    <div className="flex items-center gap-2 text-[11px]">
+      <span className="text-slate-400 w-28 shrink-0">{label}</span>
+      <select
+        disabled={disabled}
+        value={value ?? ""}
+        onChange={(e) => onChange(e.target.value || null)}
+        className="bg-surface-card border border-surface-border rounded px-2 py-0.5 text-[11px] text-white disabled:opacity-40"
+      >
+        <option value="">{defaultLabel ?? "— dezactivat —"}</option>
+        {options.map((s) => <option key={s} value={s}>{s}</option>)}
+      </select>
     </div>
   );
 }

@@ -36,7 +36,9 @@ from datetime import datetime
 
 from ai_engine.config import load_config, load_keys
 from ai_engine.providers import ProviderRegistry, ProviderError
-from ai_engine.council import _PREAMBLE, _short, VALID_VETO_CODES
+from ai_engine.council import (_PREAMBLE, _short, VALID_VETO_CODES,
+                               DebateRunner, _format_extra)
+from ai_engine.consensus import CouncilOpinion, combine, resolve_sources
 
 # ── Praguri de incredere ─────────────────────────────────────────────────────
 # permissive: blocheaza doar setup-urile pe care consiliul le considera slabe
@@ -139,11 +141,146 @@ _HEAD_USER = (
     "PROPOSED TRADE:\n{trade}\n\n"
     "TECHNICAL ANALYST: {tech_view}\n"
     "MACRO ANALYST: {macro_view}\n"
-    "RISK MANAGER: {risk_view}\n\n"
+    "RISK MANAGER: {risk_view}\n"
+    "{extra}\n"
     "Make the final call. Respond ONLY with JSON:\n"
     '{{"approve": true|false, "confidence": 0-100, '
     '"reason": "2-3 sentences summarizing the desk consensus"}}'
 )
+
+# ── Roluri OPTIONALE de revizie (dezactivate by default) ─────────────────────
+# Gate-uite prin cfg["role_quant_enabled"] / cfg["role_devils_advocate_enabled"]
+# (mapate din session_cfg ai_role_*). Cand ambele sunt oprite, consiliul de
+# revizie e EXACT cel de dinainte (4 roluri).
+
+_QUANT_SYS = _PREAMBLE + (
+    "\nROLE: Quantitative / Volatility Analyst reviewing a SYSTEMATIC trade signal "
+    "with FIXED entry, stop and take-profit. You do NOT redesign it. You judge the "
+    "NUMBERS: is the fixed reward/risk justified by a realistic win probability, is "
+    "the stop sane vs ATR and its percentile, is expected value positive? EV is "
+    "roughly win_prob*RR - (1-win_prob). Flag signals whose geometry only pays off "
+    "on optimistic assumptions; endorse those with a positive, robust edge."
+)
+_QUANT_USER = (
+    "{briefing}\n\n"
+    "PROPOSED TRADE:\n{trade}\n\n"
+    "TECHNICAL ANALYST: {tech_view}\n"
+    "MACRO ANALYST: {macro_view}\n\n"
+    "Assess the quantitative quality of taking this fixed trade. Respond ONLY with JSON:\n"
+    '{{"assessment": "favorable"|"marginal"|"unfavorable", "confidence": 0-100, '
+    '"est_win_prob": 0-100|null, "reasoning": "2-4 sentences"}}'
+)
+
+_DEVIL_SYS = _PREAMBLE + (
+    "\nROLE: Devil's Advocate reviewing a SYSTEMATIC trade signal. Your ONLY job is "
+    "to argue AGAINST taking this specific trade now and run a PRE-MORTEM: assume it "
+    "already hit its stop, then explain what most likely killed it. The rule engine "
+    "has a real edge, so do not reject on principle — but surface the blind spot the "
+    "desk may be ignoring. If you find no serious objection, say so (severity 'low')."
+)
+_DEVIL_USER = (
+    "{briefing}\n\n"
+    "PROPOSED TRADE:\n{trade}\n\n"
+    "TECHNICAL ANALYST: {tech_view}\n"
+    "MACRO ANALYST: {macro_view}\n\n"
+    "Argue against taking this trade and run the pre-mortem. Respond ONLY with JSON:\n"
+    '{{"strongest_objection": "1-2 sentences", "failure_mode": "what most likely '
+    'stops it out", "severity": "low"|"medium"|"high", "reasoning": "2-4 sentences"}}'
+)
+
+
+# ── Helpers de veto / consiliu de revizie reutilizabile ──────────────────────
+
+def _flag(v) -> bool:
+    """Bool robust: modelele pot returna 'true'/'false' ca string."""
+    if isinstance(v, bool):
+        return v
+    return isinstance(v, str) and v.strip().lower() in ("true", "yes", "da", "1")
+
+
+def _hard_veto(risk: dict) -> str | None:
+    """Codul de veto DOAR daca e valid pentru filtru — altfel None (prudenta necalificata)."""
+    code = str(risk.get("veto_code") or "").strip().upper()
+    return code if (_flag(risk.get("veto")) and code in _FILTER_VETO_CODES) else None
+
+
+def _rep_source(runner: DebateRunner, assignments: dict | None) -> str:
+    """Eticheta sursei pentru un consiliu distribuit pe roluri (source=None)."""
+    ht = runner.transcript.get("head_trader", {})
+    return ht.get("_provider") or (assignments or {}).get("head_trader") or "roluri"
+
+
+def run_review_council(registry, briefing: str, trade_desc: str, cfg: dict,
+                       source: str | None = None, assignments: dict | None = None,
+                       deadline: float | None = None, log=None) -> CouncilOpinion:
+    """
+    Ruleaza consiliul de revizie (4-6 roluri) pe un trade DEJA format si intoarce
+    o CouncilOpinion (approved/confidence/hard_veto/transcript). Pinned pe `source`
+    (consens, fara failover) sau via `assignments` (un singur consiliu, cu failover).
+    Nu ridica: orice ProviderError → opinion cu `error` setat (consiliul iese din joc).
+    """
+    t0 = time.time()
+    src_label = source or "roluri"
+    try:
+        runner = DebateRunner(registry, cfg, source=source,
+                              assignments=assignments or {}, deadline=deadline)
+        tech = runner.ask("technical", _TECH_SYS,
+                          _TECH_USER.format(briefing=briefing, trade=trade_desc),
+                          ["alignment", "confidence", "reasoning"])
+        macro = runner.ask("macro", _MACRO_SYS,
+                           _MACRO_USER.format(briefing=briefing, trade=trade_desc,
+                                              tech_view=_short(tech)),
+                           ["timing_quality", "event_risk", "confidence", "reasoning"])
+        risk = runner.ask("risk", _RISK_SYS,
+                          _RISK_USER.format(briefing=briefing, trade=trade_desc,
+                                            tech_view=_short(tech), macro_view=_short(macro)),
+                          ["veto", "notes"])
+        extra_views: dict = {}
+        if cfg.get("role_quant_enabled"):
+            extra_views["quant"] = runner.ask(
+                "quant", _QUANT_SYS,
+                _QUANT_USER.format(briefing=briefing, trade=trade_desc,
+                                   tech_view=_short(tech), macro_view=_short(macro)),
+                ["assessment", "confidence", "reasoning"])
+        if cfg.get("role_devils_advocate_enabled"):
+            extra_views["devils_advocate"] = runner.ask(
+                "devils_advocate", _DEVIL_SYS,
+                _DEVIL_USER.format(briefing=briefing, trade=trade_desc,
+                                   tech_view=_short(tech), macro_view=_short(macro)),
+                ["strongest_objection", "severity", "reasoning"])
+        head = runner.ask("head_trader", _HEAD_SYS,
+                          _HEAD_USER.format(briefing=briefing, trade=trade_desc,
+                                            tech_view=_short(tech), macro_view=_short(macro),
+                                            risk_view=_short(risk),
+                                            extra=_format_extra(extra_views)),
+                          ["approve", "confidence", "reason"])
+        v = TradeFilter._verdict(head, risk)
+        return CouncilOpinion(
+            source=(source or _rep_source(runner, assignments)),
+            approved=v["approved"], confidence=v["confidence"],
+            hard_veto=_hard_veto(risk), reason=v["reason"],
+            transcript=runner.transcript, duration_s=round(time.time() - t0, 1),
+            fallback_from=runner.fallback_from)
+    except ProviderError as e:
+        if log:
+            log.warning(f"  [AI-FILTER] consiliul «{src_label}» indisponibil ({e})")
+        return CouncilOpinion(source=src_label, approved=False, confidence=None,
+                              error=str(e)[:300], transcript={},
+                              duration_s=round(time.time() - t0, 1))
+
+
+def review_trade(registry, briefing: str, sig: dict, cfg: dict,
+                 source: str | None = None, session_cfg: dict | None = None,
+                 deadline: float | None = None, log=None) -> CouncilOpinion:
+    """
+    Wrapper subtire peste run_review_council pentru orchestratorul motorului
+    autonom: revizuieste un trade descris de `sig` (dict cu symbol/direction/
+    entry/sl/tp/r_ratio/dir_str) pe o sursa data. Foloseste describe_trade.
+    """
+    trade_desc = describe_trade(sig, session_cfg)
+    return run_review_council(registry, briefing, trade_desc, cfg, source=source,
+                              assignments=cfg.get("role_assignments"),
+                              deadline=deadline, log=log)
 
 
 def describe_trade(sig: dict, session_cfg: dict | None = None) -> str:
@@ -210,67 +347,105 @@ class TradeFilter:
         else:
             self._registry.refresh(self._cfg["providers"], keys)
 
+    @staticmethod
+    def _plan_councils(session_cfg: dict, assignments: dict, registry) -> list[str | None]:
+        """
+        Sursele consiliilor din config-ul sesiunii. Fara secondary/tertiary → un
+        singur consiliu (sentinel `None` = distribuit pe roluri, EXACT ca inainte).
+        Cu secondary/tertiary → consilii pinned pe surse DISTINCTE (primary default
+        pe sursa Head Trader-ului). Feature: Multi-Council Consensus.
+        """
+        sc = session_cfg or {}
+        primary = sc.get("ai_filter_primary_source") or None
+        sec = sc.get("ai_filter_secondary_source") or None
+        ter = sc.get("ai_filter_tertiary_source") or None
+        if not (sec or ter):
+            return [primary]   # [None] = un consiliu distribuit pe roluri (backward compat)
+        p = primary or (assignments or {}).get("head_trader") or registry.DEFAULT
+        sources, _dups = resolve_sources(p, sec, ter)
+        return sources or [None]
+
     def evaluate(self, sig: dict, briefing: str, level: str,
                  session_cfg: dict | None = None, log=None) -> dict:
         """
-        Ruleaza consiliul de revizie pe un semnal. NU ridica niciodata — orice
-        esec intoarce approved=True (fail-open) cu `error` completat.
+        Ruleaza pana la 3 consilii AI de revizie pe un semnal si combina verdictele
+        prin CONSENS (media increderilor efective + veto absolut — vezi consensus.py).
+        NU ridica niciodata — orice esec total intoarce approved=True (fail-open).
 
-        Returneaza:
-          {approved, confidence, threshold, level, reason, veto, veto_code,
-           error, duration_s, transcript}
+        Un singur consiliu (default) → comportament IDENTIC cu cel de dinainte de
+        feature: effective = confidence daca aproba altfel 0; aprobat ⟺ >= prag.
+
+        Returneaza (campuri de dinainte + campuri noi additive):
+          {approved, confidence, threshold, level, reason, veto, veto_code, error,
+           duration_s, transcript, consensus_confidence, n_councils, sources,
+           councils, consensus}
         """
         lv = normalize_level(level)
         threshold = FILTER_LEVELS[lv]
         t0 = time.time()
         base = {"level": lv, "threshold": threshold, "veto": False,
-                "veto_code": None, "error": None, "transcript": {}}
+                "veto_code": None, "error": None, "transcript": {},
+                "consensus_confidence": None, "n_councils": 0, "sources": [],
+                "councils": [], "consensus": None}
 
         try:
             self._refresh()
             registry = self._registry
-            assignments = self._cfg.get("role_assignments", {})
+            cfg = dict(self._cfg)
+            # Rolurile optionale se activeaza per sesiune (mostenesc global daca lipsesc).
+            cfg["role_quant_enabled"] = bool((session_cfg or {}).get(
+                "ai_role_quant_enabled", cfg.get("role_quant_enabled", False)))
+            cfg["role_devils_advocate_enabled"] = bool((session_cfg or {}).get(
+                "ai_role_devils_advocate_enabled", cfg.get("role_devils_advocate_enabled", False)))
+            assignments = cfg.get("role_assignments", {})
             trade_desc = describe_trade(sig, session_cfg)
-            transcript: dict = {}
 
-            def _ask(role: str, system: str, user: str, required: list[str]) -> dict:
-                if time.time() - t0 > TIME_BUDGET_S:
-                    raise ProviderError(
-                        f"buget de timp depasit ({TIME_BUDGET_S}s)", kind="network")
-                view, meta = registry.call_role(role, assignments, system, user, required)
-                view["_provider"]  = meta["provider"]
-                view["_latency_s"] = meta["latency_s"]
-                if "fallback_from" in meta:
-                    view["_fallback_from"] = meta["fallback_from"]
-                transcript[role] = view
-                return view
+            council_sources = self._plan_councils(session_cfg or {}, assignments, registry)
+            deadline = t0 + TIME_BUDGET_S
+            opinions: list[CouncilOpinion] = [
+                run_review_council(registry, briefing, trade_desc, cfg, source=src,
+                                   assignments=assignments, deadline=deadline, log=log)
+                for src in council_sources
+            ]
 
-            tech = _ask("technical", _TECH_SYS,
-                        _TECH_USER.format(briefing=briefing, trade=trade_desc),
-                        ["alignment", "confidence", "reasoning"])
-            macro = _ask("macro", _MACRO_SYS,
-                         _MACRO_USER.format(briefing=briefing, trade=trade_desc,
-                                            tech_view=_short(tech)),
-                         ["timing_quality", "event_risk", "confidence", "reasoning"])
-            risk = _ask("risk", _RISK_SYS,
-                        _RISK_USER.format(briefing=briefing, trade=trade_desc,
-                                          tech_view=_short(tech), macro_view=_short(macro)),
-                        ["veto", "notes"])
-            head = _ask("head_trader", _HEAD_SYS,
-                        _HEAD_USER.format(briefing=briefing, trade=trade_desc,
-                                          tech_view=_short(tech), macro_view=_short(macro),
-                                          risk_view=_short(risk)),
-                        ["approve", "confidence", "reason"])
+            verdict = combine(opinions, threshold)
+            dur = round(time.time() - t0, 1)
 
-            verdict = self._verdict(head, risk)
-            # Gate-ul de prag — miezul filtrului: aprobarea consiliului conteaza
-            # doar daca increderea atinge pragul nivelului configurat.
-            if verdict["approved"] and verdict["confidence"] < threshold:
-                verdict["approved"] = False
-                verdict["reason"] = (f"Încredere {verdict['confidence']}% sub pragul "
-                                     f"{threshold}% (nivel {lv}). {verdict['reason']}")
-            return {**base, **verdict,
-                    "duration_s": round(time.time() - t0, 1),
+            if verdict.all_failed:
+                err = next((o.error for o in opinions if o.error), "consiliu indisponibil")
+                if log:
+                    log.warning(f"  [AI-FILTER] toate consiliile indisponibile ({err}) "
+                                "— fail-open, trade permis")
+                return {**base, "approved": True, "confidence": None,
+                        "reason": "Filtru AI indisponibil — trade permis (fail-open).",
+                        "error": err[:300], "duration_s": dur,
+                        "councils": verdict.per_council, "consensus": verdict.to_dict()}
+
+            primary_op = opinions[0]
+            single = verdict.n_participating <= 1
+            if verdict.consensus_confidence is None:
+                # veto absolut → nu exista o medie de consens
+                confidence = primary_op.confidence if single else None
+            elif single:
+                confidence = primary_op.confidence   # backward compat: increderea head-ului
+            else:
+                confidence = int(round(verdict.consensus_confidence))
+            reason = self._compose_reason(verdict, primary_op, threshold, lv, single)
+            # transcriptul principal ramane cel al consiliului primar (compat UI);
+            # opiniile per consiliu sunt in `councils`.
+            transcript = primary_op.transcript
+            return {**base,
+                    "approved":  verdict.approved,
+                    "confidence": confidence,
+                    "reason":    reason,
+                    "veto":      bool(verdict.veto_code),
+                    "veto_code": verdict.veto_code,
+                    "consensus_confidence": verdict.consensus_confidence,
+                    "n_councils": verdict.n_participating,
+                    "sources":   verdict.sources,
+                    "councils":  verdict.per_council,
+                    "consensus": verdict.to_dict(),
+                    "duration_s": dur,
                     "transcript": transcript}
 
         except ProviderError as e:
@@ -290,6 +465,20 @@ class TradeFilter:
                     "duration_s": round(time.time() - t0, 1)}
 
     @staticmethod
+    def _compose_reason(verdict, primary_op, threshold: int, lv: str, single: bool) -> str:
+        """Motivul afisat — reproduce mesajele de dinainte de feature pt 1 consiliu."""
+        if verdict.veto_code:
+            return primary_op.reason          # deja "[VETO ...] ..." din _verdict
+        if single:
+            if (not verdict.approved and primary_op.approved
+                    and (primary_op.confidence or 0) < threshold):
+                return (f"Încredere {primary_op.confidence}% sub pragul {threshold}% "
+                        f"(nivel {lv}). {primary_op.reason}")
+            return primary_op.reason
+        # multi-council: motivul de consens + rezumatul consiliului primar
+        return verdict.reason + (f" {primary_op.reason}" if primary_op.reason else "")
+
+    @staticmethod
     def _verdict(head: dict, risk: dict) -> dict:
         """
         Regulile aplicate IN COD (LLM-ul propune, codul dispune):
@@ -298,12 +487,10 @@ class TradeFilter:
           3. approve=true dar confidence < prag → respins ("sub prag")
           4. altfel → aprobat
         Veto necalificat (fara cod valid) NU respinge — doar apare in motiv.
-        """
-        def _flag(v) -> bool:
-            if isinstance(v, bool):
-                return v
-            return isinstance(v, str) and v.strip().lower() in ("true", "yes", "da", "1")
 
+        NOTA: aceasta functie decide approve la nivel de UN consiliu (fara pragul
+        de incredere — pragul se aplica pe media de consens in `evaluate`).
+        """
         try:
             confidence = max(0, min(100, int(float(head.get("confidence", 0) or 0))))
         except (TypeError, ValueError):
@@ -360,6 +547,11 @@ def log_verdict(output_dir: str, sig: dict, verdict: dict) -> None:
             "veto_code":   verdict.get("veto_code"),
             "error":       verdict.get("error"),
             "duration_s":  verdict.get("duration_s"),
+            # Multi-Council Consensus (additive — gol/None cand e un singur consiliu)
+            "consensus_confidence": verdict.get("consensus_confidence"),
+            "n_councils":  verdict.get("n_councils"),
+            "sources":     verdict.get("sources") or [],
+            "councils":    verdict.get("councils") or [],
             "transcript":  verdict.get("transcript") or {},
         }
         os.makedirs(output_dir, exist_ok=True)

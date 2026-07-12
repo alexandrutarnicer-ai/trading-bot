@@ -155,34 +155,77 @@ class Ledger:
                 "risk_pct", "ticket", "ts"]
         return [dict(zip(cols, r)) for r in rows]
 
-    def daily_loss_R(self, day_iso: str) -> float:
-        """Suma R negative + pozitive din ziua data (pentru stop zilnic)."""
-        row = self.con.execute(
-            "SELECT COALESCE(SUM(result_r), 0) FROM outcomes "
-            "WHERE ts LIKE ? AND result_r IS NOT NULL", (day_iso + "%",)).fetchone()
+    def daily_loss_R(self, day_iso: str, symbol: str | None = None) -> float:
+        """Suma R din ziua data (pentru stop zilnic). Cu `symbol` → doar acea piata
+        (stopul zilnic PER PIATA din market_overrides)."""
+        if symbol is None:
+            row = self.con.execute(
+                "SELECT COALESCE(SUM(result_r), 0) FROM outcomes "
+                "WHERE ts LIKE ? AND result_r IS NOT NULL", (day_iso + "%",)).fetchone()
+        else:
+            row = self.con.execute(
+                "SELECT COALESCE(SUM(result_r), 0) FROM outcomes "
+                "WHERE ts LIKE ? AND result_r IS NOT NULL AND symbol=?",
+                (day_iso + "%", symbol)).fetchone()
         return float(row[0])
+
+    def placed_count(self, day_iso: str, symbol: str) -> int:
+        """Cate ordine au fost PLASATE azi pe piata (gate anti-overtrading)."""
+        row = self.con.execute(
+            "SELECT COUNT(*) FROM decisions "
+            "WHERE ts LIKE ? AND symbol=? AND exec_status='placed'",
+            (day_iso + "%", symbol)).fetchone()
+        return int(row[0])
 
     # Statusuri care reprezinta o tranzactie REALA (ordin activat → pozitie
     # deschisa → inchisa). 'expired'/'cancelled' = ordin plasat care nu s-a
     # activat niciodata → NU e o tranzactie, nu intra in closed_trades/win/exp.
     _CLOSED_STATUSES = ("TP", "SL", "closed")
 
-    def scorecard(self) -> dict:
+    def scorecard(self, exclude_symbols: tuple | list = ()) -> dict:
         """Statistici agregate pentru evaluarea creierului.
 
         closed_trades numara DOAR tranzactiile care s-au activat si s-au inchis
         real (TP/SL/closed). Ordinele expirate sau anulate (niciodata triggerate)
-        sunt excluse din toate statisticile — nu au fost tranzactii."""
+        sunt excluse din toate statisticile — nu au fost tranzactii.
+
+        `exclude_symbols`: pietele IZOLATE (market_overrides.isolated=true) sunt
+        excluse din scorecard-ul principal — rezultatele lor raman vizibile doar
+        per piata (scorecard_by_symbol), pana sunt promovate. Gol → identic cu
+        comportamentul de dinainte."""
+        ex = list(exclude_symbols or ())
+        ex_sql = f" AND symbol NOT IN ({','.join('?' * len(ex))})" if ex else ""
         row = self.con.execute(
             "SELECT COUNT(*), COALESCE(SUM(result_r),0), COALESCE(AVG(result_r),0), "
             "SUM(CASE WHEN result_r > 0 THEN 1 ELSE 0 END) "
-            "FROM outcomes WHERE status IN ('TP','SL','closed') AND result_r IS NOT NULL").fetchone()
+            "FROM outcomes WHERE status IN ('TP','SL','closed') AND result_r IS NOT NULL"
+            + ex_sql, ex).fetchone()
         n, total_r, avg_r, wins = row
-        n_dec = self.con.execute("SELECT COUNT(*) FROM decisions").fetchone()[0]
+        n_dec = self.con.execute(
+            "SELECT COUNT(*) FROM decisions WHERE 1=1" + ex_sql, ex).fetchone()[0]
         n_wait = self.con.execute(
-            "SELECT COUNT(*) FROM decisions WHERE action='WAIT'").fetchone()[0]
+            "SELECT COUNT(*) FROM decisions WHERE action='WAIT'" + ex_sql, ex).fetchone()[0]
         return {
             "decisions": n_dec, "waits": n_wait, "closed_trades": n,
             "total_R": round(total_r, 2), "expectancy_R": round(avg_r, 3),
             "win_rate": round(wins / n, 3) if n else None,
         }
+
+    def scorecard_by_symbol(self) -> dict:
+        """Scorecard separat PER PIATA: {symbol: {decisions, closed_trades, total_R,
+        expectancy_R, win_rate}}. Sursa pentru vizualizarea izolata a pietelor."""
+        out: dict = {}
+        for sym, n_dec in self.con.execute(
+                "SELECT symbol, COUNT(*) FROM decisions GROUP BY symbol"):
+            out[sym] = {"decisions": n_dec, "closed_trades": 0, "total_R": 0.0,
+                        "expectancy_R": 0.0, "win_rate": None}
+        for sym, n, tot, avg, wins in self.con.execute(
+                "SELECT symbol, COUNT(*), COALESCE(SUM(result_r),0), COALESCE(AVG(result_r),0), "
+                "SUM(CASE WHEN result_r>0 THEN 1 ELSE 0 END) FROM outcomes "
+                "WHERE status IN ('TP','SL','closed') AND result_r IS NOT NULL "
+                "GROUP BY symbol"):
+            d = out.setdefault(sym, {"decisions": 0})
+            d.update({"closed_trades": n, "total_R": round(tot, 2),
+                      "expectancy_R": round(avg, 3),
+                      "win_rate": round(wins / n, 3) if n else None})
+        return out

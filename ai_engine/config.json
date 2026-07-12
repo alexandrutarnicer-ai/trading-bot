@@ -56,5 +56,9 @@
     "macro": "ollama",
     "risk": "ollama",
     "technical": "ollama"
-  }
+  },
+  "role_quant_enabled": true,
+  "consensus_threshold": 70,
+  "role_devils_advocate_enabled": false,
+  "market_overrides": {}
 }

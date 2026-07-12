@@ -15,14 +15,16 @@ from __future__ import annotations
 import os
 import json
 import time
+import ctypes
 import logging
 from datetime import datetime, timedelta
 
 from adapters.mt5_source import Mt5DataSource
-from ai_engine.config import load_config, save_default_config, load_keys, AI_DATA
+from ai_engine.config import (load_config, save_default_config, load_keys,
+                              market_cfg, isolated_markets, AI_DATA)
 from ai_engine.providers import ProviderRegistry
 from ai_engine.ledger import Ledger
-from ai_engine import perception, triggers, council, executor
+from ai_engine import perception, triggers, council, executor, orchestrator
 from tz_helper import now_local
 
 log = logging.getLogger("ai_engine")
@@ -37,9 +39,90 @@ def _record_error(where: str, err: str) -> None:
     del _last_errors[:-20]
 
 
+# ── Guard de instanta unica ──────────────────────────────────────────────────
+# Motorul plaseaza ordine pe magic 770015. DOUA instante = expunere dublata SI
+# pozitii care se calca (fiecare vede/inchide pozitiile celeilalte prin acelasi
+# magic) + contentie pe ledger-ul SQLite. run() scria PID-ul fara sa-l verifice,
+# deci un `python -m ai_engine` manual / dublu-click pe .bat / task de autostart
+# suprapus peste o instanta vie pornea o a doua (observat: 3 instante simultan).
+# Guard: mutex Windows NUMIT (atomic, eliberat automat de OS chiar si la taskkill)
+# — Global daca privilegiile permit (cross-sesiune), altfel Local (per-sesiune,
+# prinde cazul comun al dublurilor din aceeasi sesiune) + verificare PID din
+# fisier ca plasa cross-sesiune cand n-avem Global.
+_ERROR_ALREADY_EXISTS = 183
+_MUTEX_NAMES = (r"Global\TradingBot_AIEngine_SingleInstance",
+                r"Local\TradingBot_AIEngine_SingleInstance")
+_single_instance_handle = None
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        STILL_ACTIVE = 259
+        h = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)
+        if not h:
+            return False
+        code = ctypes.c_ulong()
+        ok = ctypes.windll.kernel32.GetExitCodeProcess(h, ctypes.byref(code))
+        ctypes.windll.kernel32.CloseHandle(h)
+        return bool(ok) and code.value == STILL_ACTIVE
+    except Exception:
+        return False
+
+
+def _other_engine_pid(pid_path: str) -> int | None:
+    """PID-ul unei alte instante vii din fisierul PID (cross-sesiune), sau None."""
+    try:
+        with open(pid_path) as f:
+            pid = int(f.read().strip())
+    except (OSError, ValueError):
+        return None
+    return pid if (pid != os.getpid() and _pid_alive(pid)) else None
+
+
+def _acquire_single_instance(names: tuple | None = None) -> tuple[bool, str]:
+    """
+    Obtine lock-ul de instanta unica via mutex Windows numit.
+    Returneaza (True, name) daca suntem singura instanta; (False, name) daca alta
+    o detine deja. Pe non-Windows nu blocheaza (motorul e Windows-only).
+    `names` permite un nume alternativ (folosit de teste, sa nu se cioc­neasca cu
+    motorul real care ruleaza).
+    """
+    global _single_instance_handle
+    if os.name != "nt":
+        return True, "(non-windows)"
+    try:
+        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        k32.CreateMutexW.restype = ctypes.c_void_p
+        k32.CreateMutexW.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_wchar_p]
+    except Exception:
+        return True, "(mutex indisponibil)"
+    for name in (names or _MUTEX_NAMES):
+        handle = k32.CreateMutexW(None, False, name)
+        err = ctypes.get_last_error()
+        if not handle:
+            continue   # namespace refuzat (privilegii) → incearca Local
+        if err == _ERROR_ALREADY_EXISTS:
+            k32.CloseHandle(ctypes.c_void_p(handle))
+            return False, name
+        _single_instance_handle = handle   # tine handle-ul viu pe durata procesului
+        return True, name
+    return True, "(mutex indisponibil — fail-open)"
+
+
+def _release_single_instance() -> None:
+    global _single_instance_handle
+    if _single_instance_handle:
+        try:
+            ctypes.windll.kernel32.CloseHandle(ctypes.c_void_p(_single_instance_handle))
+        except Exception:
+            pass
+        _single_instance_handle = None
+
+
 def _write_status(running: bool, cfg: dict | None = None,
                   scorecard: dict | None = None, equity: float | None = None,
-                  providers_health: dict | None = None) -> None:
+                  providers_health: dict | None = None,
+                  extra: dict | None = None) -> None:
     """Heartbeat pentru UI — scris la fiecare iteratie si la start/stop."""
     try:
         st = {
@@ -55,6 +138,8 @@ def _write_status(running: bool, cfg: dict | None = None,
             "providers":  providers_health or {},
             "role_assignments": (cfg or {}).get("role_assignments"),
         }
+        if extra:
+            st.update(extra)   # scorecard_by_symbol, isolated_markets etc.
         with open(STATUS_PATH, "w", encoding="utf-8") as f:
             json.dump(st, f, ensure_ascii=False, indent=1)
     except Exception:
@@ -91,9 +176,16 @@ def _sleep_to_next_bar(bar_minutes: int) -> None:
 
 
 def _update_outcomes(ledger: Ledger, cfg: dict) -> None:
-    for dec in ledger.open_decisions():
+    open_decs = ledger.open_decisions()
+    if not open_decs:
+        return   # nimic de verificat → zero interogari MT5
+    # Citim pozitiile + ordinele O SINGURA DATA pentru TOATE deciziile (nu N ori).
+    # Snapshot consistent: toate deciziile evaluate pe aceeasi stare de piata.
+    positions = executor.ai_positions(cfg["magic"])
+    pending   = executor.ai_pending_orders(cfg["magic"])
+    for dec in open_decs:
         try:
-            out = executor.check_decision_outcome(dec, cfg)
+            out = executor.check_decision_outcome(dec, cfg, positions, pending)
         except Exception as e:
             log.warning("outcome check %s: %s", dec["symbol"], e)
             continue
@@ -148,13 +240,43 @@ def _weekend_guard(symbol: str, cfg: dict) -> bool:
     return True
 
 
+def _market_limits_text(symbol: str, m: dict, cfg: dict,
+                        daily_r: float, trades_today: int) -> str:
+    """
+    Blocul "DESK LIMITS" adaugat la briefing cand piata are override-uri — asa
+    consiliul PRIMESTE limitele (banda RR permisa, stop zilnic ramas, ordine
+    ramase azi) si proiecteaza trade-ul IN interiorul lor, nu orbeste. Piata
+    fara override → briefing identic byte-cu-byte cu inainte (zero drift LLM).
+    """
+    lines = [f"DESK LIMITS FOR {symbol} (hard rails — enforced by code, design within them):"]
+    if m["capital_fraction"] != 1.0:
+        lines.append(f"- capital allocated to this market: {m['capital_fraction'] * 100:.0f}% of account equity")
+    if m["risk_pct"] is not None:
+        lines.append(f"- max risk per trade on this market: {m['risk_pct'] * 100:.2f}%")
+    if m["max_rr"] is not None:
+        lines.append(f"- reward/risk must be between {cfg['min_rr']:.1f} and {m['max_rr']:.1f} "
+                     "(a TP beyond the max is clamped by the desk)")
+    if m["max_daily_loss_R"] is not None:
+        lines.append(f"- daily loss stop for THIS market: -{m['max_daily_loss_R']:.1f}R "
+                     f"(realized today on it: {daily_r:+.2f}R)")
+    if m["max_trades_per_day"] is not None:
+        left = max(0, int(m["max_trades_per_day"]) - trades_today)
+        lines.append(f"- max orders per day on this market: {int(m['max_trades_per_day'])} "
+                     f"(placed today: {trades_today}, remaining: {left})")
+    return "\n".join(lines)
+
+
 def _process_market(symbol: str, src: Mt5DataSource, registry: ProviderRegistry,
                     ledger: Ledger, cfg: dict, prev_snapshots: dict) -> None:
     snap = perception.build_snapshot(src, symbol)
     prev = prev_snapshots.get(symbol)
     prev_snapshots[symbol] = snap
 
-    pos = executor.open_position_for(symbol, cfg["magic"])
+    # O SINGURA citire de pozitii, refolosita pentru trigger SI pentru expunere
+    # (aceeasi stare, la microsecunde distanta, inainte de consiliu) — evita al
+    # doilea positions_get identic per piata triggerata.
+    positions = executor.ai_positions(cfg["magic"])
+    pos = next((p for p in positions if p.symbol == symbol), None)
     trig = triggers.evaluate(snap, prev, ledger.last_council_ts(symbol),
                              pos is not None, cfg)
     if trig is None:
@@ -165,11 +287,16 @@ def _process_market(symbol: str, src: Mt5DataSource, registry: ProviderRegistry,
     briefing = perception.render_text(snap)
 
     today = datetime.now().date().isoformat()
-    n_open = len(executor.ai_positions(cfg["magic"]))
+    n_open = len(positions)
     # Expunere ANGAJATA = pozitii deschise + ordine pending (fiecare stop poate
     # deveni pozitie). Rail-ul foloseste asta ca sa nu depaseasca max_open_positions
     # la cold-start, cand heartbeat-ul convoaca toate pietele deodata (ledger gol).
-    n_committed = n_open + len(executor.ai_pending_orders(cfg["magic"]))
+    pending_orders = executor.ai_pending_orders(cfg["magic"])
+    n_committed = n_open + len(pending_orders)
+    # Expunere pe ACEST simbol: pozitie deschisa SAU ordin pending pe el. Motorul
+    # nu face pyramiding — blocam un al doilea ordin pe acelasi simbol (defense-in-
+    # depth peste guard-ul de instanta unica: nici o singura instanta nu stivuieste).
+    symbol_committed = (pos is not None) or any(o.symbol == symbol for o in pending_orders)
     desk_state = {
         "open_positions": n_open,
         "committed": n_committed,
@@ -180,7 +307,28 @@ def _process_market(symbol: str, src: Mt5DataSource, registry: ProviderRegistry,
             f"floating {pos.profit:+.2f}$" if pos else "none"),
     }
 
-    decision, transcript, dur = council.convene(registry, briefing, desk_state, cfg)
+    # ── Config PER PIATA (market_overrides) ──
+    # Piata fara override: mcfg = pure default-uri, briefing neschimbat, zero
+    # interogari suplimentare → comportament identic cu inainte.
+    mcfg = market_cfg(cfg, symbol)
+    m_daily_r, m_trades = 0.0, 0
+    if mcfg["_has_overrides"]:
+        m_daily_r = ledger.daily_loss_R(today, symbol)
+        m_trades  = ledger.placed_count(today, symbol)
+        # Consiliul PRIMESTE limitele pietei in briefing — proiecteaza inauntrul lor.
+        briefing += "\n\n" + _market_limits_text(symbol, mcfg, cfg, m_daily_r, m_trades)
+
+    # Consens multi-council: consiliul primar propune, revizorii (daca exista)
+    # confirma; executia e gate-uita de consens. Fara surse secundare/tertiare in
+    # config → un singur convene, identic cu comportamentul de dinainte.
+    decision, bundle, dur = orchestrator.decide(registry, symbol, snap, briefing,
+                                                desk_state, cfg)
+    # transcriptul stocat = rolurile consiliului primar (compat UI) + eventualul
+    # bloc de consens/revizori sub chei cu prefix _ (nu strica rendarea existenta).
+    transcript = dict(bundle.get("primary") or {})
+    if bundle.get("consensus"):
+        transcript["_consensus"] = bundle["consensus"]
+        transcript["_reviewers"] = bundle["reviewers"]
     council_id = ledger.add_council(symbol, trig, snap_id, transcript, dur)
     log.info("DECIZIE %s: %s (conf %s%%) — %s",
              symbol, decision["action"], decision["confidence"],
@@ -199,16 +347,34 @@ def _process_market(symbol: str, src: Mt5DataSource, registry: ProviderRegistry,
             _send_telegram(f"🤖 AI Engine — CLOSE {symbol}\nMotiv: {decision['rationale'][:300]}")
         return
 
+    # ── Aplicarea limitelor PER PIATA pe decizia OPEN (inainte de rails) ──
+    if mcfg["_has_overrides"]:
+        # cap de risc per piata (consiliul poate cere mai putin, niciodata mai mult)
+        if mcfg["risk_pct"] is not None and decision.get("risk_pct"):
+            decision["risk_pct"] = min(decision["risk_pct"], mcfg["risk_pct"])
+        # TP peste plafonul RR al pietei → adus la plafon (SL/directia raman)
+        if council.clamp_tp_to_max_rr(decision, mcfg["max_rr"]):
+            log.info("TP %s plafonat la max_rr=%.1f (limita pietei)", symbol, mcfg["max_rr"])
+
     # OPEN_LONG / OPEN_SHORT — rail-ul foloseste expunerea ANGAJATA (pozitii+pending)
+    # + interdictia de pyramiding pe acelasi simbol + limitele per piata.
+    market_state = None
+    if mcfg["max_daily_loss_R"] is not None or mcfg["max_trades_per_day"] is not None:
+        market_state = {"symbol": symbol, "daily_r": m_daily_r, "trades_today": m_trades,
+                        "max_daily_loss_R": mcfg["max_daily_loss_R"],
+                        "max_trades_per_day": mcfg["max_trades_per_day"]}
     reason = executor.validate_decision(decision, snap, cfg, n_committed,
-                                        desk_state["daily_r"])
+                                        desk_state["daily_r"],
+                                        symbol_committed=symbol_committed,
+                                        market_state=market_state)
     if reason:
         ledger.add_decision(symbol, council_id, decision, "rejected", reason)
         log.info("RESPINS %s: %s", symbol, reason)
         return
 
     dec_id = ledger.add_decision(symbol, council_id, decision, "pending")
-    status, detail, ticket = executor.place(decision, snap, cfg, dec_id)
+    status, detail, ticket = executor.place(decision, snap, cfg, dec_id,
+                                            capital_fraction=mcfg["capital_fraction"])
     entry_used = decision.get("entry") if decision["order_type"] == "stop" else snap["price"]
     ledger.set_exec(dec_id, status, detail, ticket,
                     entry=entry_used if status == "placed" else None)
@@ -232,6 +398,27 @@ def run() -> None:
              cfg["mode"], ",".join(cfg["markets"]),
              ",".join(cfg["providers"].keys()), cfg["role_assignments"])
 
+    # ── Guard de instanta unica (INAINTE de a atinge MT5/Ollama) ──
+    # O a doua instanta ar dubla expunerea pe magic 770015. Verificam PRIMUL lucru.
+    pid_path = os.path.join(AI_DATA, "ai_engine.pid")
+    got_lock, lock_name = _acquire_single_instance()
+    # Verificam SI fisierul PID, mereu: prinde o instanta care ruleaza cod vechi
+    # (fara mutex) sau o instanta dintr-o alta sesiune cand n-avem mutex Global.
+    # Fals-pozitivul de reutilizare PID e improbabil si esueaza in siguranta (refuz).
+    other = _other_engine_pid(pid_path)
+    if (not got_lock) or (other is not None):
+        who = lock_name if not got_lock else f"PID {other}"
+        log.error("Alt AI Engine ruleaza deja (%s) — NU pornesc a doua instanta "
+                  "(as dubla expunerea pe magic %s).", who, cfg["magic"])
+        _send_telegram("🤖⛔ AI Engine — pornirea unei A DOUA instante a fost BLOCATA "
+                       f"({who} ruleaza deja). O singura instanta poate plasa ordine "
+                       "pe magic 770015.")
+        _release_single_instance()
+        return
+    with open(pid_path, "w") as f:
+        f.write(str(os.getpid()))
+    log.info("Instanta unica confirmata (lock: %s, PID %s).", lock_name, os.getpid())
+
     registry = ProviderRegistry(cfg["providers"], load_keys())
     if not registry.default_available():
         raise RuntimeError(
@@ -240,17 +427,30 @@ def run() -> None:
             "Ruleaza: ollama pull <model> / porneste Ollama. "
             "(Ollama e safety-net-ul failover-ului; celelalte surse sunt optionale.)")
 
+    # Sonda PROFUNDA: Ollama poate raspunde la /api/tags (reachable) dar sa nu poata
+    # RULA inferenta (runner llama-server lipsa/corupt) — un fals-pozitiv pe care
+    # default_available() nu-l prinde. Nu oprim motorul (ramane sus, degradeaza
+    # gratios pe surse cloud si se auto-repara dupa ce Ollama e reparat), dar
+    # paginam operatorul CLAR, o singura data, la pornire.
+    ok, detail = registry.default_probe()
+    if not ok:
+        log.error("SAFETY-NET Ollama DEFECT la pornire: %s", detail)
+        _record_error("ollama_probe", detail)
+        _send_telegram(
+            "🛑 AI Engine — safety-net Ollama DEFECT la pornire.\n"
+            f"{detail}\n"
+            "Motorul ruleaza DEGRADAT (failover pe surse cloud daca sunt configurate + "
+            "sanatoase; altfel toate deciziile devin WAIT). Repara Ollama: reinstaleaza "
+            "de pe ollama.com/download. Diagnostic: python -m ai_engine.doctor")
+    else:
+        log.info("Ollama inferenta verificata OK (safety-net functional).")
+
     acc = executor.connect()     # impune DEMO — arunca RuntimeError altfel
     log.info("MT5 conectat: cont %s (%s) equity %.2f %s — DEMO verificat",
              acc.login, acc.server, acc.equity, acc.currency)
 
     src = Mt5DataSource(n_bars=2000)
     src.connect()
-
-    # PID file — permite oprirea curata din exterior
-    pid_path = os.path.join(AI_DATA, "ai_engine.pid")
-    with open(pid_path, "w") as f:
-        f.write(str(os.getpid()))
 
     ledger = Ledger()
     prev_snapshots: dict = {}
@@ -308,10 +508,18 @@ def run() -> None:
                     log.error("Reconectare esuata: %s — reincerc la bara urmatoare", e)
                     _record_error("mt5_reconnect", str(e))
 
-            sc = ledger.scorecard()
-            log.info("scorecard: %s", sc)
+            # Pietele IZOLATE (market_overrides.isolated) nu intra in scorecard-ul
+            # principal — datele lor raman separate, per piata (scorecard_by_symbol),
+            # pana sunt promovate. Derivat din OVERRIDE-URI (nu din lista markets):
+            # o piata izolata scoasa din urmarire ramane exclusa (istoricul ei nu
+            # reintra pe tacute). Fara piete izolate → scorecard identic cu inainte.
+            iso = isolated_markets(cfg)
+            sc = ledger.scorecard(exclude_symbols=iso)
+            log.info("scorecard: %s%s", sc, f" (izolate: {','.join(iso)})" if iso else "")
             _write_status(True, cfg, sc, executor.equity() or None,
-                          providers_health=registry.snapshot())
+                          providers_health=registry.snapshot(),
+                          extra={"scorecard_by_symbol": ledger.scorecard_by_symbol(),
+                                 "isolated_markets": iso})
             _sleep_to_next_bar(cfg["bar_minutes"])
     except KeyboardInterrupt:
         log.info("Oprire ceruta (Ctrl+C).")
@@ -322,5 +530,6 @@ def run() -> None:
             os.remove(pid_path)
         except OSError:
             pass
+        _release_single_instance()
         ledger.close()
         src.disconnect()

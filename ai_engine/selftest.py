@@ -103,6 +103,11 @@ def test_rails(cfg):
     bad_stop = dict(good, entry=1.0840)
     _assert(validate_decision(bad_stop, snap, cfg, 0, 0.0) is not None,
             "BUY_STOP sub pret -> respins")
+    # fara pyramiding: exista deja pozitie/ordin pe simbol -> OPEN respins
+    _assert(validate_decision(good, snap, cfg, 0, 0.0, symbol_committed=True) is not None,
+            "simbol deja angajat -> al doilea OPEN respins (fara stivuire pe simbol)")
+    _assert(validate_decision(good, snap, cfg, 0, 0.0, symbol_committed=False) is None,
+            "simbol liber -> OPEN permis (backward compat, default False)")
 
 
 class _FakeProvider(BaseProvider):
@@ -284,6 +289,145 @@ def test_stop_bracket(cfg):
     _assert(skip is None and e == 1.3420, "SELL_STOP valid sub piata ramane neschimbat")
 
 
+def test_consensus():
+    print("[7b] consens multi-council (combine + surse pinned)")
+    from ai_engine.consensus import CouncilOpinion, combine, resolve_sources
+
+    def _o(src, ap=True, conf=80, veto=None, err=None):
+        return CouncilOpinion(source=src, approved=ap, confidence=conf,
+                              hard_veto=veto, error=err)
+
+    _assert(combine([_o("a", True, 80)], 70).approved,
+            "1 consiliu 80@70 -> aprobat (identic cu regula veche)")
+    _assert(not combine([_o("a", True, 60)], 70).approved,
+            "1 consiliu 60@70 -> respins")
+    v = combine([_o("a", True, 80), _o("b", True, 60)], 70)
+    _assert(v.approved and v.consensus_confidence == 70, "media 2 consilii (75? -> 70)")
+    _assert(not combine([_o("a", True, 90), _o("b", False, 88)], 70).approved,
+            "dizidenta (effective 0) trage media sub prag")
+    _assert(combine([_o("a", True, 95), _o("b", True, 95, veto="NEWS_IMMINENT")], 70).veto_code
+            == "NEWS_IMMINENT", "veto absolut respinge indiferent de medie")
+    fv = combine([_o("a", True, 80), _o("b", err="x", conf=None)], 70)
+    _assert(fv.approved and fv.n_participating == 1, "consiliu esuat ignorat, restul decid")
+    _assert(combine([_o("a", err="x", conf=None)], 70).all_failed, "toate esuate -> all_failed")
+
+    s, d = resolve_sources("ollama", "claude", "ollama")
+    _assert(s == ["ollama", "claude"] and d == ["ollama"], "resolve_sources deduplica")
+
+    # call_role_pinned nu face failover
+    reg = _fake_registry({"gemini": "network", "ollama": None})
+    try:
+        reg.call_role_pinned("gemini", "s", "u", ["bias"])
+        _assert(False, "sursa pinned picata ar fi trebuit sa ridice")
+    except ProviderError:
+        _assert(reg._instances["ollama"].calls == 0,
+                "call_role_pinned NU cade pe alta sursa (independenta consiliilor)")
+
+
+def test_outcome_prefetch(cfg):
+    print("[3b] check_decision_outcome refoloseste pozitii/ordine pre-citite (fara MT5 redundant)")
+    from types import SimpleNamespace
+    import datetime as _dt
+    from ai_engine import executor
+    tk = 555001
+    dec = {"ticket": tk, "symbol": "EURUSD", "action": "OPEN_LONG",
+           "entry": 1.10, "sl": 1.09,
+           "ts": _dt.datetime.now().isoformat(timespec="seconds")}
+    # pozitie deschisa cu acest ticket, pasata explicit -> inca activa, ZERO MT5
+    fake_pos = SimpleNamespace(ticket=tk, identifier=tk, symbol="EURUSD")
+    _assert(executor.check_decision_outcome(dec, cfg, positions=[fake_pos], pending=[]) is None,
+            "pozitie deschisa (pre-citita) -> inca activa, fara interogare history MT5")
+    # ordin pending recent, pasat explicit -> inca pending
+    fake_ord = SimpleNamespace(ticket=tk, symbol="EURUSD")
+    _assert(executor.check_decision_outcome(dec, cfg, positions=[], pending=[fake_ord]) is None,
+            "ordin pending recent (pre-citit) -> inca activ")
+    # fara ticket -> None imediat
+    _assert(executor.check_decision_outcome({"ticket": None}, cfg, positions=[], pending=[]) is None,
+            "fara ticket -> None")
+
+
+def test_single_instance():
+    print("[7d] guard de instanta unica (mutex numit)")
+    if os.name != "nt":
+        print("  SKIP — non-Windows")
+        return
+    from ai_engine import engine as E
+    uniq = (r"Local\TradingBot_AIEngine_selftest_%d" % os.getpid(),)
+    E._single_instance_handle = None
+    ok1, _ = E._acquire_single_instance(uniq)
+    ok2, _ = E._acquire_single_instance(uniq)   # a doua achizitie -> blocata
+    E._release_single_instance()
+    ok3, _ = E._acquire_single_instance(uniq)   # dupa release -> disponibila din nou
+    E._release_single_instance()
+    _assert(ok1, "prima instanta obtine lock-ul")
+    _assert(not ok2, "a doua instanta e BLOCATA (nu pornim doua motoare)")
+    _assert(ok3, "dupa oprirea primei, lock-ul redevine disponibil")
+    # _other_engine_pid: PID propriu nu conteaza ca 'alt motor'; un PID mort -> None
+    import tempfile
+    p = os.path.join(tempfile.mkdtemp(), "pid")
+    open(p, "w").write(str(os.getpid()))
+    _assert(E._other_engine_pid(p) is None, "PID-ul propriu nu e considerat 'alt motor'")
+    open(p, "w").write("999999999")            # PID inexistent
+    _assert(E._other_engine_pid(p) is None, "PID mort in fisier -> None (stale, se preia)")
+
+
+def test_ollama_backend_broken():
+    print("[7c] backend Ollama defect -> server_error actionabil (llama-server lipsa)")
+    from ai_engine import providers as P
+    from ai_engine.providers import OllamaProvider, ProviderError, is_ollama_backend_broken
+
+    _assert(is_ollama_backend_broken("HTTP 500 error starting llama-server: binary not found"),
+            "semnatura 'llama-server' e recunoscuta")
+    _assert(not is_ollama_backend_broken("connection refused"),
+            "eroare benigna NU e clasificata ca backend defect")
+
+    prov = OllamaProvider("ollama", "qwen3:8b")
+    orig = P._http_json
+
+    # 1. 500 "llama-server binary not found" (venit ca 'network' din _http_json) → server_error
+    def _boom(*a, **k):
+        raise ProviderError("ollama: HTTP 500 error starting llama-server: "
+                            "llama-server binary not found", kind="network")
+    P._http_json = _boom
+    try:
+        prov.chat("s", "u")
+        _assert(False, "ar fi trebuit sa ridice")
+    except ProviderError as e:
+        _assert(e.kind == "server_error", f"500 llama-server -> server_error (era {e.kind})")
+        _assert("ollama.com/download" in str(e), "mesaj actionabil (reinstalare Ollama)")
+    finally:
+        P._http_json = orig
+
+    # 2. 200 + {"error": ...} (varianta de versiune) -> tot server_error, nu "raspuns gol"
+    P._http_json = lambda *a, **k: {"error": "error starting llama-server: not found"}
+    try:
+        prov.chat("s", "u")
+        _assert(False, "ar fi trebuit sa ridice")
+    except ProviderError as e:
+        _assert(e.kind == "server_error", "200+error body llama-server -> server_error")
+    finally:
+        P._http_json = orig
+
+    # 3. eroare benigna ramane 'network' (nu reclasificam orice)
+    P._http_json = lambda *a, **k: (_ for _ in ()).throw(ProviderError("ollama: timeout", kind="network"))
+    try:
+        prov.chat("s", "u")
+        _assert(False, "ar fi trebuit sa ridice")
+    except ProviderError as e:
+        _assert(e.kind == "network", "eroare benigna ramane network")
+    finally:
+        P._http_json = orig
+
+    _assert(P._COOLDOWNS["server_error"] > P._COOLDOWNS["network"],
+            "server_error are cooldown mai lung decat network (nu loop strans)")
+
+    # 4. report_failure pe safety-net cu server_error → 'paused' (se auto-repară), nu 'disabled'
+    reg = _fake_registry({"ollama": None})
+    reg.report_failure("ollama", ProviderError("backend defect llama-server", kind="server_error"))
+    _assert(reg.health["ollama"]["status"] == "paused",
+            "server_error -> paused (auto-recovery in <=5 min dupa reparare), nu disabled")
+
+
 def test_council_live(cfg):
     print("[8] consiliu LIVE pe Ollama (poate dura ~1-2 min)")
     provider = make_provider(cfg)
@@ -315,10 +459,14 @@ def main():
     test_ledger()
     test_triggers(cfg)
     test_rails(cfg)
+    test_outcome_prefetch(cfg)
     test_failover()
     test_veto_semantics(cfg)
     test_tp_repair(cfg)
     test_stop_bracket(cfg)
+    test_consensus()
+    test_single_instance()
+    test_ollama_backend_broken()
     test_council_live(cfg)
     print("\nToate verificarile AI Engine au trecut.")
 

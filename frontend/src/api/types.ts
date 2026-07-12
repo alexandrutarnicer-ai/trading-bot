@@ -200,6 +200,13 @@ export interface ProfileSession {
   // Filtru AI Pre-Trade (validare finala inainte de MT5)
   ai_filter_enabled?: boolean;
   ai_filter_level?: "permissive" | "balanced" | "strict";
+  // Multi-Council Consensus — pana la 3 consilii pe surse AI distincte
+  ai_filter_primary_source?: string | null;
+  ai_filter_secondary_source?: string | null;
+  ai_filter_tertiary_source?: string | null;
+  // Roluri AI optionale (Additional AI Roles)
+  ai_role_quant_enabled?: boolean;
+  ai_role_devils_advocate_enabled?: boolean;
 }
 
 export interface TelegramConfig {
@@ -457,6 +464,8 @@ export interface Transaction {
   pnl_usd: number | null;
   ai_approved?: boolean | null;
   ai_confidence?: number | null;
+  ai_n_councils?: number | null;
+  ai_consensus?: number | null;
 }
 
 export interface TransactionsResponse {
@@ -702,6 +711,19 @@ export interface AiStatus {
   equity: number | null;
   scorecard: AiScorecard | null;
   last_errors: { ts: string; where: string; error: string }[];
+  // Config per piata: statistici SEPARATE per simbol + pietele izolate
+  scorecard_by_symbol?: Record<string, AiScorecard> | null;
+  isolated_markets?: string[] | null;
+}
+
+// Override-uri per piata (toate campurile optionale; lipsa = comportament global)
+export interface MarketOverride {
+  capital_fraction?: number | null;    // 0.05-1.0 — fractia din equity pt sizing
+  risk_pct?: number | null;            // cap risc/trade pe piata
+  max_rr?: number | null;              // plafon R:R (TP peste e limitat)
+  max_daily_loss_R?: number | null;    // stop zilnic pe piata
+  max_trades_per_day?: number | null;  // anti-overtrading
+  isolated?: boolean;                  // date separate, excluse din scorecard-ul principal
 }
 
 export interface AiOutcomeInfo {
@@ -749,6 +771,17 @@ export interface AiConfig {
   max_daily_loss_R: number;
   heartbeat_hours: number;
   council_cooldown_min: number;
+  // Roluri optionale de consiliu (Additional AI Roles)
+  role_quant_enabled?: boolean;
+  role_devils_advocate_enabled?: boolean;
+  // Consiliu multiplu (Multi-Council Consensus) — motorul autonom
+  council_primary_source?: string | null;
+  council_secondary_source?: string | null;
+  council_tertiary_source?: string | null;
+  consensus_threshold?: number;
+  // Config per piata
+  market_overrides?: Record<string, MarketOverride>;
+  min_rr?: number;
   [k: string]: unknown;
 }
 

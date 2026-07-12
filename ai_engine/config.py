@@ -43,12 +43,29 @@ DEFAULTS: dict = {
     },
     # Ce sursa joaca fiecare rol din consiliu. Se pot imparti oricum;
     # schimbarile din UI se aplica la urmatorul consiliu (fara restart).
+    # quant / devils_advocate = roluri OPTIONALE (folosite doar cand sunt activate).
     "role_assignments": {
-        "technical":   "ollama",
-        "macro":       "ollama",
-        "risk":        "ollama",
-        "head_trader": "ollama",
+        "technical":       "ollama",
+        "macro":           "ollama",
+        "risk":            "ollama",
+        "quant":           "ollama",
+        "devils_advocate": "ollama",
+        "head_trader":     "ollama",
     },
+
+    # ── Roluri suplimentare de consiliu (Feature: Additional AI Roles) ──
+    # Dezactivate by default → consiliul e EXACT cel de dinainte (4 roluri).
+    "role_quant_enabled":            False,  # Analist Cantitativ / Volatilitate (EV, win-prob)
+    "role_devils_advocate_enabled":  False,  # Avocatul Diavolului (pre-mortem, contra-teza)
+
+    # ── Consiliu multiplu (Feature: Multi-Council Consensus) ──
+    # Motorul autonom: consiliul PRIMAR construieste trade-ul; daca sunt configurate
+    # surse secundare/tertiare, acele consilii REVIZUIESC trade-ul propus si executia
+    # e gate-uita de consens. Toate None → un singur consiliu (comportamentul de azi).
+    "council_primary_source":   None,   # None = distribuit pe roluri (role_assignments)
+    "council_secondary_source": None,   # sursa consiliului 2 (optional, distincta)
+    "council_tertiary_source":  None,   # sursa consiliului 3 (optional, distincta)
+    "consensus_threshold":      70,     # media increderilor >= prag → executa
 
     # Cadenta: perceptia ruleaza la fiecare bara M15; consiliul doar pe trigger.
     "bar_minutes":            15,
@@ -74,7 +91,78 @@ DEFAULTS: dict = {
     # Inchidere weekend (piete FX/indici) — cripto (XRP/BTC...) e exceptat, ruleaza non-stop.
     "weekend_close_enabled": True, # Vineri: inchide pozitiile + anuleaza pending; nu deschide Sam/Dum
     "weekend_close_hour":    22,   # Vineri, ora RO (Europe/Bucharest), de la care FX e "inchis"
+
+    # ── Config PER PIATA (market_overrides) — toate campurile OPTIONALE ──
+    # O piata fara override se comporta EXACT ca pana acum. Campuri per simbol:
+    #   capital_fraction   (0.05-1.0, default 1.0) — fractia din equity folosita ca
+    #                      baza de sizing pe piata (risc $ = equity*fraction*risk_pct)
+    #   risk_pct           (cap per trade pe piata; clamp la risk_pct_max global)
+    #   max_rr             (1-10; TP peste e LIMITAT la max_rr; consiliul e informat)
+    #   max_daily_loss_R   (stop zilnic PE PIATA, separat de stopul global -3R)
+    #   max_trades_per_day (anti-overtrading: max ordine plasate/zi pe piata)
+    #   isolated           (true = piata "in observatie": rezultatele ei NU intra in
+    #                      scorecard-ul principal; raman vizibile per piata)
+    "market_overrides": {},
 }
+
+# Valorile implicite ale unui override — identice cu comportamentul fara override.
+MARKET_OVERRIDE_DEFAULTS = {
+    "capital_fraction":   1.0,    # tot equity-ul (ca pana acum)
+    "risk_pct":           None,   # None = riscul decis de consiliu (clamp global)
+    "max_rr":             None,   # None = fara plafon RR (ca pana acum)
+    "max_daily_loss_R":   None,   # None = doar stopul global de zi
+    "max_trades_per_day": None,   # None = fara limita per piata
+    "isolated":           False,  # in scorecard-ul principal
+}
+
+
+def sanitize_market_overrides(raw: dict | None, risk_pct_max: float = 0.02) -> dict:
+    """Curata + clamp-uieste override-urile per piata (folosit de load_config SI de API)."""
+    out: dict = {}
+    for sym, ov in (raw or {}).items():
+        if not isinstance(ov, dict):
+            continue
+        clean: dict = {}
+        try:
+            if ov.get("capital_fraction") is not None:
+                clean["capital_fraction"] = max(0.05, min(1.0, float(ov["capital_fraction"])))
+            if ov.get("risk_pct") is not None:
+                clean["risk_pct"] = max(0.0005, min(float(ov["risk_pct"]), float(risk_pct_max)))
+            if ov.get("max_rr") is not None:
+                clean["max_rr"] = max(1.0, min(10.0, float(ov["max_rr"])))
+            if ov.get("max_daily_loss_R") is not None:
+                clean["max_daily_loss_R"] = max(0.25, min(10.0, float(ov["max_daily_loss_R"])))
+            if ov.get("max_trades_per_day") is not None:
+                clean["max_trades_per_day"] = max(1, min(20, int(ov["max_trades_per_day"])))
+            if ov.get("isolated"):
+                clean["isolated"] = True
+        except (TypeError, ValueError):
+            continue   # override corupt → ignorat (fail-safe: comportament default)
+        if clean:
+            out[str(sym).strip().upper()] = clean
+    return out
+
+
+def market_cfg(cfg: dict, symbol: str) -> dict:
+    """Config-ul REZOLVAT al unei piete: DEFAULTS + override-ul ei (daca exista).
+    `_has_overrides` = piata are cel putin un camp configurat explicit.
+    O piata NOUA (fara override) primeste pure default-uri = comportament global."""
+    ov = (cfg.get("market_overrides") or {}).get(symbol) or {}
+    m = dict(MARKET_OVERRIDE_DEFAULTS)
+    m.update(ov)
+    m["_has_overrides"] = bool(ov)
+    return m
+
+
+def isolated_markets(cfg: dict) -> list[str]:
+    """
+    Pietele marcate `isolated` in market_overrides — derivate din OVERRIDE-URI,
+    nu din lista `markets`: o piata izolata SCOASA din urmarire ramane izolata,
+    ca istoricul ei sa nu reintre pe tacute in scorecard-ul principal. (Config-ul
+    ei ramane salvat si e re-aplicat automat daca piata e re-adaugata.)
+    """
+    return sorted(s for s, ov in (cfg.get("market_overrides") or {}).items()
+                  if isinstance(ov, dict) and ov.get("isolated"))
 
 
 def load_config() -> dict:
@@ -90,6 +178,14 @@ def load_config() -> dict:
     # Rails: orice ar scrie utilizatorul/consiliul, limitele hard raman.
     cfg["risk_pct_max"]       = min(float(cfg["risk_pct_max"]), 0.02)
     cfg["max_open_positions"] = min(int(cfg["max_open_positions"]), 6)
+    # Pragul de consens: clamp in banda utila (sub 50 = fara sens, peste 90 = paralizie).
+    try:
+        cfg["consensus_threshold"] = max(50, min(90, int(cfg.get("consensus_threshold", 70))))
+    except (TypeError, ValueError):
+        cfg["consensus_threshold"] = 70
+    # Override-uri per piata: curatate + clamp-uite (corupt → ignorat, default-uri raman)
+    cfg["market_overrides"] = sanitize_market_overrides(
+        cfg.get("market_overrides"), cfg["risk_pct_max"])
 
     # ── Normalizare registru surse ──
     provs = dict(cfg.get("providers") or {})
@@ -104,10 +200,18 @@ def load_config() -> dict:
 
     # asignari de rol: doar surse existente; fallback pe ollama
     ra = dict(cfg.get("role_assignments") or {})
-    for role in ("technical", "macro", "risk", "head_trader"):
+    for role in ("technical", "macro", "risk", "quant", "devils_advocate", "head_trader"):
         if ra.get(role) not in provs:
             ra[role] = "ollama"
     cfg["role_assignments"] = ra
+
+    # surse de consiliu multiplu: doar surse existente si enabled (altfel None)
+    for key in ("council_primary_source", "council_secondary_source",
+                "council_tertiary_source"):
+        src = cfg.get(key)
+        if src is not None and not (isinstance(provs.get(src), dict)
+                                    and provs[src].get("enabled")):
+            cfg[key] = None
 
     os.makedirs(AI_DATA, exist_ok=True)
     return cfg

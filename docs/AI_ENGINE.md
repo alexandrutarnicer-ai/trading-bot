@@ -28,6 +28,15 @@ strategia in functie de context (trend, structura, volatilitate, stiri), dezbate
 fiecare decizie intr-un "consiliu de traderi AI" si executa DOAR pe cont demo,
 cu rails de risc hard. Contextul si decizia de arhitectura: [AI_ENGINE_FEASIBILITY.md](AI_ENGINE_FEASIBILITY.md).
 
+## Consiliu multiplu (consens) + roluri suplimentare — optional
+
+Optional si dezactivat by default: motorul poate rula **pana la 3 consilii** pe surse
+AI diferite (primarul propune trade-ul, revizorii il confirma; media increderilor >=
+prag → executa, un veto valid blocheaza) si poate activa doua roluri suplimentare
+(**Analist Cantitativ**, **Avocatul Diavolului**). Fara surse secundare/tertiare →
+un singur consiliu, identic cu comportamentul de dinainte. Detalii complete (strategia
+de consens, roluri, config, vizibilitate, teste): [MULTI_COUNCIL_CONSENSUS.md](MULTI_COUNCIL_CONSENSUS.md).
+
 ## Pornire
 
 ```bash
@@ -166,6 +175,27 @@ heartbeat-ul convoaca toate pietele in prima bara. Expunerea e totusi plafonata 
 Rails-urile din `config.py` sunt clamp-uri **hard** — consiliul poate cere mai
 putin risc, niciodata mai mult.
 
+### Limite PER PIATA (`market_overrides`) — optional, default gol
+
+Fiecare piata poate primi propriile limite (tab AI Engine → cardul **Limite per
+piata**; toate campurile optionale — o piata fara override se comporta EXACT ca
+pana acum):
+
+| Camp | Efect |
+|---|---|
+| `capital_fraction` | baza de sizing = equity × fractie (0.05–1.0). Nota: la cont mic, lotul minim al brokerului domina — fractia devine efectiva cu equity mai mare |
+| `risk_pct` | cap de risc per trade PE PIATA (clamp la `risk_pct_max` global) |
+| `max_rr` | plafon R:R — un TP peste plafon e ADUS la plafon (SL/directia raman ale consiliului) |
+| `max_daily_loss_R` | stop zilnic PE PIATA (separat de stopul global -3R) |
+| `max_trades_per_day` | anti-overtrading: max ordine plasate/zi pe piata |
+| `isolated` | piata „in observatie": rezultatele ei NU intra in scorecard-ul principal; raman vizibile per piata (`scorecard_by_symbol` in status + UI) |
+
+**Consiliul primeste limitele** in briefing (bloc „DESK LIMITS" — banda R:R
+permisa, stopul zilnic ramas, ordinele ramase azi) si proiecteaza trade-ul in
+interiorul lor; codul le aplica oricum ca rails hard (`validate_decision` +
+`clamp_tp_to_max_rr`). Se aplica hot (per iteratie, fara restart). Teste:
+`python scripts/test_market_config.py`.
+
 ## Siguranta
 
 1. **DEMO enforced** — `executor.connect()` refuza orice cont non-demo (RuntimeError).
@@ -181,6 +211,34 @@ putin risc, niciodata mai mult.
    libera a contului (protejeaza contul mic de pozitii disproportionate).
 7. **Reconectare automata MT5** — daca toate pietele esueaza intr-o iteratie (terminal
    inchis/restartat), motorul reconecteaza singur si notifica pe Telegram.
+
+## Depanare — „Ollama reachable dar toate deciziile sunt WAIT"
+
+Simptom (tab-ul AI Engine → cardul Surse AI): Ollama apare cu eroare
+`HTTP 500 ... error starting llama-server: llama-server binary not found`, iar
+motorul face WAIT la aproape tot. Cauza: **instalare Ollama corupta/partiala** —
+serverul raspunde la `/api/tags` (deci pare pornit si modelul e listat) dar nu
+poate porni runner-ul de inferenta (`llama-server.exe` lipseste din
+`%LOCALAPPDATA%\Programs\Ollama\lib\ollama\`), tipic dupa un update intrerupt sau
+cand antivirusul a pus binarul in carantina.
+
+Diagnostic si remediere:
+
+```bash
+python -m ai_engine.doctor        # confirma "Ollama inferenta: DEFECT" + pasii de reparare
+```
+
+1. Reinstaleaza/actualizeaza Ollama de pe <https://ollama.com/download>.
+2. Verifica ca antivirusul nu a pus `llama-server.exe` in carantina.
+3. Reporneste Ollama si confirma: `ollama run qwen3:8b "ok"`.
+4. Reruleaza `python -m ai_engine.doctor` — trebuie sa arate `Ollama inferenta: OK`.
+
+Motorul **detecteaza** singur aceasta stare: la pornire ruleaza o sonda de inferenta
+reala (`default_probe`, nu doar reachability) si, daca esueaza, ramane sus si
+degradeaza pe sursele cloud (daca sunt configurate), dar PAGINEAZA operatorul o
+data pe Telegram. Eroarea e clasificata `server_error` (pauza 300s, `paused` nu
+`disabled`), deci se **auto-repara** in ≤5 min dupa ce reinstalezi Ollama — fara
+restart de motor.
 
 ## Evaluare — cand stim daca "creierul" are valoare?
 
