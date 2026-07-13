@@ -423,6 +423,16 @@ def _place_order(sig: dict, lots: float, expire_bars: int,
             # Ambele sunt tranzitorii, nu probleme de filling — retry bara urm.
             log.warning(f"  [EXEC] {sig['signal_id']}: retcode={result.retcode} conexiune/timeout — retry bara urm.")
             return None
+        if result.retcode in (10015, 10016):
+            # 10015 = Invalid price, 10016 = Invalid stops. Cauza tipica: pretul a depasit
+            # entry (sau SL/TP a ajuns de partea gresita a pretului) in milisecundele dintre
+            # pre-check-ul de mai sus si order_send — un RACE, nu o eroare de config. La crypto
+            # trade_stops_level=0, deci pre-check-ul de distanta minima nu prinde acest caz.
+            # Pastram semnalul si reincercam bara urmatoare; expira natural dupa expire_bars
+            # daca pretul nu revine. (Observat: S3-BTC IB0013 2026-07-13, S7-XRP IB0020 2026-06-29.)
+            log.warning(f"  [EXEC] {sig['signal_id']}: retcode={result.retcode} "
+                        f"(pret/stops invalide — pretul a depasit entry?) — retry bara urm.")
+            return None
         if result.retcode not in (10030, 10006):
             # 10030 = invalid fill type, 10006 = reject generic (ICMarketsEU crypto returneaza
             # 10006 in loc de 10030 cand filling mode e incompatibil) — incercam alt filling.
@@ -545,7 +555,8 @@ def _cancel_mt5_order(ticket: int, sig_id: str, reason: str, log) -> bool:
     return False
 
 
-def _notify_signal(sig: dict, session_id: str, telegram: bool = True) -> None:
+def _notify_signal(sig: dict, session_id: str, telegram: bool = True,
+                   ai_note: str = "") -> None:
     """
     Notificare Windows Toast + Telegram + terminal bell la detectarea unui semnal nou.
     Non-blocking. Esecul notificarii nu opreste sesiunea.
@@ -553,6 +564,9 @@ def _notify_signal(sig: dict, session_id: str, telegram: bool = True) -> None:
     telegram=False cand execute_trades=True — Telegram-ul este trimis separat in
     "Ordin plasat" (cu ticket + lots), evitand doua notificari identice la distanta
     de secunde pentru acelasi eveniment.
+
+    ai_note = sufixul din _ai_note() cand sesiunea are Filtrul AI activat — asa si
+    notificarea sesiunilor de observatie (execute_trades=False) arata verdictul AI.
     """
     # Bell in terminal
     sys.stdout.write("\a")
@@ -583,7 +597,8 @@ def _notify_signal(sig: dict, session_id: str, telegram: bool = True) -> None:
             f"Entry: <code>{entry}</code>\n"
             f"SL:    <code>{sl}</code>\n"
             f"TP:    <code>{tp}</code>\n"
-            f"R/R:   {sig['r_ratio']:.1f}R\n"
+            f"R/R:   {sig['r_ratio']:.1f}R"
+            f"{ai_note}\n"
             f"<i>{session_id}</i>"
         )
 
@@ -615,6 +630,14 @@ def _notify_signal(sig: dict, session_id: str, telegram: bool = True) -> None:
 
 _AI_FILTER = None   # instanta TradeFilter, lazy per proces de sesiune
 
+# Marker fail-open: filtrul e ACTIVAT dar nu a putut evalua (Ollama/modul picat,
+# briefing/eval a aruncat). Trade-ul e permis (fail-open), DAR notificarea trebuie
+# sa spuna explicit ca AI a fost indisponibil — altfel mesajul e mut si pare ca
+# sesiunea nici nu are filtru. Se distinge de None (= filtru dezactivat).
+_AI_UNAVAILABLE = {"approved": True, "confidence": None, "threshold": None,
+                   "level": None, "error": "unavailable", "n_councils": None,
+                   "sources": []}
+
 
 def _ai_filter_check(sig: dict, session_cfg: dict, src, log) -> dict | None:
     """
@@ -632,7 +655,7 @@ def _ai_filter_check(sig: dict, session_cfg: dict, src, log) -> dict | None:
         from ai_engine.trade_filter import TradeFilter, build_briefing, log_verdict
     except Exception as e:
         log.warning(f"  [AI-FILTER] modul indisponibil ({e}) — fail-open, trade permis")
-        return None
+        return dict(_AI_UNAVAILABLE)
     try:
         if _AI_FILTER is None:
             _AI_FILTER = TradeFilter()
@@ -658,7 +681,7 @@ def _ai_filter_check(sig: dict, session_cfg: dict, src, log) -> dict | None:
     except Exception as e:
         log.warning(f"  [AI-FILTER] eroare neasteptata ({type(e).__name__}: {e}) "
                     "— fail-open, trade permis")
-        return None
+        return dict(_AI_UNAVAILABLE)
 
 
 def _ai_note(p: dict | None) -> str:
@@ -670,7 +693,7 @@ def _ai_note(p: dict | None) -> str:
     if not v:
         return ""
     if v.get("error"):
-        return "\n🤖 Filtru AI: indisponibil la plasare (fail-open)"
+        return "\n🤖 Filtru AI: indisponibil (fail-open — trade permis)"
     conf, thr = v.get("confidence"), v.get("threshold")
     n = v.get("n_councils")
     # Sufix consens cand au participat mai multe consilii AI (Multi-Council).
@@ -679,8 +702,8 @@ def _ai_note(p: dict | None) -> str:
         srcs = v.get("sources") or []
         tail = f" · consens {n} consilii" + (f" ({', '.join(srcs)})" if srcs else "")
     if conf is None:
-        return "\n🤖 Filtru AI: aprobat" + tail
-    return f"\n🤖 Filtru AI: aprobat — încredere {conf}% (prag {thr}%){tail}"
+        return "\n🤖 Filtru AI: aprobat ✅" + tail
+    return f"\n🤖 Filtru AI: aprobat ✅ — încredere {conf}% (prag {thr}%){tail}"
 
 
 def _ai_pending_entry(verdict: dict | None) -> dict | None:
@@ -3480,9 +3503,11 @@ def run_generator(session_cfg: dict):
                         f"entry={sig['entry']:.5f} sl={sig['sl']:.5f} tp={sig['tp']:.5f} "
                         f"({sig['r_ratio']:.1f}R) RSI={sig['rsi']:.0f}"
                     )
-                    # execute_trades=True → Telegram vine din "Ordin plasat" (cu ticket+lots)
+                    # execute_trades=True → Telegram vine din "Ordin plasat" (cu ticket+lots).
+                    # Sesiunile de observatie (telegram=True) primesc verdictul AI aici.
                     _notify_signal(sig, session_cfg["session_id"],
-                                   telegram=not session_cfg.get("execute_trades", False))
+                                   telegram=not session_cfg.get("execute_trades", False),
+                                   ai_note=_ai_note(state["pending"][symbol][sig["signal_id"]]))
 
                     # Executie demo/live
                     if session_cfg.get("execute_trades", False):

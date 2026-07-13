@@ -48,16 +48,18 @@ ALL_SYMBOLS = [
 RETCODES = {
     10004: "Requote",          10006: "Cerere respinsa",
     10008: "Ordin plasat",     10009: "DONE",
-    10012: "Timeout server",   10013: "Pret invalid",
-    10014: "Stop-uri invalide",10015: "Volum invalid",
+    10012: "Timeout server",   10013: "Cerere invalida",
+    10014: "Volum invalid",    10015: "Pret invalid",
+    10016: "Stop-uri invalide",
     10017: "Trade dezactivat", 10018: "Piata inchisa",
     10019: "Fonduri insuf",    10022: "Ordin invalid",
     10025: "Operatie nepermisa",10026: "AutoTrade SERVER",
     10027: "AutoTrade CLIENT", 10030: "Filling nepermis",
     10031: "Fara conexiune",
 }
-# Retcode-uri care inseamna retry bara urm (nu eroare fatala)
-RETRY_NONE_RETCODES = {10012, 10031, 10026, 10027}
+# Retcode-uri care inseamna retry bara urm (nu eroare fatala).
+# 10015/10016 = pretul a depasit entry/stops intre pre-check si order_send (race).
+RETRY_NONE_RETCODES = {10012, 10031, 10026, 10027, 10015, 10016}
 
 
 # ===========================================================================
@@ -159,6 +161,29 @@ def run_unit_tests():
         passed += 1
     else:
         failed += 1
+
+    # Test: 10015/10016 (pret/stops invalide = race la breakout) → None, nu False.
+    # Reproducerea bug-ului S3-BTC IB0013 (2026-07-13): pretul a depasit entry intre
+    # pre-check si order_send; inainte de fix era clasificat drept eroare fatala (False).
+    def _sim_invalid_price(rc):
+        if rc in (10026, 10027):
+            return "None-autotrading"
+        if rc in (10012, 10031):
+            return "None-conn"
+        if rc in (10015, 10016):
+            return "None"  # race pret/stops → retry bara urm, nu drop
+        if rc not in (10030, 10006):
+            return "False"
+        return "continue"
+
+    for rc in (10015, 10016):
+        result = _sim_invalid_price(rc)
+        ok = result == "None"
+        print(f"  [{'PASS' if ok else 'FAIL'}] retcode {rc} (pret/stops invalide) -> None (retry), nu False")
+        if ok:
+            passed += 1
+        else:
+            failed += 1
 
     # Test logica all_10006: simulam toate incercarile returnand 10006
     def _sim_all_10006():
