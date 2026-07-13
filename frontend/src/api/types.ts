@@ -881,3 +881,11 @@ export interface AiProviderTestResult {
   detail: string;
   kind: string | null;
 }
+
+export interface AiProviderModelsResult {
+  ok: boolean;
+  models: string[];
+  count?: number;
+  detail?: string;
+  kind?: string | null;
+}

@@ -115,6 +115,11 @@ if ($mt5Exe) {
 }
 
 # Task 2: run_all.py la login (via start_bot.bat, cu 45s delay intern)
+# ATENTIE: RunLevel Limited (NU Highest) — cu Highest, sesiunile pornite de task
+# rulau ELEVATED si nici UI-ul (API neelevat), nici run_all pornit din UI nu le
+# putea opri sau inlocui (Access Denied, CommandLine invizibil). Observat live
+# 12-13 iul 2026: 20 sesiuni orfane elevate au supravietuit la 3 restarturi.
+# Botul nu are nevoie de admin (scrie doar in folderul proiectului).
 try {
     $a2 = New-ScheduledTaskAction -Execute "cmd.exe" -Argument "/c `"$BatPath`""
     $t2 = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
@@ -122,8 +127,8 @@ try {
           -DontStopIfGoingOnBatteries -StartWhenAvailable `
           -ExecutionTimeLimit (New-TimeSpan -Days 2)
     Register-ScheduledTask -TaskName "TradingBot-RunAll" `
-        -Action $a2 -Trigger $t2 -Settings $s2 -RunLevel Highest -Force | Out-Null
-    Write-Host "[OK] Task TradingBot-RunAll - run_all.py porneste la login + 45s" -ForegroundColor Green
+        -Action $a2 -Trigger $t2 -Settings $s2 -RunLevel Limited -Force | Out-Null
+    Write-Host "[OK] Task TradingBot-RunAll - run_all.py porneste la login + 45s (neelevat)" -ForegroundColor Green
 } catch {
     Write-Host "[EROARE] Task RunAll: $_" -ForegroundColor Red
 }

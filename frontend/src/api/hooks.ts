@@ -768,7 +768,7 @@ export const useMt5Orders = () =>
 
 // ── Surse AI multi-provider ───────────────────────────────────────────────────
 
-import type { AiProvidersResponse, AiProviderTestResult } from "./types";
+import type { AiProvidersResponse, AiProviderTestResult, AiProviderModelsResult } from "./types";
 
 // `poll=true` (AI Engine tab): reimprospatare la 15s pentru sanatatea live a
 // surselor. `poll=false` (SessionEditor, montat permanent in tab-ul Profile):
@@ -799,4 +799,14 @@ export const useAiTestProvider = () =>
   useMutation<AiProviderTestResult, Error, string>({
     mutationFn: (name: string) =>
       apiFetch("/ai/providers/test", { method: "POST", body: { name } }),
+  });
+
+// Descoperire LIVE de modele la o sursa (dropdown dinamic in AiProvidersCard).
+// Sursa existenta: {name}. Sursa noua (formularul de adaugare): {type, base_url?, key?}.
+export const useAiProviderModels = () =>
+  useMutation<AiProviderModelsResult, Error, {
+    name?: string; type?: string; base_url?: string; url?: string; key?: string;
+  }>({
+    mutationFn: body =>
+      apiFetch("/ai/providers/models", { method: "POST", body }),
   });

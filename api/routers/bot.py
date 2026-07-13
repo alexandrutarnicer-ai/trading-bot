@@ -122,11 +122,12 @@ def _clear_active_profile() -> None:
             os.remove(ACTIVE_PROFILE_FILE)
     except Exception:
         pass
-    try:
-        if os.path.exists(RUNTIME_PROFILE_FILE):
-            os.remove(RUNTIME_PROFILE_FILE)
-    except Exception:
-        pass
+    # INTENTIONAT nu stergem RUNTIME_PROFILE_FILE: e snapshot-ul de config citit
+    # de sesiuni la pornire. Daca il stergem, un start ulterior din CLI/autostart
+    # (fara UI) porneste sesiunile pe SESSION_CONFIG hardcodat — fara filtru AI,
+    # fara orele/riscul din profil, silentios (observat live: 12-13 iul 2026,
+    # autostart dupa boot a rulat 20 sesiuni o zi intreaga fara profil).
+    # Markerul de "bot pornit" ramane ACTIVE_PROFILE_FILE (sters mai sus).
     _update_run_log(last_stopped_at=datetime.now().isoformat())
 
 
