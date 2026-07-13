@@ -72,7 +72,12 @@
       "inside_bar_r_ratio": 2,
       "inside_bar_risk_pct": 0.01,
       "ai_filter_enabled": true,
-      "ai_filter_level": "balanced"
+      "ai_filter_level": "balanced",
+      "ai_filter_primary_source": null,
+      "ai_filter_secondary_source": null,
+      "ai_filter_tertiary_source": null,
+      "ai_role_quant_enabled": false,
+      "ai_role_devils_advocate_enabled": false
     },
     {
       "id": "S2",
@@ -160,6 +165,11 @@
       "inside_bar_risk_pct": 0.01,
       "ai_filter_enabled": false,
       "ai_filter_level": "balanced",
+      "ai_filter_primary_source": null,
+      "ai_filter_secondary_source": null,
+      "ai_filter_tertiary_source": null,
+      "ai_role_quant_enabled": false,
+      "ai_role_devils_advocate_enabled": false,
       "adx_d1_enabled": false
     },
     {
@@ -249,7 +259,12 @@
       "inside_bar_r_ratio": 2,
       "inside_bar_risk_pct": 0.01,
       "ai_filter_enabled": true,
-      "ai_filter_level": "balanced"
+      "ai_filter_level": "balanced",
+      "ai_filter_primary_source": null,
+      "ai_filter_secondary_source": null,
+      "ai_filter_tertiary_source": null,
+      "ai_role_quant_enabled": false,
+      "ai_role_devils_advocate_enabled": false
     },
     {
       "id": "S4",
@@ -320,7 +335,12 @@
       "inside_bar_r_ratio": 2,
       "inside_bar_risk_pct": 0.01,
       "ai_filter_enabled": false,
-      "ai_filter_level": "balanced"
+      "ai_filter_level": "balanced",
+      "ai_filter_primary_source": null,
+      "ai_filter_secondary_source": null,
+      "ai_filter_tertiary_source": null,
+      "ai_role_quant_enabled": false,
+      "ai_role_devils_advocate_enabled": false
     },
     {
       "id": "S5",
@@ -395,7 +415,12 @@
       "inside_bar_r_ratio": 2,
       "inside_bar_risk_pct": 0.01,
       "ai_filter_enabled": false,
-      "ai_filter_level": "balanced"
+      "ai_filter_level": "balanced",
+      "ai_filter_primary_source": null,
+      "ai_filter_secondary_source": null,
+      "ai_filter_tertiary_source": null,
+      "ai_role_quant_enabled": false,
+      "ai_role_devils_advocate_enabled": false
     },
     {
       "id": "S6",
@@ -469,7 +494,12 @@
       "inside_bar_r_ratio": 2,
       "inside_bar_risk_pct": 0.01,
       "ai_filter_enabled": false,
-      "ai_filter_level": "balanced"
+      "ai_filter_level": "balanced",
+      "ai_filter_primary_source": null,
+      "ai_filter_secondary_source": null,
+      "ai_filter_tertiary_source": null,
+      "ai_role_quant_enabled": false,
+      "ai_role_devils_advocate_enabled": false
     },
     {
       "id": "S7",
@@ -541,7 +571,12 @@
       "inside_bar_r_ratio": 2,
       "inside_bar_risk_pct": 0.01,
       "ai_filter_enabled": true,
-      "ai_filter_level": "balanced"
+      "ai_filter_level": "balanced",
+      "ai_filter_primary_source": null,
+      "ai_filter_secondary_source": null,
+      "ai_filter_tertiary_source": null,
+      "ai_role_quant_enabled": false,
+      "ai_role_devils_advocate_enabled": false
     },
     {
       "id": "S8",
@@ -621,7 +656,12 @@
       "inside_bar_r_ratio": 2,
       "inside_bar_risk_pct": 0.01,
       "ai_filter_enabled": true,
-      "ai_filter_level": "balanced"
+      "ai_filter_level": "balanced",
+      "ai_filter_primary_source": null,
+      "ai_filter_secondary_source": null,
+      "ai_filter_tertiary_source": null,
+      "ai_role_quant_enabled": false,
+      "ai_role_devils_advocate_enabled": false
     },
     {
       "id": "S9",
@@ -706,7 +746,12 @@
       "inside_bar_r_ratio": 2,
       "inside_bar_risk_pct": 0.01,
       "ai_filter_enabled": true,
-      "ai_filter_level": "balanced"
+      "ai_filter_level": "balanced",
+      "ai_filter_primary_source": null,
+      "ai_filter_secondary_source": null,
+      "ai_filter_tertiary_source": null,
+      "ai_role_quant_enabled": false,
+      "ai_role_devils_advocate_enabled": false
     },
     {
       "id": "S10",
@@ -792,7 +837,12 @@
       "inside_bar_r_ratio": 2,
       "inside_bar_risk_pct": 0.01,
       "ai_filter_enabled": true,
-      "ai_filter_level": "balanced"
+      "ai_filter_level": "balanced",
+      "ai_filter_primary_source": null,
+      "ai_filter_secondary_source": null,
+      "ai_filter_tertiary_source": null,
+      "ai_role_quant_enabled": false,
+      "ai_role_devils_advocate_enabled": false
     },
     {
       "id": "S11",
@@ -880,7 +930,12 @@
       "inside_bar_r_ratio": 2,
       "inside_bar_risk_pct": 0.01,
       "ai_filter_enabled": false,
-      "ai_filter_level": "balanced"
+      "ai_filter_level": "balanced",
+      "ai_filter_primary_source": null,
+      "ai_filter_secondary_source": null,
+      "ai_filter_tertiary_source": null,
+      "ai_role_quant_enabled": false,
+      "ai_role_devils_advocate_enabled": false
     },
     {
       "id": "S12",
@@ -963,7 +1018,12 @@
       "inside_bar_r_ratio": 2,
       "inside_bar_risk_pct": 0.01,
       "ai_filter_enabled": false,
-      "ai_filter_level": "balanced"
+      "ai_filter_level": "balanced",
+      "ai_filter_primary_source": null,
+      "ai_filter_secondary_source": null,
+      "ai_filter_tertiary_source": null,
+      "ai_role_quant_enabled": false,
+      "ai_role_devils_advocate_enabled": false
     },
     {
       "id": "S13",
@@ -1052,7 +1112,12 @@
       "inside_bar_r_ratio": 2,
       "inside_bar_risk_pct": 0.01,
       "ai_filter_enabled": true,
-      "ai_filter_level": "balanced"
+      "ai_filter_level": "balanced",
+      "ai_filter_primary_source": null,
+      "ai_filter_secondary_source": null,
+      "ai_filter_tertiary_source": null,
+      "ai_role_quant_enabled": false,
+      "ai_role_devils_advocate_enabled": false
     },
     {
       "id": "S14",
@@ -1136,7 +1201,12 @@
       "inside_bar_r_ratio": 2,
       "inside_bar_risk_pct": 0.01,
       "ai_filter_enabled": true,
-      "ai_filter_level": "balanced"
+      "ai_filter_level": "balanced",
+      "ai_filter_primary_source": null,
+      "ai_filter_secondary_source": null,
+      "ai_filter_tertiary_source": null,
+      "ai_role_quant_enabled": false,
+      "ai_role_devils_advocate_enabled": false
     },
     {
       "id": "S15",
@@ -1227,7 +1297,12 @@
       "inside_bar_r_ratio": 2,
       "inside_bar_risk_pct": 0.01,
       "ai_filter_enabled": true,
-      "ai_filter_level": "balanced"
+      "ai_filter_level": "strict",
+      "ai_filter_primary_source": null,
+      "ai_filter_secondary_source": null,
+      "ai_filter_tertiary_source": null,
+      "ai_role_quant_enabled": false,
+      "ai_role_devils_advocate_enabled": false
     },
     {
       "id": "S16",
@@ -1309,7 +1384,12 @@
       "inside_bar_r_ratio": 2,
       "inside_bar_risk_pct": 0.01,
       "ai_filter_enabled": false,
-      "ai_filter_level": "balanced"
+      "ai_filter_level": "balanced",
+      "ai_filter_primary_source": null,
+      "ai_filter_secondary_source": null,
+      "ai_filter_tertiary_source": null,
+      "ai_role_quant_enabled": false,
+      "ai_role_devils_advocate_enabled": false
     },
     {
       "id": "S17",
@@ -1395,7 +1475,12 @@
       "inside_bar_r_ratio": 2,
       "inside_bar_risk_pct": 0.01,
       "ai_filter_enabled": true,
-      "ai_filter_level": "balanced"
+      "ai_filter_level": "balanced",
+      "ai_filter_primary_source": null,
+      "ai_filter_secondary_source": null,
+      "ai_filter_tertiary_source": null,
+      "ai_role_quant_enabled": false,
+      "ai_role_devils_advocate_enabled": false
     },
     {
       "id": "S18",
@@ -1476,7 +1561,12 @@
       "inside_bar_r_ratio": 2,
       "inside_bar_risk_pct": 0.01,
       "ai_filter_enabled": true,
-      "ai_filter_level": "balanced"
+      "ai_filter_level": "balanced",
+      "ai_filter_primary_source": null,
+      "ai_filter_secondary_source": null,
+      "ai_filter_tertiary_source": null,
+      "ai_role_quant_enabled": false,
+      "ai_role_devils_advocate_enabled": false
     },
     {
       "id": "S19",
@@ -1565,7 +1655,12 @@
       "inside_bar_r_ratio": 2,
       "inside_bar_risk_pct": 0.01,
       "ai_filter_enabled": false,
-      "ai_filter_level": "balanced"
+      "ai_filter_level": "balanced",
+      "ai_filter_primary_source": null,
+      "ai_filter_secondary_source": null,
+      "ai_filter_tertiary_source": null,
+      "ai_role_quant_enabled": false,
+      "ai_role_devils_advocate_enabled": false
     },
     {
       "id": "S20",
@@ -1645,10 +1740,15 @@
       "inside_bar_r_ratio": 2,
       "inside_bar_risk_pct": 0.01,
       "ai_filter_enabled": true,
-      "ai_filter_level": "balanced"
+      "ai_filter_level": "balanced",
+      "ai_filter_primary_source": null,
+      "ai_filter_secondary_source": null,
+      "ai_filter_tertiary_source": null,
+      "ai_role_quant_enabled": false,
+      "ai_role_devils_advocate_enabled": false
     }
   ],
-  "updated_at": "2026-07-10T17:47:41",
+  "updated_at": "2026-07-13T19:06:29",
   "capital_protection_enabled": false,
   "capital_protection_threshold_pct": 80
 }
