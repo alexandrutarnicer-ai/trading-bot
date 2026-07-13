@@ -454,6 +454,41 @@ def ai_put_providers(body: dict = Body(...)):
     return {"ok": True, "restart_needed": False, "note": "Se aplica la urmatorul consiliu"}
 
 
+@router.post("/providers/models")
+def ai_list_provider_models(body: dict = Body(...)):
+    """
+    Descoperire LIVE de modele la o sursa (pentru dropdown-ul din UI).
+
+    body: {name?: str, type?: str, base_url?: str, url?: str, key?: str}
+    - sursa EXISTENTA: doar {name} — spec+cheie salvate sunt folosite
+    - sursa NOUA (formularul de adaugare, inainte de salvare): {type, base_url?, key?}
+      — override-urile permit descoperirea fara sa salvezi nimic
+    """
+    from ai_engine.config import load_keys
+    from ai_engine.providers import build_provider, ProviderError
+    name = str(body.get("name") or "").strip()
+    cfg = load_config()
+    spec = dict(cfg["providers"].get(name) or {})
+    key = load_keys().get(name, "") if name else ""
+    for field in ("type", "base_url", "url", "model"):
+        if body.get(field):
+            spec[field] = str(body[field])
+    if body.get("key"):
+        key = str(body["key"])
+    if not spec.get("type"):
+        raise HTTPException(400, "Sursa necunoscuta si fara 'type' — nimic de interogat")
+    spec.setdefault("model", "?")   # build_provider cere model; discovery nu-l foloseste
+    try:
+        prov = build_provider(name or "discovery", spec, key)
+        models = prov.list_models()
+        return {"ok": True, "models": models[:300], "count": len(models)}
+    except ProviderError as e:
+        return {"ok": False, "models": [], "detail": str(e)[:300], "kind": e.kind}
+    except Exception as e:
+        return {"ok": False, "models": [], "detail": f"{type(e).__name__}: {e}"[:300],
+                "kind": "network"}
+
+
 @router.post("/providers/test")
 def ai_test_provider(body: dict = Body(...)):
     """Testul de contract pentru o sursa: reachable → auth → JSON valid + latenta."""

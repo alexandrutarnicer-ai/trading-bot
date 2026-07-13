@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { Plus, Trash2, KeyRound } from "lucide-react";
-import { useAiProviders, useAiSaveProviders, useAiTestProvider } from "../api/hooks";
+import { Plus, Trash2, KeyRound, RefreshCw } from "lucide-react";
+import { useAiProviders, useAiSaveProviders, useAiTestProvider, useAiProviderModels } from "../api/hooks";
 import type { AiProviderTestResult } from "../api/types";
 
 /**
@@ -33,6 +33,7 @@ export function AiProvidersCard() {
   const { data } = useAiProviders();
   const save = useAiSaveProviders();
   const testMut = useAiTestProvider();
+  const modelsMut = useAiProviderModels();
   const [testResults, setTestResults] = useState<Record<string, AiProviderTestResult>>({});
   const [testing, setTesting] = useState<string | null>(null);
   const [keyDrafts, setKeyDrafts] = useState<Record<string, string>>({});
@@ -40,6 +41,28 @@ export function AiProvidersCard() {
   const [addForm, setAddForm] = useState({
     name: "", type: "openai_compatible", model: "", base_url: "", key: "",
   });
+  // Descoperire dinamica de modele: liste per sursa (+"__add" pt formularul nou)
+  const [modelLists, setModelLists] = useState<Record<string, string[]>>({});
+  const [modelDrafts, setModelDrafts] = useState<Record<string, string>>({});
+  const [discovering, setDiscovering] = useState<string | null>(null);
+  const [discoverErr, setDiscoverErr] = useState<Record<string, string>>({});
+
+  const discover = (key: string, body: Parameters<typeof modelsMut.mutate>[0], force = false) => {
+    if (discovering === key || (!force && modelLists[key]?.length)) return;
+    setDiscovering(key);
+    setDiscoverErr(p => ({ ...p, [key]: "" }));
+    modelsMut.mutate(body, {
+      onSuccess: r => {
+        setDiscovering(null);
+        if (r.ok) setModelLists(p => ({ ...p, [key]: r.models }));
+        else setDiscoverErr(p => ({ ...p, [key]: r.detail || "descoperire eșuată" }));
+      },
+      onError: e => {
+        setDiscovering(null);
+        setDiscoverErr(p => ({ ...p, [key]: (e as Error).message }));
+      },
+    });
+  };
 
   if (!data) return null;
   const { providers, role_assignments, health } = data;
@@ -107,9 +130,23 @@ export function AiProvidersCard() {
                 <option key={t} value={t}>{l}</option>
               ))}
             </select>
-            <input placeholder="model (ex: gemini-2.5-flash)" value={addForm.model}
-              onChange={e => setAddForm(f => ({ ...f, model: e.target.value }))}
-              className="bg-surface-card border border-surface-border rounded px-2 py-1 text-xs text-white font-mono" />
+            <div className="flex items-center gap-1">
+              <input list="models-__add" placeholder="model (ex: gemini-2.5-flash)" value={addForm.model}
+                onChange={e => setAddForm(f => ({ ...f, model: e.target.value }))}
+                className="flex-1 bg-surface-card border border-surface-border rounded px-2 py-1 text-xs text-white font-mono" />
+              <datalist id="models-__add">
+                {(modelLists["__add"] ?? []).map(m => <option key={m} value={m} />)}
+              </datalist>
+              <button type="button" title="Descoperă modelele disponibile (necesită cheie API)"
+                onClick={() => discover("__add", {
+                  type: addForm.type,
+                  base_url: addForm.base_url.trim() || undefined,
+                  key: addForm.key.trim() || undefined,
+                }, true)}
+                className="text-[10px] px-2 py-1 rounded bg-blue-500/20 text-blue-300 hover:bg-blue-500/30 whitespace-nowrap">
+                {discovering === "__add" ? "Caut..." : "Descoperă"}
+              </button>
+            </div>
             {addForm.type === "openai_compatible" && (
               <input placeholder="base URL (ex: https://api.groq.com/openai/v1)" value={addForm.base_url}
                 onChange={e => setAddForm(f => ({ ...f, base_url: e.target.value }))}
@@ -123,6 +160,9 @@ export function AiProvidersCard() {
             className="text-[11px] px-3 py-1 rounded-lg bg-profit/20 text-profit hover:bg-profit/30">
             Salvează sursa
           </button>
+          {discoverErr["__add"] && (
+            <div className="text-[10px] text-amber-400/80">modele: {discoverErr["__add"]}</div>
+          )}
           {save.isError && <div className="text-[10px] text-loss">{(save.error as Error).message}</div>}
         </div>
       )}
@@ -145,7 +185,28 @@ export function AiProvidersCard() {
               <div className="flex items-center gap-2 flex-wrap">
                 <span className={`w-2 h-2 rounded-full shrink-0 ${stateDot}`} />
                 <span className="text-xs font-semibold text-white">{name}</span>
-                <span className="text-[10px] text-slate-500 font-mono">{p.model}</span>
+                <input list={`models-${name}`}
+                  value={modelDrafts[name] ?? p.model ?? ""}
+                  onChange={e => setModelDrafts(d => ({ ...d, [name]: e.target.value }))}
+                  onFocus={() => discover(name, { name })}
+                  title="Modelul sursei — focus = descoperă lista live de la API"
+                  className="w-44 bg-surface-card border border-surface-border rounded px-1.5 py-0.5 text-[10px] text-slate-300 font-mono" />
+                <datalist id={`models-${name}`}>
+                  {(modelLists[name] ?? []).map(m => <option key={m} value={m} />)}
+                </datalist>
+                <button title="Reîncarcă modelele disponibile"
+                  onClick={() => discover(name, { name }, true)}
+                  className="text-slate-600 hover:text-slate-300">
+                  <RefreshCw size={11} className={discovering === name ? "animate-spin" : ""} />
+                </button>
+                {modelDrafts[name] !== undefined && modelDrafts[name] !== p.model && modelDrafts[name].trim() && (
+                  <button
+                    onClick={() => save.mutate({ providers: { [name]: { model: modelDrafts[name].trim() } } },
+                      { onSuccess: () => setModelDrafts(d => { const n = { ...d }; delete n[name]; return n; }) })}
+                    className="text-[10px] px-2 py-0.5 rounded bg-profit/20 text-profit">
+                    Salvează model
+                  </button>
+                )}
                 {p.is_default && (
                   <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300">DEFAULT</span>
                 )}
@@ -177,6 +238,14 @@ export function AiProvidersCard() {
                 <div className={`text-[10px] ${tr.ok ? "text-profit" : "text-loss"}`}>
                   {tr.ok ? `✓ funcționează (${tr.latency_s}s, ${tr.detail})` : `✗ ${tr.detail}`}
                 </div>
+              )}
+              {modelLists[name] && !discoverErr[name] && (
+                <div className="text-[10px] text-slate-500">
+                  {modelLists[name].length} modele disponibile la sursă — tastează în câmpul model pentru sugestii
+                </div>
+              )}
+              {discoverErr[name] && (
+                <div className="text-[10px] text-amber-400/80">modele: {discoverErr[name]}</div>
               )}
               {h?.status !== "healthy" && h?.reason && p.enabled && (
                 <div className="text-[10px] text-amber-400/80">{h.reason}</div>

@@ -88,6 +88,11 @@ class BaseProvider:
     def chat(self, system: str, user: str, json_mode: bool = False) -> str:
         raise NotImplementedError
 
+    def list_models(self) -> list[str]:
+        """Modelele disponibile LIVE la sursa (pentru dropdown-ul din UI).
+        Suprascris per adaptor; lista goala = descoperire nesuportata."""
+        return []
+
     def chat_json(self, system: str, user: str, required_keys: list[str],
                   retries: int = 2) -> dict:
         """Chat cu output JSON validat pe chei obligatorii, retry cu feedback."""
@@ -127,11 +132,20 @@ class BaseProvider:
                     "detail": f"{type(e).__name__}: {e}"[:300], "kind": "network"}
 
 
-def _http_json(url: str, payload: dict, headers: dict, timeout: int,
+# User-Agent onest pentru toate cererile HTTP ale adaptorilor. Fara el, urllib
+# trimite "Python-urllib/3.x" si WAF-ul Cloudflare al unor API-uri (ex: Groq)
+# respinge cererea cu 403 "error code: 1010" — fals-pozitiv de bot, NU cheie gresita.
+_USER_AGENT = "trading-bot-ai-engine/1.0"
+
+
+def _http_json(url: str, payload: dict | None, headers: dict, timeout: int,
                provider_name: str) -> dict:
-    """POST JSON cu clasificarea erorilor HTTP comuna adaptorilor pe urllib."""
-    req = urllib.request.Request(url, data=json.dumps(payload).encode(),
-                                 headers={"Content-Type": "application/json", **headers})
+    """POST (payload dict) sau GET (payload None) JSON, cu clasificarea erorilor
+    HTTP comuna adaptorilor pe urllib."""
+    req = urllib.request.Request(url,
+                                 data=None if payload is None else json.dumps(payload).encode(),
+                                 headers={"Content-Type": "application/json",
+                                          "User-Agent": _USER_AGENT, **headers})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return json.loads(r.read())
@@ -142,6 +156,11 @@ def _http_json(url: str, payload: dict, headers: dict, timeout: int,
         except Exception:
             pass
         low = body.lower()
+        if e.code == 403 and ("error code: 10" in low or "cloudflare" in low):
+            # Bloc WAF/CDN (Cloudflare 1006-1020), nu autentificare — clasificat
+            # "network" (pauza 2 min), nu "auth" (care ar DEZACTIVA sursa).
+            raise ProviderError(f"{provider_name}: blocat de WAF/CDN "
+                                f"(HTTP 403) {body[:120]}", kind="network") from e
         if e.code in (401, 403):
             raise ProviderError(f"{provider_name}: cheie invalida/neautorizat "
                                 f"(HTTP {e.code}) {body[:120]}", kind="auth") from e
@@ -234,6 +253,10 @@ class OllamaProvider(BaseProvider):
             raise ProviderError(f"{self.name}: raspuns gol de la model", kind="bad_response")
         return content
 
+    def list_models(self) -> list[str]:
+        out = _http_json(f"{self.url}/api/tags", None, {}, 15, self.name)
+        return sorted(m.get("name", "") for m in out.get("models", []) if m.get("name"))
+
     def probe(self) -> tuple[bool, str]:
         """
         Verificare PROFUNDA: nu doar ca serverul raspunde (/api/tags) ci ca poate
@@ -309,6 +332,14 @@ class AnthropicProvider(BaseProvider):
             raise ProviderError(f"{self.name}: raspuns gol/refuzat", kind="bad_response")
         return text
 
+    def list_models(self) -> list[str]:
+        if not self.api_key:
+            raise ProviderError(f"{self.name}: cheie API lipsa", kind="auth")
+        out = _http_json("https://api.anthropic.com/v1/models", None,
+                         {"x-api-key": self.api_key,
+                          "anthropic-version": "2023-06-01"}, 15, self.name)
+        return sorted(m.get("id", "") for m in out.get("data", []) if m.get("id"))
+
 
 class GeminiProvider(BaseProvider):
     """Google Gemini (generativelanguage.googleapis.com). Free tier cu quota zilnica."""
@@ -343,6 +374,17 @@ class GeminiProvider(BaseProvider):
                                 f"({json.dumps(out)[:160]})", kind="bad_response")
         return text
 
+    def list_models(self) -> list[str]:
+        if not self.api_key:
+            raise ProviderError(f"{self.name}: cheie API lipsa", kind="auth")
+        out = _http_json("https://generativelanguage.googleapis.com/v1beta/models",
+                         None, {"x-goog-api-key": self.api_key}, 15, self.name)
+        names = []
+        for m in out.get("models", []):
+            if "generateContent" in (m.get("supportedGenerationMethods") or []):
+                names.append(m.get("name", "").removeprefix("models/"))
+        return sorted(n for n in names if n)
+
 
 class OpenAICompatProvider(BaseProvider):
     """Orice API compatibil OpenAI: OpenAI, Groq, DeepSeek, Mistral, xAI, OpenRouter..."""
@@ -374,6 +416,13 @@ class OpenAICompatProvider(BaseProvider):
         if not text:
             raise ProviderError(f"{self.name}: raspuns gol", kind="bad_response")
         return text
+
+    def list_models(self) -> list[str]:
+        if not self.api_key:
+            raise ProviderError(f"{self.name}: cheie API lipsa", kind="auth")
+        out = _http_json(f"{self.base_url}/models", None,
+                         {"Authorization": f"Bearer {self.api_key}"}, 15, self.name)
+        return sorted(m.get("id", "") for m in out.get("data", []) if m.get("id"))
 
 
 _TYPES = {

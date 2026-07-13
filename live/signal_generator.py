@@ -2954,6 +2954,14 @@ def _apply_profile_overrides(session_cfg: dict, cfg: dict, log) -> None:
     """
     runtime_file = os.path.join(DATA_DIR, "active_profile_runtime.json")
     if not os.path.exists(runtime_file):
+        # Vizibil in log + Notificari (prin _NotificationHandler): fara profil,
+        # sesiunea ruleaza pe SESSION_CONFIG hardcodat — fara filtru AI, fara
+        # parametrii din UI. Inainte era complet silentios (return sec) si a
+        # ascuns o zi intreaga de ruluare fara profil (12-13 iul 2026).
+        log.warning("  [PROFIL] Niciun profil activ (active_profile_runtime.json "
+                    "lipsa) — sesiunea ruleaza pe parametrii HARDCODATI din script "
+                    "(fara filtru AI, fara setarile din UI). Porneste botul din UI "
+                    "macar o data ca sa fixezi profilul.")
         return
     try:
         with open(runtime_file, encoding="utf-8") as f:

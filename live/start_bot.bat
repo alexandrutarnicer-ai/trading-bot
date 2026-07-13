@@ -1,4 +1,4 @@
-@echo off
+﻿@echo off
 title Trading Bot -- Sesiuni Live
 echo ==================================================
 echo  Trading Bot -- pornire automata
@@ -10,6 +10,6 @@ for /f "delims=" %%i in ('powershell -NoProfile -Command "[Environment]::GetEnvi
 for /f "delims=" %%i in ('powershell -NoProfile -Command "[Environment]::GetEnvironmentVariable(\"TELEGRAM_CHAT_ID\",\"User\")"') do set "TELEGRAM_CHAT_ID=%%i"
 
 timeout /t 90 /nobreak
-cd /d "c:\trading-bot"
-py live\run_all.py
+cd /d "C:\trading-bot"
+"C:\Users\alext\AppData\Local\Programs\Python\Python314\python.exe" live\run_all.py
 pause

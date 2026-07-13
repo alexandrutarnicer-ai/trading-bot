@@ -211,6 +211,51 @@ def _kill_old_instance() -> None:
         pass
 
 
+def _kill_orphan_sessions() -> None:
+    """
+    Plasa de siguranta dupa _kill_old_instance: ucide sesiunile ORFANE ramase
+    din instante anterioare.
+
+    taskkill /T pe PID-ul din run_all.pid omoara doar arborele instantei
+    anterioare — daca parintele lor a murit intre timp (crash, kill manual),
+    sesiunile raman orfane, tin session.lock si BLOCHEAZA SILENTIOS sesiunile
+    noi (observat live 13 iul 2026: sesiuni din 12 iul au supravietuit la trei
+    restarturi si au rulat o zi fara profil). Matching strict pe linia de
+    comanda: doar python care ruleaza live\\session<N>_*.py.
+    """
+    ps_cmd = (
+        "$all = Get-CimInstance Win32_Process -Filter \"Name='python.exe'\" | "
+        f"Where-Object {{ $_.ProcessId -ne {os.getpid()} }}; "
+        "$hidden = @($all | Where-Object { -not $_.CommandLine }); "
+        "if ($hidden.Count -gt 0) { Write-Output \"HIDDEN:$($hidden.Count)\" } "
+        "$all | Where-Object { $_.CommandLine -match 'live[\\\\/]session\\d+_' } | "
+        "ForEach-Object { Stop-Process -Id $_.ProcessId -Force "
+        "-ErrorAction SilentlyContinue; Write-Output $_.ProcessId }"
+    )
+    try:
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_cmd],
+            capture_output=True, text=True, timeout=30,
+        )
+        lines = (result.stdout or "").split()
+        pids = [p for p in lines if p.strip().isdigit()]
+        hidden = next((l for l in lines if l.startswith("HIDDEN:")), None)
+        if pids:
+            print(f"  [!] {len(pids)} sesiuni ORFANE gasite si oprite: {', '.join(pids)}")
+            time.sleep(2)   # lasa OS-ul sa elibereze session.lock-urile
+        if hidden:
+            # Procese python cu CommandLine INVIZIBIL = ruleaza elevat (ex: pornite
+            # de un task Scheduler cu RunLevel Highest). Nu le putem inspecta sau
+            # opri de aici — daca sunt sesiuni vechi, ele vor bloca session.lock!
+            n = hidden.split(":", 1)[1]
+            print(f"  [!!] ATENTIE: {n} procese python ELEVATE (invizibile de aici). "
+                  "Daca sunt sesiuni vechi pornite de autostart-ul elevat, vor bloca "
+                  "sesiunile noi. Inchide-le dintr-un PowerShell ADMIN sau reporneste "
+                  "PC-ul dupa refacerea task-ului cu setup_autostart.ps1 (acum Limited).")
+    except Exception as e:
+        print(f"  [~] Sweep sesiuni orfane esuat ({e}) — continui pornirea.")
+
+
 def _load_dotenv() -> None:
     """Incarca .env din radacina proiectului fara a suprascrie variabile deja setate."""
     env_path = os.path.join(ROOT, ".env")
@@ -319,6 +364,7 @@ def _print_status(sp_list):
 
 def main():
     _kill_old_instance()
+    _kill_orphan_sessions()
 
     os.makedirs(DATA_DIR, exist_ok=True)
     with open(PID_FILE, "w") as f:

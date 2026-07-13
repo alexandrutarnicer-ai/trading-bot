@@ -158,6 +158,8 @@ if ($mt5Exe) {
 }
 
 # Task 2: AI Engine la login (via start_ai_engine_auto.bat, cu asteptare 120s interna)
+# RunLevel Limited (NU Highest) - proces elevat nu poate fi oprit/inlocuit de
+# UI-ul neelevat (Access Denied). Vezi nota din setup_autostart.ps1.
 try {
     $a2 = New-ScheduledTaskAction -Execute "cmd.exe" -Argument "/c `"$BatPath`""
     $t2 = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
@@ -165,8 +167,8 @@ try {
           -DontStopIfGoingOnBatteries -StartWhenAvailable `
           -ExecutionTimeLimit (New-TimeSpan -Days 2)
     Register-ScheduledTask -TaskName "TradingBot-AIEngine" `
-        -Action $a2 -Trigger $t2 -Settings $s2 -RunLevel Highest -Force | Out-Null
-    Write-Host "[OK] Task TradingBot-AIEngine  - motorul AI porneste la login + 120s" -ForegroundColor Green
+        -Action $a2 -Trigger $t2 -Settings $s2 -RunLevel Limited -Force | Out-Null
+    Write-Host "[OK] Task TradingBot-AIEngine  - motorul AI porneste la login + 120s (neelevat)" -ForegroundColor Green
 } catch {
     Write-Host "[EROARE] Task AIEngine: $_" -ForegroundColor Red
 }

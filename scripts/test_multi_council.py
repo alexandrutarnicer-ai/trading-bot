@@ -313,6 +313,10 @@ check("roluri: activate → 6 roluri (quant + devils_advocate adaugate)",
 # ═════════════════════════════════════════════════════════════════════════════
 
 CFG = load_config()
+# Izolare de config-ul utilizatorului: role_assignments din UI (ex: head_trader →
+# gemini) ar ruta rolurile fake-registry-ului spre surse pe care nu le cunoaste →
+# WAIT fals. Testele de aici verifica MECANICA orchestratorului, nu rutarea userului.
+CFG["role_assignments"] = {}
 SNAP = {"symbol": "EURUSD", "price": 1.0855, "atr": 0.0009}
 DESK = {"open_positions": 0, "daily_r": 0.0, "open_pos_desc": "none", "trigger": "test"}
 
