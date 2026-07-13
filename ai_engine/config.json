@@ -51,15 +51,26 @@
       "model": "gpt-4o-mini",
       "enabled": false,
       "base_url": "https://api.openai.com/v1"
+    },
+    "groq": {
+      "enabled": true,
+      "type": "openai_compatible",
+      "model": "llama-3.3-70b-versatile",
+      "base_url": "https://api.groq.com/openai/v1"
     }
   },
   "role_assignments": {
-    "macro": "gemini",
+    "macro": "ollama",
     "risk": "gemini",
-    "technical": "ollama"
+    "technical": "groq",
+    "head_trader": "groq"
   },
   "role_quant_enabled": true,
   "consensus_threshold": 70,
   "role_devils_advocate_enabled": false,
-  "market_overrides": {}
+  "market_overrides": {
+    "GBPUSD": {
+      "max_trades_per_day": 2
+    }
+  }
 }
