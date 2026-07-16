@@ -197,16 +197,19 @@ class Ledger:
         ex_sql = f" AND symbol NOT IN ({','.join('?' * len(ex))})" if ex else ""
         row = self.con.execute(
             "SELECT COUNT(*), COALESCE(SUM(result_r),0), COALESCE(AVG(result_r),0), "
-            "SUM(CASE WHEN result_r > 0 THEN 1 ELSE 0 END) "
+            "SUM(CASE WHEN result_r > 0 THEN 1 ELSE 0 END), "
+            "SUM(CASE WHEN result_r < 0 THEN 1 ELSE 0 END) "
             "FROM outcomes WHERE status IN ('TP','SL','closed') AND result_r IS NOT NULL"
             + ex_sql, ex).fetchone()
-        n, total_r, avg_r, wins = row
+        n, total_r, avg_r, wins, losses = row
         n_dec = self.con.execute(
             "SELECT COUNT(*) FROM decisions WHERE 1=1" + ex_sql, ex).fetchone()[0]
         n_wait = self.con.execute(
             "SELECT COUNT(*) FROM decisions WHERE action='WAIT'" + ex_sql, ex).fetchone()[0]
         return {
             "decisions": n_dec, "waits": n_wait, "closed_trades": n,
+            # wins = result_r > 0, losses = result_r < 0; break-even (=0) nu e nici una
+            "wins": int(wins or 0), "losses": int(losses or 0),
             "total_R": round(total_r, 2), "expectancy_R": round(avg_r, 3),
             "win_rate": round(wins / n, 3) if n else None,
         }
@@ -217,15 +220,17 @@ class Ledger:
         out: dict = {}
         for sym, n_dec in self.con.execute(
                 "SELECT symbol, COUNT(*) FROM decisions GROUP BY symbol"):
-            out[sym] = {"decisions": n_dec, "closed_trades": 0, "total_R": 0.0,
-                        "expectancy_R": 0.0, "win_rate": None}
-        for sym, n, tot, avg, wins in self.con.execute(
+            out[sym] = {"decisions": n_dec, "closed_trades": 0, "wins": 0, "losses": 0,
+                        "total_R": 0.0, "expectancy_R": 0.0, "win_rate": None}
+        for sym, n, tot, avg, wins, losses in self.con.execute(
                 "SELECT symbol, COUNT(*), COALESCE(SUM(result_r),0), COALESCE(AVG(result_r),0), "
-                "SUM(CASE WHEN result_r>0 THEN 1 ELSE 0 END) FROM outcomes "
+                "SUM(CASE WHEN result_r>0 THEN 1 ELSE 0 END), "
+                "SUM(CASE WHEN result_r<0 THEN 1 ELSE 0 END) FROM outcomes "
                 "WHERE status IN ('TP','SL','closed') AND result_r IS NOT NULL "
                 "GROUP BY symbol"):
             d = out.setdefault(sym, {"decisions": 0})
-            d.update({"closed_trades": n, "total_R": round(tot, 2),
+            d.update({"closed_trades": n, "wins": int(wins or 0), "losses": int(losses or 0),
+                      "total_R": round(tot, 2),
                       "expectancy_R": round(avg, 3),
                       "win_rate": round(wins / n, 3) if n else None})
         return out

@@ -401,14 +401,44 @@ class TradeFilter:
             trade_desc = describe_trade(sig, session_cfg)
 
             council_sources = self._plan_councils(session_cfg or {}, assignments, registry)
-            deadline = t0 + TIME_BUDGET_S
-            opinions: list[CouncilOpinion] = [
-                run_review_council(registry, briefing, trade_desc, cfg, source=src,
-                                   assignments=assignments, deadline=deadline, log=log)
-                for src in council_sources
-            ]
+            opinions: list[CouncilOpinion] = []
+            if len(council_sources) == 1 and council_sources[0]:
+                # UN singur consiliu cu sursa PREFERATA: rulam cu FAILOVER, nu
+                # pinned — sursa aleasa → celelalte surse sanatoase → ollama.
+                # (Pinned exista doar pentru independenta opiniilor in modul
+                # multi-council; cu un singur consiliu, un blip la sursa aleasa
+                # nu are voie sa scoata filtrul din joc — cerinta: filtrul
+                # consuma toate sursele AI si abia apoi cade pe fail-open.)
+                pref = {role: council_sources[0] for role in
+                        ("technical", "macro", "risk", "quant",
+                         "devils_advocate", "head_trader")}
+                opinions = [run_review_council(
+                    registry, briefing, trade_desc, cfg, source=None,
+                    assignments=pref, deadline=t0 + TIME_BUDGET_S, log=log)]
+            else:
+                # Buget PER consiliu (nu comun): un consiliu lent nu mai consuma
+                # bugetul urmatoarelor — consiliile 2/3 nu mai picau doar pentru
+                # ca primul a fost lent (esec observat cu rolurile optionale active).
+                opinions = [
+                    run_review_council(registry, briefing, trade_desc, cfg, source=src,
+                                       assignments=assignments,
+                                       deadline=time.time() + TIME_BUDGET_S, log=log)
+                    for src in council_sources
+                ]
 
             verdict = combine(opinions, threshold)
+            if verdict.all_failed and any(council_sources):
+                # Toate consiliile pinned au picat → INAINTE de fail-open, o ultima
+                # incercare cu failover complet pe roluri (orice sursa sanatoasa →
+                # ollama). Abia daca si asta pica, filtrul devine fail-open.
+                if log:
+                    log.warning("  [AI-FILTER] toate consiliile pinned au picat — "
+                                "incerc consiliul de rezerva cu failover (→ ollama)")
+                fb = run_review_council(registry, briefing, trade_desc, cfg, source=None,
+                                        assignments=assignments,
+                                        deadline=time.time() + TIME_BUDGET_S, log=log)
+                opinions.append(fb)
+                verdict = combine(opinions, threshold)
             dur = round(time.time() - t0, 1)
 
             if verdict.all_failed:
@@ -421,7 +451,9 @@ class TradeFilter:
                         "error": err[:300], "duration_s": dur,
                         "councils": verdict.per_council, "consensus": verdict.to_dict()}
 
-            primary_op = opinions[0]
+            # Consiliul "primar" pentru motiv/transcript = primul care a PARTICIPAT
+            # (cu fallback-ul de rezerva, opinions[0] poate fi un consiliu picat).
+            primary_op = next((o for o in opinions if o.participated), opinions[0])
             single = verdict.n_participating <= 1
             if verdict.consensus_confidence is None:
                 # veto absolut → nu exista o medie de consens

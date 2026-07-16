@@ -200,6 +200,8 @@ export interface ProfileSession {
   // Filtru AI Pre-Trade (validare finala inainte de MT5)
   ai_filter_enabled?: boolean;
   ai_filter_level?: "permissive" | "balanced" | "strict";
+  // Strict (fail-closed): AI indisponibil → ordinul NU se plaseaza (default off = fail-open)
+  ai_filter_strict?: boolean;
   // Multi-Council Consensus — pana la 3 consilii pe surse AI distincte
   ai_filter_primary_source?: string | null;
   ai_filter_secondary_source?: string | null;
@@ -696,6 +698,8 @@ export interface AiScorecard {
   decisions: number;
   waits: number;
   closed_trades: number;
+  wins?: number;      // result_r > 0
+  losses?: number;    // result_r < 0 (break-even nu e nici una)
   total_R: number;
   expectancy_R: number;
   win_rate: number | null;
@@ -723,7 +727,24 @@ export interface MarketOverride {
   max_rr?: number | null;              // plafon R:R (TP peste e limitat)
   max_daily_loss_R?: number | null;    // stop zilnic pe piata
   max_trades_per_day?: number | null;  // anti-overtrading
+  fixed_lots?: number | null;          // volum FIX per ordin (null = sizing dinamic pe risc)
   isolated?: boolean;                  // date separate, excluse din scorecard-ul principal
+}
+
+// Raspunsul POST /ai/lot-info — costul real (MT5) al unui volum fix pe o piata
+export interface AiLotInfo {
+  ok: boolean;
+  detail?: string;
+  symbol?: string;
+  lots?: number;
+  price?: number;
+  margin_usd?: number | null;              // marja ceruta de broker pentru volum
+  value_per_price_unit_usd?: number | null; // USD per 1.0 unitate de pret la volumul dat
+  volume_min?: number;
+  volume_step?: number;
+  volume_max?: number;
+  free_margin?: number | null;
+  currency?: string | null;
 }
 
 export interface AiOutcomeInfo {

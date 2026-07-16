@@ -9,11 +9,16 @@ import type { AiProviderTestResult } from "../api/types";
  * urmatorul consiliu (motorul reciteste config-ul per iteratie).
  */
 
+// Rolurile obligatorii + cele OPTIONALE (Quant / Avocatul Diavolului). Cele
+// optionale au aceleasi optiuni de sursa + failover ca cele obligatorii —
+// ruleaza doar cand sunt activate (AI Engine: card Consens · Filtru: per sesiune).
 const ROLE_LABELS: Record<string, string> = {
-  technical:   "Analist Tehnic",
-  macro:       "Analist Macro",
-  risk:        "Risk Manager",
-  head_trader: "Head Trader",
+  technical:       "Analist Tehnic",
+  macro:           "Analist Macro",
+  risk:            "Risk Manager",
+  head_trader:     "Head Trader",
+  quant:           "🧮 Analist Cantitativ (opțional)",
+  devils_advocate: "😈 Avocatul Diavolului (opțional)",
 };
 
 const TYPE_LABELS: Record<string, string> = {
