@@ -50,12 +50,49 @@
       "model": "gpt-4o-mini",
       "enabled": false,
       "base_url": "https://api.openai.com/v1"
+    },
+    "groq": {
+      "enabled": true,
+      "type": "openai_compatible",
+      "model": "llama-3.3-70b-versatile",
+      "base_url": "https://api.groq.com/openai/v1"
+    },
+    "cerebras": {
+      "type": "openai_compatible",
+      "model": "gemma-4-31b",
+      "enabled": true,
+      "base_url": "https://api.cerebras.ai/v1"
+    },
+    "openroute": {
+      "type": "openai_compatible",
+      "model": "openai/gpt-4o",
+      "enabled": true,
+      "base_url": "https://openrouter.ai/api/v1"
+    },
+    "hug1": {
+      "type": "openai_compatible",
+      "model": "zai-org/GLM-5.2:novita",
+      "enabled": true,
+      "base_url": "https://router.huggingface.co/v1"
+    },
+    "hug2quen3": {
+      "type": "openai_compatible",
+      "model": "Qwen/Qwen3.6-27B:featherless-ai",
+      "enabled": true,
+      "base_url": "https://router.huggingface.co/v1"
+    },
+    "mistral": {
+      "type": "openai_compatible",
+      "model": "mistral-small-latest",
+      "enabled": true,
+      "base_url": "https://api.mistral.ai/v1"
     }
   },
   "role_assignments": {
-    "macro": "ollama",
-    "risk": "ollama",
-    "technical": "ollama"
+    "macro": "cerebras",
+    "risk": "groq",
+    "technical": "cerebras",
+    "head_trader": "mistral"
   },
   "role_quant_enabled": true,
   "consensus_threshold": 70,
