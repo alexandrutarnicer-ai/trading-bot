@@ -44,6 +44,25 @@ def equity() -> float:
     return float(acc.equity) if acc else 0.0
 
 
+def capital_base(cfg: dict) -> float:
+    """
+    Baza de capital a motorului AI pentru sizing (inainte de capital_fraction
+    per piata):
+      - capital_sync_mt5=True (default): equity-ul REAL din MT5 — comportamentul
+        de dinainte, sincron cu contul la fiecare ordin.
+      - capital_sync_mt5=False: capitalul FIX alocat AI-ului (capital_usd),
+        PLAFONAT la equity-ul real cand acesta e disponibil — nu poti aloca
+        mai mult capital decat exista in cont (protectie la typo: 100000 pe un
+        cont de 700$ nu umfla riscul). Cu MT5 indisponibil (equity 0) se
+        foloseste capitalul fix ca atare.
+    """
+    if cfg.get("capital_sync_mt5", True):
+        return equity()
+    cap = float(cfg.get("capital_usd") or 0.0)
+    eq = equity()
+    return min(cap, eq) if eq > 0 else cap
+
+
 # ── Stare pozitii/ordine AI (filtrate pe magic) ──────────────────────────────
 
 def ai_positions(magic: int) -> list:
@@ -329,7 +348,7 @@ def place(d: dict, snapshot: dict, cfg: dict, decision_id: int,
             lots, risk_usd = snap_fixed_lots(symbol, fixed_lots, entry, d["sl"])
         else:
             lots, risk_usd = calc_lots(symbol, entry, d["sl"],
-                                       equity() * capital_fraction, d["risk_pct"])
+                                       capital_base(cfg) * capital_fraction, d["risk_pct"])
         if lots <= 0:
             return "rejected", "lot calculat 0 (capital insuficient?)", None
         m_err = _margin_ok(lots, entry)
@@ -369,7 +388,7 @@ def place(d: dict, snapshot: dict, cfg: dict, decision_id: int,
             lots, risk_usd = snap_fixed_lots(symbol, fixed_lots, d["entry"], d["sl"])
         else:
             lots, risk_usd = calc_lots(symbol, d["entry"], d["sl"],
-                                       equity() * capital_fraction, d["risk_pct"])
+                                       capital_base(cfg) * capital_fraction, d["risk_pct"])
         if lots <= 0:
             return "rejected", "lot calculat 0 (capital insuficient?)", None
         m_err = _margin_ok(lots, d["entry"])

@@ -264,6 +264,8 @@ def ai_put_config(body: dict = Body(...)):
     """Actualizeaza doar campurile editabile din UI. Pietele se valideaza in MT5."""
     editable = {"markets", "mode", "model", "risk_pct_default",
                 "heartbeat_hours", "council_cooldown_min",
+                # Capitalul AI (baza de sizing): sync MT5 sau capital fix alocat
+                "capital_sync_mt5", "capital_usd",
                 # Roluri optionale de consiliu (Additional AI Roles)
                 "role_quant_enabled", "role_devils_advocate_enabled",
                 # Consiliu multiplu (Multi-Council Consensus)
@@ -302,6 +304,17 @@ def ai_put_config(body: dict = Body(...)):
         except (TypeError, ValueError):
             raise HTTPException(400, "consensus_threshold: numar intreg (50-90)")
         updates["consensus_threshold"] = max(50, min(90, th))
+
+    if "capital_sync_mt5" in updates:
+        updates["capital_sync_mt5"] = bool(updates["capital_sync_mt5"])
+    if "capital_usd" in updates:
+        try:
+            cap = float(updates["capital_usd"])
+        except (TypeError, ValueError):
+            raise HTTPException(400, "capital_usd: numar (USD, 10 - 1.000.000)")
+        if not (10 <= cap <= 1_000_000):
+            raise HTTPException(400, "capital_usd: intre 10 si 1.000.000 USD")
+        updates["capital_usd"] = round(cap, 2)
 
     if "market_overrides" in updates:
         from ai_engine.config import sanitize_market_overrides

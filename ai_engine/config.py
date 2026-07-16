@@ -78,6 +78,15 @@ DEFAULTS: dict = {
     "magic":           770015,      # namespace MT5 al motorului AI
     "comment_prefix":  "AI",
 
+    # ── Capitalul motorului AI (baza de sizing) ──
+    # sync ON (default) = equity-ul REAL din MT5 la fiecare ordin (ca pana acum).
+    # sync OFF = capitalul FIX alocat AI-ului (capital_usd) — restul contului nu
+    # participa la sizing; daca depaseste equity-ul real, se foloseste equity-ul
+    # (nu poti aloca mai mult decat exista). Per piata se aplica in continuare
+    # market_overrides.capital_fraction peste aceasta baza.
+    "capital_sync_mt5":   True,
+    "capital_usd":        1000.0,
+
     # Rails de risc HARD (clamp peste orice decide consiliul).
     "risk_pct_default":   0.005,   # 0.5% din equity per trade
     "risk_pct_max":       0.01,    # consiliul nu poate cere mai mult de 1%
@@ -183,6 +192,12 @@ def load_config() -> dict:
     # Rails: orice ar scrie utilizatorul/consiliul, limitele hard raman.
     cfg["risk_pct_max"]       = min(float(cfg["risk_pct_max"]), 0.02)
     cfg["max_open_positions"] = min(int(cfg["max_open_positions"]), 6)
+    # Capitalul AI: sync bool robust + clamp pe capitalul fix (corupt → defaults).
+    cfg["capital_sync_mt5"] = bool(cfg.get("capital_sync_mt5", True))
+    try:
+        cfg["capital_usd"] = max(10.0, min(1_000_000.0, float(cfg.get("capital_usd", 1000.0))))
+    except (TypeError, ValueError):
+        cfg["capital_usd"] = 1000.0
     # Pragul de consens: clamp in banda utila (sub 50 = fara sens, peste 90 = paralizie).
     try:
         cfg["consensus_threshold"] = max(50, min(90, int(cfg.get("consensus_threshold", 70))))
