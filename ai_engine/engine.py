@@ -263,6 +263,9 @@ def _market_limits_text(symbol: str, m: dict, cfg: dict,
         left = max(0, int(m["max_trades_per_day"]) - trades_today)
         lines.append(f"- max orders per day on this market: {int(m['max_trades_per_day'])} "
                      f"(placed today: {trades_today}, remaining: {left})")
+    if m.get("fixed_lots") is not None:
+        lines.append(f"- position size on this market is FIXED at {m['fixed_lots']} lots "
+                     "(the desk ignores risk-based sizing here; risk_pct is informational)")
     return "\n".join(lines)
 
 
@@ -374,7 +377,8 @@ def _process_market(symbol: str, src: Mt5DataSource, registry: ProviderRegistry,
 
     dec_id = ledger.add_decision(symbol, council_id, decision, "pending")
     status, detail, ticket = executor.place(decision, snap, cfg, dec_id,
-                                            capital_fraction=mcfg["capital_fraction"])
+                                            capital_fraction=mcfg["capital_fraction"],
+                                            fixed_lots=mcfg.get("fixed_lots"))
     entry_used = decision.get("entry") if decision["order_type"] == "stop" else snap["price"]
     ledger.set_exec(dec_id, status, detail, ticket,
                     entry=entry_used if status == "placed" else None)

@@ -355,7 +355,136 @@ check("categorize: ordin cu sufix AI ramane order",
       _categorize("Ordin plasat: LONG EURUSD ... Filtru AI: aprobat") == "order")
 
 # ═════════════════════════════════════════════════════════════════════════════
-# 7. Optional: consiliu REAL pe Ollama (--live)
+# 7. Rutarea surselor: failover pe consiliul unic + fallback cand pinned pica
+# ═════════════════════════════════════════════════════════════════════════════
+
+from ai_engine.providers import ProviderRegistry
+
+
+class _RoleProv:
+    """Sursa falsa pentru ProviderRegistry REAL: raspunde per rol dupa chei."""
+    def __init__(self, name, fail=None, head_conf=80, head_approve=True):
+        self.name, self.fail = name, fail
+        self.head_conf, self.head_approve = head_conf, head_approve
+        self.calls = 0
+
+    def chat_json(self, system, user, required, retries=2):
+        self.calls += 1
+        if self.fail:
+            raise ProviderError(f"{self.name} picat", kind=self.fail)
+        keys = set(required)
+        if "alignment" in keys:
+            return {"alignment": "supports", "confidence": 75, "reasoning": "ok"}
+        if "timing_quality" in keys:
+            return {"timing_quality": "good", "event_risk": "none", "confidence": 70,
+                    "reasoning": "ok"}
+        if "veto" in keys:
+            return {"veto": False, "veto_code": None, "concerns": [], "notes": "n"}
+        if "approve" in keys:
+            return {"approve": self.head_approve, "confidence": self.head_conf,
+                    "reason": f"desk {self.name}"}
+        return {"assessment": "favorable", "confidence": 70, "reasoning": "q"}
+
+
+def _real_reg(specs):
+    """Registru REAL (cu failover) peste surse false. specs: {name: fail_kind|None}."""
+    cfg = {n: {"enabled": True, "type": "ollama", "model": "x"} for n in specs}
+    r = ProviderRegistry(cfg, {})
+    for n, fail in specs.items():
+        r._instances[n] = _RoleProv(n, fail=fail)
+    return r
+
+
+def _make_filter_real(registry):
+    f = tf.TradeFilter()
+    f._refresh = lambda: None
+    f._registry = registry
+    f._cfg = {"role_assignments": {}}
+    return f
+
+
+# consiliu UNIC cu sursa preferata picata → failover pe alta sursa → aprobat
+reg = _real_reg({"groq": "network", "ollama": None})
+f = _make_filter_real(reg)
+v = f.evaluate(SIG, BRIEFING, "balanced",
+               {"ai_filter_primary_source": "groq"}, _Log())
+check("failover: sursa primara picata → consumat restul → ollama (nu fail-open)",
+      v["approved"] is True and v["error"] is None and v["n_councils"] == 1,
+      f"sources={v['sources']}")
+check("failover: sursa reala folosita raportata (ollama)", v["sources"] == ["ollama"])
+
+# consiliu UNIC cu sursa preferata sanatoasa → sursa aleasa e consumata prima
+reg = _real_reg({"groq": None, "ollama": None})
+f = _make_filter_real(reg)
+v = f.evaluate(SIG, BRIEFING, "balanced",
+               {"ai_filter_primary_source": "groq"}, _Log())
+check("failover: sursa preferata sanatoasa → folosita ea",
+      v["approved"] is True and v["sources"] == ["groq"]
+      and reg._instances["ollama"].calls == 0)
+
+# MULTI-council: TOATE sursele pinned pica → consiliul de rezerva cu failover
+# (→ ollama) decide, NU fail-open
+reg = _real_reg({"a": "network", "b": "network", "ollama": None})
+f = _make_filter_real(reg)
+v = f.evaluate(SIG, BRIEFING, "balanced",
+               {"ai_filter_primary_source": "a", "ai_filter_secondary_source": "b"}, _Log())
+check("fallback: toate consiliile pinned picate → consiliul de rezerva (ollama) decide",
+      v["approved"] is True and v["error"] is None and v["n_councils"] == 1,
+      f"sources={v['sources']} err={v['error']}")
+
+# ... si abia cand pica si rezerva → fail-open (plasa finala)
+reg = _real_reg({"a": "network", "b": "network", "ollama": "network"})
+f = _make_filter_real(reg)
+v = f.evaluate(SIG, BRIEFING, "balanced",
+               {"ai_filter_primary_source": "a", "ai_filter_secondary_source": "b"}, _Log())
+check("fallback: si rezerva picata → fail-open (trade permis + error)",
+      v["approved"] is True and v["error"] is not None)
+
+# _plan_councils: fara secondary → [primary]; cu secondary → surse distincte
+pc = tf.TradeFilter._plan_councils({}, {}, None)
+check("_plan_councils: default → [None] (distribuit pe roluri)", pc == [None])
+pc = tf.TradeFilter._plan_councils({"ai_filter_primary_source": "groq"}, {}, None)
+check("_plan_councils: doar primary → [groq]", pc == ["groq"])
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 8. Mod STRICT (fail-closed) — AI indisponibil → ordinul NU se plaseaza
+# ═════════════════════════════════════════════════════════════════════════════
+
+_V_OK     = {"approved": True,  "confidence": 80, "error": None}
+_V_FAIL   = {"approved": True,  "confidence": None, "error": "nicio sursa AI"}
+_V_REJECT = {"approved": False, "confidence": 40, "error": None}
+
+check("strict: OFF + fail-open → NU blocheaza (comportament vechi)",
+      sg._ai_strict_blocked({}, _V_FAIL) is False)
+check("strict: ON + verdict valid aprobat → NU blocheaza",
+      sg._ai_strict_blocked({"ai_filter_strict": True}, _V_OK) is False)
+check("strict: ON + AI indisponibil (fail-open) → BLOCHEAZA",
+      sg._ai_strict_blocked({"ai_filter_strict": True}, _V_FAIL) is True)
+check("strict: ON + respins normal → nu e treaba strict-ului (respins oricum)",
+      sg._ai_strict_blocked({"ai_filter_strict": True}, _V_REJECT) is False)
+check("strict: ON dar filtru dezactivat (verdict None) → NU blocheaza",
+      sg._ai_strict_blocked({"ai_filter_strict": True}, None) is False)
+
+# profilele copiaza si ai_filter_strict in sesiunea live
+with tempfile.TemporaryDirectory() as td:
+    profile = {"name": "T", "sessions": [{
+        "session_key": "sessionT", "ai_filter_enabled": True, "ai_filter_strict": True,
+    }]}
+    with open(os.path.join(td, "active_profile_runtime.json"), "w", encoding="utf-8") as fh:
+        json.dump(profile, fh)
+    _old_dd = sg.DATA_DIR
+    sg.DATA_DIR = td
+    try:
+        scfg = {"session_key": "sessionT"}
+        sg._apply_profile_overrides(scfg, {"optional_criteria": {"rsi": {}},
+                                           "reward_ladder": {}}, _Log())
+        check("profil: ai_filter_strict aplicat in sesiunea live",
+              scfg.get("ai_filter_strict") is True)
+    finally:
+        sg.DATA_DIR = _old_dd
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 9. Optional: consiliu REAL pe Ollama (--live)
 # ═════════════════════════════════════════════════════════════════════════════
 
 if "--live" in sys.argv:

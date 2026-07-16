@@ -369,6 +369,60 @@ check("orchestrator: primar WAIT → fara revizuire", dec["action"] == "WAIT"
       and bundle["consensus"] is None)
 
 # ═════════════════════════════════════════════════════════════════════════════
+# 9. Media membrilor consiliului + gate pe pragul de consens ("bara" din UI)
+# ═════════════════════════════════════════════════════════════════════════════
+
+from ai_engine import council as _council
+
+# council_confidence = media rolurilor cu confidence (technical/macro/[quant]/head)
+avg = _council.council_confidence({"technical": {"confidence": 72},
+                                   "macro": {"confidence": 68},
+                                   "head_trader": {"confidence": 80}})
+check("council_confidence: media membrilor (72+68+80)/3 → 73", avg == 73, f"avg={avg}")
+avg = _council.council_confidence({"technical": {"confidence": 72},
+                                   "macro": {"confidence": 68},
+                                   "quant": {"confidence": 60},
+                                   "head_trader": {"confidence": 80}})
+check("council_confidence: cu quant (72+68+60+80)/4 → 70", avg == 70, f"avg={avg}")
+check("council_confidence: transcript gol → None", _council.council_confidence({}) is None)
+check("council_confidence: valori string tolerate",
+      _council.council_confidence({"technical": {"confidence": "80"},
+                                   "head_trader": {"confidence": 60}}) == 70)
+check("council_confidence: risk/devil (fara confidence) ignorati",
+      _council.council_confidence({"risk": {"veto": False},
+                                   "devils_advocate": {"severity": "low"},
+                                   "head_trader": {"confidence": 90}}) == 90)
+
+# convene: decizia poarta MEDIA membrilor, nu doar head-ul (fake: tech 72, macro 68)
+cfg = dict(CFG); cfg["council_secondary_source"] = None; cfg["council_tertiary_source"] = None
+reg = MultiFakeRegistry({"ollama": {"conf": 80, "action": "OPEN_LONG"}})
+dec, bundle, dur = orchestrator.decide(reg, "EURUSD", SNAP, BRIEF, DESK, cfg)
+check("media: decizia OPEN poarta media membrilor (73), nu head-ul (80)",
+      dec["confidence"] == 73 and dec.get("head_confidence") == 80,
+      f"conf={dec['confidence']} head={dec.get('head_confidence')}")
+
+# gate consiliu unic: head 55 → media (72+68+55)/3 = 65 < prag 70 → WAIT
+reg = MultiFakeRegistry({"ollama": {"conf": 55, "action": "OPEN_LONG"}})
+dec, bundle, dur = orchestrator.decide(reg, "EURUSD", SNAP, BRIEF, DESK, cfg)
+check("gate: consiliu unic sub prag (media 65 < 70) → WAIT, ordin blocat",
+      dec["action"] == "WAIT" and "Sub pragul" in dec["rationale"],
+      f"conf={dec['confidence']}")
+
+# gate: prag configurabil — acelasi consiliu trece la prag 60
+cfg_low = dict(cfg); cfg_low["consensus_threshold"] = 60
+dec, bundle, dur = orchestrator.decide(reg, "EURUSD", SNAP, BRIEF, DESK, cfg_low)
+check("gate: acelasi consiliu (media 65) la prag 60 → OPEN", dec["action"] == "OPEN_LONG")
+
+# gate si cand revizorii pica: primar sub prag → WAIT (nu se strecoara pe fallback)
+cfg_m = dict(CFG); cfg_m["council_primary_source"] = "ollama"
+cfg_m["council_secondary_source"] = "claude"; cfg_m["consensus_threshold"] = 70
+reg = MultiFakeRegistry({"ollama": {"conf": 55, "action": "OPEN_LONG"},
+                         "claude": {"fail": True}})
+dec, bundle, dur = orchestrator.decide(reg, "EURUSD", SNAP, BRIEF, DESK, cfg_m)
+check("gate: revizori picati + primar sub prag → WAIT",
+      dec["action"] == "WAIT" and "Sub pragul" in dec["rationale"])
+
+# ═════════════════════════════════════════════════════════════════════════════
 
 print("\n" + "═" * 60)
 print(f"REZULTAT: {len(PASS)} PASS / {len(FAIL)} FAIL din {len(PASS) + len(FAIL)}")

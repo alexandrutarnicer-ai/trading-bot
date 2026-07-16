@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Bot, Play, Square, Brain, AlertTriangle, ChevronDown, ChevronRight, RefreshCw, Loader2 } from "lucide-react";
 import {
   useAiStatus, useAiDecisions, useAiOutcomes, useAiCouncil, useAiConfig,
-  useAiLogs, useAiStart, useAiStop, useAiSaveConfig, useAiProviders,
+  useAiLogs, useAiStart, useAiStop, useAiSaveConfig, useAiProviders, useAiLotInfo,
 } from "../api/hooks";
 import type { AiDecision, MarketOverride } from "../api/types";
 import { AiProvidersCard } from "../components/AiProvidersCard";
@@ -138,7 +138,10 @@ function DecisionRow({ d }: { d: AiDecision }) {
             {d.entry} / SL {d.sl} / TP {d.tp}
           </span>
         )}
-        <span className="ml-auto text-[10px] text-slate-500 shrink-0">conf {d.confidence}%</span>
+        <span className="ml-auto text-[10px] text-slate-500 shrink-0"
+          title="Media încrederilor membrilor consiliului (Tehnic / Macro / [Quant] / Head Trader)">
+          conf medie {d.confidence}%
+        </span>
         {d.outcome && (
           <span className={`text-xs font-mono font-semibold shrink-0 ${(d.outcome.result_r ?? 0) >= 0 ? "text-profit" : "text-loss"}`}>
             {fmtR(d.outcome.result_r)}
@@ -306,6 +309,8 @@ function ConsensusConfig() {
         {nCouncils > 1
           ? `Consiliul primar propune trade-ul; ${nCouncils - 1} consiliu/consilii îl revizuiesc. Media încrederilor ≥ prag → execută; un veto valid blochează. Revizori indisponibili → decide primarul.`
           : "Un singur consiliu (implicit). Adaugă Consiliu 2/3 pentru confirmare prin consens."}
+        {" "}Pragul se aplică pe <b>media încrederilor membrilor consiliului</b> (Tehnic / Macro /
+        [Quant] / Head) — inclusiv cu un singur consiliu: sub prag, ordinul NU se plasează (WAIT).
       </p>
 
       {/* Roluri optionale */}
@@ -366,6 +371,13 @@ const LIMIT_TIPS = {
     "Ex: 2 → al treilea ordin din aceeași zi e respins automat.",
     "Gol = fără limită per piață (limitele globale de expunere rămân).",
   ].join("\n"),
+  lots: [
+    "Volum FIX per ordin pe această piață (în loturi).",
+    "Gol = sizing dinamic pe risc (comportamentul de până acum — default).",
+    "Setat → fiecare ordin AI pe piață folosește exact acest volum",
+    "(aliniat la lot minim/step-ul brokerului; rail-ul de marjă ≤40% rămâne activ).",
+    "Sub câmp apare costul real din MT5: marja necesară + risc $ per unitate de preț.",
+  ].join("\n"),
   isolated: [
     "«Izolat» = piață în OBSERVAȚIE / test.",
     "Deciziile și rezultatele ei se salvează normal, dar SEPARAT:",
@@ -377,10 +389,36 @@ const LIMIT_TIPS = {
   ].join("\n"),
 };
 
+// Estimarea USD (din MT5) pentru un volum fix — marja necesara + risc $/unitate
+// de pret. Interogata cu debounce ca sa nu bombardam API-ul in timp ce tastezi.
+function LotUsdEstimate({ symbol, lots }: { symbol: string; lots: number | null | undefined }) {
+  const lotInfo = useAiLotInfo();
+  useEffect(() => {
+    if (!lots || lots <= 0) return;
+    const t = setTimeout(() => lotInfo.mutate({ symbol, lots }), 600);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [symbol, lots]);
+  if (!lots || lots <= 0) return null;
+  if (lotInfo.isPending) return <div className="text-[9px] text-slate-600">se calculează…</div>;
+  const d = lotInfo.data;
+  if (!d) return null;
+  if (!d.ok) return <div className="text-[9px] text-amber-500/80" title={d.detail}>MT5 indisponibil</div>;
+  return (
+    <div className="text-[9px] text-slate-500 whitespace-nowrap"
+      title={`Marjă necesară pentru ${lots} loturi la prețul curent · risc $ = distanța SL × valoare/unitate. Marjă liberă: ${d.free_margin ?? "?"}$`}>
+      marjă ~<span className="text-slate-300 font-mono">{d.margin_usd != null ? `$${d.margin_usd}` : "?"}</span>
+      {d.value_per_price_unit_usd != null && (
+        <> · <span className="text-slate-300 font-mono">${d.value_per_price_unit_usd}</span>/unit</>
+      )}
+    </div>
+  );
+}
+
 function MarketLimitsRow({ symbol, ov, stats, orphan, effRiskPct, onSave, saving }: {
   symbol: string;
   ov: MarketOverride;
-  stats?: { closed_trades: number; total_R: number } | null;
+  stats?: { closed_trades: number; total_R: number; wins?: number; losses?: number } | null;
   orphan?: boolean;                       // are config dar nu mai e in lista de piete
   effRiskPct: string;                     // valoarea globala curenta (placeholder)
   onSave: (symbol: string, ov: MarketOverride | null, onDone: () => void) => void;
@@ -402,7 +440,9 @@ function MarketLimitsRow({ symbol, ov, stats, orphan, effRiskPct, onSave, saving
         {orphan && <span className="ml-1.5 text-[9px] px-1 py-0.5 rounded bg-slate-600/40 text-slate-400" title="Piața nu mai e în lista urmărită — config-ul și izolarea ei rămân active până le ștergi">NEURMĂRIT</span>}
         {stats && stats.closed_trades > 0 && (
           <div className={`text-[9px] font-mono ${stats.total_R >= 0 ? "text-profit" : "text-loss"}`}>
-            {stats.closed_trades}t · {stats.total_R >= 0 ? "+" : ""}{stats.total_R}R
+            {stats.closed_trades}t
+            {stats.wins != null && <span className="text-slate-500"> ({stats.wins}W/{stats.losses ?? 0}L)</span>}
+            {" "}· {stats.total_R >= 0 ? "+" : ""}{stats.total_R}R
           </div>
         )}
       </td>
@@ -435,6 +475,13 @@ function MarketLimitsRow({ symbol, ov, stats, orphan, effRiskPct, onSave, saving
           placeholder="∞"
           value={draft.max_trades_per_day ?? ""}
           onChange={e => upd({ max_trades_per_day: e.target.value === "" ? null : Math.round(num(e.target.value) ?? 1) })} />
+      </td>
+      <td className="px-1 py-1.5">
+        <input className={inputCls} type="number" min={0.01} max={100} step={0.01}
+          placeholder="auto"
+          value={draft.fixed_lots ?? ""}
+          onChange={e => upd({ fixed_lots: e.target.value === "" ? null : num(e.target.value) })} />
+        <LotUsdEstimate symbol={symbol} lots={draft.fixed_lots} />
       </td>
       <td className="px-1 py-1.5 text-center">
         <input type="checkbox" className="accent-amber-500"
@@ -491,6 +538,7 @@ function MarketLimitsCard() {
       if (ov.max_rr != null) clean.max_rr = ov.max_rr;
       if (ov.max_daily_loss_R != null) clean.max_daily_loss_R = ov.max_daily_loss_R;
       if (ov.max_trades_per_day != null) clean.max_trades_per_day = ov.max_trades_per_day;
+      if (ov.fixed_lots != null && ov.fixed_lots > 0) clean.fixed_lots = ov.fixed_lots;
       if (ov.isolated) clean.isolated = true;
       if (Object.keys(clean).length) next[symbol] = clean;
       else delete next[symbol];
@@ -529,6 +577,7 @@ function MarketLimitsCard() {
               <Th label="Max R:R" tip={LIMIT_TIPS.maxRr} />
               <Th label="Stop zi (R)" tip={LIMIT_TIPS.dailyStop} align="right" />
               <Th label="Max ord/zi" tip={LIMIT_TIPS.maxTrades} align="right" />
+              <Th label="Loturi" tip={LIMIT_TIPS.lots} align="right" />
               <Th label="Izolat" tip={LIMIT_TIPS.isolated} align="right" />
               <th className="px-1 py-1"></th>
             </tr>
@@ -537,14 +586,16 @@ function MarketLimitsCard() {
             {markets.map(sym => (
               <MarketLimitsRow key={sym} symbol={sym}
                 ov={overrides[sym] ?? {}}
-                stats={bySym[sym] ? { closed_trades: bySym[sym].closed_trades, total_R: bySym[sym].total_R } : null}
+                stats={bySym[sym] ? { closed_trades: bySym[sym].closed_trades, total_R: bySym[sym].total_R,
+                                      wins: bySym[sym].wins, losses: bySym[sym].losses } : null}
                 effRiskPct={effRiskPct}
                 onSave={saveRow} saving={save.isPending} />
             ))}
             {orphans.map(sym => (
               <MarketLimitsRow key={sym} symbol={sym} orphan
                 ov={overrides[sym] ?? {}}
-                stats={bySym[sym] ? { closed_trades: bySym[sym].closed_trades, total_R: bySym[sym].total_R } : null}
+                stats={bySym[sym] ? { closed_trades: bySym[sym].closed_trades, total_R: bySym[sym].total_R,
+                                      wins: bySym[sym].wins, losses: bySym[sym].losses } : null}
                 effRiskPct={effRiskPct}
                 onSave={saveRow} saving={save.isPending} />
             ))}
@@ -644,18 +695,31 @@ export function AiEnginePage() {
       )}
 
       {/* Scorecard */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
         {[
           { label: "Decizii",       value: sc ? String(sc.decisions) : "—" },
           { label: "WAIT (răbdare)", value: sc ? String(sc.waits) : "—" },
           { label: "Trades închise", value: sc ? String(sc.closed_trades) : "—" },
+          { label: "Win / Loss",    value: null },   // randat custom mai jos
           { label: "Total R",       value: sc ? fmtR(sc.total_R) : "—",
             color: sc && sc.total_R >= 0 ? "text-profit" : "text-loss" },
           { label: "Expectancy",    value: sc ? fmtR(sc.expectancy_R) : "—",
             color: sc && sc.expectancy_R >= 0 ? "text-profit" : "text-loss" },
         ].map(c => (
           <div key={c.label} className="bg-surface rounded-xl border border-surface-border p-3 text-center">
-            <div className={`text-lg font-bold font-mono ${c.color ?? "text-white"}`}>{c.value}</div>
+            {c.label === "Win / Loss" ? (
+              <div className="text-lg font-bold font-mono">
+                {sc && sc.wins != null ? (
+                  <>
+                    <span className="text-profit">{sc.wins}W</span>
+                    <span className="text-slate-600"> · </span>
+                    <span className="text-loss">{sc.losses ?? 0}L</span>
+                  </>
+                ) : <span className="text-white">—</span>}
+              </div>
+            ) : (
+              <div className={`text-lg font-bold font-mono ${c.color ?? "text-white"}`}>{c.value}</div>
+            )}
             <div className="text-[10px] text-slate-500">{c.label}</div>
           </div>
         ))}

@@ -117,6 +117,8 @@ const TIPS = {
     "",
     "Configurația AI e moștenită automat din tab-ul AI Engine (surse, role assignments) — nicio setare duplicată. Schimbările de acolo se aplică imediat.",
     "FAIL-OPEN: dacă AI-ul e indisponibil (Ollama oprit etc.), trade-ul e PERMIS — botul nu se blochează niciodată din cauza filtrului.",
+    "Excepție: cu modul STRICT activat (fail-closed), un filtru indisponibil BLOCHEAZĂ ordinul — se plasează doar semnale validate efectiv de AI.",
+    "Rutare surse: sursa selectată → celelalte surse sănătoase → Ollama (failover automat).",
     "Latență: evaluarea durează tipic 10–60s (4 apeluri LLM) — irelevant pentru ordinele pending pe M15/H1.",
   ].join("\n"),
   ai_filter_level: [
@@ -1045,6 +1047,20 @@ export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted,
                     fiecare semnal cu sursele configurate în tab-ul AI Engine. Sub prag → ordinul e respins
                     (notificare cu motivul). AI indisponibil → trade permis (fail-open, botul nu se blochează).
                   </p>
+
+                  {/* Mod Strict (fail-closed) */}
+                  <div className="space-y-1.5 border-t border-surface-border/40 pt-2">
+                    <Toggle
+                      label="Strict (fail-closed): fără verdict AI, ordinul NU se plasează"
+                      value={session.ai_filter_strict ?? false}
+                      onChange={(v) => upd({ ai_filter_strict: v })}
+                    />
+                    <p className={`text-[10px] leading-relaxed ${(session.ai_filter_strict ?? false) ? "text-amber-400/90" : "text-slate-600"}`}>
+                      {(session.ai_filter_strict ?? false)
+                        ? "⚠ Activ: dacă filtrul AI e indisponibil (nicio sursă AI funcțională, timeout, eroare), ordinul este BLOCAT — se plasează doar semnalele validate efectiv de AI."
+                        : "Dezactivat (default): dacă AI-ul e indisponibil, ordinul se plasează normal (fail-open — comportamentul de până acum)."}
+                    </p>
+                  </div>
 
                   {/* Consiliu multiplu (Multi-Council Consensus) */}
                   <MultiCouncilConfig

@@ -191,6 +191,31 @@ def calc_lots(symbol: str, entry: float, sl: float,
     return lot, risk_usd
 
 
+def snap_fixed_lots(symbol: str, fixed_lots: float,
+                    entry: float, sl: float) -> tuple[float, float | None]:
+    """
+    Volum FIX per ordin (market_overrides.fixed_lots), aliniat la specificatiile
+    brokerului: clamp la [volume_min, volume_max] si rotunjit in JOS la volume_step
+    (nu crestem niciodata expunerea peste ce a configurat utilizatorul, cu exceptia
+    lotului minim — sub el ordinul nu exista). Returneaza (lot, risc_usd_la_SL).
+    """
+    info = mt5.symbol_info(symbol)
+    if info is None:
+        return 0.0, None
+    step = info.volume_step if info.volume_step > 0 else 0.01
+    # floor la step cu epsilon: fara el, 0.5 // 0.01 = 49 (float) → 0.49 in loc de 0.50
+    lot = int(float(fixed_lots) / step + 1e-9) * step
+    lot = max(info.volume_min, lot)
+    if info.volume_max and info.volume_max > 0:
+        lot = min(lot, info.volume_max)
+    lot = round(lot, 2)
+    dist = abs(entry - sl)
+    risk_usd = None
+    if dist > 0 and info.trade_tick_size > 0:
+        risk_usd = round(lot * dist * (info.trade_tick_value / info.trade_tick_size), 2)
+    return lot, risk_usd
+
+
 # ── Sanitizare pret ordin STOP (pur, testabil fara MT5) ─────────────────────
 
 def adjust_stop_bracket(entry: float, sl: float, tp: float, ref: float,
@@ -253,7 +278,8 @@ def _send_with_fillings(req: dict):
 
 
 def place(d: dict, snapshot: dict, cfg: dict, decision_id: int,
-          capital_fraction: float = 1.0) -> tuple[str, str, int | None]:
+          capital_fraction: float = 1.0,
+          fixed_lots: float | None = None) -> tuple[str, str, int | None]:
     """
     Executa o decizie OPEN_*. Returneaza (status, detail, ticket):
       status: "placed" | "rejected" | "failed" | "shadow"
@@ -261,6 +287,11 @@ def place(d: dict, snapshot: dict, cfg: dict, decision_id: int,
     `capital_fraction` (market_overrides): fractia din equity folosita ca baza de
     sizing pe aceasta piata (risc $ = equity * fraction * risk_pct). Default 1.0
     = tot equity-ul, identic cu comportamentul de dinainte.
+
+    `fixed_lots` (market_overrides.fixed_lots): volum FIX per ordin — inlocuieste
+    complet sizing-ul dinamic pe risc (snap la volume_min/step/max al brokerului).
+    None = sizing dinamic, identic cu comportamentul de dinainte. Rail-ul de marja
+    (<=40% din marja libera) ramane activ si pe lot fix.
     """
     symbol = snapshot["symbol"]
     capital_fraction = max(0.05, min(1.0, float(capital_fraction or 1.0)))
@@ -294,8 +325,11 @@ def place(d: dict, snapshot: dict, cfg: dict, decision_id: int,
         # normalizeaza SL/TP la precizia simbolului (evita 10015 pe precizie)
         d["sl"] = round(d["sl"], info.digits)
         d["tp"] = round(d["tp"], info.digits)
-        lots, risk_usd = calc_lots(symbol, entry, d["sl"],
-                                   equity() * capital_fraction, d["risk_pct"])
+        if fixed_lots:
+            lots, risk_usd = snap_fixed_lots(symbol, fixed_lots, entry, d["sl"])
+        else:
+            lots, risk_usd = calc_lots(symbol, entry, d["sl"],
+                                       equity() * capital_fraction, d["risk_pct"])
         if lots <= 0:
             return "rejected", "lot calculat 0 (capital insuficient?)", None
         m_err = _margin_ok(lots, entry)
@@ -331,8 +365,11 @@ def place(d: dict, snapshot: dict, cfg: dict, decision_id: int,
                      symbol, d["entry"], n_entry, ref, round(buf, info.digits))
         d["entry"], d["sl"], d["tp"] = n_entry, n_sl, n_tp
 
-        lots, risk_usd = calc_lots(symbol, d["entry"], d["sl"],
-                                   equity() * capital_fraction, d["risk_pct"])
+        if fixed_lots:
+            lots, risk_usd = snap_fixed_lots(symbol, fixed_lots, d["entry"], d["sl"])
+        else:
+            lots, risk_usd = calc_lots(symbol, d["entry"], d["sl"],
+                                       equity() * capital_fraction, d["risk_pct"])
         if lots <= 0:
             return "rejected", "lot calculat 0 (capital insuficient?)", None
         m_err = _margin_ok(lots, d["entry"])
