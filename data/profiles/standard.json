@@ -1642,10 +1642,11 @@
       "ai_filter_secondary_source": null,
       "ai_filter_tertiary_source": null,
       "ai_role_quant_enabled": true,
-      "ai_role_devils_advocate_enabled": true
+      "ai_role_devils_advocate_enabled": true,
+      "ai_filter_strict": true
     }
   ],
-  "updated_at": "2026-07-15T09:21:29",
+  "updated_at": "2026-07-16T21:41:18",
   "capital_protection_enabled": true,
   "capital_protection_threshold_pct": 80
 }
