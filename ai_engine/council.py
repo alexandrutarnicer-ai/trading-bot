@@ -316,6 +316,13 @@ def convene(registry, briefing: str, desk_state: dict, cfg: dict,
                           ["action", "confidence", "rationale"])
 
         decision = _sanitize(head, risk, cfg)
+        # Increderea DECIZIEI = media membrilor consiliului (nu doar head trader).
+        # Head-ul raporteaza sistematic mai sus decat media desk-ului; ordinele se
+        # gate-uiesc pe media membrilor contra consensus_threshold (orchestrator).
+        avg = council_confidence(transcript)
+        if avg is not None:
+            decision["head_confidence"] = decision["confidence"]
+            decision["confidence"] = avg
     except ProviderError as e:
         decision = {"action": "WAIT", "order_type": None, "entry": None, "sl": None,
                     "tp": None, "risk_pct": None, "confidence": 0,
@@ -329,6 +336,31 @@ def _short(view: dict) -> str:
     return str({k: v for k, v in view.items()
                 if k != "reasoning" and not k.startswith("_")}) + \
            f" reasoning: {view.get('reasoning', view.get('notes', ''))}"
+
+
+# Rolurile care raporteaza un camp numeric "confidence" (Risk Manager si Avocatul
+# Diavolului nu au — ei se exprima prin veto/severity, nu prin incredere).
+_CONFIDENCE_ROLES = ("technical", "macro", "quant", "head_trader")
+
+
+def council_confidence(transcript: dict) -> int | None:
+    """
+    MEDIA increderilor MEMBRILOR consiliului (technical/macro/[quant]/head).
+
+    Aceasta e valoarea pe care o gate-uieste pragul de consens ("bara" din UI):
+    increderea afisata/stocata a unei decizii trebuie sa fie media calculata a
+    fiecarui membru care raporteaza confidence, nu doar parerea Head Trader-ului
+    (care e sistematic mai optimista decat media analiza+macro). None daca niciun
+    rol nu a produs o incredere numerica (ex: consiliu esuat).
+    """
+    vals = []
+    for role in _CONFIDENCE_ROLES:
+        view = transcript.get(role)
+        if isinstance(view, dict):
+            c = _num(view.get("confidence"))
+            if c is not None:
+                vals.append(max(0.0, min(100.0, c)))
+    return int(round(sum(vals) / len(vals))) if vals else None
 
 
 # Codurile de veto pe care sistemul le onoreaza. Orice veto FARA un cod din

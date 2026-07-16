@@ -810,3 +810,10 @@ export const useAiProviderModels = () =>
     mutationFn: body =>
       apiFetch("/ai/providers/models", { method: "POST", body }),
   });
+
+// Costul real (MT5) al unui volum fix pe o piata — pentru campul "Loturi" din
+// Limite per piata (marja necesara + USD per unitate de pret).
+export const useAiLotInfo = () =>
+  useMutation<import("./types").AiLotInfo, Error, { symbol: string; lots: number }>({
+    mutationFn: body => apiFetch("/ai/lot-info", { method: "POST", body }),
+  });

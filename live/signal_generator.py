@@ -684,6 +684,19 @@ def _ai_filter_check(sig: dict, session_cfg: dict, src, log) -> dict | None:
         return dict(_AI_UNAVAILABLE)
 
 
+def _ai_strict_blocked(session_cfg: dict, verdict: dict | None) -> bool:
+    """
+    True cand modul STRICT (fail-closed, per sesiune) blocheaza ordinul: filtrul
+    AI e activ dar verdictul e un fail-open (approved=True cu `error` setat —
+    AI indisponibil / timeout / eroare interna) si ai_filter_strict=True.
+    Cu Strict OFF (default) intoarce mereu False → comportament identic cu inainte.
+    """
+    return (bool(session_cfg.get("ai_filter_strict", False))
+            and verdict is not None
+            and bool(verdict.get("approved", True))
+            and bool(verdict.get("error")))
+
+
 def _ai_note(p: dict | None) -> str:
     """
     Sufix dinamic pentru notificarile Telegram cand trade-ul a trecut prin
@@ -2994,7 +3007,7 @@ def _apply_profile_overrides(session_cfg: dict, cfg: dict, log) -> None:
                   # Inside Bar pattern
                   "inside_bar_enabled", "inside_bar_r_ratio", "inside_bar_risk_pct",
                   # Filtru AI Pre-Trade
-                  "ai_filter_enabled", "ai_filter_level",
+                  "ai_filter_enabled", "ai_filter_level", "ai_filter_strict",
                   # Filtru AI — consiliu multiplu (consens) + roluri optionale
                   "ai_filter_primary_source", "ai_filter_secondary_source",
                   "ai_filter_tertiary_source",
@@ -3453,9 +3466,18 @@ def run_generator(session_cfg: dict):
                     pd.DataFrame([sig]).reindex(columns=_SIGNALS_COLS).to_csv(
                         signals_file, mode="a", header=False, index=False)
 
-                    if _ai_verdict is not None and not _ai_verdict.get("approved", True):
-                        # RESPINS: outcome imediat (status=ai_reject), nu intra in
-                        # pending → niciun ordin MT5, nici retry la barele urmatoare.
+                    # ── Mod STRICT (fail-closed, per sesiune, default OFF) ──
+                    # Fail-open-ul clasic permite trade-ul cand AI-ul e indisponibil
+                    # (verdict cu `error` setat). Cu Strict activat, un filtru
+                    # indisponibil BLOCHEAZA ordinul: AI Filter ON + Strict ON +
+                    # AI picat → ordinul NU se plaseaza. Strict OFF → identic cu inainte.
+                    _ai_strict_block = _ai_strict_blocked(session_cfg, _ai_verdict)
+
+                    if _ai_verdict is not None and (
+                            not _ai_verdict.get("approved", True) or _ai_strict_block):
+                        # RESPINS (sau blocat de Strict): outcome imediat
+                        # (status=ai_reject), nu intra in pending → niciun ordin
+                        # MT5, nici retry la barele urmatoare.
                         _rej_row = {
                             "signal_id": sig["signal_id"], "time_check": now_local(),
                             "symbol": symbol, "direction": sig["direction"],
@@ -3470,21 +3492,39 @@ def run_generator(session_cfg: dict):
                         _conf = _ai_verdict.get("confidence")
                         _conf_str = f"{_conf}%" if _conf is not None else "—"
                         fmt = ".2f" if sig["entry"] > 100 else ".5f"
+                        if _ai_strict_block:
+                            _head = (f"⛔ <b>Filtru AI STRICT: ordin BLOCAT — "
+                                     f"{sig['dir_str']} {sig['symbol']}</b>\n"
+                                     f"Filtrul AI e indisponibil "
+                                     f"({_html_esc(str(_ai_verdict.get('error', ''))[:150])}) "
+                                     f"și modul Strict e activ — fără verdict AI, "
+                                     f"ordinul nu se plasează.\n")
+                        else:
+                            _head = (f"⛔ <b>Filtru AI: RESPINS — {sig['dir_str']} "
+                                     f"{sig['symbol']}</b>\n"
+                                     f"Încredere: {_conf_str} (prag "
+                                     f"{_ai_verdict.get('threshold')}% — nivel "
+                                     f"{_ai_verdict.get('level')})\n"
+                                     f"Motiv: {_html_esc(_ai_verdict.get('reason', ''))[:400]}\n")
                         _send_telegram(
-                            f"⛔ <b>Filtru AI: RESPINS — {sig['dir_str']} {sig['symbol']}</b>\n"
-                            f"Încredere: {_conf_str} (prag {_ai_verdict.get('threshold')}% "
-                            f"— nivel {_ai_verdict.get('level')})\n"
-                            f"Motiv: {_html_esc(_ai_verdict.get('reason', ''))[:400]}\n"
+                            _head +
                             f"Entry: <code>{format(sig['entry'], fmt)}</code>  "
                             f"SL: <code>{format(sig['sl'], fmt)}</code>  "
                             f"TP: <code>{format(sig['tp'], fmt)}</code> ({sig['r_ratio']:.1f}R)\n"
                             f"<i>{session_cfg['session_id']} | {sig['signal_id']}</i>"
                         )
-                        log.info(
-                            f"  *** SEMNAL RESPINS DE FILTRUL AI: {sig['signal_id']} "
-                            f"{symbol} {sig['dir_str']} — incredere {_conf_str} "
-                            f"< prag {_ai_verdict.get('threshold')}%"
-                        )
+                        if _ai_strict_block:
+                            log.warning(
+                                f"  *** SEMNAL BLOCAT (STRICT): {sig['signal_id']} "
+                                f"{symbol} {sig['dir_str']} — filtru AI indisponibil "
+                                f"({_ai_verdict.get('error')}) si ai_filter_strict=True"
+                            )
+                        else:
+                            log.info(
+                                f"  *** SEMNAL RESPINS DE FILTRUL AI: {sig['signal_id']} "
+                                f"{symbol} {sig['dir_str']} — incredere {_conf_str} "
+                                f"< prag {_ai_verdict.get('threshold')}%"
+                            )
                         new_sigs += 1
                         continue
 

@@ -100,6 +100,8 @@ DEFAULTS: dict = {
     #   max_rr             (1-10; TP peste e LIMITAT la max_rr; consiliul e informat)
     #   max_daily_loss_R   (stop zilnic PE PIATA, separat de stopul global -3R)
     #   max_trades_per_day (anti-overtrading: max ordine plasate/zi pe piata)
+    #   fixed_lots         (0.01-100; volum FIX per ordin pe piata — inlocuieste
+    #                      sizing-ul dinamic pe risc; None = sizing dinamic, ca acum)
     #   isolated           (true = piata "in observatie": rezultatele ei NU intra in
     #                      scorecard-ul principal; raman vizibile per piata)
     "market_overrides": {},
@@ -112,6 +114,7 @@ MARKET_OVERRIDE_DEFAULTS = {
     "max_rr":             None,   # None = fara plafon RR (ca pana acum)
     "max_daily_loss_R":   None,   # None = doar stopul global de zi
     "max_trades_per_day": None,   # None = fara limita per piata
+    "fixed_lots":         None,   # None = sizing dinamic pe risc (ca pana acum)
     "isolated":           False,  # in scorecard-ul principal
 }
 
@@ -134,6 +137,8 @@ def sanitize_market_overrides(raw: dict | None, risk_pct_max: float = 0.02) -> d
                 clean["max_daily_loss_R"] = max(0.25, min(10.0, float(ov["max_daily_loss_R"])))
             if ov.get("max_trades_per_day") is not None:
                 clean["max_trades_per_day"] = max(1, min(20, int(ov["max_trades_per_day"])))
+            if ov.get("fixed_lots") is not None:
+                clean["fixed_lots"] = round(max(0.01, min(100.0, float(ov["fixed_lots"]))), 2)
             if ov.get("isolated"):
                 clean["isolated"] = True
         except (TypeError, ValueError):

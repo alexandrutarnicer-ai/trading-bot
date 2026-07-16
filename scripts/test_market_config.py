@@ -237,6 +237,48 @@ m_back = C.market_cfg({"market_overrides": {}}, "XRPUSD")
 check("config sters → piata revine la comportament global", m_back["_has_overrides"] is False)
 
 # ═════════════════════════════════════════════════════════════════════════════
+# Volum FIX per piata (fixed_lots) — sizing pe loturi in loc de risc
+# ═════════════════════════════════════════════════════════════════════════════
+
+s = C.sanitize_market_overrides({
+    "EURUSD": {"fixed_lots": 0.5},
+    "XRPUSD": {"fixed_lots": 0.001},     # sub minim → clamp la 0.01
+    "GBPUSD": {"fixed_lots": 500},       # peste maxim → clamp la 100
+    "USDJPY": {"fixed_lots": "0.25"},    # string numeric tolerat
+}, risk_pct_max=0.02)
+check("fixed_lots: valoare valida pastrata", s["EURUSD"]["fixed_lots"] == 0.5)
+check("fixed_lots: clamp jos la 0.01", s["XRPUSD"]["fixed_lots"] == 0.01)
+check("fixed_lots: clamp sus la 100", s["GBPUSD"]["fixed_lots"] == 100.0)
+check("fixed_lots: string numeric tolerat", s["USDJPY"]["fixed_lots"] == 0.25)
+check("fixed_lots: default None (sizing dinamic, ca inainte)",
+      C.market_cfg({"market_overrides": {}}, "EURUSD")["fixed_lots"] is None)
+check("fixed_lots: rezolvat prin market_cfg",
+      C.market_cfg({"market_overrides": {"EURUSD": {"fixed_lots": 0.5}}},
+                   "EURUSD")["fixed_lots"] == 0.5)
+
+# snap la specificatiile brokerului (mock mt5.symbol_info — fara MT5 real)
+import ai_engine.executor as _ex
+_real_mt5 = _ex.mt5
+_ex.mt5 = SimpleNamespace(symbol_info=lambda s: SimpleNamespace(
+    volume_min=0.01, volume_step=0.01, volume_max=50.0,
+    trade_tick_value=1.0, trade_tick_size=0.00001))
+try:
+    lot, risk = _ex.snap_fixed_lots("EURUSD", 0.5, 1.0850, 1.0820)
+    check("snap_fixed_lots: volum pastrat + risc USD la SL calculat",
+          lot == 0.5 and risk == round(0.5 * 0.0030 * 100000, 2), f"lot={lot} risk={risk}")
+    lot, _ = _ex.snap_fixed_lots("EURUSD", 0.005, 1.0850, 1.0820)
+    check("snap_fixed_lots: sub lotul minim → ridicat la volume_min", lot == 0.01)
+    lot, _ = _ex.snap_fixed_lots("EURUSD", 75.0, 1.0850, 1.0820)
+    check("snap_fixed_lots: peste volume_max → limitat la max", lot == 50.0)
+    lot, _ = _ex.snap_fixed_lots("EURUSD", 0.157, 1.0850, 1.0820)
+    check("snap_fixed_lots: rotunjit in JOS la volume_step", lot == 0.15)
+    _ex.mt5 = SimpleNamespace(symbol_info=lambda s: None)
+    lot, risk = _ex.snap_fixed_lots("EURUSD", 0.5, 1.0850, 1.0820)
+    check("snap_fixed_lots: simbol necunoscut → (0, None), fail-safe", lot == 0.0 and risk is None)
+finally:
+    _ex.mt5 = _real_mt5
+
+# ═════════════════════════════════════════════════════════════════════════════
 
 print("\n" + "═" * 60)
 print(f"REZULTAT: {len(PASS)} PASS / {len(FAIL)} FAIL din {len(PASS) + len(FAIL)}")

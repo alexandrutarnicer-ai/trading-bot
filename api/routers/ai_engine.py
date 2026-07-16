@@ -100,14 +100,16 @@ def ai_status():
                 # Trebuie sa ramana sincronizat cu ledger.Ledger.scorecard().
                 row = con.execute(
                     "SELECT COUNT(*), COALESCE(SUM(result_r),0), COALESCE(AVG(result_r),0), "
-                    "SUM(CASE WHEN result_r>0 THEN 1 ELSE 0 END) FROM outcomes "
+                    "SUM(CASE WHEN result_r>0 THEN 1 ELSE 0 END), "
+                    "SUM(CASE WHEN result_r<0 THEN 1 ELSE 0 END) FROM outcomes "
                     "WHERE status IN ('TP','SL','closed') AND result_r IS NOT NULL"
                     + _ex, _iso).fetchone()
-                n, tot, avg, w = row
+                n, tot, avg, w, l = row
                 n_dec = con.execute("SELECT COUNT(*) FROM decisions WHERE 1=1" + _ex, _iso).fetchone()[0]
                 n_wait = con.execute("SELECT COUNT(*) FROM decisions WHERE action='WAIT'" + _ex, _iso).fetchone()[0]
                 status["scorecard"] = {
                     "decisions": n_dec, "waits": n_wait, "closed_trades": n,
+                    "wins": int(w or 0), "losses": int(l or 0),
                     "total_R": round(tot, 2), "expectancy_R": round(avg, 3),
                     "win_rate": round(w / n, 3) if n else None}
         except Exception:
@@ -487,6 +489,55 @@ def ai_list_provider_models(body: dict = Body(...)):
     except Exception as e:
         return {"ok": False, "models": [], "detail": f"{type(e).__name__}: {e}"[:300],
                 "kind": "network"}
+
+
+@router.post("/lot-info")
+def ai_lot_info(body: dict = Body(...)):
+    """
+    Estimare in USD pentru un volum FIX pe o piata (campul fixed_lots din
+    "Limite per piata"). body: {symbol: str, lots: float}. Returneaza costul
+    real din MT5: marja necesara pentru lots + valoarea per unitate de pret
+    (pentru intuitia risc $ per miscare) + specificatiile de volum ale brokerului.
+    Trece prin pool-ul MT5 al API-ului (lock global, fara shutdown).
+    """
+    symbol = str(body.get("symbol") or "").strip().upper()
+    try:
+        lots = float(body.get("lots") or 0)
+    except (TypeError, ValueError):
+        lots = 0.0
+    if not symbol or lots <= 0:
+        raise HTTPException(400, "symbol si lots (>0) sunt obligatorii")
+    from api import mt5_pool
+    with mt5_pool._LOCK:
+        try:
+            mt5 = mt5_pool._ensure_mt5()
+        except mt5_pool.Mt5Unavailable as e:
+            return {"ok": False, "detail": str(e)}
+        if not mt5.symbol_select(symbol, True):
+            return {"ok": False, "detail": f"simbolul {symbol} nu exista in MT5"}
+        info = mt5.symbol_info(symbol)
+        tick = mt5.symbol_info_tick(symbol)
+        if info is None or tick is None:
+            return {"ok": False, "detail": "symbol_info/tick indisponibil"}
+        price = tick.ask or tick.bid or 0.0
+        # marja reala ceruta de broker pentru volumul dat (BUY ca referinta)
+        margin = None
+        try:
+            margin = mt5.order_calc_margin(mt5.ORDER_TYPE_BUY, symbol, lots, price)
+        except Exception:
+            pass
+        val_per_unit = None
+        if info.trade_tick_size and info.trade_tick_size > 0:
+            # USD per 1.0 unitate de pret, pentru `lots` — riscul $ = dist_SL × asta
+            val_per_unit = round(lots * info.trade_tick_value / info.trade_tick_size, 2)
+        acc = mt5.account_info()
+        return {"ok": True, "symbol": symbol, "lots": lots, "price": price,
+                "margin_usd": round(float(margin), 2) if margin is not None else None,
+                "value_per_price_unit_usd": val_per_unit,
+                "volume_min": info.volume_min, "volume_step": info.volume_step,
+                "volume_max": info.volume_max,
+                "free_margin": round(float(acc.margin_free), 2) if acc else None,
+                "currency": acc.currency if acc else None}
 
 
 @router.post("/providers/test")
