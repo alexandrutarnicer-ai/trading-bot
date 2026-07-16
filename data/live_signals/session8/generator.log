@@ -1,0 +1,1332 @@
+2026-06-25 19:05:10    ib_signal_counter sincronizat la 2 din signals.csv
+2026-06-25 19:05:10    [PROFIL] Profil 'Standard Profile' aplicat pe session8.
+2026-06-25 19:05:10  =================================================================
+2026-06-25 19:05:10    S8-EURCAD-H1 — EURCAD H1+D1 LONG pw=6 pullback+flag | test +0.384R DD -23.7%
+2026-06-25 19:05:10    Piete: ['EURCAD']
+2026-06-25 19:05:10    TF: H1 (trend D1) | PW=6 | LONG
+2026-06-25 19:05:10    Output: C:\Dev\trading-bot\data\live_signals\session8
+2026-06-25 19:05:10  =================================================================
+2026-06-25 19:05:11  MT5: 52906593 @ ICMarketsEU-Demo (DEMO)
+2026-06-25 19:05:13  Simboluri active: ['EURCAD']
+2026-06-25 19:05:13  Pornit. Ctrl+C pentru oprire.
+
+2026-06-25 19:05:13  --- S8-EURCAD-H1 iter 1 @ 19:05:13 ---
+2026-06-25 19:05:33    Niciun semnal nou. Pendinge: 0
+2026-06-25 19:05:33    Urmatoarea bara 60min @ 20:00:05 — 3272s
+2026-06-25 20:00:05  --- S8-EURCAD-H1 iter 2 @ 20:00:05 ---
+2026-06-25 20:00:09    Niciun semnal nou. Pendinge: 0
+2026-06-25 20:00:09    Urmatoarea bara 60min @ 21:00:05 — 3595s
+2026-06-25 21:00:05  --- S8-EURCAD-H1 iter 3 @ 21:00:05 ---
+2026-06-25 21:00:05    Niciun semnal nou. Pendinge: 0
+2026-06-25 21:00:05    Urmatoarea bara 60min @ 22:00:05 — 3600s
+2026-06-25 21:53:11    [PROFIL] Profil 'Standard Profile' aplicat pe session8.
+2026-06-25 21:53:11  =================================================================
+2026-06-25 21:53:11    S8-EURCAD-H1 — EURCAD H1+D1 LONG pw=6 pullback+flag | test +0.384R DD -23.7%
+2026-06-25 21:53:11    Piete: ['EURCAD']
+2026-06-25 21:53:11    TF: H1 (trend D1) | PW=6 | LONG
+2026-06-25 21:53:11    Output: C:\Dev\trading-bot\data\live_signals\session8
+2026-06-25 21:53:11  =================================================================
+2026-06-25 21:53:11  MT5: 52906593 @ ICMarketsEU-Demo (DEMO)
+2026-06-25 21:53:13  Simboluri active: ['EURCAD']
+2026-06-25 21:53:13  Pornit. Ctrl+C pentru oprire.
+
+2026-06-25 21:53:13  --- S8-EURCAD-H1 iter 1 @ 21:53:13 ---
+2026-06-25 21:53:15    Niciun semnal nou. Pendinge: 0
+2026-06-25 21:53:15    Urmatoarea bara 60min @ 22:00:05 — 410s
+2026-06-25 22:00:05  --- S8-EURCAD-H1 iter 2 @ 22:00:05 ---
+2026-06-25 22:00:05    Niciun semnal nou. Pendinge: 0
+2026-06-25 22:00:05    Urmatoarea bara 60min @ 23:00:05 — 3600s
+2026-06-25 23:00:05  --- S8-EURCAD-H1 iter 3 @ 23:00:05 ---
+2026-06-25 23:00:05    Niciun semnal nou. Pendinge: 0
+2026-06-25 23:00:05    Urmatoarea bara 60min @ 00:00:05 — 3599s
+2026-06-26 00:00:05  --- S8-EURCAD-H1 iter 4 @ 00:00:05 ---
+2026-06-26 00:00:06    Niciun semnal nou. Pendinge: 0
+2026-06-26 00:00:06    Urmatoarea bara 60min @ 01:00:05 — 3599s
+2026-06-26 01:00:05  --- S8-EURCAD-H1 iter 5 @ 01:00:05 ---
+2026-06-26 01:00:05    Niciun semnal nou. Pendinge: 0
+2026-06-26 01:00:05    Urmatoarea bara 60min @ 02:00:05 — 3599s
+2026-06-26 02:00:05  --- S8-EURCAD-H1 iter 6 @ 02:00:05 ---
+2026-06-26 02:00:05    Niciun semnal nou. Pendinge: 0
+2026-06-26 02:00:05    Urmatoarea bara 60min @ 03:00:05 — 3599s
+2026-06-26 03:00:05  --- S8-EURCAD-H1 iter 7 @ 03:00:05 ---
+2026-06-26 03:00:05    Niciun semnal nou. Pendinge: 0
+2026-06-26 03:00:05    Urmatoarea bara 60min @ 04:00:05 — 3600s
+2026-06-26 04:00:05  --- S8-EURCAD-H1 iter 8 @ 04:00:05 ---
+2026-06-26 04:00:05    Niciun semnal nou. Pendinge: 0
+2026-06-26 04:00:05    Urmatoarea bara 60min @ 05:00:05 — 3600s
+2026-06-26 05:00:05  --- S8-EURCAD-H1 iter 9 @ 05:00:05 ---
+2026-06-26 05:00:05    Niciun semnal nou. Pendinge: 0
+2026-06-26 05:00:05    Urmatoarea bara 60min @ 06:00:05 — 3599s
+2026-06-26 06:00:05  --- S8-EURCAD-H1 iter 10 @ 06:00:05 ---
+2026-06-26 06:00:05    Niciun semnal nou. Pendinge: 0
+2026-06-26 06:00:05    Urmatoarea bara 60min @ 07:00:05 — 3600s
+2026-06-26 07:00:05  --- S8-EURCAD-H1 iter 11 @ 07:00:05 ---
+2026-06-26 07:00:05    Niciun semnal nou. Pendinge: 0
+2026-06-26 07:00:05    Urmatoarea bara 60min @ 08:00:05 — 3600s
+2026-06-26 08:00:05  --- S8-EURCAD-H1 iter 12 @ 08:00:05 ---
+2026-06-26 08:00:35    Niciun semnal nou. Pendinge: 0
+2026-06-26 08:00:35    Urmatoarea bara 60min @ 09:00:05 — 3569s
+2026-06-26 09:00:05  --- S8-EURCAD-H1 iter 13 @ 09:00:05 ---
+2026-06-26 09:00:05    Niciun semnal nou. Pendinge: 0
+2026-06-26 09:00:05    Urmatoarea bara 60min @ 10:00:05 — 3600s
+2026-06-26 10:00:05  --- S8-EURCAD-H1 iter 14 @ 10:00:05 ---
+2026-06-26 10:00:05    Niciun semnal nou. Pendinge: 0
+2026-06-26 10:00:05    Urmatoarea bara 60min @ 11:00:05 — 3599s
+2026-06-26 11:00:05  --- S8-EURCAD-H1 iter 15 @ 11:00:05 ---
+2026-06-26 11:00:47    Niciun semnal nou. Pendinge: 0
+2026-06-26 11:00:47    Urmatoarea bara 60min @ 12:00:05 — 3558s
+2026-06-26 11:28:28    [PROFIL] Profil 'Standard Profile' aplicat pe session8.
+2026-06-26 11:28:28  =================================================================
+2026-06-26 11:28:28    S8-EURCAD-H1 — EURCAD H1+D1 LONG pw=6 pullback+flag | test +0.384R DD -23.7%
+2026-06-26 11:28:28    Piete: ['EURCAD']
+2026-06-26 11:28:28    TF: H1 (trend D1) | PW=6 | LONG
+2026-06-26 11:28:28    Output: C:\Dev\trading-bot\data\live_signals\session8
+2026-06-26 11:28:29  =================================================================
+2026-06-26 11:28:29  MT5: 52906593 @ ICMarketsEU-Demo (DEMO)
+2026-06-26 11:28:29  Simboluri active: ['EURCAD']
+2026-06-26 11:28:29  Pornit. Ctrl+C pentru oprire.
+
+2026-06-26 11:28:29  --- S8-EURCAD-H1 iter 1 @ 11:28:29 ---
+2026-06-26 11:28:31    Niciun semnal nou. Pendinge: 0
+2026-06-26 11:28:31    Urmatoarea bara 60min @ 12:00:05 — 1894s
+2026-06-26 12:00:05  --- S8-EURCAD-H1 iter 2 @ 12:00:05 ---
+2026-06-26 12:00:06    Niciun semnal nou. Pendinge: 0
+2026-06-26 12:00:06    Urmatoarea bara 60min @ 13:00:05 — 3599s
+2026-06-26 13:00:05  --- S8-EURCAD-H1 iter 3 @ 13:00:05 ---
+2026-06-26 13:00:05    Niciun semnal nou. Pendinge: 0
+2026-06-26 13:00:05    Urmatoarea bara 60min @ 14:00:05 — 3600s
+2026-06-26 14:00:05  --- S8-EURCAD-H1 iter 4 @ 14:00:05 ---
+2026-06-26 14:00:05    Niciun semnal nou. Pendinge: 0
+2026-06-26 14:00:05    Urmatoarea bara 60min @ 15:00:05 — 3599s
+2026-06-26 14:19:33    [PROFIL] Profil 'Standard Profile' aplicat pe session8.
+2026-06-26 14:19:33  =================================================================
+2026-06-26 14:19:33    S8-EURCAD-H1 — EURCAD H1+D1 LONG pw=6 pullback+flag | test +0.384R DD -23.7%
+2026-06-26 14:19:33    Piete: ['EURCAD']
+2026-06-26 14:19:33    TF: H1 (trend D1) | PW=6 | LONG
+2026-06-26 14:19:33    Output: C:\Dev\trading-bot\data\live_signals\session8
+2026-06-26 14:19:33  =================================================================
+2026-06-26 14:19:33  MT5: 52906593 @ ICMarketsEU-Demo (DEMO)
+2026-06-26 14:19:33  Simboluri active: ['EURCAD']
+2026-06-26 14:19:33  Pornit. Ctrl+C pentru oprire.
+
+2026-06-26 14:19:33  --- S8-EURCAD-H1 iter 1 @ 14:19:33 ---
+2026-06-26 14:19:34    Niciun semnal nou. Pendinge: 0
+2026-06-26 14:19:34    Urmatoarea bara 60min @ 15:00:05 — 2431s
+2026-06-26 14:47:30    [PROFIL] Profil 'Standard Profile' aplicat pe session8.
+2026-06-26 14:47:30  =================================================================
+2026-06-26 14:47:30    S8-EURCAD-H1 — EURCAD H1+D1 LONG pw=6 pullback+flag | test +0.384R DD -23.7%
+2026-06-26 14:47:30    Piete: ['EURCAD']
+2026-06-26 14:47:30    TF: H1 (trend D1) | PW=6 | LONG
+2026-06-26 14:47:30    Output: C:\Dev\trading-bot\data\live_signals\session8
+2026-06-26 14:47:30  =================================================================
+2026-06-26 14:47:31  MT5: 52906593 @ ICMarketsEU-Demo (DEMO)
+2026-06-26 14:47:31  Simboluri active: ['EURCAD']
+2026-06-26 14:47:31  Pornit. Ctrl+C pentru oprire.
+
+2026-06-26 14:47:31  --- S8-EURCAD-H1 iter 1 @ 14:47:31 ---
+2026-06-26 14:47:31    Niciun semnal nou. Pendinge: 0
+2026-06-26 14:47:31    Urmatoarea bara 60min @ 15:00:05 — 754s
+2026-06-26 15:00:05  --- S8-EURCAD-H1 iter 2 @ 15:00:05 ---
+2026-06-26 15:00:05    Niciun semnal nou. Pendinge: 0
+2026-06-26 15:00:05    Urmatoarea bara 60min @ 16:00:05 — 3600s
+2026-06-26 15:12:17    [PROFIL] Profil 'Standard Profile' aplicat pe session8.
+2026-06-26 15:12:17  =================================================================
+2026-06-26 15:12:17    S8-EURCAD-H1 — EURCAD H1+D1 LONG pw=6 pullback+flag | test +0.384R DD -23.7%
+2026-06-26 15:12:17    Piete: ['EURCAD']
+2026-06-26 15:12:17    TF: H1 (trend D1) | PW=6 | LONG
+2026-06-26 15:12:17    Output: C:\Dev\trading-bot\data\live_signals\session8
+2026-06-26 15:12:17  =================================================================
+2026-06-26 15:12:17  MT5: 52906593 @ ICMarketsEU-Demo (DEMO)
+2026-06-26 15:12:17  Simboluri active: ['EURCAD']
+2026-06-26 15:12:17  Pornit. Ctrl+C pentru oprire.
+
+2026-06-26 15:12:17  --- S8-EURCAD-H1 iter 1 @ 15:12:17 ---
+2026-06-26 15:12:17    Niciun semnal nou. Pendinge: 0
+2026-06-26 15:12:17    Urmatoarea bara 60min @ 16:00:05 — 2867s
+2026-06-26 16:00:05  --- S8-EURCAD-H1 iter 2 @ 16:00:05 ---
+2026-06-26 16:00:05    Niciun semnal nou. Pendinge: 0
+2026-06-26 16:00:05    Urmatoarea bara 60min @ 17:00:05 — 3600s
+2026-06-26 16:32:25    [PROFIL] Profil 'Standard Profile' aplicat pe session8.
+2026-06-26 16:32:25  =================================================================
+2026-06-26 16:32:25    S8-EURCAD-H1 — EURCAD H1+D1 LONG pw=6 pullback+flag | test +0.384R DD -23.7%
+2026-06-26 16:32:25    Piete: ['EURCAD']
+2026-06-26 16:32:25    TF: H1 (trend D1) | PW=6 | LONG
+2026-06-26 16:32:25    Output: C:\Dev\trading-bot\data\live_signals\session8
+2026-06-26 16:32:25  =================================================================
+2026-06-26 16:32:26  MT5: 52906593 @ ICMarketsEU-Demo (DEMO)
+2026-06-26 16:32:26  Simboluri active: ['EURCAD']
+2026-06-26 16:32:26  Pornit. Ctrl+C pentru oprire.
+
+2026-06-26 16:32:26  --- S8-EURCAD-H1 iter 1 @ 16:32:26 ---
+2026-06-26 16:32:59    Niciun semnal nou. Pendinge: 0
+2026-06-26 16:32:59    Urmatoarea bara 60min @ 17:00:05 — 1625s
+2026-06-26 17:00:05  --- S8-EURCAD-H1 iter 2 @ 17:00:05 ---
+2026-06-26 17:03:05    Niciun semnal nou. Pendinge: 0
+2026-06-26 17:03:05    Urmatoarea bara 60min @ 18:00:05 — 3420s
+2026-06-26 18:00:05  --- S8-EURCAD-H1 iter 3 @ 18:00:05 ---
+2026-06-26 18:00:05    Niciun semnal nou. Pendinge: 0
+2026-06-26 18:00:05    Urmatoarea bara 60min @ 19:00:05 — 3600s
+2026-06-26 19:00:05  --- S8-EURCAD-H1 iter 4 @ 19:00:05 ---
+2026-06-26 19:00:05    Niciun semnal nou. Pendinge: 0
+2026-06-26 19:00:05    Urmatoarea bara 60min @ 20:00:05 — 3599s
+2026-06-26 20:00:05  --- S8-EURCAD-H1 iter 5 @ 20:00:05 ---
+2026-06-26 20:00:05    [VINERI] Ora 20:00 >= 20:00 — inchid pozitii deschise.
+2026-06-26 20:00:05    Niciun semnal nou. Pendinge: 0
+2026-06-26 20:00:05    Urmatoarea bara 60min @ 21:00:05 — 3600s
+2026-06-26 21:00:05  --- S8-EURCAD-H1 iter 6 @ 21:00:05 ---
+2026-06-26 21:00:26    Niciun semnal nou. Pendinge: 0
+2026-06-26 21:00:26    Urmatoarea bara 60min @ 22:00:05 — 3579s
+2026-06-26 21:03:08    [PROFIL] Profil 'Standard Profile' aplicat pe session8.
+2026-06-26 21:03:08  =================================================================
+2026-06-26 21:03:08    S8-EURCAD-H1 — EURCAD H1+D1 LONG pw=6 pullback+flag | test +0.384R DD -23.7%
+2026-06-26 21:03:08    Piete: ['EURCAD']
+2026-06-26 21:03:08    TF: H1 (trend D1) | PW=6 | LONG
+2026-06-26 21:03:08    Output: C:\Dev\trading-bot\data\live_signals\session8
+2026-06-26 21:03:08  =================================================================
+2026-06-26 21:03:08  MT5: 52906593 @ ICMarketsEU-Demo (DEMO)
+2026-06-26 21:03:08  Simboluri active: ['EURCAD']
+2026-06-26 21:03:08  Pornit. Ctrl+C pentru oprire.
+
+2026-06-26 21:03:08  --- S8-EURCAD-H1 iter 1 @ 21:03:08 ---
+2026-06-26 21:03:08    Niciun semnal nou. Pendinge: 0
+2026-06-26 21:03:08    Urmatoarea bara 60min @ 22:00:05 — 3416s
+2026-06-26 21:32:14    [PROFIL] Profil 'Standard Profile' aplicat pe session8.
+2026-06-26 21:32:14  =================================================================
+2026-06-26 21:32:14    S8-EURCAD-H1 — EURCAD H1+D1 LONG pw=6 pullback+flag | test +0.384R DD -23.7%
+2026-06-26 21:32:14    Piete: ['EURCAD']
+2026-06-26 21:32:14    TF: H1 (trend D1) | PW=6 | LONG
+2026-06-26 21:32:14    Output: C:\Dev\trading-bot\data\live_signals\session8
+2026-06-26 21:32:14  =================================================================
+2026-06-26 21:32:14  MT5: 52906593 @ ICMarketsEU-Demo (DEMO)
+2026-06-26 21:32:14  Simboluri active: ['EURCAD']
+2026-06-26 21:32:14  Pornit. Ctrl+C pentru oprire.
+
+2026-06-26 21:32:14  --- S8-EURCAD-H1 iter 1 @ 21:32:14 ---
+2026-06-26 21:32:15    Niciun semnal nou. Pendinge: 0
+2026-06-26 21:32:15    Urmatoarea bara 60min @ 22:00:05 — 1670s
+2026-06-26 22:00:05  --- S8-EURCAD-H1 iter 2 @ 22:00:05 ---
+2026-06-26 22:00:05    Niciun semnal nou. Pendinge: 0
+2026-06-26 22:00:05    Urmatoarea bara 60min @ 23:00:05 — 3600s
+2026-06-26 23:00:05  --- S8-EURCAD-H1 iter 3 @ 23:00:05 ---
+2026-06-26 23:00:05    Niciun semnal nou. Pendinge: 0
+2026-06-26 23:00:05    Urmatoarea bara 60min @ 00:00:05 — 3600s
+2026-06-27 00:00:05  --- S8-EURCAD-H1 iter 4 @ 00:00:05 ---
+2026-06-27 00:00:05    Niciun semnal nou. Pendinge: 0
+2026-06-27 00:00:05    Urmatoarea bara 60min @ 01:00:05 — 3599s
+2026-06-27 01:00:05  --- S8-EURCAD-H1 iter 5 @ 01:00:05 ---
+2026-06-27 01:00:05    Niciun semnal nou. Pendinge: 0
+2026-06-27 01:00:05    Urmatoarea bara 60min @ 02:00:05 — 3600s
+2026-06-27 02:00:05  --- S8-EURCAD-H1 iter 6 @ 02:00:05 ---
+2026-06-27 02:00:05    Niciun semnal nou. Pendinge: 0
+2026-06-27 02:00:05    Urmatoarea bara 60min @ 03:00:05 — 3600s
+2026-06-27 03:00:05  --- S8-EURCAD-H1 iter 7 @ 03:00:05 ---
+2026-06-27 03:00:05    Niciun semnal nou. Pendinge: 0
+2026-06-27 03:00:05    Urmatoarea bara 60min @ 04:00:05 — 3600s
+2026-06-27 04:00:05  --- S8-EURCAD-H1 iter 8 @ 04:00:05 ---
+2026-06-27 04:00:05    Niciun semnal nou. Pendinge: 0
+2026-06-27 04:00:05    Urmatoarea bara 60min @ 05:00:05 — 3600s
+2026-06-27 05:00:05  --- S8-EURCAD-H1 iter 9 @ 05:00:05 ---
+2026-06-27 05:00:05    Niciun semnal nou. Pendinge: 0
+2026-06-27 05:00:05    Urmatoarea bara 60min @ 06:00:05 — 3600s
+2026-06-27 06:00:05  --- S8-EURCAD-H1 iter 10 @ 06:00:05 ---
+2026-06-27 06:00:05    Niciun semnal nou. Pendinge: 0
+2026-06-27 06:00:05    Urmatoarea bara 60min @ 07:00:05 — 3600s
+2026-06-27 07:00:05  --- S8-EURCAD-H1 iter 11 @ 07:00:05 ---
+2026-06-27 07:00:05    Niciun semnal nou. Pendinge: 0
+2026-06-27 07:00:05    Urmatoarea bara 60min @ 08:00:05 — 3599s
+2026-06-27 08:00:05  --- S8-EURCAD-H1 iter 12 @ 08:00:05 ---
+2026-06-27 08:00:05    Niciun semnal nou. Pendinge: 0
+2026-06-27 08:00:05    Urmatoarea bara 60min @ 09:00:05 — 3599s
+2026-06-27 09:00:05  --- S8-EURCAD-H1 iter 13 @ 09:00:05 ---
+2026-06-27 09:00:05    Niciun semnal nou. Pendinge: 0
+2026-06-27 09:00:05    Urmatoarea bara 60min @ 10:00:05 — 3600s
+2026-06-28 21:29:40    [PROFIL] Profil 'Standard Profile' aplicat pe session8.
+2026-06-28 21:29:40  =================================================================
+2026-06-28 21:29:40    S8-EURCAD-H1 — EURCAD H1+D1 LONG pw=6 pullback+flag | test +0.384R DD -23.7%
+2026-06-28 21:29:40    Piete: ['EURCAD']
+2026-06-28 21:29:40    TF: H1 (trend D1) | PW=6 | LONG
+2026-06-28 21:29:40    Output: C:\Dev\trading-bot\data\live_signals\session8
+2026-06-28 21:29:40  =================================================================
+2026-06-28 21:29:42  MT5: 52906593 @ ICMarketsEU-Demo (DEMO)
+2026-06-28 21:29:48  Simboluri active: ['EURCAD']
+2026-06-28 21:29:48  Pornit. Ctrl+C pentru oprire.
+
+2026-06-28 21:29:48  --- S8-EURCAD-H1 iter 1 @ 21:29:48 ---
+2026-06-28 21:29:55    Niciun semnal nou. Pendinge: 0
+2026-06-28 21:29:55    Urmatoarea bara 60min @ 22:00:05 — 1810s
+2026-06-28 22:00:05  --- S8-EURCAD-H1 iter 2 @ 22:00:05 ---
+2026-06-28 22:00:06    Niciun semnal nou. Pendinge: 0
+2026-06-28 22:00:06    Urmatoarea bara 60min @ 23:00:05 — 3598s
+2026-06-28 22:44:34    [PROFIL] Profil 'Standard Profile' aplicat pe session8.
+2026-06-28 22:44:34  =================================================================
+2026-06-28 22:44:34    S8-EURCAD-H1 — EURCAD H1+D1 LONG pw=6 pullback+flag | test +0.384R DD -23.7%
+2026-06-28 22:44:34    Piete: ['EURCAD']
+2026-06-28 22:44:34    TF: H1 (trend D1) | PW=6 | LONG
+2026-06-28 22:44:34    Output: C:\Dev\trading-bot\data\live_signals\session8
+2026-06-28 22:44:34  =================================================================
+2026-06-28 22:44:34  MT5 nu e disponibil: mt5.initialize() a esuat: (-6, 'Terminal: Authorization failed')
+2026-06-29 06:54:54    [PROFIL] Profil 'Standard Profile' aplicat pe session8.
+2026-06-29 06:54:54  =================================================================
+2026-06-29 06:54:54    S8-EURCAD-H1 — EURCAD H1+D1 LONG pw=6 pullback+flag | test +0.384R DD -23.7%
+2026-06-29 06:54:54    Piete: ['EURCAD']
+2026-06-29 06:54:54    TF: H1 (trend D1) | PW=6 | LONG
+2026-06-29 06:54:54    Output: C:\Dev\trading-bot\data\live_signals\session8
+2026-06-29 06:54:54  =================================================================
+2026-06-29 06:54:55  MT5: 52906593 @ ICMarketsEU-Demo (DEMO)
+2026-06-29 06:54:57  Simboluri active: ['EURCAD']
+2026-06-29 06:54:57  Pornit. Ctrl+C pentru oprire.
+
+2026-06-29 06:54:57  --- S8-EURCAD-H1 iter 1 @ 06:54:57 ---
+2026-06-29 06:55:00    Niciun semnal nou. Pendinge: 0
+2026-06-29 06:55:00    Urmatoarea bara 60min @ 07:00:05 — 305s
+2026-06-29 07:00:05  --- S8-EURCAD-H1 iter 2 @ 07:00:05 ---
+2026-06-29 07:00:05    Niciun semnal nou. Pendinge: 0
+2026-06-29 07:00:05    Urmatoarea bara 60min @ 08:00:05 — 3600s
+2026-06-29 08:00:04  --- S8-EURCAD-H1 iter 3 @ 08:00:04 ---
+2026-06-29 08:00:04    Niciun semnal nou. Pendinge: 0
+2026-06-29 08:00:04    Urmatoarea bara 60min @ 09:00:05 — 3600s
+2026-06-29 09:00:04  --- S8-EURCAD-H1 iter 4 @ 09:00:04 ---
+2026-06-29 09:00:04    Niciun semnal nou. Pendinge: 0
+2026-06-29 09:00:04    Urmatoarea bara 60min @ 10:00:05 — 3600s
+2026-06-29 22:42:54    ib_signal_counter sincronizat la 3 din signals.csv
+2026-06-29 22:42:54    [PROFIL] Profil 'Standard Profile' aplicat pe session8.
+2026-06-29 22:42:54  =================================================================
+2026-06-29 22:42:54    S8-EURCAD-H1 — EURCAD H1+D1 LONG pw=6 pullback+flag | test +0.384R DD -23.7%
+2026-06-29 22:42:54    Piete: ['EURCAD']
+2026-06-29 22:42:54    TF: H1 (trend D1) | PW=6 | LONG
+2026-06-29 22:42:54    Output: C:\Dev\trading-bot\data\live_signals\session8
+2026-06-29 22:42:54  =================================================================
+2026-06-29 22:42:54  MT5: 52906593 @ ICMarketsEU-Demo (DEMO)
+2026-06-29 22:42:54  Simboluri active: ['EURCAD']
+2026-06-29 22:42:54  Pornit. Ctrl+C pentru oprire.
+
+2026-06-29 22:42:54  --- S8-EURCAD-H1 iter 1 @ 22:42:54 ---
+2026-06-29 22:42:54    Niciun semnal nou. Pendinge: 0
+2026-06-29 22:42:54    Urmatoarea bara 60min @ 23:00:05 — 1030s
+2026-06-29 23:00:05  --- S8-EURCAD-H1 iter 2 @ 23:00:05 ---
+2026-06-29 23:00:05    Niciun semnal nou. Pendinge: 0
+2026-06-29 23:00:05    Urmatoarea bara 60min @ 00:00:05 — 3599s
+2026-06-30 00:00:05  --- S8-EURCAD-H1 iter 3 @ 00:00:05 ---
+2026-06-30 00:00:05    *** SEMNAL [INSIDE_BAR]: S8-EURCAD-H1-IB0004 EURCAD LONG entry=1.62378 sl=1.62220 tp=1.62694 (2.0R) RSI=71
+2026-06-30 00:00:06    [EXEC] S8-EURCAD-H1-IB0004: filling=1 → retcode=10018 (Market closed)
+2026-06-30 00:00:06    S8-EURCAD-H1-IB0004: scos din pending (eroare MT5)
+2026-06-30 00:00:06    Urmatoarea bara 60min @ 01:00:05 — 3599s
+2026-06-30 01:00:05  --- S8-EURCAD-H1 iter 4 @ 01:00:05 ---
+2026-06-30 01:00:05    Niciun semnal nou. Pendinge: 0
+2026-06-30 01:00:05    Urmatoarea bara 60min @ 02:00:05 — 3600s
+2026-06-30 02:00:05  --- S8-EURCAD-H1 iter 5 @ 02:00:05 ---
+2026-06-30 02:00:05    Niciun semnal nou. Pendinge: 0
+2026-06-30 02:00:05    Urmatoarea bara 60min @ 03:00:05 — 3600s
+2026-06-30 03:00:05  --- S8-EURCAD-H1 iter 6 @ 03:00:05 ---
+2026-06-30 03:00:05    Niciun semnal nou. Pendinge: 0
+2026-06-30 03:00:05    Urmatoarea bara 60min @ 04:00:05 — 3600s
+2026-06-30 04:00:05  --- S8-EURCAD-H1 iter 7 @ 04:00:05 ---
+2026-06-30 04:00:05    Niciun semnal nou. Pendinge: 0
+2026-06-30 04:00:05    Urmatoarea bara 60min @ 05:00:05 — 3600s
+2026-06-30 05:00:05  --- S8-EURCAD-H1 iter 8 @ 05:00:05 ---
+2026-06-30 05:00:05    Niciun semnal nou. Pendinge: 0
+2026-06-30 05:00:05    Urmatoarea bara 60min @ 06:00:05 — 3600s
+2026-06-30 06:00:05  --- S8-EURCAD-H1 iter 9 @ 06:00:05 ---
+2026-06-30 06:00:05    Niciun semnal nou. Pendinge: 0
+2026-06-30 06:00:05    Urmatoarea bara 60min @ 07:00:05 — 3600s
+2026-06-30 07:00:05  --- S8-EURCAD-H1 iter 10 @ 07:00:05 ---
+2026-06-30 07:00:05    Niciun semnal nou. Pendinge: 0
+2026-06-30 07:00:05    Urmatoarea bara 60min @ 08:00:05 — 3599s
+2026-06-30 08:00:05  --- S8-EURCAD-H1 iter 11 @ 08:00:05 ---
+2026-06-30 08:00:06    Niciun semnal nou. Pendinge: 0
+2026-06-30 08:00:06    Urmatoarea bara 60min @ 09:00:05 — 3599s
+2026-06-30 09:00:05  --- S8-EURCAD-H1 iter 12 @ 09:00:05 ---
+2026-06-30 09:00:05    Niciun semnal nou. Pendinge: 0
+2026-06-30 09:00:05    Urmatoarea bara 60min @ 10:00:05 — 3599s
+2026-06-30 09:18:48    [PROFIL] Profil 'Standard Profile' aplicat pe session8.
+2026-06-30 09:18:48  =================================================================
+2026-06-30 09:18:48    S8-EURCAD-H1 — EURCAD H1+D1 LONG pw=6 pullback+flag | test +0.384R DD -23.7%
+2026-06-30 09:18:48    Piete: ['EURCAD']
+2026-06-30 09:18:48    TF: H1 (trend D1) | PW=6 | LONG
+2026-06-30 09:18:48    Output: C:\Dev\trading-bot\data\live_signals\session8
+2026-06-30 09:18:48  =================================================================
+2026-06-30 09:18:48  MT5: 52906593 @ ICMarketsEU-Demo (DEMO)
+2026-06-30 09:18:48  Simboluri active: ['EURCAD']
+2026-06-30 09:18:48  Pornit. Ctrl+C pentru oprire.
+
+2026-06-30 09:18:48  --- S8-EURCAD-H1 iter 1 @ 09:18:48 ---
+2026-06-30 09:18:48    Niciun semnal nou. Pendinge: 0
+2026-06-30 09:18:48    Urmatoarea bara 60min @ 10:00:05 — 2477s
+2026-07-01 22:59:01    [PROFIL] Profil 'Standard Profile' aplicat pe session8.
+2026-07-01 22:59:01  =================================================================
+2026-07-01 22:59:01    S8-EURCAD-H1 — EURCAD H1+D1 LONG pw=6 pullback+flag | test +0.384R DD -23.7%
+2026-07-01 22:59:01    Piete: ['EURCAD']
+2026-07-01 22:59:01    TF: H1 (trend D1) | PW=6 | LONG
+2026-07-01 22:59:01    Output: C:\Dev\trading-bot\data\live_signals\session8
+2026-07-01 22:59:01  =================================================================
+2026-07-01 22:59:01  MT5: 52906593 @ ICMarketsEU-Demo (DEMO)
+2026-07-01 22:59:01    [MIGRATE] Cheie goala stearsa din pending: 'EURCAD'
+2026-07-01 22:59:01    [MIGRATE] Migrare pending: 0 semnale migrate, 1 chei goale sterse.
+2026-07-01 22:59:01    [ORPHAN] Nicio pozitie MT5 fara corespondent — state consistent cu MT5.
+2026-07-01 22:59:01  Simboluri active: ['EURCAD']
+2026-07-01 22:59:01  Pornit. Ctrl+C pentru oprire.
+
+2026-07-01 22:59:01  --- S8-EURCAD-H1 iter 1 @ 22:59:01 ---
+2026-07-01 22:59:02    Niciun semnal nou. Pendinge: 0
+2026-07-01 22:59:02    Urmatoarea bara 60min @ 23:00:05 — 62s
+2026-07-01 23:00:05  --- S8-EURCAD-H1 iter 2 @ 23:00:05 ---
+2026-07-01 23:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-01 23:00:05    Urmatoarea bara 60min @ 00:00:05 — 3599s
+2026-07-01 23:14:36    [PROFIL] Profil 'Standard Profile' aplicat pe session8.
+2026-07-01 23:14:36  =================================================================
+2026-07-01 23:14:36    S8-EURCAD-H1 — EURCAD H1+D1 LONG pw=6 pullback+flag | test +0.384R DD -23.7%
+2026-07-01 23:14:36    Piete: ['EURCAD']
+2026-07-01 23:14:36    TF: H1 (trend D1) | PW=6 | LONG
+2026-07-01 23:14:36    Output: C:\Dev\trading-bot\data\live_signals\session8
+2026-07-01 23:14:36  =================================================================
+2026-07-01 23:14:36  MT5: 52906593 @ ICMarketsEU-Demo (DEMO)
+2026-07-01 23:14:36    [ORPHAN] Nicio pozitie MT5 fara corespondent — state consistent cu MT5.
+2026-07-01 23:14:37  Simboluri active: ['EURCAD']
+2026-07-01 23:14:37  Pornit. Ctrl+C pentru oprire.
+
+2026-07-01 23:14:37  --- S8-EURCAD-H1 iter 1 @ 23:14:37 ---
+2026-07-01 23:14:37    Niciun semnal nou. Pendinge: 0
+2026-07-01 23:14:37    Urmatoarea bara 60min @ 00:00:05 — 2727s
+2026-07-01 23:21:39    [PROFIL] Profil 'Standard Profile' aplicat pe session8.
+2026-07-01 23:21:39  =================================================================
+2026-07-01 23:21:39    S8-EURCAD-H1 — EURCAD H1+D1 LONG pw=6 pullback+flag | test +0.384R DD -23.7%
+2026-07-01 23:21:39    Piete: ['EURCAD']
+2026-07-01 23:21:39    TF: H1 (trend D1) | PW=6 | LONG
+2026-07-01 23:21:39    Output: C:\Dev\trading-bot\data\live_signals\session8
+2026-07-01 23:21:39  =================================================================
+2026-07-01 23:21:40  MT5: 52906593 @ ICMarketsEU-Demo (DEMO)
+2026-07-01 23:21:40    [ORPHAN] Nicio pozitie MT5 fara corespondent — state consistent cu MT5.
+2026-07-01 23:21:40  Simboluri active: ['EURCAD']
+2026-07-01 23:21:40  Pornit. Ctrl+C pentru oprire.
+
+2026-07-01 23:21:40  --- S8-EURCAD-H1 iter 1 @ 23:21:40 ---
+2026-07-01 23:21:40    Niciun semnal nou. Pendinge: 0
+2026-07-01 23:21:40    Urmatoarea bara 60min @ 00:00:05 — 2304s
+2026-07-01 23:33:50    [PROFIL] Profil 'Standard Profile' aplicat pe session8.
+2026-07-01 23:33:50  =================================================================
+2026-07-01 23:33:50    S8-EURCAD-H1 — EURCAD H1+D1 LONG pw=6 pullback+flag | test +0.384R DD -23.7%
+2026-07-01 23:33:50    Piete: ['EURCAD']
+2026-07-01 23:33:50    TF: H1 (trend D1) | PW=6 | LONG
+2026-07-01 23:33:50    Output: C:\Dev\trading-bot\data\live_signals\session8
+2026-07-01 23:33:50  =================================================================
+2026-07-01 23:33:51  MT5: 52906593 @ ICMarketsEU-Demo (DEMO)
+2026-07-01 23:33:51    [ORPHAN] Nicio pozitie MT5 fara corespondent — state consistent cu MT5.
+2026-07-01 23:33:51  Simboluri active: ['EURCAD']
+2026-07-01 23:33:51  Pornit. Ctrl+C pentru oprire.
+
+2026-07-01 23:33:51  --- S8-EURCAD-H1 iter 1 @ 23:33:51 ---
+2026-07-01 23:33:51    Niciun semnal nou. Pendinge: 0
+2026-07-01 23:33:51    Urmatoarea bara 60min @ 00:00:05 — 1573s
+2026-07-02 00:00:05  --- S8-EURCAD-H1 iter 2 @ 00:00:05 ---
+2026-07-02 00:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-02 00:00:05    Urmatoarea bara 60min @ 01:00:05 — 3600s
+2026-07-02 01:00:05  --- S8-EURCAD-H1 iter 3 @ 01:00:05 ---
+2026-07-02 01:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-02 01:00:05    Urmatoarea bara 60min @ 02:00:05 — 3599s
+2026-07-02 02:00:05  --- S8-EURCAD-H1 iter 4 @ 02:00:05 ---
+2026-07-02 02:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-02 02:00:05    Urmatoarea bara 60min @ 03:00:05 — 3600s
+2026-07-02 03:00:05  --- S8-EURCAD-H1 iter 5 @ 03:00:05 ---
+2026-07-02 03:00:08    Niciun semnal nou. Pendinge: 0
+2026-07-02 03:00:08    Urmatoarea bara 60min @ 04:00:05 — 3596s
+2026-07-02 04:00:05  --- S8-EURCAD-H1 iter 6 @ 04:00:05 ---
+2026-07-02 04:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-02 04:00:05    Urmatoarea bara 60min @ 05:00:05 — 3600s
+2026-07-02 05:00:05  --- S8-EURCAD-H1 iter 7 @ 05:00:05 ---
+2026-07-02 05:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-02 05:00:05    Urmatoarea bara 60min @ 06:00:05 — 3600s
+2026-07-02 06:00:05  --- S8-EURCAD-H1 iter 8 @ 06:00:05 ---
+2026-07-02 06:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-02 06:00:05    Urmatoarea bara 60min @ 07:00:05 — 3599s
+2026-07-02 07:00:05  --- S8-EURCAD-H1 iter 9 @ 07:00:05 ---
+2026-07-02 07:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-02 07:00:05    Urmatoarea bara 60min @ 08:00:05 — 3600s
+2026-07-02 08:00:05  --- S8-EURCAD-H1 iter 10 @ 08:00:05 ---
+2026-07-02 08:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-02 08:00:05    Urmatoarea bara 60min @ 09:00:05 — 3599s
+2026-07-02 09:00:05  --- S8-EURCAD-H1 iter 11 @ 09:00:05 ---
+2026-07-02 09:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-02 09:00:05    Urmatoarea bara 60min @ 10:00:05 — 3600s
+2026-07-02 10:00:05  --- S8-EURCAD-H1 iter 12 @ 10:00:05 ---
+2026-07-02 10:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-02 10:00:05    Urmatoarea bara 60min @ 11:00:05 — 3600s
+2026-07-02 11:00:05  --- S8-EURCAD-H1 iter 13 @ 11:00:05 ---
+2026-07-02 11:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-02 11:00:05    Urmatoarea bara 60min @ 12:00:05 — 3600s
+2026-07-02 12:00:05  --- S8-EURCAD-H1 iter 14 @ 12:00:05 ---
+2026-07-02 12:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-02 12:00:05    Urmatoarea bara 60min @ 13:00:05 — 3600s
+2026-07-02 13:00:05  --- S8-EURCAD-H1 iter 15 @ 13:00:05 ---
+2026-07-02 13:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-02 13:00:05    Urmatoarea bara 60min @ 14:00:05 — 3599s
+2026-07-02 14:00:05  --- S8-EURCAD-H1 iter 16 @ 14:00:05 ---
+2026-07-02 14:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-02 14:00:05    Urmatoarea bara 60min @ 15:00:05 — 3600s
+2026-07-02 14:33:03    [PROFIL] Profil 'Standard Profile' aplicat pe session8.
+2026-07-02 14:33:03  =================================================================
+2026-07-02 14:33:03    S8-EURCAD-H1 — EURCAD H1+D1 LONG pw=6 pullback+flag | test +0.384R DD -23.7%
+2026-07-02 14:33:03    Piete: ['EURCAD']
+2026-07-02 14:33:03    TF: H1 (trend D1) | PW=6 | LONG
+2026-07-02 14:33:03    Output: C:\Dev\trading-bot\data\live_signals\session8
+2026-07-02 14:33:03  =================================================================
+2026-07-02 14:33:03  MT5: 52906593 @ ICMarketsEU-Demo (DEMO)
+2026-07-02 14:33:03    [ORPHAN] Nicio pozitie MT5 fara corespondent — state consistent cu MT5.
+2026-07-02 14:33:04  Simboluri active: ['EURCAD']
+2026-07-02 14:33:04  Pornit. Ctrl+C pentru oprire.
+
+2026-07-02 14:33:04  --- S8-EURCAD-H1 iter 1 @ 14:33:04 ---
+2026-07-02 14:33:05    Niciun semnal nou. Pendinge: 0
+2026-07-02 14:33:05    Urmatoarea bara 60min @ 15:00:05 — 1620s
+2026-07-02 14:39:34    [PROFIL] Profil 'Standard Profile' aplicat pe session8.
+2026-07-02 14:39:34  =================================================================
+2026-07-02 14:39:34    S8-EURCAD-H1 — EURCAD H1+D1 LONG pw=6 pullback+flag | test +0.384R DD -23.7%
+2026-07-02 14:39:34    Piete: ['EURCAD']
+2026-07-02 14:39:34    TF: H1 (trend D1) | PW=6 | LONG
+2026-07-02 14:39:34    Output: C:\Dev\trading-bot\data\live_signals\session8
+2026-07-02 14:39:34  =================================================================
+2026-07-02 14:39:34  MT5: 52906593 @ ICMarketsEU-Demo (DEMO)
+2026-07-02 14:39:34    [ORPHAN] Nicio pozitie MT5 fara corespondent — state consistent cu MT5.
+2026-07-02 14:39:34  Simboluri active: ['EURCAD']
+2026-07-02 14:39:34  Pornit. Ctrl+C pentru oprire.
+
+2026-07-02 14:39:34  --- S8-EURCAD-H1 iter 1 @ 14:39:34 ---
+2026-07-02 14:39:34    Niciun semnal nou. Pendinge: 0
+2026-07-02 14:39:34    Urmatoarea bara 60min @ 15:00:05 — 1231s
+2026-07-02 14:49:39    [PROFIL] Profil 'Standard Profile' aplicat pe session8.
+2026-07-02 14:49:39  =================================================================
+2026-07-02 14:49:39    S8-EURCAD-H1 — EURCAD H1+D1 LONG pw=6 pullback+flag | test +0.384R DD -23.7%
+2026-07-02 14:49:39    Piete: ['EURCAD']
+2026-07-02 14:49:39    TF: H1 (trend D1) | PW=6 | LONG
+2026-07-02 14:49:39    Output: C:\Dev\trading-bot\data\live_signals\session8
+2026-07-02 14:49:39  =================================================================
+2026-07-02 14:49:40  MT5: 52906593 @ ICMarketsEU-Demo (DEMO)
+2026-07-02 14:49:40    [ORPHAN] Nicio pozitie MT5 fara corespondent — state consistent cu MT5.
+2026-07-02 14:49:40  Simboluri active: ['EURCAD']
+2026-07-02 14:49:40  Pornit. Ctrl+C pentru oprire.
+
+2026-07-02 14:49:40  --- S8-EURCAD-H1 iter 1 @ 14:49:40 ---
+2026-07-02 14:49:40    Niciun semnal nou. Pendinge: 0
+2026-07-02 14:49:40    Urmatoarea bara 60min @ 15:00:05 — 624s
+2026-07-02 15:00:05  --- S8-EURCAD-H1 iter 2 @ 15:00:05 ---
+2026-07-02 15:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-02 15:00:05    Urmatoarea bara 60min @ 16:00:05 — 3599s
+2026-07-02 16:00:05  --- S8-EURCAD-H1 iter 3 @ 16:00:05 ---
+2026-07-02 16:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-02 16:00:05    Urmatoarea bara 60min @ 17:00:05 — 3599s
+2026-07-02 17:00:05  --- S8-EURCAD-H1 iter 4 @ 17:00:05 ---
+2026-07-02 17:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-02 17:00:05    Urmatoarea bara 60min @ 18:00:05 — 3599s
+2026-07-02 17:02:02    [PROFIL] Profil 'Standard Profile' aplicat pe session8.
+2026-07-02 17:02:02  =================================================================
+2026-07-02 17:02:02    S8-EURCAD-H1 — EURCAD H1+D1 LONG pw=6 pullback+flag | test +0.384R DD -23.7%
+2026-07-02 17:02:02    Piete: ['EURCAD']
+2026-07-02 17:02:02    TF: H1 (trend D1) | PW=6 | LONG
+2026-07-02 17:02:02    Output: C:\Dev\trading-bot\data\live_signals\session8
+2026-07-02 17:02:02  =================================================================
+2026-07-02 17:02:02  MT5: 52906593 @ ICMarketsEU-Demo (DEMO)
+2026-07-02 17:02:02    [ORPHAN] Nicio pozitie MT5 fara corespondent — state consistent cu MT5.
+2026-07-02 17:02:02  Simboluri active: ['EURCAD']
+2026-07-02 17:02:02  Pornit. Ctrl+C pentru oprire.
+
+2026-07-02 17:02:02  --- S8-EURCAD-H1 iter 1 @ 17:02:02 ---
+2026-07-02 17:02:02    Niciun semnal nou. Pendinge: 0
+2026-07-02 17:02:02    Urmatoarea bara 60min @ 18:00:05 — 3482s
+2026-07-02 18:00:05  --- S8-EURCAD-H1 iter 2 @ 18:00:05 ---
+2026-07-02 18:00:06    Niciun semnal nou. Pendinge: 0
+2026-07-02 18:00:06    Urmatoarea bara 60min @ 19:00:05 — 3598s
+2026-07-02 19:00:05  --- S8-EURCAD-H1 iter 3 @ 19:00:05 ---
+2026-07-02 19:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-02 19:00:05    Urmatoarea bara 60min @ 20:00:05 — 3599s
+2026-07-02 20:00:05  --- S8-EURCAD-H1 iter 4 @ 20:00:05 ---
+2026-07-02 20:00:22    Niciun semnal nou. Pendinge: 0
+2026-07-02 20:00:22    Urmatoarea bara 60min @ 21:00:05 — 3583s
+2026-07-02 21:00:05  --- S8-EURCAD-H1 iter 5 @ 21:00:05 ---
+2026-07-02 21:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-02 21:00:05    Urmatoarea bara 60min @ 22:00:05 — 3600s
+2026-07-02 22:00:05  --- S8-EURCAD-H1 iter 6 @ 22:00:05 ---
+2026-07-02 22:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-02 22:00:05    Urmatoarea bara 60min @ 23:00:05 — 3599s
+2026-07-02 23:00:05  --- S8-EURCAD-H1 iter 7 @ 23:00:05 ---
+2026-07-02 23:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-02 23:00:05    Urmatoarea bara 60min @ 00:00:05 — 3599s
+2026-07-03 00:00:05  --- S8-EURCAD-H1 iter 8 @ 00:00:05 ---
+2026-07-03 00:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-03 00:00:05    Urmatoarea bara 60min @ 01:00:05 — 3599s
+2026-07-03 01:00:05  --- S8-EURCAD-H1 iter 9 @ 01:00:05 ---
+2026-07-03 01:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-03 01:00:05    Urmatoarea bara 60min @ 02:00:05 — 3599s
+2026-07-03 02:00:05  --- S8-EURCAD-H1 iter 10 @ 02:00:05 ---
+2026-07-03 02:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-03 02:00:05    Urmatoarea bara 60min @ 03:00:05 — 3599s
+2026-07-03 03:00:05  --- S8-EURCAD-H1 iter 11 @ 03:00:05 ---
+2026-07-03 03:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-03 03:00:05    Urmatoarea bara 60min @ 04:00:05 — 3599s
+2026-07-03 04:00:05  --- S8-EURCAD-H1 iter 12 @ 04:00:05 ---
+2026-07-03 04:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-03 04:00:05    Urmatoarea bara 60min @ 05:00:05 — 3599s
+2026-07-03 05:00:05  --- S8-EURCAD-H1 iter 13 @ 05:00:05 ---
+2026-07-03 05:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-03 05:00:05    Urmatoarea bara 60min @ 06:00:05 — 3600s
+2026-07-03 06:00:05  --- S8-EURCAD-H1 iter 14 @ 06:00:05 ---
+2026-07-03 06:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-03 06:00:05    Urmatoarea bara 60min @ 07:00:05 — 3599s
+2026-07-03 07:00:05  --- S8-EURCAD-H1 iter 15 @ 07:00:05 ---
+2026-07-03 07:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-03 07:00:05    Urmatoarea bara 60min @ 08:00:05 — 3599s
+2026-07-03 08:00:05  --- S8-EURCAD-H1 iter 16 @ 08:00:05 ---
+2026-07-03 08:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-03 08:00:05    Urmatoarea bara 60min @ 09:00:05 — 3599s
+2026-07-03 14:37:29    ib_signal_counter sincronizat la 5 din signals.csv
+2026-07-03 14:37:29    [PROFIL] Profil 'Standard Profile' aplicat pe session8.
+2026-07-03 14:37:29  =================================================================
+2026-07-03 14:37:29    S8-EURCAD-H1 — EURCAD H1+D1 LONG pw=6 pullback+flag | test +0.384R DD -23.7%
+2026-07-03 14:37:29    Piete: ['EURCAD']
+2026-07-03 14:37:29    TF: H1 (trend D1) | PW=6 | LONG
+2026-07-03 14:37:29    Output: C:\Dev\trading-bot\data\live_signals\session8
+2026-07-03 14:37:29  =================================================================
+2026-07-03 14:37:29  MT5: 52906593 @ ICMarketsEU-Demo (DEMO)
+2026-07-03 14:37:29    [SCAN-RECOVER] Comentariu trunchiat 'S8-EURCAD-H1-IB0' → S8-EURCAD-H1-IB0005 (match prin pret 1.62221)
+2026-07-03 14:37:30    [SCAN-RECOVER] S8-EURCAD-H1-IB0005: TP +2.000R +4.29USD recuperat din scanare history MT5
+2026-07-03 14:37:30    [SCAN-RECOVER] 1 outcome(uri) recuperate din scanare history MT5
+2026-07-03 14:37:30    [ORPHAN] Nicio pozitie MT5 fara corespondent — state consistent cu MT5.
+2026-07-03 14:37:31  Simboluri active: ['EURCAD']
+2026-07-03 14:37:31  Pornit. Ctrl+C pentru oprire.
+
+2026-07-03 14:37:31  --- S8-EURCAD-H1 iter 1 @ 14:37:31 ---
+2026-07-03 14:37:32    Niciun semnal nou. Pendinge: 0
+2026-07-03 14:37:32    Urmatoarea bara 60min @ 15:00:05 — 1352s
+2026-07-03 15:00:05  --- S8-EURCAD-H1 iter 2 @ 15:00:05 ---
+2026-07-03 15:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-03 15:00:05    Urmatoarea bara 60min @ 16:00:05 — 3600s
+2026-07-03 16:00:05  --- S8-EURCAD-H1 iter 3 @ 16:00:05 ---
+2026-07-03 16:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-03 16:00:05    Urmatoarea bara 60min @ 17:00:05 — 3599s
+2026-07-03 17:00:05  --- S8-EURCAD-H1 iter 4 @ 17:00:05 ---
+2026-07-03 17:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-03 17:00:05    Urmatoarea bara 60min @ 18:00:05 — 3599s
+2026-07-03 18:00:05  --- S8-EURCAD-H1 iter 5 @ 18:00:05 ---
+2026-07-03 18:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-03 18:00:05    Urmatoarea bara 60min @ 19:00:05 — 3599s
+2026-07-03 19:00:05  --- S8-EURCAD-H1 iter 6 @ 19:00:05 ---
+2026-07-03 19:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-03 19:00:06    Urmatoarea bara 60min @ 20:00:05 — 3599s
+2026-07-03 20:00:05  --- S8-EURCAD-H1 iter 7 @ 20:00:05 ---
+2026-07-03 20:00:05    [VINERI] Ora 20:00 >= 20:00 — inchid pozitii deschise.
+2026-07-03 20:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-03 20:00:05    Urmatoarea bara 60min @ 21:00:05 — 3599s
+2026-07-03 21:00:05  --- S8-EURCAD-H1 iter 8 @ 21:00:05 ---
+2026-07-03 21:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-03 21:00:05    Urmatoarea bara 60min @ 22:00:05 — 3600s
+2026-07-03 22:00:05  --- S8-EURCAD-H1 iter 9 @ 22:00:05 ---
+2026-07-03 22:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-03 22:00:05    Urmatoarea bara 60min @ 23:00:05 — 3599s
+2026-07-03 23:00:05  --- S8-EURCAD-H1 iter 10 @ 23:00:05 ---
+2026-07-03 23:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-03 23:00:05    Urmatoarea bara 60min @ 00:00:05 — 3599s
+2026-07-04 00:00:05  --- S8-EURCAD-H1 iter 11 @ 00:00:05 ---
+2026-07-04 00:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-04 00:00:05    Urmatoarea bara 60min @ 01:00:05 — 3599s
+2026-07-04 01:00:05  --- S8-EURCAD-H1 iter 12 @ 01:00:05 ---
+2026-07-04 01:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-04 01:00:05    Urmatoarea bara 60min @ 02:00:05 — 3599s
+2026-07-05 13:12:54    [PROFIL] Profil 'Standard Profile' aplicat pe session8.
+2026-07-05 13:12:54  =================================================================
+2026-07-05 13:12:54    S8-EURCAD-H1 — EURCAD H1+D1 LONG pw=6 pullback+flag | test +0.384R DD -23.7%
+2026-07-05 13:12:54    Piete: ['EURCAD']
+2026-07-05 13:12:54    TF: H1 (trend D1) | PW=6 | LONG
+2026-07-05 13:12:54    Output: C:\Dev\trading-bot\data\live_signals\session8
+2026-07-05 13:12:54  =================================================================
+2026-07-05 13:12:55  MT5: 52906593 @ ICMarketsEU-Demo (DEMO)
+2026-07-05 13:12:55    [ORPHAN] Nicio pozitie MT5 fara corespondent — state consistent cu MT5.
+2026-07-05 13:12:56  Simboluri active: ['EURCAD']
+2026-07-05 13:12:56  Pornit. Ctrl+C pentru oprire.
+
+2026-07-05 13:12:56  --- S8-EURCAD-H1 iter 1 @ 13:12:56 ---
+2026-07-05 13:13:02    Niciun semnal nou. Pendinge: 0
+2026-07-05 13:13:04    Urmatoarea bara 60min @ 14:00:05 — 2821s
+2026-07-05 20:28:47    [PROFIL] Profil 'Standard Profile' aplicat pe session8.
+2026-07-05 20:28:47  =================================================================
+2026-07-05 20:28:47    S8-EURCAD-H1 — EURCAD H1+D1 LONG pw=6 pullback+flag | test +0.384R DD -23.7%
+2026-07-05 20:28:47    Piete: ['EURCAD']
+2026-07-05 20:28:47    TF: H1 (trend D1) | PW=6 | LONG
+2026-07-05 20:28:47    Output: C:\Dev\trading-bot\data\live_signals\session8
+2026-07-05 20:28:47  =================================================================
+2026-07-05 20:28:47  MT5: 52906593 @ ICMarketsEU-Demo (DEMO)
+2026-07-05 20:28:47    [ORPHAN] Nicio pozitie MT5 fara corespondent — state consistent cu MT5.
+2026-07-05 20:28:49  Simboluri active: ['EURCAD']
+2026-07-05 20:28:49  Pornit. Ctrl+C pentru oprire.
+
+2026-07-05 20:28:49  --- S8-EURCAD-H1 iter 1 @ 20:28:49 ---
+2026-07-05 20:28:50    Niciun semnal nou. Pendinge: 0
+2026-07-05 20:28:50    Urmatoarea bara 60min @ 21:00:05 — 1875s
+2026-07-05 21:00:05  --- S8-EURCAD-H1 iter 2 @ 21:00:05 ---
+2026-07-05 21:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-05 21:00:05    Urmatoarea bara 60min @ 22:00:05 — 3600s
+2026-07-05 22:00:05  --- S8-EURCAD-H1 iter 3 @ 22:00:05 ---
+2026-07-05 22:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-05 22:00:05    Urmatoarea bara 60min @ 23:00:05 — 3599s
+2026-07-05 23:00:05  --- S8-EURCAD-H1 iter 4 @ 23:00:05 ---
+2026-07-05 23:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-05 23:00:05    Urmatoarea bara 60min @ 00:00:05 — 3599s
+2026-07-06 00:00:05  --- S8-EURCAD-H1 iter 5 @ 00:00:05 ---
+2026-07-06 00:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-06 00:00:05    Urmatoarea bara 60min @ 01:00:05 — 3599s
+2026-07-06 01:00:05  --- S8-EURCAD-H1 iter 6 @ 01:00:05 ---
+2026-07-06 01:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-06 01:00:05    Urmatoarea bara 60min @ 02:00:05 — 3600s
+2026-07-06 02:00:05  --- S8-EURCAD-H1 iter 7 @ 02:00:05 ---
+2026-07-06 02:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-06 02:00:05    Urmatoarea bara 60min @ 03:00:05 — 3599s
+2026-07-06 03:00:05  --- S8-EURCAD-H1 iter 8 @ 03:00:05 ---
+2026-07-06 03:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-06 03:00:05    Urmatoarea bara 60min @ 04:00:05 — 3600s
+2026-07-06 04:00:05  --- S8-EURCAD-H1 iter 9 @ 04:00:05 ---
+2026-07-06 04:00:06    Niciun semnal nou. Pendinge: 0
+2026-07-06 04:00:06    Urmatoarea bara 60min @ 05:00:05 — 3599s
+2026-07-06 05:00:05  --- S8-EURCAD-H1 iter 10 @ 05:00:05 ---
+2026-07-06 05:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-06 05:00:05    Urmatoarea bara 60min @ 06:00:05 — 3599s
+2026-07-06 09:02:12    [PROFIL] Profil 'Standard Profile' aplicat pe session8.
+2026-07-06 09:02:12  =================================================================
+2026-07-06 09:02:12    S8-EURCAD-H1 — EURCAD H1+D1 LONG pw=6 pullback+flag | test +0.384R DD -23.7%
+2026-07-06 09:02:12    Piete: ['EURCAD']
+2026-07-06 09:02:12    TF: H1 (trend D1) | PW=6 | LONG
+2026-07-06 09:02:12    Output: C:\Dev\trading-bot\data\live_signals\session8
+2026-07-06 09:02:12  =================================================================
+2026-07-06 09:02:12  MT5: 52906593 @ ICMarketsEU-Demo (DEMO)
+2026-07-06 09:02:13    [ORPHAN] Nicio pozitie MT5 fara corespondent — state consistent cu MT5.
+2026-07-06 09:02:13  Simboluri active: ['EURCAD']
+2026-07-06 09:02:13  Pornit. Ctrl+C pentru oprire.
+
+2026-07-06 09:02:13  --- S8-EURCAD-H1 iter 1 @ 09:02:13 ---
+2026-07-06 09:02:13    Niciun semnal nou. Pendinge: 0
+2026-07-06 09:02:13    Urmatoarea bara 60min @ 10:00:05 — 3472s
+2026-07-06 10:00:05  --- S8-EURCAD-H1 iter 2 @ 10:00:05 ---
+2026-07-06 10:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-06 10:00:05    Urmatoarea bara 60min @ 11:00:05 — 3600s
+2026-07-06 11:00:05  --- S8-EURCAD-H1 iter 3 @ 11:00:05 ---
+2026-07-06 11:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-06 11:00:05    Urmatoarea bara 60min @ 12:00:05 — 3600s
+2026-07-06 11:24:58    [PROFIL] Profil 'Standard Profile' aplicat pe session8.
+2026-07-06 11:24:58  =================================================================
+2026-07-06 11:24:58    S8-EURCAD-H1 — EURCAD H1+D1 LONG pw=6 pullback+flag | test +0.384R DD -23.7%
+2026-07-06 11:24:58    Piete: ['EURCAD']
+2026-07-06 11:24:58    TF: H1 (trend D1) | PW=6 | LONG
+2026-07-06 11:24:58    Output: C:\Dev\trading-bot\data\live_signals\session8
+2026-07-06 11:24:58  =================================================================
+2026-07-06 11:24:58  MT5: 52906593 @ ICMarketsEU-Demo (DEMO)
+2026-07-06 11:24:58    [ORPHAN] Nicio pozitie MT5 fara corespondent — state consistent cu MT5.
+2026-07-06 11:24:58  Simboluri active: ['EURCAD']
+2026-07-06 11:24:58  Pornit. Ctrl+C pentru oprire.
+
+2026-07-06 11:24:58  --- S8-EURCAD-H1 iter 1 @ 11:24:58 ---
+2026-07-06 11:24:58    Niciun semnal nou. Pendinge: 0
+2026-07-06 11:24:58    Urmatoarea bara 60min @ 12:00:05 — 2106s
+2026-07-06 12:00:05  --- S8-EURCAD-H1 iter 2 @ 12:00:05 ---
+2026-07-06 12:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-06 12:00:05    Urmatoarea bara 60min @ 13:00:05 — 3600s
+2026-07-06 12:57:13    [PROFIL] Profil 'Standard Profile' aplicat pe session8.
+2026-07-06 12:57:13  =================================================================
+2026-07-06 12:57:13    S8-EURCAD-H1 — EURCAD H1+D1 LONG pw=6 pullback+flag | test +0.384R DD -23.7%
+2026-07-06 12:57:13    Piete: ['EURCAD']
+2026-07-06 12:57:13    TF: H1 (trend D1) | PW=6 | LONG
+2026-07-06 12:57:13    Output: C:\Dev\trading-bot\data\live_signals\session8
+2026-07-06 12:57:13  =================================================================
+2026-07-06 12:57:13  MT5: 52906593 @ ICMarketsEU-Demo (DEMO)
+2026-07-06 12:57:13    [ORPHAN] Nicio pozitie MT5 fara corespondent — state consistent cu MT5.
+2026-07-06 12:57:13  Simboluri active: ['EURCAD']
+2026-07-06 12:57:13  Pornit. Ctrl+C pentru oprire.
+
+2026-07-06 12:57:13  --- S8-EURCAD-H1 iter 1 @ 12:57:13 ---
+2026-07-06 12:57:13    Niciun semnal nou. Pendinge: 0
+2026-07-06 12:57:13    Urmatoarea bara 60min @ 13:00:05 — 171s
+2026-07-06 13:00:05  --- S8-EURCAD-H1 iter 2 @ 13:00:05 ---
+2026-07-06 13:00:22    Niciun semnal nou. Pendinge: 0
+2026-07-06 13:00:22    Urmatoarea bara 60min @ 14:00:05 — 3583s
+2026-07-06 14:00:05  --- S8-EURCAD-H1 iter 3 @ 14:00:05 ---
+2026-07-06 14:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-06 14:00:05    Urmatoarea bara 60min @ 15:00:05 — 3600s
+2026-07-06 15:00:05  --- S8-EURCAD-H1 iter 4 @ 15:00:05 ---
+2026-07-06 15:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-06 15:00:05    Urmatoarea bara 60min @ 16:00:05 — 3599s
+2026-07-06 16:00:05  --- S8-EURCAD-H1 iter 5 @ 16:00:05 ---
+2026-07-06 16:00:05    *** SEMNAL [INSIDE_BAR]: S8-EURCAD-H1-IB0006 EURCAD LONG entry=1.62535 sl=1.62292 tp=1.63021 (2.0R) RSI=56
+2026-07-06 16:00:06    [EXEC] *** ORDIN: S8-EURCAD-H1-IB0006 EURCAD LONG 0.01lot @ 1.62535  SL=1.62292  TP=1.63021  ticket=#1791755235
+2026-07-06 16:00:06    Urmatoarea bara 60min @ 17:00:05 — 3598s
+2026-07-06 17:00:05  --- S8-EURCAD-H1 iter 6 @ 17:00:05 ---
+2026-07-06 17:00:05    Niciun semnal nou. Pendinge: 1
+2026-07-06 17:00:06    Urmatoarea bara 60min @ 18:00:05 — 3599s
+2026-07-06 18:00:05  --- S8-EURCAD-H1 iter 7 @ 18:00:05 ---
+2026-07-06 18:00:10    Niciun semnal nou. Pendinge: 1
+2026-07-06 18:00:10    Urmatoarea bara 60min @ 19:00:05 — 3595s
+2026-07-06 19:00:05  --- S8-EURCAD-H1 iter 8 @ 19:00:05 ---
+2026-07-06 19:00:05    Niciun semnal nou. Pendinge: 1
+2026-07-06 19:00:05    Urmatoarea bara 60min @ 20:00:05 — 3599s
+2026-07-06 20:00:05  --- S8-EURCAD-H1 iter 9 @ 20:00:05 ---
+2026-07-06 20:00:05    Niciun semnal nou. Pendinge: 1
+2026-07-06 20:00:05    Urmatoarea bara 60min @ 21:00:05 — 3599s
+2026-07-06 21:00:05  --- S8-EURCAD-H1 iter 10 @ 21:00:05 ---
+2026-07-06 21:00:05    [EXEC] S8-EURCAD-H1-IB0006: ordin MT5 #1791755235 deja disparut din MT5 (expirat) — ok
+2026-07-06 21:00:05    EXPIRAT: S8-EURCAD-H1-IB0006 EURCAD (>4 bare fara trigger)
+2026-07-06 21:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-06 21:00:05    Urmatoarea bara 60min @ 22:00:05 — 3599s
+2026-07-06 22:00:05  --- S8-EURCAD-H1 iter 11 @ 22:00:05 ---
+2026-07-06 22:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-06 22:00:05    Urmatoarea bara 60min @ 23:00:05 — 3599s
+2026-07-06 23:00:05  --- S8-EURCAD-H1 iter 12 @ 23:00:05 ---
+2026-07-06 23:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-06 23:00:05    Urmatoarea bara 60min @ 00:00:05 — 3600s
+2026-07-07 00:00:05  --- S8-EURCAD-H1 iter 13 @ 00:00:05 ---
+2026-07-07 00:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-07 00:00:05    Urmatoarea bara 60min @ 01:00:05 — 3600s
+2026-07-07 01:00:05  --- S8-EURCAD-H1 iter 14 @ 01:00:05 ---
+2026-07-07 01:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-07 01:00:05    Urmatoarea bara 60min @ 02:00:05 — 3600s
+2026-07-07 02:00:05  --- S8-EURCAD-H1 iter 15 @ 02:00:05 ---
+2026-07-07 02:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-07 02:00:05    Urmatoarea bara 60min @ 03:00:05 — 3600s
+2026-07-07 03:00:05  --- S8-EURCAD-H1 iter 16 @ 03:00:05 ---
+2026-07-07 03:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-07 03:00:05    Urmatoarea bara 60min @ 04:00:05 — 3600s
+2026-07-07 04:00:05  --- S8-EURCAD-H1 iter 17 @ 04:00:05 ---
+2026-07-07 04:00:06    Niciun semnal nou. Pendinge: 0
+2026-07-07 04:00:06    Urmatoarea bara 60min @ 05:00:05 — 3599s
+2026-07-07 05:00:05  --- S8-EURCAD-H1 iter 18 @ 05:00:05 ---
+2026-07-07 05:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-07 05:00:05    Urmatoarea bara 60min @ 06:00:05 — 3600s
+2026-07-07 06:00:05  --- S8-EURCAD-H1 iter 19 @ 06:00:05 ---
+2026-07-07 06:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-07 06:00:05    Urmatoarea bara 60min @ 07:00:05 — 3600s
+2026-07-07 07:00:05  --- S8-EURCAD-H1 iter 20 @ 07:00:05 ---
+2026-07-07 07:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-07 07:00:05    Urmatoarea bara 60min @ 08:00:05 — 3600s
+2026-07-07 08:00:05  --- S8-EURCAD-H1 iter 21 @ 08:00:05 ---
+2026-07-07 08:00:07    Niciun semnal nou. Pendinge: 0
+2026-07-07 08:00:07    Urmatoarea bara 60min @ 09:00:05 — 3598s
+2026-07-07 08:57:54    [PROFIL] Profil 'Standard Profile' aplicat pe session8.
+2026-07-07 08:57:54  =================================================================
+2026-07-07 08:57:54    S8-EURCAD-H1 — EURCAD H1+D1 LONG pw=6 pullback+flag | test +0.384R DD -23.7%
+2026-07-07 08:57:54    Piete: ['EURCAD']
+2026-07-07 08:57:54    TF: H1 (trend D1) | PW=6 | LONG
+2026-07-07 08:57:54    Output: C:\Dev\trading-bot\data\live_signals\session8
+2026-07-07 08:57:54  =================================================================
+2026-07-07 08:57:54  MT5: 52906593 @ ICMarketsEU-Demo (DEMO)
+2026-07-07 08:57:54    [MIGRATE] Cheie goala stearsa din pending: 'EURCAD'
+2026-07-07 08:57:54    [MIGRATE] Migrare pending: 0 semnale migrate, 1 chei goale sterse.
+2026-07-07 08:57:54    [ORPHAN-RECOVER] Pozitie #1791755235 comment 'S8-EURCAD-H1-IB0' → S8-EURCAD-H1-IB0006 (via comment_map)
+2026-07-07 08:57:55    [ORPHAN-RECOVER] Pozitie #1791755235 (S8-EURCAD-H1-IB0006) LONG EURCAD @ 1.62536 preluata din MT5 — reconstruita in pending+tracking
+2026-07-07 08:57:55    [ORPHAN-RECOVER] 1 ordine/pozitii preluate automat din MT5 la startup
+2026-07-07 08:57:55  Simboluri active: ['EURCAD']
+2026-07-07 08:57:55  Pornit. Ctrl+C pentru oprire.
+
+2026-07-07 08:57:55  --- S8-EURCAD-H1 iter 1 @ 08:57:55 ---
+2026-07-07 08:57:56    Niciun semnal nou. Pendinge: 1
+2026-07-07 08:57:56    Urmatoarea bara 60min @ 09:00:05 — 129s
+2026-07-07 09:00:05  --- S8-EURCAD-H1 iter 2 @ 09:00:05 ---
+2026-07-07 09:00:05    Niciun semnal nou. Pendinge: 1
+2026-07-07 09:00:05    Urmatoarea bara 60min @ 10:00:05 — 3599s
+2026-07-07 10:00:05  --- S8-EURCAD-H1 iter 3 @ 10:00:05 ---
+2026-07-07 10:00:05    Niciun semnal nou. Pendinge: 1
+2026-07-07 10:00:05    Urmatoarea bara 60min @ 11:00:05 — 3600s
+2026-07-07 11:00:05  --- S8-EURCAD-H1 iter 4 @ 11:00:05 ---
+2026-07-07 11:00:05    Niciun semnal nou. Pendinge: 1
+2026-07-07 11:00:05    Urmatoarea bara 60min @ 12:00:05 — 3599s
+2026-07-07 12:00:05  --- S8-EURCAD-H1 iter 5 @ 12:00:05 ---
+2026-07-07 12:00:05    Niciun semnal nou. Pendinge: 1
+2026-07-07 12:00:05    Urmatoarea bara 60min @ 13:00:05 — 3599s
+2026-07-07 13:00:05  --- S8-EURCAD-H1 iter 6 @ 13:00:05 ---
+2026-07-07 13:00:05    Niciun semnal nou. Pendinge: 1
+2026-07-07 13:00:05    Urmatoarea bara 60min @ 14:00:05 — 3600s
+2026-07-07 14:00:05  --- S8-EURCAD-H1 iter 7 @ 14:00:05 ---
+2026-07-07 14:00:05    Niciun semnal nou. Pendinge: 1
+2026-07-07 14:00:05    Urmatoarea bara 60min @ 15:00:05 — 3600s
+2026-07-07 15:00:05  --- S8-EURCAD-H1 iter 8 @ 15:00:05 ---
+2026-07-07 15:00:05    Niciun semnal nou. Pendinge: 1
+2026-07-07 15:00:05    Urmatoarea bara 60min @ 16:00:05 — 3599s
+2026-07-07 16:00:05  --- S8-EURCAD-H1 iter 9 @ 16:00:05 ---
+2026-07-07 16:00:05    Niciun semnal nou. Pendinge: 1
+2026-07-07 16:00:05    Urmatoarea bara 60min @ 17:00:05 — 3599s
+2026-07-07 17:00:05  --- S8-EURCAD-H1 iter 10 @ 17:00:05 ---
+2026-07-07 17:00:05    Niciun semnal nou. Pendinge: 1
+2026-07-07 17:00:05    Urmatoarea bara 60min @ 18:00:05 — 3599s
+2026-07-07 18:00:05  --- S8-EURCAD-H1 iter 11 @ 18:00:05 ---
+2026-07-07 18:00:05    [MT5] Pozitie #1791755235 inchisa: exit=1.6228500000000001  result=-1.029R  pnl=-1.77USD  comm=-0.08  swap=-0.02  [SL]
+2026-07-07 18:00:05    PIERDERE (MT5): S8-EURCAD-H1-IB0006 SL -1.029R
+2026-07-07 18:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-07 18:00:05    Urmatoarea bara 60min @ 19:00:05 — 3599s
+2026-07-07 19:00:05  --- S8-EURCAD-H1 iter 12 @ 19:00:05 ---
+2026-07-07 19:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-07 19:00:05    Urmatoarea bara 60min @ 20:00:05 — 3599s
+2026-07-07 20:00:05  --- S8-EURCAD-H1 iter 13 @ 20:00:05 ---
+2026-07-07 20:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-07 20:00:05    Urmatoarea bara 60min @ 21:00:05 — 3599s
+2026-07-07 21:00:05  --- S8-EURCAD-H1 iter 14 @ 21:00:05 ---
+2026-07-07 21:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-07 21:00:05    Urmatoarea bara 60min @ 22:00:05 — 3600s
+2026-07-07 22:00:05  --- S8-EURCAD-H1 iter 15 @ 22:00:05 ---
+2026-07-07 22:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-07 22:00:05    Urmatoarea bara 60min @ 23:00:05 — 3600s
+2026-07-07 23:00:05  --- S8-EURCAD-H1 iter 16 @ 23:00:05 ---
+2026-07-07 23:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-07 23:00:05    Urmatoarea bara 60min @ 00:00:05 — 3599s
+2026-07-08 00:00:05  --- S8-EURCAD-H1 iter 17 @ 00:00:05 ---
+2026-07-08 00:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-08 00:00:05    Urmatoarea bara 60min @ 01:00:05 — 3599s
+2026-07-08 01:00:05  --- S8-EURCAD-H1 iter 18 @ 01:00:05 ---
+2026-07-08 01:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-08 01:00:05    Urmatoarea bara 60min @ 02:00:05 — 3599s
+2026-07-08 02:00:05  --- S8-EURCAD-H1 iter 19 @ 02:00:05 ---
+2026-07-08 02:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-08 02:00:05    Urmatoarea bara 60min @ 03:00:05 — 3599s
+2026-07-08 03:00:05  --- S8-EURCAD-H1 iter 20 @ 03:00:05 ---
+2026-07-08 03:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-08 03:00:05    Urmatoarea bara 60min @ 04:00:05 — 3599s
+2026-07-08 04:00:05  --- S8-EURCAD-H1 iter 21 @ 04:00:05 ---
+2026-07-08 04:00:06    Niciun semnal nou. Pendinge: 0
+2026-07-08 04:00:06    Urmatoarea bara 60min @ 05:00:05 — 3599s
+2026-07-08 05:00:05  --- S8-EURCAD-H1 iter 22 @ 05:00:05 ---
+2026-07-08 05:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-08 05:00:05    Urmatoarea bara 60min @ 06:00:05 — 3599s
+2026-07-08 06:00:05  --- S8-EURCAD-H1 iter 23 @ 06:00:05 ---
+2026-07-08 06:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-08 06:00:05    Urmatoarea bara 60min @ 07:00:05 — 3599s
+2026-07-08 07:00:05  --- S8-EURCAD-H1 iter 24 @ 07:00:05 ---
+2026-07-08 07:00:05    *** SEMNAL [INSIDE_BAR]: S8-EURCAD-H1-IB0007 EURCAD LONG entry=1.62071 sl=1.61920 tp=1.62373 (2.0R) RSI=40
+2026-07-08 07:00:06    [EXEC] *** ORDIN: S8-EURCAD-H1-IB0007 EURCAD LONG 0.02lot @ 1.62071  SL=1.61920  TP=1.62373  ticket=#1795759769
+2026-07-08 07:00:06    Urmatoarea bara 60min @ 08:00:05 — 3599s
+2026-07-08 08:00:05  --- S8-EURCAD-H1 iter 25 @ 08:00:05 ---
+2026-07-08 08:00:05    Niciun semnal nou. Pendinge: 1
+2026-07-08 08:00:05    Urmatoarea bara 60min @ 09:00:05 — 3599s
+2026-07-08 08:41:53    [PROFIL] Profil 'Standard Profile' aplicat pe session8.
+2026-07-08 08:41:53  =================================================================
+2026-07-08 08:41:53    S8-EURCAD-H1 — EURCAD H1+D1 LONG pw=6 pullback+flag | test +0.384R DD -23.7%
+2026-07-08 08:41:53    Piete: ['EURCAD']
+2026-07-08 08:41:53    TF: H1 (trend D1) | PW=6 | LONG
+2026-07-08 08:41:53    Output: C:\Dev\trading-bot\data\live_signals\session8
+2026-07-08 08:41:53  =================================================================
+2026-07-08 08:41:53  MT5: 52906593 @ ICMarketsEU-Demo (DEMO)
+2026-07-08 08:41:53    [SCAN-RECOVER] Comentariu trunchiat 'S8-EURCAD-H1-IB0' → comment_map arata spre S8-EURCAD-H1-IB0007 care are ticket activ — ordin vechi ignorat, se foloseste ID ticket-based
+2026-07-08 08:41:53    [SCAN-RECOVER] Comentariu trunchiat 'S8-EURCAD-H1-IB0' → comment_map arata spre S8-EURCAD-H1-IB0007 care are ticket activ — ordin vechi ignorat, se foloseste ID ticket-based
+2026-07-08 08:41:53    [ORPHAN] Nicio pozitie MT5 fara corespondent — state consistent cu MT5.
+2026-07-08 08:41:53  Simboluri active: ['EURCAD']
+2026-07-08 08:41:53  Pornit. Ctrl+C pentru oprire.
+
+2026-07-08 08:41:53  --- S8-EURCAD-H1 iter 1 @ 08:41:53 ---
+2026-07-08 08:41:53    Niciun semnal nou. Pendinge: 1
+2026-07-08 08:41:53    Urmatoarea bara 60min @ 09:00:05 — 1091s
+2026-07-08 09:00:05  --- S8-EURCAD-H1 iter 2 @ 09:00:05 ---
+2026-07-08 09:00:05    Niciun semnal nou. Pendinge: 1
+2026-07-08 09:00:05    Urmatoarea bara 60min @ 10:00:05 — 3600s
+2026-07-08 10:00:05  --- S8-EURCAD-H1 iter 3 @ 10:00:05 ---
+2026-07-08 10:00:05    [EXEC] S8-EURCAD-H1-IB0007: ordin MT5 #1795759769 anulat (invalidat)
+2026-07-08 10:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-08 10:00:05    Urmatoarea bara 60min @ 11:00:05 — 3600s
+2026-07-08 11:00:05  --- S8-EURCAD-H1 iter 4 @ 11:00:05 ---
+2026-07-08 11:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-08 11:00:05    Urmatoarea bara 60min @ 12:00:05 — 3600s
+2026-07-08 12:00:05  --- S8-EURCAD-H1 iter 5 @ 12:00:05 ---
+2026-07-08 12:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-08 12:00:05    Urmatoarea bara 60min @ 13:00:05 — 3600s
+2026-07-08 13:00:05  --- S8-EURCAD-H1 iter 6 @ 13:00:05 ---
+2026-07-08 13:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-08 13:00:05    Urmatoarea bara 60min @ 14:00:05 — 3600s
+2026-07-08 13:49:04    [PROFIL] Profil 'Standard Profile' aplicat pe session8.
+2026-07-08 13:49:04  =================================================================
+2026-07-08 13:49:04    S8-EURCAD-H1 — EURCAD H1+D1 LONG pw=6 pullback+flag | test +0.384R DD -23.7%
+2026-07-08 13:49:04    Piete: ['EURCAD']
+2026-07-08 13:49:04    TF: H1 (trend D1) | PW=6 | LONG
+2026-07-08 13:49:04    Output: C:\Dev\trading-bot\data\live_signals\session8
+2026-07-08 13:49:04  =================================================================
+2026-07-08 13:49:04  MT5: 52906593 @ ICMarketsEU-Demo (DEMO)
+2026-07-08 13:49:04    [MIGRATE] Cheie goala stearsa din pending: 'EURCAD'
+2026-07-08 13:49:04    [MIGRATE] Migrare pending: 0 semnale migrate, 1 chei goale sterse.
+2026-07-08 13:49:04    [ORPHAN] Nicio pozitie MT5 fara corespondent — state consistent cu MT5.
+2026-07-08 13:49:04  Simboluri active: ['EURCAD']
+2026-07-08 13:49:04  Pornit. Ctrl+C pentru oprire.
+
+2026-07-08 13:49:04  --- S8-EURCAD-H1 iter 1 @ 13:49:04 ---
+2026-07-08 13:49:04    Niciun semnal nou. Pendinge: 0
+2026-07-08 13:49:04    Urmatoarea bara 60min @ 14:00:05 — 660s
+2026-07-08 14:00:05  --- S8-EURCAD-H1 iter 2 @ 14:00:05 ---
+2026-07-08 14:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-08 14:00:05    Urmatoarea bara 60min @ 15:00:05 — 3600s
+2026-07-08 15:00:05  --- S8-EURCAD-H1 iter 3 @ 15:00:05 ---
+2026-07-08 15:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-08 15:00:05    Urmatoarea bara 60min @ 16:00:05 — 3599s
+2026-07-08 16:00:05  --- S8-EURCAD-H1 iter 4 @ 16:00:05 ---
+2026-07-08 16:00:06    Niciun semnal nou. Pendinge: 0
+2026-07-08 16:00:06    Urmatoarea bara 60min @ 17:00:05 — 3598s
+2026-07-08 17:00:05  --- S8-EURCAD-H1 iter 5 @ 17:00:05 ---
+2026-07-08 17:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-08 17:00:05    Urmatoarea bara 60min @ 18:00:05 — 3599s
+2026-07-13 21:45:56    signal_counter sincronizat la 1 din signals.csv
+2026-07-13 21:45:56    ib_signal_counter sincronizat la 8 din signals.csv
+2026-07-13 21:45:56    [PROFIL] Profil 'Standard Profile' aplicat pe session8.
+2026-07-13 21:45:56  =================================================================
+2026-07-13 21:45:56    S8-EURCAD-H1 — EURCAD H1+D1 LONG pw=6 pullback+flag | test +0.384R DD -23.7%
+2026-07-13 21:45:56    Piete: ['EURCAD']
+2026-07-13 21:45:56    TF: H1 (trend D1) | PW=6 | LONG
+2026-07-13 21:45:56    Output: C:\Dev\trading-bot\data\live_signals\session8
+2026-07-13 21:45:56  =================================================================
+2026-07-13 21:45:56  MT5: 52906593 @ ICMarketsEU-Demo (DEMO)
+2026-07-13 21:45:56    [ORPHAN] Nicio pozitie MT5 fara corespondent — state consistent cu MT5.
+2026-07-13 21:45:56  Simboluri active: ['EURCAD']
+2026-07-13 21:45:56  Pornit. Ctrl+C pentru oprire.
+
+2026-07-13 21:45:56  --- S8-EURCAD-H1 iter 1 @ 21:45:56 ---
+2026-07-13 21:45:57    Niciun semnal nou. Pendinge: 0
+2026-07-13 21:45:57    Urmatoarea bara 60min @ 22:00:05 — 848s
+2026-07-13 21:46:14    [PROFIL] Profil 'Standard Profile' aplicat pe session8.
+2026-07-13 21:46:14  =================================================================
+2026-07-13 21:46:14    S8-EURCAD-H1 — EURCAD H1+D1 LONG pw=6 pullback+flag | test +0.384R DD -23.7%
+2026-07-13 21:46:14    Piete: ['EURCAD']
+2026-07-13 21:46:14    TF: H1 (trend D1) | PW=6 | LONG
+2026-07-13 21:46:14    Output: C:\Dev\trading-bot\data\live_signals\session8
+2026-07-13 21:46:14  =================================================================
+2026-07-13 21:46:14  MT5: 52906593 @ ICMarketsEU-Demo (DEMO)
+2026-07-13 21:46:14    [ORPHAN] Nicio pozitie MT5 fara corespondent — state consistent cu MT5.
+2026-07-13 21:46:14  Simboluri active: ['EURCAD']
+2026-07-13 21:46:14  Pornit. Ctrl+C pentru oprire.
+
+2026-07-13 21:46:14  --- S8-EURCAD-H1 iter 1 @ 21:46:14 ---
+2026-07-13 21:46:14    Niciun semnal nou. Pendinge: 0
+2026-07-13 21:46:14    Urmatoarea bara 60min @ 22:00:05 — 831s
+2026-07-13 22:00:05  --- S8-EURCAD-H1 iter 2 @ 22:00:05 ---
+2026-07-13 22:00:06    Niciun semnal nou. Pendinge: 0
+2026-07-13 22:00:06    Urmatoarea bara 60min @ 23:00:05 — 3599s
+2026-07-13 23:00:05  --- S8-EURCAD-H1 iter 3 @ 23:00:05 ---
+2026-07-13 23:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-13 23:00:05    Urmatoarea bara 60min @ 00:00:05 — 3599s
+2026-07-13 23:21:16    [PROFIL] Profil 'Standard Profile' aplicat pe session8.
+2026-07-13 23:21:16  =================================================================
+2026-07-13 23:21:16    S8-EURCAD-H1 — EURCAD H1+D1 LONG pw=6 pullback+flag | test +0.384R DD -23.7%
+2026-07-13 23:21:16    Piete: ['EURCAD']
+2026-07-13 23:21:16    TF: H1 (trend D1) | PW=6 | LONG
+2026-07-13 23:21:16    Output: C:\Dev\trading-bot\data\live_signals\session8
+2026-07-13 23:21:16  =================================================================
+2026-07-13 23:21:16  MT5: 52906593 @ ICMarketsEU-Demo (DEMO)
+2026-07-13 23:21:16    [ORPHAN] Nicio pozitie MT5 fara corespondent — state consistent cu MT5.
+2026-07-13 23:21:17  Simboluri active: ['EURCAD']
+2026-07-13 23:21:17  Pornit. Ctrl+C pentru oprire.
+
+2026-07-13 23:21:17  --- S8-EURCAD-H1 iter 1 @ 23:21:17 ---
+2026-07-13 23:21:17    Niciun semnal nou. Pendinge: 0
+2026-07-13 23:21:17    Urmatoarea bara 60min @ 00:00:05 — 2328s
+2026-07-14 00:00:05  --- S8-EURCAD-H1 iter 2 @ 00:00:05 ---
+2026-07-14 00:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-14 00:00:05    Urmatoarea bara 60min @ 01:00:05 — 3600s
+2026-07-14 01:00:05  --- S8-EURCAD-H1 iter 3 @ 01:00:05 ---
+2026-07-14 01:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-14 01:00:05    Urmatoarea bara 60min @ 02:00:05 — 3600s
+2026-07-14 02:00:05  --- S8-EURCAD-H1 iter 4 @ 02:00:05 ---
+2026-07-14 02:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-14 02:00:05    Urmatoarea bara 60min @ 03:00:05 — 3600s
+2026-07-14 03:00:05  --- S8-EURCAD-H1 iter 5 @ 03:00:05 ---
+2026-07-14 03:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-14 03:00:05    Urmatoarea bara 60min @ 04:00:05 — 3600s
+2026-07-14 04:00:05  --- S8-EURCAD-H1 iter 6 @ 04:00:05 ---
+2026-07-14 04:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-14 04:00:05    Urmatoarea bara 60min @ 05:00:05 — 3600s
+2026-07-14 05:00:05  --- S8-EURCAD-H1 iter 7 @ 05:00:05 ---
+2026-07-14 05:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-14 05:00:05    Urmatoarea bara 60min @ 06:00:05 — 3600s
+2026-07-14 06:00:05  --- S8-EURCAD-H1 iter 8 @ 06:00:05 ---
+2026-07-14 06:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-14 06:00:05    Urmatoarea bara 60min @ 07:00:05 — 3599s
+2026-07-14 07:00:05  --- S8-EURCAD-H1 iter 9 @ 07:00:05 ---
+2026-07-14 07:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-14 07:00:05    Urmatoarea bara 60min @ 08:00:05 — 3600s
+2026-07-14 08:00:05  --- S8-EURCAD-H1 iter 10 @ 08:00:05 ---
+2026-07-14 08:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-14 08:00:05    Urmatoarea bara 60min @ 09:00:05 — 3600s
+2026-07-14 08:31:10    [PROFIL] Profil 'Standard Profile' aplicat pe session8.
+2026-07-14 08:31:10  =================================================================
+2026-07-14 08:31:10    S8-EURCAD-H1 — EURCAD H1+D1 LONG pw=6 pullback+flag | test +0.384R DD -23.7%
+2026-07-14 08:31:10    Piete: ['EURCAD']
+2026-07-14 08:31:10    TF: H1 (trend D1) | PW=6 | LONG
+2026-07-14 08:31:10    Output: C:\Dev\trading-bot\data\live_signals\session8
+2026-07-14 08:31:10  =================================================================
+2026-07-14 08:31:10  MT5: 52906593 @ ICMarketsEU-Demo (DEMO)
+2026-07-14 08:31:11    [ORPHAN] Nicio pozitie MT5 fara corespondent — state consistent cu MT5.
+2026-07-14 08:31:11  Simboluri active: ['EURCAD']
+2026-07-14 08:31:11  Pornit. Ctrl+C pentru oprire.
+
+2026-07-14 08:31:11  --- S8-EURCAD-H1 iter 1 @ 08:31:11 ---
+2026-07-14 08:31:11    Niciun semnal nou. Pendinge: 0
+2026-07-14 08:31:11    Urmatoarea bara 60min @ 09:00:05 — 1734s
+2026-07-14 09:00:05  --- S8-EURCAD-H1 iter 2 @ 09:00:05 ---
+2026-07-14 09:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-14 09:00:05    Urmatoarea bara 60min @ 10:00:05 — 3600s
+2026-07-14 10:00:05  --- S8-EURCAD-H1 iter 3 @ 10:00:05 ---
+2026-07-14 10:00:06    Niciun semnal nou. Pendinge: 0
+2026-07-14 10:00:06    Urmatoarea bara 60min @ 11:00:05 — 3598s
+2026-07-14 11:00:05  --- S8-EURCAD-H1 iter 4 @ 11:00:05 ---
+2026-07-14 11:00:11    Niciun semnal nou. Pendinge: 0
+2026-07-14 11:00:11    Urmatoarea bara 60min @ 12:00:05 — 3594s
+2026-07-14 12:00:05  --- S8-EURCAD-H1 iter 5 @ 12:00:05 ---
+2026-07-14 12:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-14 12:00:05    Urmatoarea bara 60min @ 13:00:05 — 3599s
+2026-07-14 13:00:05  --- S8-EURCAD-H1 iter 6 @ 13:00:05 ---
+2026-07-14 13:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-14 13:00:05    Urmatoarea bara 60min @ 14:00:05 — 3599s
+2026-07-14 14:00:05  --- S8-EURCAD-H1 iter 7 @ 14:00:05 ---
+2026-07-14 14:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-14 14:00:05    Urmatoarea bara 60min @ 15:00:05 — 3599s
+2026-07-14 14:39:14    [PROFIL] Profil 'Standard Profile' aplicat pe session8.
+2026-07-14 14:39:14  =================================================================
+2026-07-14 14:39:14    S8-EURCAD-H1 — EURCAD H1+D1 LONG pw=6 pullback+flag | test +0.384R DD -23.7%
+2026-07-14 14:39:14    Piete: ['EURCAD']
+2026-07-14 14:39:14    TF: H1 (trend D1) | PW=6 | LONG
+2026-07-14 14:39:14    Output: C:\Dev\trading-bot\data\live_signals\session8
+2026-07-14 14:39:14  =================================================================
+2026-07-14 14:39:14  MT5: 52906593 @ ICMarketsEU-Demo (DEMO)
+2026-07-14 14:39:14    [ORPHAN] Nicio pozitie MT5 fara corespondent — state consistent cu MT5.
+2026-07-14 14:39:14  Simboluri active: ['EURCAD']
+2026-07-14 14:39:14  Pornit. Ctrl+C pentru oprire.
+
+2026-07-14 14:39:14  --- S8-EURCAD-H1 iter 1 @ 14:39:14 ---
+2026-07-14 14:39:14    Niciun semnal nou. Pendinge: 0
+2026-07-14 14:39:14    Urmatoarea bara 60min @ 15:00:05 — 1250s
+2026-07-14 15:00:05  --- S8-EURCAD-H1 iter 2 @ 15:00:05 ---
+2026-07-14 15:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-14 15:00:05    Urmatoarea bara 60min @ 16:00:05 — 3600s
+2026-07-14 16:00:05  --- S8-EURCAD-H1 iter 3 @ 16:00:05 ---
+2026-07-14 16:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-14 16:00:05    Urmatoarea bara 60min @ 17:00:05 — 3600s
+2026-07-14 17:00:05  --- S8-EURCAD-H1 iter 4 @ 17:00:05 ---
+2026-07-14 17:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-14 17:00:05    Urmatoarea bara 60min @ 18:00:05 — 3599s
+2026-07-14 18:00:05  --- S8-EURCAD-H1 iter 5 @ 18:00:05 ---
+2026-07-14 18:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-14 18:00:05    Urmatoarea bara 60min @ 19:00:05 — 3599s
+2026-07-14 18:45:59    [PROFIL] Profil 'Standard Profile' aplicat pe session8.
+2026-07-14 18:45:59  =================================================================
+2026-07-14 18:45:59    S8-EURCAD-H1 — EURCAD H1+D1 LONG pw=6 pullback+flag | test +0.384R DD -23.7%
+2026-07-14 18:45:59    Piete: ['EURCAD']
+2026-07-14 18:45:59    TF: H1 (trend D1) | PW=6 | LONG
+2026-07-14 18:45:59    Output: C:\Dev\trading-bot\data\live_signals\session8
+2026-07-14 18:45:59  =================================================================
+2026-07-14 18:45:59  MT5: 52906593 @ ICMarketsEU-Demo (DEMO)
+2026-07-14 18:45:59    [ORPHAN] Nicio pozitie MT5 fara corespondent — state consistent cu MT5.
+2026-07-14 18:45:59  Simboluri active: ['EURCAD']
+2026-07-14 18:45:59  Pornit. Ctrl+C pentru oprire.
+
+2026-07-14 18:45:59  --- S8-EURCAD-H1 iter 1 @ 18:45:59 ---
+2026-07-14 18:46:00    Niciun semnal nou. Pendinge: 0
+2026-07-14 18:46:00    Urmatoarea bara 60min @ 19:00:05 — 845s
+2026-07-14 19:00:05  --- S8-EURCAD-H1 iter 2 @ 19:00:05 ---
+2026-07-14 19:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-14 19:00:05    Urmatoarea bara 60min @ 20:00:05 — 3600s
+2026-07-14 20:00:05  --- S8-EURCAD-H1 iter 3 @ 20:00:05 ---
+2026-07-14 20:00:05    EURCAD: eroare H1 — Simbolul 'EURCAD' nu este disponibil in MT5: (-10001, 'IPC send failed')
+2026-07-14 20:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-14 20:00:05  [MT5-HEALTH] terminal_info() = None — IPC pierdut
+2026-07-14 20:00:05    Urmatoarea bara 60min @ 21:00:05 — 3600s
+2026-07-14 20:44:31    [PROFIL] Profil 'Standard Profile' aplicat pe session8.
+2026-07-14 20:44:31  =================================================================
+2026-07-14 20:44:31    S8-EURCAD-H1 — EURCAD H1+D1 LONG pw=6 pullback+flag | test +0.384R DD -23.7%
+2026-07-14 20:44:31    Piete: ['EURCAD']
+2026-07-14 20:44:31    TF: H1 (trend D1) | PW=6 | LONG
+2026-07-14 20:44:31    Output: C:\Dev\trading-bot\data\live_signals\session8
+2026-07-14 20:44:31  =================================================================
+2026-07-14 20:44:31  MT5: 52906593 @ ICMarketsEU-Demo (DEMO)
+2026-07-14 20:44:31    [ORPHAN] Nicio pozitie MT5 fara corespondent — state consistent cu MT5.
+2026-07-14 20:44:31  Simboluri active: ['EURCAD']
+2026-07-14 20:44:31  Pornit. Ctrl+C pentru oprire.
+
+2026-07-14 20:44:31  --- S8-EURCAD-H1 iter 1 @ 20:44:31 ---
+2026-07-14 20:44:31    Niciun semnal nou. Pendinge: 0
+2026-07-14 20:44:31    Urmatoarea bara 60min @ 21:00:05 — 933s
+2026-07-14 21:00:05  --- S8-EURCAD-H1 iter 2 @ 21:00:05 ---
+2026-07-14 21:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-14 21:00:05    Urmatoarea bara 60min @ 22:00:05 — 3600s
+2026-07-14 22:00:05  --- S8-EURCAD-H1 iter 3 @ 22:00:05 ---
+2026-07-14 22:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-14 22:00:05    Urmatoarea bara 60min @ 23:00:05 — 3600s
+2026-07-14 23:00:05  --- S8-EURCAD-H1 iter 4 @ 23:00:05 ---
+2026-07-14 23:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-14 23:00:05    Urmatoarea bara 60min @ 00:00:05 — 3600s
+2026-07-15 00:00:05  --- S8-EURCAD-H1 iter 5 @ 00:00:05 ---
+2026-07-15 00:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-15 00:00:05    Urmatoarea bara 60min @ 01:00:05 — 3599s
+2026-07-15 01:00:05  --- S8-EURCAD-H1 iter 6 @ 01:00:05 ---
+2026-07-15 01:00:05    EURCAD: eroare H1 — Simbolul 'EURCAD' nu este disponibil in MT5: (-10001, 'IPC send failed')
+2026-07-15 01:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-15 01:00:05  [MT5-HEALTH] terminal_info() = None — IPC pierdut
+2026-07-15 01:00:05    Urmatoarea bara 60min @ 02:00:05 — 3600s
+2026-07-15 02:00:05  --- S8-EURCAD-H1 iter 7 @ 02:00:05 ---
+2026-07-15 02:00:05    EURCAD: eroare H1 — Simbolul 'EURCAD' nu este disponibil in MT5: (-10001, 'IPC send failed')
+2026-07-15 02:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-15 02:00:05  [MT5-HEALTH] terminal_info() = None — IPC pierdut
+2026-07-15 02:00:05    Urmatoarea bara 60min @ 03:00:05 — 3600s
+2026-07-15 03:00:05  --- S8-EURCAD-H1 iter 8 @ 03:00:05 ---
+2026-07-15 03:00:05    EURCAD: eroare H1 — Simbolul 'EURCAD' nu este disponibil in MT5: (-10001, 'IPC send failed')
+2026-07-15 03:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-15 03:00:05  [MT5-HEALTH] terminal_info() = None — IPC pierdut
+2026-07-15 03:00:05    Urmatoarea bara 60min @ 04:00:05 — 3600s
+2026-07-15 04:00:05  --- S8-EURCAD-H1 iter 9 @ 04:00:05 ---
+2026-07-15 04:00:05    EURCAD: eroare H1 — Simbolul 'EURCAD' nu este disponibil in MT5: (-10001, 'IPC send failed')
+2026-07-15 04:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-15 04:00:05  [MT5-HEALTH] terminal_info() = None — IPC pierdut
+2026-07-15 04:00:05    Urmatoarea bara 60min @ 05:00:05 — 3600s
+2026-07-15 05:00:05  --- S8-EURCAD-H1 iter 10 @ 05:00:05 ---
+2026-07-15 05:00:05    EURCAD: eroare H1 — Simbolul 'EURCAD' nu este disponibil in MT5: (-10001, 'IPC send failed')
+2026-07-15 05:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-15 05:00:05  [MT5-HEALTH] terminal_info() = None — IPC pierdut
+2026-07-15 05:00:05    Urmatoarea bara 60min @ 06:00:05 — 3600s
+2026-07-15 06:00:05  --- S8-EURCAD-H1 iter 11 @ 06:00:05 ---
+2026-07-15 06:00:05    EURCAD: eroare H1 — Simbolul 'EURCAD' nu este disponibil in MT5: (-10001, 'IPC send failed')
+2026-07-15 06:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-15 06:00:05  [MT5-HEALTH] terminal_info() = None — IPC pierdut
+2026-07-15 06:00:05    Urmatoarea bara 60min @ 07:00:05 — 3600s
+2026-07-15 07:00:05  --- S8-EURCAD-H1 iter 12 @ 07:00:05 ---
+2026-07-15 07:00:05    EURCAD: eroare H1 — Simbolul 'EURCAD' nu este disponibil in MT5: (-10001, 'IPC send failed')
+2026-07-15 07:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-15 07:00:05  [MT5-HEALTH] terminal_info() = None — IPC pierdut
+2026-07-15 07:00:05    Urmatoarea bara 60min @ 08:00:05 — 3600s
+2026-07-15 08:00:05  --- S8-EURCAD-H1 iter 13 @ 08:00:05 ---
+2026-07-15 08:00:05    EURCAD: eroare H1 — Simbolul 'EURCAD' nu este disponibil in MT5: (-10001, 'IPC send failed')
+2026-07-15 08:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-15 08:00:05  [MT5-HEALTH] terminal_info() = None — IPC pierdut
+2026-07-15 08:00:05    Urmatoarea bara 60min @ 09:00:05 — 3600s
+2026-07-15 09:21:09    [PROFIL] Profil 'Standard Profile' aplicat pe session8.
+2026-07-15 09:21:09  =================================================================
+2026-07-15 09:21:09    S8-EURCAD-H1 — EURCAD H1+D1 LONG pw=6 pullback+flag | test +0.384R DD -23.7%
+2026-07-15 09:21:09    Piete: ['EURCAD']
+2026-07-15 09:21:09    TF: H1 (trend D1) | PW=6 | LONG
+2026-07-15 09:21:09    Output: C:\Dev\trading-bot\data\live_signals\session8
+2026-07-15 09:21:09  =================================================================
+2026-07-15 09:21:10  MT5: 52906593 @ ICMarketsEU-Demo (DEMO)
+2026-07-15 09:21:10    [ORPHAN] Nicio pozitie MT5 fara corespondent — state consistent cu MT5.
+2026-07-15 09:21:10  Simboluri active: ['EURCAD']
+2026-07-15 09:21:10  Pornit. Ctrl+C pentru oprire.
+
+2026-07-15 09:21:10  --- S8-EURCAD-H1 iter 1 @ 09:21:10 ---
+2026-07-15 09:21:10    Niciun semnal nou. Pendinge: 0
+2026-07-15 09:21:10    Urmatoarea bara 60min @ 10:00:05 — 2334s
+2026-07-15 09:21:53    [PROFIL] Profil 'Standard Profile' aplicat pe session8.
+2026-07-15 09:21:53  =================================================================
+2026-07-15 09:21:53    S8-EURCAD-H1 — EURCAD H1+D1 LONG pw=6 pullback+flag | test +0.384R DD -23.7%
+2026-07-15 09:21:53    Piete: ['EURCAD']
+2026-07-15 09:21:53    TF: H1 (trend D1) | PW=6 | LONG
+2026-07-15 09:21:53    Output: C:\Dev\trading-bot\data\live_signals\session8
+2026-07-15 09:21:53  =================================================================
+2026-07-15 09:21:53  MT5: 52906593 @ ICMarketsEU-Demo (DEMO)
+2026-07-15 09:21:53    [ORPHAN] Nicio pozitie MT5 fara corespondent — state consistent cu MT5.
+2026-07-15 09:21:53  Simboluri active: ['EURCAD']
+2026-07-15 09:21:53  Pornit. Ctrl+C pentru oprire.
+
+2026-07-15 09:21:53  --- S8-EURCAD-H1 iter 1 @ 09:21:53 ---
+2026-07-15 09:21:54    Niciun semnal nou. Pendinge: 0
+2026-07-15 09:21:54    Urmatoarea bara 60min @ 10:00:05 — 2291s
+2026-07-15 10:00:04  --- S8-EURCAD-H1 iter 2 @ 10:00:04 ---
+2026-07-15 10:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-15 10:00:05    Urmatoarea bara 60min @ 11:00:05 — 3600s
+2026-07-15 11:00:04  --- S8-EURCAD-H1 iter 3 @ 11:00:04 ---
+2026-07-15 11:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-15 11:00:05    Urmatoarea bara 60min @ 12:00:05 — 3600s
+2026-07-15 12:00:04  --- S8-EURCAD-H1 iter 4 @ 12:00:04 ---
+2026-07-15 12:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-15 12:00:05    Urmatoarea bara 60min @ 13:00:05 — 3599s
+2026-07-15 13:00:04  --- S8-EURCAD-H1 iter 5 @ 13:00:04 ---
+2026-07-15 13:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-15 13:00:05    Urmatoarea bara 60min @ 14:00:05 — 3600s
+2026-07-15 14:00:05  --- S8-EURCAD-H1 iter 6 @ 14:00:05 ---
+2026-07-15 14:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-15 14:00:05    Urmatoarea bara 60min @ 15:00:05 — 3600s
+2026-07-15 15:00:05  --- S8-EURCAD-H1 iter 7 @ 15:00:05 ---
+2026-07-15 15:00:06    Niciun semnal nou. Pendinge: 0
+2026-07-15 15:00:06    Urmatoarea bara 60min @ 16:00:05 — 3599s
+2026-07-15 16:00:05  --- S8-EURCAD-H1 iter 8 @ 16:00:05 ---
+2026-07-15 16:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-15 16:00:05    Urmatoarea bara 60min @ 17:00:05 — 3599s
+2026-07-15 17:00:05  --- S8-EURCAD-H1 iter 9 @ 17:00:05 ---
+2026-07-15 17:00:05    [STIRI] Pauza automata — BOC Monetary Policy Report (CAD, High, -14 min)
+2026-07-15 17:00:05    [STIRI] Tranzitie → pauza: inchid ordine/pozitii active.
+2026-07-15 17:00:05    [STIRI] Nicio pozitie/ordin activ — nimic de inchis.
+2026-07-15 17:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-15 17:00:05    Urmatoarea bara 60min @ 18:00:05 — 3599s
+2026-07-15 18:00:05  --- S8-EURCAD-H1 iter 10 @ 18:00:05 ---
+2026-07-15 18:00:05    [STIRI] Pauza automata — BOC Press Conference (CAD, High, -14 min)
+2026-07-15 18:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-15 18:00:05    Urmatoarea bara 60min @ 19:00:05 — 3600s
+2026-07-15 19:00:05  --- S8-EURCAD-H1 iter 11 @ 19:00:05 ---
+2026-07-15 19:00:06    [AI-FILTER] S8-EURCAD-H1-IB0009: consiliul AI evalueaza (nivel balanced)...
+2026-07-15 19:03:36    [AI-FILTER] S8-EURCAD-H1-IB0009: RESPINS — incredere 30% (prag 70%, 209.2s)
+2026-07-15 19:03:36    *** SEMNAL RESPINS DE FILTRUL AI: S8-EURCAD-H1-IB0009 EURCAD LONG — incredere 30% < prag 70%
+2026-07-15 19:03:36    Urmatoarea bara 60min @ 20:00:05 — 3389s
+2026-07-15 20:00:05  --- S8-EURCAD-H1 iter 12 @ 20:00:05 ---
+2026-07-15 20:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-15 20:00:05    Urmatoarea bara 60min @ 21:00:05 — 3600s
+2026-07-15 21:00:05  --- S8-EURCAD-H1 iter 13 @ 21:00:05 ---
+2026-07-15 21:00:06    Niciun semnal nou. Pendinge: 0
+2026-07-15 21:00:06    Urmatoarea bara 60min @ 22:00:05 — 3599s
+2026-07-15 22:00:05  --- S8-EURCAD-H1 iter 14 @ 22:00:05 ---
+2026-07-15 22:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-15 22:00:05    Urmatoarea bara 60min @ 23:00:05 — 3599s
+2026-07-15 23:00:05  --- S8-EURCAD-H1 iter 15 @ 23:00:05 ---
+2026-07-15 23:00:06    Niciun semnal nou. Pendinge: 0
+2026-07-15 23:00:06    Urmatoarea bara 60min @ 00:00:05 — 3599s
+2026-07-16 00:00:05  --- S8-EURCAD-H1 iter 16 @ 00:00:05 ---
+2026-07-16 00:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-16 00:00:05    Urmatoarea bara 60min @ 01:00:05 — 3599s
+2026-07-16 01:00:05  --- S8-EURCAD-H1 iter 17 @ 01:00:05 ---
+2026-07-16 01:00:08    Niciun semnal nou. Pendinge: 0
+2026-07-16 01:00:08    Urmatoarea bara 60min @ 02:00:05 — 3596s
+2026-07-16 02:00:05  --- S8-EURCAD-H1 iter 18 @ 02:00:05 ---
+2026-07-16 02:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-16 02:00:05    Urmatoarea bara 60min @ 03:00:05 — 3599s
+2026-07-16 03:00:05  --- S8-EURCAD-H1 iter 19 @ 03:00:05 ---
+2026-07-16 03:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-16 03:00:05    Urmatoarea bara 60min @ 04:00:05 — 3599s
+2026-07-16 04:00:05  --- S8-EURCAD-H1 iter 20 @ 04:00:05 ---
+2026-07-16 04:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-16 04:00:05    Urmatoarea bara 60min @ 05:00:05 — 3599s
+2026-07-16 05:00:05  --- S8-EURCAD-H1 iter 21 @ 05:00:05 ---
+2026-07-16 05:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-16 05:00:05    Urmatoarea bara 60min @ 06:00:05 — 3599s
+2026-07-16 06:00:05  --- S8-EURCAD-H1 iter 22 @ 06:00:05 ---
+2026-07-16 06:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-16 06:00:05    Urmatoarea bara 60min @ 07:00:05 — 3599s
+2026-07-16 07:00:05  --- S8-EURCAD-H1 iter 23 @ 07:00:05 ---
+2026-07-16 07:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-16 07:00:05    Urmatoarea bara 60min @ 08:00:05 — 3599s
+2026-07-16 08:00:05  --- S8-EURCAD-H1 iter 24 @ 08:00:05 ---
+2026-07-16 08:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-16 08:00:05    Urmatoarea bara 60min @ 09:00:05 — 3599s
+2026-07-16 09:00:05  --- S8-EURCAD-H1 iter 25 @ 09:00:05 ---
+2026-07-16 09:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-16 09:00:05    Urmatoarea bara 60min @ 10:00:05 — 3599s
+2026-07-16 10:00:05  --- S8-EURCAD-H1 iter 26 @ 10:00:05 ---
+2026-07-16 10:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-16 10:00:05    Urmatoarea bara 60min @ 11:00:05 — 3600s
+2026-07-16 11:00:05  --- S8-EURCAD-H1 iter 27 @ 11:00:05 ---
+2026-07-16 11:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-16 11:00:05    Urmatoarea bara 60min @ 12:00:05 — 3599s
+2026-07-16 12:00:05  --- S8-EURCAD-H1 iter 28 @ 12:00:05 ---
+2026-07-16 12:00:06    Niciun semnal nou. Pendinge: 0
+2026-07-16 12:00:06    Urmatoarea bara 60min @ 13:00:05 — 3599s
+2026-07-16 13:00:05  --- S8-EURCAD-H1 iter 29 @ 13:00:05 ---
+2026-07-16 13:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-16 13:00:05    Urmatoarea bara 60min @ 14:00:05 — 3599s
+2026-07-16 14:00:05  --- S8-EURCAD-H1 iter 30 @ 14:00:05 ---
+2026-07-16 14:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-16 14:00:05    Urmatoarea bara 60min @ 15:00:05 — 3599s
+2026-07-16 15:00:05  --- S8-EURCAD-H1 iter 31 @ 15:00:05 ---
+2026-07-16 15:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-16 15:00:05    Urmatoarea bara 60min @ 16:00:05 — 3599s
+2026-07-16 16:00:05  --- S8-EURCAD-H1 iter 32 @ 16:00:05 ---
+2026-07-16 16:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-16 16:00:05    Urmatoarea bara 60min @ 17:00:05 — 3599s
+2026-07-16 17:00:05  --- S8-EURCAD-H1 iter 33 @ 17:00:05 ---
+2026-07-16 17:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-16 17:00:05    Urmatoarea bara 60min @ 18:00:05 — 3599s
+2026-07-16 18:00:05  --- S8-EURCAD-H1 iter 34 @ 18:00:05 ---
+2026-07-16 18:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-16 18:00:05    Urmatoarea bara 60min @ 19:00:05 — 3599s
+2026-07-16 19:00:05  --- S8-EURCAD-H1 iter 35 @ 19:00:05 ---
+2026-07-16 19:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-16 19:00:05    Urmatoarea bara 60min @ 20:00:05 — 3599s
+2026-07-16 20:00:05  --- S8-EURCAD-H1 iter 36 @ 20:00:05 ---
+2026-07-16 20:00:05    Niciun semnal nou. Pendinge: 0
+2026-07-16 20:00:05    Urmatoarea bara 60min @ 21:00:05 — 3599s
