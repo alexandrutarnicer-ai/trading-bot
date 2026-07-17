@@ -817,3 +817,28 @@ export const useAiLotInfo = () =>
   useMutation<import("./types").AiLotInfo, Error, { symbol: string; lots: number }>({
     mutationFn: body => apiFetch("/ai/lot-info", { method: "POST", body }),
   });
+
+// ── Trading LIVE — deblocarea explicita a contului real, per componenta ──────
+
+export interface LiveTradingState {
+  flags: { bot: boolean; ai_engine: boolean };
+  account: { connected: boolean; is_demo: boolean | null;
+             login: string | null; server: string | null };
+}
+
+export const useLiveTrading = () =>
+  useQuery<LiveTradingState>({
+    queryKey: ["live-trading"],
+    queryFn:  () => apiFetch("/settings/live-trading"),
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
+  });
+
+export const useSetLiveTrading = () => {
+  const qc = useQueryClient();
+  return useMutation<{ ok: boolean; flags: LiveTradingState["flags"]; note: string },
+                     Error, { component: "bot" | "ai_engine"; allowed: boolean }>({
+    mutationFn: body => apiFetch("/settings/live-trading", { method: "PUT", body }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["live-trading"] }),
+  });
+};

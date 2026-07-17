@@ -227,6 +227,7 @@ def _status_disconnected(error: str) -> dict:
         "account": None, "server": None,
         "balance": None, "equity": None, "currency": None,
         "algo_trading_enabled": None,
+        "is_demo": None,
         "error": error,
     }
 
@@ -254,6 +255,8 @@ def get_status() -> dict:
                     "equity": round(info.equity, 2),
                     "currency": info.currency,
                     "algo_trading_enabled": algo_ok,
+                    # tipul contului — folosit de deblocarea Trading LIVE (UI)
+                    "is_demo": info.trade_mode == mt5.ACCOUNT_TRADE_MODE_DEMO,
                     "error": None,
                 }
         except Mt5Unavailable as e:

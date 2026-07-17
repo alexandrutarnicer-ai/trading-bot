@@ -2342,6 +2342,43 @@ def _is_news_paused(session_key: str) -> tuple[bool, list]:
     return False, []
 
 
+# Cache mtime pentru re-citirea hot a lui execute_trades din runtime profile —
+# evita re-parsarea JSON la fiecare bara cand fisierul nu s-a schimbat.
+_RUNTIME_ET_CACHE: dict = {"mtime": None, "map": {}}
+
+
+def _runtime_execute_trades(session_key: str) -> bool | None:
+    """
+    Citeste execute_trades PER SESIUNE din active_profile_runtime.json, cu cache
+    invalidat pe mtime. Returneaza True/False daca sesiunea e in profil, altfel
+    None (fara profil / sesiune absenta → apelantul pastreaza valoarea curenta).
+
+    Scopul: un toggle execute_trades din UI (observatie ⇄ live) sa se aplice la
+    URMATOAREA bara, ca butonul de pauza — nu doar la restart de bot. Fara asta,
+    dezactivarea executiei unei piete din UI parea ca nu are efect (ordinele se
+    plasau in continuare pana la restart), ceea ce e periculos in productie.
+    """
+    runtime_file = os.path.join(DATA_DIR, "active_profile_runtime.json")
+    try:
+        mtime = os.path.getmtime(runtime_file)
+    except OSError:
+        return None
+    if _RUNTIME_ET_CACHE["mtime"] != mtime:
+        try:
+            with open(runtime_file, encoding="utf-8") as f:
+                profile = json.load(f)
+            _RUNTIME_ET_CACHE["map"] = {
+                s.get("session_key"): s.get("execute_trades")
+                for s in profile.get("sessions", [])
+                if s.get("session_key") and "execute_trades" in s
+            }
+            _RUNTIME_ET_CACHE["mtime"] = mtime
+        except Exception:
+            return None
+    val = _RUNTIME_ET_CACHE["map"].get(session_key)
+    return bool(val) if val is not None else None
+
+
 # ---------------------------------------------------------------------------
 # Vineri close — inchide pozitii triggerate la ora configurata
 # ---------------------------------------------------------------------------
@@ -3240,7 +3277,7 @@ def run_generator(session_cfg: dict):
     log.info(f"  Output: {out_dir}")
     log.info("=" * 65)
 
-    src = Mt5DataSource(n_bars=session_cfg["n_bars_entry"])
+    src = Mt5DataSource(n_bars=session_cfg["n_bars_entry"], component="bot")
     try:
         acc = src.connect()
         log.info(f"MT5: {acc.login} @ {acc.server} "
@@ -3352,6 +3389,21 @@ def run_generator(session_cfg: dict):
             manual_paused  = _is_paused(session_key)
             news_paused, news_events = _is_news_paused(session_key)
             session_paused = manual_paused or news_paused
+
+            # Hot-reload execute_trades: un toggle observatie⇄live din UI se aplica
+            # de la bara urmatoare (ca butonul de pauza), nu doar la restart. Critic
+            # pentru siguranta: dezactivarea executiei unei piete trebuie sa OPREASCA
+            # ordinele imediat. Pozitiile/pending-urile deja plasate raman monitorizate.
+            _rt_exec = _runtime_execute_trades(session_key)
+            if _rt_exec is not None and _rt_exec != session_cfg.get("execute_trades", False):
+                _old_exec = session_cfg.get("execute_trades", False)
+                session_cfg["execute_trades"] = _rt_exec
+                log.warning(f"  [EXEC] execute_trades schimbat din UI: {_old_exec} → "
+                            f"{_rt_exec} (se aplica de la aceasta bara)")
+                _send_telegram(
+                    f"{'▶️' if _rt_exec else '⏹'} <b>{session_cfg['session_id']}: "
+                    f"execuție {'ACTIVATĂ (live)' if _rt_exec else 'DEZACTIVATĂ (observație)'}</b>\n"
+                    f"{'Ordinele noi se vor plasa în MT5.' if _rt_exec else 'Nu se mai plasează ordine noi; pozițiile deschise rămân monitorizate.'}")
 
             if manual_paused:
                 log.info("  [PAUZA] Sesiune in pauza manuala — semnal checking dezactivat. "

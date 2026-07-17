@@ -5,7 +5,8 @@
     "GBPUSD",
     "AUDUSD",
     "USDCAD",
-    "XRPUSD"
+    "XRPUSD",
+    "USDCHF"
   ],
   "provider": "ollama",
   "ollama_url": "http://localhost:11434",
@@ -23,7 +24,7 @@
   "comment_prefix": "AI",
   "risk_pct_default": 0.005,
   "risk_pct_max": 0.01,
-  "max_open_positions": 3,
+  "max_open_positions": 5,
   "max_daily_loss_R": 3.0,
   "min_rr": 1.0,
   "max_sl_atr_mult": 5.0,
@@ -92,10 +93,18 @@
     "macro": "cerebras",
     "risk": "groq",
     "technical": "cerebras",
-    "head_trader": "mistral"
+    "head_trader": "gemini",
+    "devils_advocate": "hug1",
+    "quant": "mistral"
   },
   "role_quant_enabled": true,
-  "consensus_threshold": 70,
+  "consensus_threshold": 65,
   "role_devils_advocate_enabled": false,
-  "market_overrides": {}
+  "market_overrides": {
+    "GBPUSD": {
+      "max_trades_per_day": 2
+    }
+  },
+  "capital_sync_mt5": true,
+  "capital_usd": 500.0
 }

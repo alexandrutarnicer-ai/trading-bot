@@ -366,10 +366,15 @@ def _process_market(symbol: str, src: Mt5DataSource, registry: ProviderRegistry,
         market_state = {"symbol": symbol, "daily_r": m_daily_r, "trades_today": m_trades,
                         "max_daily_loss_R": mcfg["max_daily_loss_R"],
                         "max_trades_per_day": mcfg["max_trades_per_day"]}
+    # Pietele care ocupa deja sloturile (pentru mesajul de respingere clar cand
+    # se atinge plafonul GLOBAL — altfel "expunere maxima pe USDCAD" pare per piata).
+    committed_symbols = sorted({p.symbol for p in positions}
+                               | {o.symbol for o in pending_orders})
     reason = executor.validate_decision(decision, snap, cfg, n_committed,
                                         desk_state["daily_r"],
                                         symbol_committed=symbol_committed,
-                                        market_state=market_state)
+                                        market_state=market_state,
+                                        committed_symbols=committed_symbols)
     if reason:
         ledger.add_decision(symbol, council_id, decision, "rejected", reason)
         log.info("RESPINS %s: %s", symbol, reason)
@@ -449,11 +454,12 @@ def run() -> None:
     else:
         log.info("Ollama inferenta verificata OK (safety-net functional).")
 
-    acc = executor.connect()     # impune DEMO — arunca RuntimeError altfel
-    log.info("MT5 conectat: cont %s (%s) equity %.2f %s — DEMO verificat",
+    # impune DEMO by default; cont REAL doar cu deblocare explicita (live_guard)
+    acc = executor.connect()
+    log.info("MT5 conectat: cont %s (%s) equity %.2f %s — mod cont verificat",
              acc.login, acc.server, acc.equity, acc.currency)
 
-    src = Mt5DataSource(n_bars=2000)
+    src = Mt5DataSource(n_bars=2000, component="ai_engine")
     src.connect()
 
     ledger = Ledger()

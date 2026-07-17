@@ -233,6 +233,116 @@ function MarketsEditor() {
   );
 }
 
+// ── Capitalul AI Engine (baza de sizing) ─────────────────────────────────────
+
+function CapitalConfig() {
+  const { data: cfg } = useAiConfig();
+  const { data: st } = useAiStatus();
+  const save = useAiSaveConfig();
+  const [draft, setDraft] = useState<string | null>(null);   // null = nu editez
+  if (!cfg) return null;
+
+  const sync = cfg.capital_sync_mt5 ?? true;
+  const cap = cfg.capital_usd ?? 1000;
+  const equity = st?.equity ?? null;
+  const capNum = draft !== null ? parseFloat(draft) : cap;
+  const overEquity = !sync && equity != null && Number.isFinite(capNum) && capNum > equity;
+
+  const saveCap = () => {
+    const v = parseFloat(draft ?? "");
+    if (!Number.isFinite(v) || v < 10) return;
+    save.mutate({ capital_usd: Math.round(v * 100) / 100 } as never,
+      { onSuccess: () => setDraft(null) });
+  };
+
+  return (
+    <div className="bg-surface rounded-xl border border-surface-border p-4 space-y-2">
+      <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+        Capital AI Engine
+        <span className="text-[10px] text-slate-500 font-normal">
+          baza din care se calculează riscul per trade · se aplică la următorul ordin, fără restart
+        </span>
+      </h3>
+      <div className="flex items-center gap-3 flex-wrap text-[11px]">
+        <label className="flex items-center gap-2 text-slate-300 cursor-pointer">
+          <input type="checkbox" className="accent-profit" checked={Boolean(sync)}
+            onChange={e => {
+              const on = e.target.checked;
+              // La debifare, capitalul fix porneste de la ULTIMA valoare sincronizata
+              // din MT5 (equity curent) — editabila apoi de utilizator. La rebifare,
+              // baza redevine automat equity-ul live MT5.
+              const patch: Record<string, unknown> = { capital_sync_mt5: on };
+              if (!on && equity != null) patch.capital_usd = Math.round(equity * 100) / 100;
+              setDraft(null);
+              save.mutate(patch as never);
+            }} />
+          Sync automat cu MT5 (equity)
+        </label>
+        {sync ? (
+          <span className="text-slate-500">
+            capital curent: <span className="text-slate-200 font-mono">
+              {equity != null ? `$${equity.toFixed(2)}` : "— (MT5 indisponibil)"}
+            </span> — tot equity-ul contului, citit la fiecare ordin
+          </span>
+        ) : (
+          <span className="flex items-center gap-1.5">
+            <span className="text-slate-400">Capital alocat AI:</span>
+            <span className="text-slate-500">$</span>
+            <input type="number" min={10} max={1000000} step={10}
+              value={draft ?? String(cap)}
+              onChange={e => setDraft(e.target.value)}
+              className="w-24 bg-surface-card border border-surface-border rounded px-2 py-0.5 text-[11px] text-white font-mono" />
+            {draft !== null && parseFloat(draft) !== cap && (
+              <button onClick={saveCap} disabled={save.isPending}
+                className="text-[10px] px-2 py-0.5 rounded bg-profit/20 text-profit hover:bg-profit/30">
+                Salvează
+              </button>
+            )}
+          </span>
+        )}
+      </div>
+      {overEquity && (
+        <div className="text-[10px] text-amber-400">
+          ⚠ Capitalul alocat (${capNum}) depășește equity-ul MT5 (${equity?.toFixed(2)}) —
+          la ordine se va folosi equity-ul real (nu poți aloca mai mult decât există).
+        </div>
+      )}
+      {/* Poziții AI simultane (max_open_positions) — expunerea GLOBALĂ pe toate piețele */}
+      <div className="flex items-center gap-3 flex-wrap text-[11px] border-t border-surface-border/40 pt-2">
+        <span className="text-slate-400">Poziții AI simultane (max):</span>
+        <div className="flex items-center gap-1">
+          {[1, 2, 3, 4, 5, 6].map(n => (
+            <button key={n}
+              onClick={() => save.mutate({ max_open_positions: n } as never)}
+              className={`w-7 h-7 rounded text-[11px] font-mono transition-colors ${
+                (cfg.max_open_positions ?? 3) === n
+                  ? "bg-purple-600/80 text-white"
+                  : "bg-surface-card border border-surface-border text-slate-400 hover:border-slate-500"
+              }`}>
+              {n}
+            </button>
+          ))}
+        </div>
+        <span className="text-slate-600">
+          limită totală (poziții + ordine pending) pe TOATE piețele, nu per piață
+        </span>
+      </div>
+      <p className="text-[10px] text-slate-600">
+        Câte poziții AI pot fi deschise simultan pe întreg contul. La limită, un semnal pe o piață
+        nouă e respins până se închide una existentă. Mai multe poziții = mai multă marjă angajată
+        (plafon hard 6, pentru siguranță pe cont mic).
+      </p>
+      <p className="text-[10px] text-slate-600">
+        Sync ON (default) = comportamentul de până acum: riscul se calculează din equity-ul real MT5.
+        Sync OFF = AI-ul primește un buget fix; restul contului nu participă la sizing. Peste această
+        bază se aplică „Capital %" per piață (gol = 100%), iar riscul per trade îl decide consiliul
+        (Risk Manager + Head Trader) în limitele rails-urilor — câmpurile per piață goale nu impun nimic.
+      </p>
+      {save.isError && <div className="text-[10px] text-loss">{(save.error as Error).message}</div>}
+    </div>
+  );
+}
+
 // ── Consens multi-council + roluri (motorul autonom) ────────────────────────
 
 function ConsensusConfig() {
@@ -343,15 +453,17 @@ function num(v: string): number | null {
 // Tooltips (i) per coloana — explicatii scurte, in clar
 const LIMIT_TIPS = {
   capital: [
-    "Fracția din equity folosită ca bază de sizing pe această piață.",
-    "Gol = 100% din cont (comportamentul de până acum).",
-    "Ex: 50% la un cont de 2000$ → riscul se calculează din 1000$.",
+    "Fracția din capitalul AI Engine folosită ca bază de sizing pe această piață.",
+    "Baza = cardul «Capital AI Engine» (equity MT5 la Sync ON, sau capitalul fix alocat).",
+    "Gol (auto) = 100% din baza AI — nu impune nimic în plus.",
+    "Ex: 50% la o bază de 2000$ → riscul se calculează din 1000$.",
     "Notă: la cont mic (~sub 1500$), lotul minim al brokerului domină — vezi Ghid.",
   ].join("\n"),
   risk: [
     "Cap de risc per tranzacție pe această piață (%).",
-    "Gol = riscul decis de consiliu, cu limitele globale (default 0.5%, max 1%).",
-    "Consiliul poate cere mai puțin, niciodată mai mult decât acest cap.",
+    "Gol (auto) = decide consiliul: Risk Manager-ul propune (0.25–1%), Head Trader-ul cere,",
+    "codul ia minimul dintre ele și rail-ul global — câmpul gol NU impune o valoare.",
+    "Setat = consiliul poate cere mai puțin, niciodată mai mult decât acest cap.",
     "La contul actual, ACEASTA e pârghia reală pentru poziții mai mari.",
   ].join("\n"),
   maxRr: [
@@ -415,12 +527,13 @@ function LotUsdEstimate({ symbol, lots }: { symbol: string; lots: number | null 
   );
 }
 
-function MarketLimitsRow({ symbol, ov, stats, orphan, effRiskPct, onSave, saving }: {
+function MarketLimitsRow({ symbol, ov, stats, orphan, effRiskPct, capitalBase, onSave, saving }: {
   symbol: string;
   ov: MarketOverride;
   stats?: { closed_trades: number; total_R: number; wins?: number; losses?: number } | null;
   orphan?: boolean;                       // are config dar nu mai e in lista de piete
   effRiskPct: string;                     // valoarea globala curenta (placeholder)
+  capitalBase?: number | null;            // baza AI Engine ($) — pt echivalentul $ sub Capital %
   onSave: (symbol: string, ov: MarketOverride | null, onDone: () => void) => void;
   saving: boolean;
 }) {
@@ -448,19 +561,33 @@ function MarketLimitsRow({ symbol, ov, stats, orphan, effRiskPct, onSave, saving
       </td>
       <td className="px-1 py-1.5">
         <input className={inputCls} type="number" min={5} max={100} step={5}
-          placeholder="100"
+          placeholder="auto"
+          title="PROCENT (5–100) din capitalul AI Engine, nu sumă în $. Gol (auto) = 100% — nu impune nimic"
           value={draft.capital_fraction != null ? Math.round(draft.capital_fraction * 100) : ""}
           onChange={e => upd({ capital_fraction: e.target.value === "" ? null : (num(e.target.value) ?? 100) / 100 })} />
+        {draft.capital_fraction != null && draft.capital_fraction > 1.0 && (
+          <div className="text-[9px] text-amber-400 whitespace-nowrap">
+            % nu $ — max 100 (se salvează 100)
+          </div>
+        )}
+        {draft.capital_fraction != null && draft.capital_fraction <= 1.0 && capitalBase != null && capitalBase > 0 && (
+          <div className="text-[9px] text-slate-500 whitespace-nowrap"
+            title="Capitalul efectiv pe această piață = baza AI Engine × procent">
+            ≈ ${(capitalBase * draft.capital_fraction).toFixed(0)}
+          </div>
+        )}
       </td>
       <td className="px-1 py-1.5">
         <input className={inputCls} type="number" min={0.05} max={2} step={0.05}
-          placeholder={effRiskPct}
+          placeholder="auto"
+          title={`Gol (auto) = riscul îl decide consiliul per trade (0.25–1%, default ${effRiskPct}% când nu specifică) — nu impune nimic`}
           value={draft.risk_pct != null ? +(draft.risk_pct * 100).toFixed(2) : ""}
           onChange={e => upd({ risk_pct: e.target.value === "" ? null : (num(e.target.value) ?? 0.5) / 100 })} />
       </td>
       <td className="px-1 py-1.5">
         <input className={inputCls} type="number" min={1} max={10} step={0.5}
-          placeholder="∞"
+          placeholder="ex: 3"
+          title="Plafon Reward:Risk — gol = fără plafon (comportamentul curent). Ex: 3 → un TP propus la 4.5R e adus la 3R."
           value={draft.max_rr ?? ""}
           onChange={e => upd({ max_rr: e.target.value === "" ? null : num(e.target.value) })} />
       </td>
@@ -525,6 +652,13 @@ function MarketLimitsCard() {
   // "dispara" pe tacute (izolarea lor ramane activa pana stergi config-ul).
   const orphans = Object.keys(overrides).filter(s => !markets.includes(s));
   const effRiskPct = `${(((cfg.risk_pct_default as number) ?? 0.005) * 100).toFixed(2)}`;
+  // Baza AI Engine ($) pentru echivalentul afisat sub Capital % — aceeasi regula
+  // ca executor.capital_base: sync ON = equity; OFF = capital fix, plafonat la equity.
+  const _eq = st?.equity ?? null;
+  const _sync = cfg.capital_sync_mt5 ?? true;
+  const _cap = cfg.capital_usd ?? null;
+  const capitalBase = _sync ? _eq
+    : (_cap != null && _eq != null ? Math.min(_cap, _eq) : (_cap ?? _eq));
 
   // ov=null → sterge complet config-ul simbolului (butonul "Șterge config")
   const saveRow = (symbol: string, ov: MarketOverride | null, onDone: () => void) => {
@@ -533,7 +667,12 @@ function MarketLimitsCard() {
       delete next[symbol];
     } else {
       const clean: MarketOverride = {};
-      if (ov.capital_fraction != null && ov.capital_fraction !== 1.0) clean.capital_fraction = ov.capital_fraction;
+      if (ov.capital_fraction != null) {
+        // clamp CLIENT-side identic cu serverul (5–100%): o valoare „în $" tastata
+        // din greseala (ex: 200) devine vizibil 100%, nu silentios alta valoare
+        const cf = Math.min(1.0, Math.max(0.05, ov.capital_fraction));
+        if (cf !== 1.0) clean.capital_fraction = cf;   // 100% = default → camp gol (auto)
+      }
       if (ov.risk_pct != null) clean.risk_pct = ov.risk_pct;
       if (ov.max_rr != null) clean.max_rr = ov.max_rr;
       if (ov.max_daily_loss_R != null) clean.max_daily_loss_R = ov.max_daily_loss_R;
@@ -564,7 +703,7 @@ function MarketLimitsCard() {
       <h3 className="text-sm font-semibold text-white flex items-center gap-2">
         Limite per piață
         <span className="text-[10px] text-slate-500 font-normal">
-          câmp gol = valoarea globală curentă (afișată estompat) · se aplică la următorul consiliu, fără restart
+          câmp gol = auto (dinamic, decide consiliul pe baza capitalului AI Engine) · se aplică la următorul consiliu, fără restart
         </span>
       </h3>
       <div className="overflow-x-auto">
@@ -588,7 +727,7 @@ function MarketLimitsCard() {
                 ov={overrides[sym] ?? {}}
                 stats={bySym[sym] ? { closed_trades: bySym[sym].closed_trades, total_R: bySym[sym].total_R,
                                       wins: bySym[sym].wins, losses: bySym[sym].losses } : null}
-                effRiskPct={effRiskPct}
+                effRiskPct={effRiskPct} capitalBase={capitalBase}
                 onSave={saveRow} saving={save.isPending} />
             ))}
             {orphans.map(sym => (
@@ -596,7 +735,7 @@ function MarketLimitsCard() {
                 ov={overrides[sym] ?? {}}
                 stats={bySym[sym] ? { closed_trades: bySym[sym].closed_trades, total_R: bySym[sym].total_R,
                                       wins: bySym[sym].wins, losses: bySym[sym].losses } : null}
-                effRiskPct={effRiskPct}
+                effRiskPct={effRiskPct} capitalBase={capitalBase}
                 onSave={saveRow} saving={save.isPending} />
             ))}
           </tbody>
@@ -726,6 +865,8 @@ export function AiEnginePage() {
       </div>
 
       <MarketsEditor />
+
+      <CapitalConfig />
 
       <MarketLimitsCard />
 

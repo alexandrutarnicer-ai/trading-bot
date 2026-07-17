@@ -792,6 +792,9 @@ export interface AiConfig {
   max_daily_loss_R: number;
   heartbeat_hours: number;
   council_cooldown_min: number;
+  // Capitalul AI (baza de sizing): sync MT5 (default) sau capital fix alocat
+  capital_sync_mt5?: boolean;
+  capital_usd?: number;
   // Roluri optionale de consiliu (Additional AI Roles)
   role_quant_enabled?: boolean;
   role_devils_advocate_enabled?: boolean;

@@ -133,3 +133,58 @@ def set_timezone(body: dict):
     with open(TZ_FILE, "w", encoding="utf-8") as f:
         json.dump({"timezone": tz}, f, ensure_ascii=False, indent=2)
     return {"ok": True, "timezone": tz, "label": _SUPPORTED_TZ[tz]}
+
+
+# ─── Trading LIVE — deblocarea explicita a contului real, per componenta ─────
+# Default: BLOCAT (demo-only). Flag-urile stau in data/live_trading.json
+# (gitignored — deblocarea nu se propaga intre masini). Vezi live_guard.py.
+
+@router.get("/live-trading")
+def get_live_trading():
+    """Starea deblocarii LIVE per componenta + tipul contului MT5 curent."""
+    from live_guard import live_flags
+    account = {"connected": False, "is_demo": None, "login": None, "server": None}
+    try:
+        from api import mt5_pool
+        st = mt5_pool.get_status()
+        if st.get("connected"):
+            account = {"connected": True, "is_demo": st.get("is_demo"),
+                       "login": st.get("account"), "server": st.get("server")}
+    except Exception:
+        pass
+    return {"flags": live_flags(), "account": account}
+
+
+@router.put("/live-trading")
+def set_live_trading(body: dict):
+    """
+    Comuta deblocarea LIVE pentru o componenta: body {component, allowed}.
+    Componente valide: "bot", "ai_engine". Trimite Telegram la fiecare schimbare
+    (activarea tranzactionarii cu bani reali nu e niciodata tacuta).
+    """
+    from live_guard import set_live, COMPONENTS, live_flags
+    component = str(body.get("component") or "").strip()
+    if component not in COMPONENTS:
+        raise HTTPException(400, f"component: una din {list(COMPONENTS)}")
+    if "allowed" not in body:
+        raise HTTPException(400, "allowed: true/false obligatoriu")
+    allowed = bool(body.get("allowed"))
+    before = live_flags().get(component)
+    flags = set_live(component, allowed)
+    if before != allowed:
+        try:
+            from api.telegram import send_message
+            import threading
+            name = "BOT (sesiunile pe reguli)" if component == "bot" else "AI Engine"
+            text = (f"🔴 <b>Trading LIVE ACTIVAT — {name}</b>\n"
+                    f"Componenta poate tranzacționa pe cont REAL pe această mașină. "
+                    f"Se aplică la următoarea pornire/reconectare."
+                    if allowed else
+                    f"🟢 <b>Trading LIVE dezactivat — {name}</b>\n"
+                    f"Componenta revine la DEMO-only (blocată pe conturi reale).")
+            threading.Thread(target=send_message, args=(text,), daemon=True).start()
+        except Exception:
+            pass
+    return {"ok": True, "flags": flags,
+            "note": "Se aplica la urmatoarea conectare MT5 a componentei "
+                    "(restart bot/motor daca ruleaza)."}

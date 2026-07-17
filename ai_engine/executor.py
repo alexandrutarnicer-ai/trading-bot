@@ -23,7 +23,12 @@ _FILLINGS = []   # populat la connect() — IOC/FOK/RETURN in ordinea suportata
 
 
 def connect() -> "mt5.AccountInfo":
-    """Initializeaza MT5 si impune cont DEMO. Ridica RuntimeError altfel."""
+    """
+    Initializeaza MT5. Cont DEMO obligatoriu by default; un cont REAL e acceptat
+    DOAR daca utilizatorul a deblocat explicit componenta "ai_engine" pe aceasta
+    masina (data/live_trading.json — UI: Profil → Trading LIVE). La conectarea
+    live se trimite Telegram + log, o data per proces (live_guard).
+    """
     if not mt5.initialize():
         raise RuntimeError(f"mt5.initialize() a esuat: {mt5.last_error()}")
     acc = mt5.account_info()
@@ -31,9 +36,19 @@ def connect() -> "mt5.AccountInfo":
         mt5.shutdown()
         raise RuntimeError("Nu pot citi contul MT5.")
     if acc.trade_mode != mt5.ACCOUNT_TRADE_MODE_DEMO:
-        mt5.shutdown()
-        raise RuntimeError(
-            f"BLOCAT — contul {acc.login} NU este DEMO. Motorul AI refuza sa ruleze.")
+        allowed = False
+        try:
+            from live_guard import live_allowed, notify_live_connection
+            allowed = live_allowed("ai_engine")
+        except Exception:
+            allowed = False   # fail-safe: orice eroare = blocat
+        if not allowed:
+            mt5.shutdown()
+            raise RuntimeError(
+                f"BLOCAT — contul {acc.login} NU este DEMO. Motorul AI refuza sa "
+                "ruleze pe cont REAL fara deblocare explicita "
+                "(UI: Profil → Trading LIVE, componenta AI Engine).")
+        notify_live_connection("ai_engine", acc.login, acc.server)
     global _FILLINGS
     _FILLINGS = [mt5.ORDER_FILLING_IOC, mt5.ORDER_FILLING_FOK, mt5.ORDER_FILLING_RETURN]
     return acc
@@ -42,6 +57,25 @@ def connect() -> "mt5.AccountInfo":
 def equity() -> float:
     acc = mt5.account_info()
     return float(acc.equity) if acc else 0.0
+
+
+def capital_base(cfg: dict) -> float:
+    """
+    Baza de capital a motorului AI pentru sizing (inainte de capital_fraction
+    per piata):
+      - capital_sync_mt5=True (default): equity-ul REAL din MT5 — comportamentul
+        de dinainte, sincron cu contul la fiecare ordin.
+      - capital_sync_mt5=False: capitalul FIX alocat AI-ului (capital_usd),
+        PLAFONAT la equity-ul real cand acesta e disponibil — nu poti aloca
+        mai mult capital decat exista in cont (protectie la typo: 100000 pe un
+        cont de 700$ nu umfla riscul). Cu MT5 indisponibil (equity 0) se
+        foloseste capitalul fix ca atare.
+    """
+    if cfg.get("capital_sync_mt5", True):
+        return equity()
+    cap = float(cfg.get("capital_usd") or 0.0)
+    eq = equity()
+    return min(cap, eq) if eq > 0 else cap
 
 
 # ── Stare pozitii/ordine AI (filtrate pe magic) ──────────────────────────────
@@ -97,13 +131,18 @@ def is_market_weekend_closed(symbol: str, now, friday_close_hour: int = 22) -> b
 def validate_decision(d: dict, snapshot: dict, cfg: dict,
                       n_committed: int, daily_r: float,
                       symbol_committed: bool = False,
-                      market_state: dict | None = None) -> str | None:
+                      market_state: dict | None = None,
+                      committed_symbols: list | None = None) -> str | None:
     """
     Returneaza motivul respingerii sau None daca decizia e executabila.
 
     `n_committed` = expunerea angajata (pozitii deschise + ordine pending). Se
     numara si pending-urile pentru ca fiecare stop poate deveni pozitie — altfel
     la cold-start s-ar plasa mai multe ordine decat max_open_positions.
+
+    `committed_symbols` (optional): pietele care ocupa deja sloturile — folosite
+    DOAR ca sa dea un mesaj de respingere clar (limita e GLOBALA pe toate pietele,
+    nu per piata). None → mesaj generic (comportament identic la nivel de logica).
 
     `symbol_committed` = exista deja o pozitie SAU un ordin pending AI pe ACEST
     simbol. Motorul nu face pyramiding — un al doilea ordin pe acelasi setup e
@@ -122,7 +161,9 @@ def validate_decision(d: dict, snapshot: dict, cfg: dict,
         return (f"exista deja o pozitie/ordin AI pe {snapshot.get('symbol', '?')} "
                 "— fara pyramiding (o singura expunere per simbol)")
     if n_committed >= cfg["max_open_positions"]:
-        return f"expunere maxima atinsa ({n_committed} pozitii+pending, max {cfg['max_open_positions']})"
+        held = f" — sloturi ocupate de: {', '.join(committed_symbols)}" if committed_symbols else ""
+        return (f"expunere AI GLOBALA maxima atinsa ({n_committed}/{cfg['max_open_positions']} "
+                f"pozitii+pending pe TOATE pietele, nu per piata){held}")
     if daily_r <= -cfg["max_daily_loss_R"]:
         return f"stop zilnic de pierdere atins ({daily_r:+.1f}R)"
 
@@ -329,7 +370,7 @@ def place(d: dict, snapshot: dict, cfg: dict, decision_id: int,
             lots, risk_usd = snap_fixed_lots(symbol, fixed_lots, entry, d["sl"])
         else:
             lots, risk_usd = calc_lots(symbol, entry, d["sl"],
-                                       equity() * capital_fraction, d["risk_pct"])
+                                       capital_base(cfg) * capital_fraction, d["risk_pct"])
         if lots <= 0:
             return "rejected", "lot calculat 0 (capital insuficient?)", None
         m_err = _margin_ok(lots, entry)
@@ -369,7 +410,7 @@ def place(d: dict, snapshot: dict, cfg: dict, decision_id: int,
             lots, risk_usd = snap_fixed_lots(symbol, fixed_lots, d["entry"], d["sl"])
         else:
             lots, risk_usd = calc_lots(symbol, d["entry"], d["sl"],
-                                       equity() * capital_fraction, d["risk_pct"])
+                                       capital_base(cfg) * capital_fraction, d["risk_pct"])
         if lots <= 0:
             return "rejected", "lot calculat 0 (capital insuficient?)", None
         m_err = _margin_ok(lots, d["entry"])

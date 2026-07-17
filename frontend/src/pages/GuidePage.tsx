@@ -560,7 +560,7 @@ export function GuidePage() {
             </p>
             <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-xs">
               <KV k="Label" v="Ex: S3 — BTCUSD M15 BOTH" />
-              <KV k="Badge LIVE/OBS" v="LIVE = ordine plasate real; OBS = observație" />
+              <KV k="Badge LIVE/OBS" v="LIVE = ordine plasate real; OBS = observație (execute_trades=False, doar semnale)" />
               <KV k="Dot verde/galben" v="Verde = running; galben = pe pauză" />
               <KV k="Badge PAUZA" v="Sesiunea nu mai deschide poziții noi" />
               <KV k="Semnale azi" v="Numărul de setup-uri detectate azi" />
@@ -644,6 +644,9 @@ export function GuidePage() {
             </div>
             <Note>
               Sesiunile de observație (<Badge color="bg-surface-border text-slate-500" label="OBS" />) sunt excluse din toate agregările. Excepție: dacă o sesiune a avut tranzacții reale MT5 (<code className="text-blue-300">pnl_usd ≠ 0</code>) și ulterior a fost oprită din execuție, tranzacțiile istorice rămân vizibile în statistici. MT5 este sursa de adevăr — dacă există <code className="text-blue-300">pnl_usd</code> real, trade-ul a fost executat indiferent de setarea curentă a profilului.
+            </Note>
+            <Note>
+              <b>Comutarea LIVE ⇄ OBS se aplică de la bara următoare, fără restart de bot</b> (ca butonul de pauză). Dacă dezactivezi execuția unei piețe din Profil și salvezi, botul oprește imediat ordinele noi pe acea piață (pozițiile deschise rămân monitorizate până la SL/TP) și trimite o notificare Telegram. Sursa de adevăr pentru execuție e <code className="text-blue-300">execute_trades</code> din profilul activ, nu valoarea hardcodată din scriptul sesiunii.
             </Note>
           </SubSection>
 
