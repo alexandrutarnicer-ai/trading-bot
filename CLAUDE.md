@@ -206,6 +206,10 @@ Strat de "second opinion" AI peste botul pe reguli — **dezactivat by default**
 - **Config mostenita:** filtrul reincarca `ai_engine/config.json` + `data/ai/providers.json` la fiecare evaluare (`registry.refresh`) — schimbarile din tab-ul AI Engine se aplica imediat, zero configurare duplicata. Nu scrie in ledger-ul motorului (jurnal propriu JSONL). Teste: `python scripts/test_ai_filter.py`.
 - **Consens multi-council + roluri (OPTIONAL, per sesiune, off by default):** filtrul poate rula pana la 3 consilii pe surse AI distincte (`ai_filter_primary/secondary/tertiary_source`) combinate prin `consensus.combine` (media efectiva + veto absolut, prag = nivelul din `ai_filter_level`), plus rolurile `ai_role_quant_enabled`/`ai_role_devils_advocate_enabled`. `evaluate` planifica sursele (`_plan_councils`) si ruleaza `run_review_council` per sursa (pinned). **Fara secondary/tertiary → un singur consiliu, verdict identic byte-cu-byte** (`_verdict` decide approve la nivel de consiliu, pragul se aplica pe media de consens; pentru 1 consiliu media = increderea lui). Fault-tolerant: un consiliu picat e ignorat, toate picate → fail-open. Jurnal: campuri noi `n_councils`/`consensus_confidence`/`sources`/`councils[]`. Notificare: sufix „consens N consilii". Vezi `docs/MULTI_COUNCIL_CONSENSUS.md`.
 
+### `live_guard.py` — deblocarea Trading LIVE (cont real)
+
+Default: TOT sistemul e DEMO-only — `Mt5DataSource.connect()` si `ai_engine/executor.connect()` refuza conturile reale cu RuntimeError. Deblocarea e EXPLICITA, per componenta, per masina: `data/live_trading.json` (`{"bot": false, "ai_engine": false}`, gitignored — nu se propaga prin git). UI: cardul "Trading LIVE" in Profil (`LiveTradingCard.tsx`, doua confirmari la activare); API: `GET/PUT /settings/live-trading` (Telegram la fiecare schimbare). `Mt5DataSource` are param `component` ("bot" in signal_generator, "ai_engine" in engine.py); `component=None` (scripturi research) = strict DEMO indiferent de flag-uri. La prima conectare pe cont REAL, componenta trimite Telegram `⚠️🔴 CONT LIVE` + log, o data per proces (`live_guard.notify_live_connection`). Orice eroare de citire a flag-urilor = BLOCAT (fail-safe). `mt5_pool.get_status()` include `is_demo` (afisat in card). Flag-urile se aplica la urmatoarea conectare (restart bot/motor daca ruleaza). Teste: `python scripts/test_live_guard.py` (26).
+
 ### `live/signal_generator.py` — engine-ul live
 
 Ruleaza in loop infinit la fiecare bara noua. Per iteratie:
@@ -422,9 +426,9 @@ Toate endpointurile `/mt5/*` trec prin acest pool. Inainte, FIECARE endpoint fac
 | session1  | session1_m15_long.py   | EURUSD  | M15+M30 | LONG | True  |
 | session2  | session2_m5_both.py    | AUDJPY  | M15+M30 | BOTH | True  |
 | session3  | session3_btc_both.py   | BTCUSD  | M15+M30 | BOTH | True  |
-| session4  | session4_obs.py        | GER40   | M15+M30 | LONG | True  |
+| session4  | session4_obs.py        | GER40   | M15+M30 | LONG | **False** (OBS) |
 | session5  | session5_ger40_h1.py   | USDCHF  | H1+D1   | BOTH | True  |
-| session6  | session6_us30_m15.py   | US30    | M15+M30 | LONG | True  |
+| session6  | session6_us30_m15.py   | US30    | M15+M30 | LONG | **False** (OBS) |
 | session7  | session7_xrp.py        | XRPUSD  | M15+M30 | BOTH | True  |
 | session8  | session8_eurcad_h1.py  | EURCAD  | H1+D1   | BOTH | True  |
 | session9  | session9_usdjpy.py     | USDJPY  | M15+M30 | BOTH | True  |
@@ -438,9 +442,11 @@ Toate endpointurile `/mt5/*` trec prin acest pool. Inainte, FIECARE endpoint fac
 | session17 | session17_audcad_h1.py | AUDCAD  | H1+D1   | BOTH | True  |
 | session18 | session18_nzdjpy_h1.py | NZDJPY  | H1+D1   | BOTH | True  |
 | session19 | session19_audnzd.py    | AUDNZD  | M15+M30 | BOTH | True  |
-| session20 | session20_xauusd.py    | XAUUSD  | M15+M30 | BOTH | False |
+| session20 | session20_xauusd.py    | XAUUSD  | M15+M30 | BOTH | True  |
 
-`session20` (XAUUSD) are `execute_trades=False` — sesiune de observatie. Sizing dinamic: botul citeste equity real MT5 la fiecare trade. `account_fraction` per sesiune configurat in profil.
+**Sursa de adevar pentru `execute_trades` = profilul activ (`data/active_profile_runtime.json`), NU scriptul hardcodat.** Scripturile `sessionN_*.py` au un default hardcodat (ex: `session20_xauusd.py` are `execute_trades=False`), dar la pornire din UI `_apply_profile_overrides` il SUPRASCRIE cu valoarea din profil. In profilul `standard` curent, DOAR `session4` (GER40) si `session6` (US30) sunt pe observatie (`execute_trades=False`); toate celelalte, inclusiv `session20` (XAUUSD), sunt LIVE. Coloana de mai sus reflecta profilul, nu default-ul din script.
+
+**`execute_trades` e HOT-RELOADED per bara (2026-07-17):** `_runtime_execute_trades(session_key)` reciteste valoarea din runtime profile (cache pe mtime) la FIECARE iteratie — un toggle observatie⇄live din UI se aplica de la bara urmatoare, ca butonul de pauza, NU doar la restart de bot. Dezactivarea executiei OPRESTE imediat ordinele noi (pozitiile/pending-urile deja plasate raman monitorizate); tranzitia trimite Telegram + WARNING in log. Inainte, `execute_trades` se citea doar la startup — un user care dezactiva executia unei piete din UI vedea ordine plasate in continuare pana la restart (perceput ca bug „aur executat desi era dezactivat"). Sizing dinamic: botul citeste equity real MT5 la fiecare trade; `account_fraction` per sesiune configurat in profil.
 
 ---
 

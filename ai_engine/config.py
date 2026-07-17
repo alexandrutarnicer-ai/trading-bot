@@ -191,7 +191,7 @@ def load_config() -> dict:
             pass
     # Rails: orice ar scrie utilizatorul/consiliul, limitele hard raman.
     cfg["risk_pct_max"]       = min(float(cfg["risk_pct_max"]), 0.02)
-    cfg["max_open_positions"] = min(int(cfg["max_open_positions"]), 6)
+    cfg["max_open_positions"] = max(1, min(int(cfg["max_open_positions"]), 6))
     # Capitalul AI: sync bool robust + clamp pe capitalul fix (corupt → defaults).
     cfg["capital_sync_mt5"] = bool(cfg.get("capital_sync_mt5", True))
     try:

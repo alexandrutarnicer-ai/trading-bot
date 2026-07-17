@@ -266,6 +266,8 @@ def ai_put_config(body: dict = Body(...)):
                 "heartbeat_hours", "council_cooldown_min",
                 # Capitalul AI (baza de sizing): sync MT5 sau capital fix alocat
                 "capital_sync_mt5", "capital_usd",
+                # Expunere: numar maxim de pozitii AI simultane (pozitii + pending)
+                "max_open_positions",
                 # Roluri optionale de consiliu (Additional AI Roles)
                 "role_quant_enabled", "role_devils_advocate_enabled",
                 # Consiliu multiplu (Multi-Council Consensus)
@@ -304,6 +306,16 @@ def ai_put_config(body: dict = Body(...)):
         except (TypeError, ValueError):
             raise HTTPException(400, "consensus_threshold: numar intreg (50-90)")
         updates["consensus_threshold"] = max(50, min(90, th))
+
+    if "max_open_positions" in updates:
+        try:
+            mop = int(updates["max_open_positions"])
+        except (TypeError, ValueError):
+            raise HTTPException(400, "max_open_positions: numar intreg (1-6)")
+        if not (1 <= mop <= 6):
+            raise HTTPException(400, "max_open_positions: intre 1 si 6 "
+                                     "(plafon hard pentru expunerea AI totala)")
+        updates["max_open_positions"] = mop
 
     if "capital_sync_mt5" in updates:
         updates["capital_sync_mt5"] = bool(updates["capital_sync_mt5"])

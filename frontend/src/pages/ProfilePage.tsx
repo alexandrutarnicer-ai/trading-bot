@@ -8,6 +8,7 @@ import { SessionEditor } from "../components/SessionEditor";
 import { InfoTooltip } from "../components/InfoTooltip";
 import { BotControl } from "../components/BotControl";
 import { TelegramSettings } from "../components/TelegramSettings";
+import { LiveTradingCard } from "../components/LiveTradingCard";
 import { Mt5Status } from "../components/Mt5Status";
 import type { Profile, ProfileSession } from "../api/types";
 import type { PendingApply } from "../App";
@@ -403,6 +404,8 @@ export function ProfilePage({
       <Mt5Status />
       <BotControl profileId={activeId} profileName={draft?.name} />
       <TelegramSettings />
+
+      <LiveTradingCard />
       <TimezoneSelector />
 
       {/* Profile selector */}

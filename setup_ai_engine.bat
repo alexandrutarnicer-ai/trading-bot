@@ -3,6 +3,31 @@ chcp 65001 >nul
 title SetupAIEngine
 cd /d "%~dp0"
 
+rem Detect winget availability and fallback to WindowsApps path if needed.
+set "WINGET_OK=0"
+winget --version >nul 2>nul && set "WINGET_OK=1"
+if "%WINGET_OK%"=="0" if exist "%LOCALAPPDATA%\Microsoft\WindowsApps\winget.exe" (
+    set "PATH=%LOCALAPPDATA%\Microsoft\WindowsApps;%PATH%"
+    winget --version >nul 2>nul && set "WINGET_OK=1"
+)
+if "%WINGET_OK%"=="0" (
+    echo [!] winget nu este disponibil. Incerc instalarea automata...
+    powershell -ExecutionPolicy Bypass -File "%~dp0scripts\install_winget.ps1"
+    if errorlevel 1 (
+        echo [!] Nu am reusit sa instalez winget automat.
+        echo     Instaleaza "App Installer" din Microsoft Store si ruleaza din nou.
+        pause
+        exit /b 1
+    )
+    winget --version >nul 2>nul
+    if errorlevel 1 (
+        echo [i] winget a fost instalat, dar este necesara repornirea ferestrei terminal.
+        echo     Inchide aceasta fereastra si ruleaza setup_ai_engine.bat din nou.
+        pause
+        exit /b 0
+    )
+)
+
 echo ==================================================
 echo   Instalare AI Engine (laptop / PC nou)
 echo ==================================================

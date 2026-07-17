@@ -215,6 +215,41 @@ _apply_profile_overrides(session_cfg, cfg, log)
 check(session_cfg["skip_monday"] is True, "skip_monday True cand 0 e in skip_weekdays")
 
 # ---------------------------------------------------------------------------
+# Hot-reload execute_trades (2026-07-17) — toggle observatie<->live fara restart
+# ---------------------------------------------------------------------------
+from live.signal_generator import _runtime_execute_trades
+import live.signal_generator as _sg
+
+# Foloseste acelasi DATA_DIR ca helperul (sg.DATA_DIR) pentru fisierul runtime.
+_rt_file = os.path.join(_sg.DATA_DIR, "active_profile_runtime.json")
+
+def _write_rt_exec(mapping: dict):
+    prof = {"name": "T", "sessions": [
+        {"session_key": k, **({"execute_trades": v} if v is not None else {})}
+        for k, v in mapping.items()]}
+    with open(_rt_file, "w", encoding="utf-8") as f:
+        json.dump(prof, f)
+    _sg._RUNTIME_ET_CACHE = {"mtime": None, "map": {}}   # forteaza re-citire
+
+_write_rt_exec({"session20": True, "session4": False, "session99": None})
+check(_runtime_execute_trades("session20") is True, "hot-reload: session20 execute=True")
+check(_runtime_execute_trades("session4") is False, "hot-reload: session4 execute=False (OBS)")
+check(_runtime_execute_trades("session99") is None, "hot-reload: sesiune fara camp -> None (pastreaza valoarea)")
+check(_runtime_execute_trades("sessionX") is None, "hot-reload: sesiune absenta -> None")
+
+# toggle live->obs se reflecta dupa schimbarea fisierului (invalidare mtime)
+import time as _time; _time.sleep(0.02)
+_write_rt_exec({"session20": False})
+check(_runtime_execute_trades("session20") is False, "hot-reload: toggle True->False preluat (mtime)")
+
+# fisier lipsa -> None (nu forteaza o valoare; apelantul pastreaza starea curenta)
+_remove_runtime()
+if os.path.exists(_rt_file):
+    os.remove(_rt_file)
+_sg._RUNTIME_ET_CACHE = {"mtime": None, "map": {}}
+check(_runtime_execute_trades("session20") is None, "hot-reload: fisier lipsa -> None (fail-safe)")
+
+# ---------------------------------------------------------------------------
 # Curatare + sumar
 # ---------------------------------------------------------------------------
 _remove_runtime()

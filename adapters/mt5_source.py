@@ -42,15 +42,24 @@ _COLUMNS = ["time", "open", "high", "low", "close", "tick_volume", "spread", "re
 
 class Mt5DataSource:
     """
-    Sursa de date live din MT5 (cont DEMO obligatoriu).
+    Sursa de date live din MT5 (cont DEMO obligatoriu by default).
 
     n_bars: cate bare se incarca la fiecare apel load_bars().
             2000 bare M15 = ~500 ore = ~83 zile de tranzactionare,
             suficient pentru warm-up EMA200 pe M30.
+
+    component: identitatea consumatorului pentru deblocarea LIVE ("bot" /
+            "ai_engine"). None (default) = strict DEMO, indiferent de flag-uri —
+            scripturile de research si orice cod care nu se declara explicit
+            raman blocate pe conturi reale. Cu component setat, conectarea la un
+            cont REAL e permisa DOAR daca utilizatorul a deblocat explicit acea
+            componenta in data/live_trading.json (UI: Profil → Trading LIVE);
+            la prima conectare live se trimite Telegram + log (live_guard).
     """
 
-    def __init__(self, n_bars: int = 2000):
+    def __init__(self, n_bars: int = 2000, component: str | None = None):
         self._n_bars = n_bars
+        self.component = component
         self._connected = False
         # Offset-ul serverului fata de UTC, detectat la primul load_bars().
         # None = nu a fost detectat inca.
@@ -77,12 +86,26 @@ class Mt5DataSource:
             raise RuntimeError("Nu am putut citi info cont MT5 dupa initialize().")
 
         if acc.trade_mode != mt5.ACCOUNT_TRADE_MODE_DEMO:
-            mt5.shutdown()
-            raise RuntimeError(
-                f"BLOCAT — contul {acc.login} pe serverul '{acc.server}' "
-                f"NU este cont DEMO (trade_mode={acc.trade_mode}). "
-                "Conecteaza-te la un cont demo inainte de a folosi Mt5DataSource."
-            )
+            # Cont REAL: permis DOAR daca componenta e declarata si deblocata
+            # explicit de utilizator pe aceasta masina (data/live_trading.json).
+            allowed = False
+            if self.component:
+                try:
+                    from live_guard import live_allowed, notify_live_connection
+                    allowed = live_allowed(self.component)
+                except Exception:
+                    allowed = False   # fail-safe: orice eroare = blocat
+            if not allowed:
+                mt5.shutdown()
+                raise RuntimeError(
+                    f"BLOCAT — contul {acc.login} pe serverul '{acc.server}' "
+                    f"NU este cont DEMO (trade_mode={acc.trade_mode}). "
+                    "Pentru tranzactionare pe cont REAL, deblocheaza explicit "
+                    "componenta din UI (Profil → Trading LIVE) sau in "
+                    "data/live_trading.json. Scripturile de research raman "
+                    "DEMO-only prin design."
+                )
+            notify_live_connection(self.component, acc.login, acc.server)
 
         self._connected = True
         return acc

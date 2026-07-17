@@ -307,6 +307,31 @@ function CapitalConfig() {
           la ordine se va folosi equity-ul real (nu poți aloca mai mult decât există).
         </div>
       )}
+      {/* Poziții AI simultane (max_open_positions) — expunerea GLOBALĂ pe toate piețele */}
+      <div className="flex items-center gap-3 flex-wrap text-[11px] border-t border-surface-border/40 pt-2">
+        <span className="text-slate-400">Poziții AI simultane (max):</span>
+        <div className="flex items-center gap-1">
+          {[1, 2, 3, 4, 5, 6].map(n => (
+            <button key={n}
+              onClick={() => save.mutate({ max_open_positions: n } as never)}
+              className={`w-7 h-7 rounded text-[11px] font-mono transition-colors ${
+                (cfg.max_open_positions ?? 3) === n
+                  ? "bg-purple-600/80 text-white"
+                  : "bg-surface-card border border-surface-border text-slate-400 hover:border-slate-500"
+              }`}>
+              {n}
+            </button>
+          ))}
+        </div>
+        <span className="text-slate-600">
+          limită totală (poziții + ordine pending) pe TOATE piețele, nu per piață
+        </span>
+      </div>
+      <p className="text-[10px] text-slate-600">
+        Câte poziții AI pot fi deschise simultan pe întreg contul. La limită, un semnal pe o piață
+        nouă e respins până se închide una existentă. Mai multe poziții = mai multă marjă angajată
+        (plafon hard 6, pentru siguranță pe cont mic).
+      </p>
       <p className="text-[10px] text-slate-600">
         Sync ON (default) = comportamentul de până acum: riscul se calculează din equity-ul real MT5.
         Sync OFF = AI-ul primește un buget fix; restul contului nu participă la sizing. Peste această

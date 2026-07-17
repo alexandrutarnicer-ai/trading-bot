@@ -150,6 +150,41 @@ except ProviderError:
 
 check("usable_sources: listeaza surse sanatoase", set(_reg({"a": None, "b": None}).usable_sources()) == {"a", "b"})
 
+# ── call_role: CASCADA automata (sursa asignata → celelalte sanatoase → ollama) ──
+r = _reg({"cerebras": None, "groq": None, "ollama": None})
+obj, meta = r.call_role("technical", {"technical": "cerebras"}, "s", "u", ["bias"])
+check("cascada: sursa asignata sanatoasa → folosita ea",
+      meta["provider"] == "cerebras" and r._instances["groq"].calls == 0)
+
+r = _reg({"cerebras": "rate_limit", "groq": None, "ollama": None})
+obj, meta = r.call_role("technical", {"technical": "cerebras"}, "s", "u", ["bias"])
+check("cascada: asignata pica (429) → urmatoarea sursa sanatoasa",
+      meta["provider"] == "groq" and meta.get("fallback_from") == "cerebras")
+
+r = _reg({"cerebras": "rate_limit", "groq": "quota", "ollama": None})
+obj, meta = r.call_role("technical", {"technical": "cerebras"}, "s", "u", ["bias"])
+check("cascada: toate cloud pica → aterizeaza pe ollama (safety-net)",
+      meta["provider"] == "ollama" and meta.get("fallback_from") == "cerebras")
+
+# sursa picata ramane in pauza → urmatorul apel o SARE fara sa o mai incerce
+check("cascada: sursa picata e pusa in pauza (nu se reincearca in bucla)",
+      r.health["cerebras"]["status"] == "paused" and r.health["groq"]["status"] == "paused")
+obj, meta = r.call_role("macro", {"macro": "cerebras"}, "s", "u", ["bias"])
+check("cascada: apel urmator sare sursele in pauza direct pe ollama",
+      meta["provider"] == "ollama" and r._instances["cerebras"].calls == 1)
+
+r = _reg({"cerebras": "network", "groq": "network", "ollama": "network"})
+try:
+    r.call_role("technical", {"technical": "cerebras"}, "s", "u", ["bias"])
+    check("cascada: TOATE picate → ProviderError (WAIT/fail-open la apelant)", False)
+except ProviderError:
+    check("cascada: TOATE picate → ProviderError (WAIT/fail-open la apelant)", True)
+
+# rol fara asignare explicita (ex: quant/devils_advocate nou) → default ollama
+r = _reg({"cerebras": None, "ollama": None})
+obj, meta = r.call_role("quant", {}, "s", "u", ["bias"])
+check("cascada: rol neasignat → default ollama", meta["provider"] == "ollama")
+
 # ═════════════════════════════════════════════════════════════════════════════
 # 4. Registru fals multi-sursa (dispatch pe cheile 'required')
 # ═════════════════════════════════════════════════════════════════════════════
