@@ -545,18 +545,36 @@ def ai_lot_info(body: dict = Body(...)):
         if info is None or tick is None:
             return {"ok": False, "detail": "symbol_info/tick indisponibil"}
         price = tick.ask or tick.bid or 0.0
-        # marja reala ceruta de broker pentru volumul dat (BUY ca referinta)
+        # ── Snap la constrangerile REALE ale brokerului (identic cu executia:
+        # executor.snap_fixed_lots). Costul afisat trebuie sa reflecte volumul care
+        # se plaseaza EFECTIV, nu cel introdus. Pe piete cu volume_min mare (ex:
+        # XRPUSD min=100), 0.01 loturi introduse dau o marja triviala ($0.01) care
+        # scaleaza liniar cu loturile si induce in eroare — ordinul real e 100 loturi.
+        step = info.volume_step if info.volume_step > 0 else 0.01
+        eff = int(lots / step + 1e-9) * step if step > 0 else lots   # floor la step
+        eff = max(info.volume_min, eff)
+        if info.volume_max and info.volume_max > 0:
+            eff = min(eff, info.volume_max)
+        eff = round(eff, 2)
+        below_min = lots < info.volume_min
+        above_max = bool(info.volume_max and info.volume_max > 0 and lots > info.volume_max)
+
+        # marja + valoarea/unitate calculate pe volumul EFECTIV (snap-uit)
         margin = None
         try:
-            margin = mt5.order_calc_margin(mt5.ORDER_TYPE_BUY, symbol, lots, price)
+            margin = mt5.order_calc_margin(mt5.ORDER_TYPE_BUY, symbol, eff, price)
         except Exception:
             pass
         val_per_unit = None
         if info.trade_tick_size and info.trade_tick_size > 0:
-            # USD per 1.0 unitate de pret, pentru `lots` — riscul $ = dist_SL × asta
-            val_per_unit = round(lots * info.trade_tick_value / info.trade_tick_size, 2)
+            val_per_unit = round(eff * info.trade_tick_value / info.trade_tick_size, 2)
         acc = mt5.account_info()
-        return {"ok": True, "symbol": symbol, "lots": lots, "price": price,
+        return {"ok": True, "symbol": symbol,
+                "lots": lots,                 # ce a introdus utilizatorul
+                "effective_lots": eff,        # ce se plaseaza efectiv (snap broker)
+                "snapped": eff != round(lots, 2),
+                "below_min": below_min, "above_max": above_max,
+                "price": price,
                 "margin_usd": round(float(margin), 2) if margin is not None else None,
                 "value_per_price_unit_usd": val_per_unit,
                 "volume_min": info.volume_min, "volume_step": info.volume_step,
@@ -580,6 +598,53 @@ def ai_test_provider(body: dict = Body(...)):
     except ProviderError as e:
         return {"ok": False, "latency_s": 0, "detail": str(e), "kind": e.kind}
     return prov.test()
+
+
+@router.post("/providers/test-all")
+def ai_test_all_providers():
+    """
+    Testeaza TOATE sursele AI activate in paralel (buton "Testeaza sursele" din UI):
+    pentru fiecare — reachable → auth → JSON valid + latenta. Returneaza rezultatele
+    per sursa + un sumar (cate sanatoase / cate picate / care sunt disponibile).
+    Diagnostic rapid al disponibilitatii fara a verifica manual fiecare sursa.
+    """
+    import concurrent.futures
+    from ai_engine.config import load_keys
+    from ai_engine.providers import build_provider, ProviderError
+    cfg  = load_config()
+    keys = load_keys()
+    enabled = {n: s for n, s in cfg["providers"].items() if s.get("enabled")}
+
+    def _test_one(name, spec):
+        try:
+            return name, build_provider(name, spec, keys.get(name, "")).test()
+        except ProviderError as e:
+            return name, {"ok": False, "latency_s": 0, "detail": str(e)[:200], "kind": e.kind}
+        except Exception as e:
+            return name, {"ok": False, "latency_s": 0,
+                          "detail": f"{type(e).__name__}: {e}"[:200], "kind": "network"}
+
+    results: dict = {}
+    if enabled:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(8, len(enabled))) as pool:
+            futs = [pool.submit(_test_one, n, s) for n, s in enabled.items()]
+            for f in concurrent.futures.as_completed(futs, timeout=120):
+                try:
+                    name, r = f.result()
+                    results[name] = r
+                except Exception as e:
+                    results[f"?{len(results)}"] = {"ok": False, "latency_s": 0,
+                                                   "detail": str(e)[:200], "kind": "network"}
+    healthy = sorted(n for n, r in results.items() if r.get("ok"))
+    failed  = sorted(n for n, r in results.items() if not r.get("ok"))
+    # roluri neacoperite: rolurile de consiliu ale caror surse asignate au picat
+    ra = cfg.get("role_assignments", {})
+    roles_at_risk = sorted({role for role, src in ra.items()
+                            if src in failed and "ollama" in failed})
+    return {"results": results, "healthy": healthy, "failed": failed,
+            "n_healthy": len(healthy), "n_total": len(results),
+            "all_down": len(results) > 0 and not healthy,
+            "roles_at_risk": roles_at_risk}
 
 
 # ─── Autostart Windows (mirror al /bot/autostart/*) ───────────────────────────

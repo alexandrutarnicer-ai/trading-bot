@@ -250,6 +250,37 @@ _sg._RUNTIME_ET_CACHE = {"mtime": None, "map": {}}
 check(_runtime_execute_trades("session20") is None, "hot-reload: fisier lipsa -> None (fail-safe)")
 
 # ---------------------------------------------------------------------------
+# Capital bot aliniat cu motorul AI (sync MT5 / capital fix) — 2026-07-17
+# ---------------------------------------------------------------------------
+from live.signal_generator import _bot_capital_base
+
+check(_bot_capital_base({}, 1000.0) == 1000.0, "capital: default (fara camp) = equity (sync ON)")
+check(_bot_capital_base({"capital_sync_mt5": True, "capital_usd": 500}, 1000.0) == 1000.0,
+      "capital: sync ON ignora capital_usd, foloseste equity")
+check(_bot_capital_base({"capital_sync_mt5": False, "capital_usd": 500}, 1000.0) == 500.0,
+      "capital: sync OFF = capital fix alocat")
+check(_bot_capital_base({"capital_sync_mt5": False, "capital_usd": 5000}, 1000.0) == 1000.0,
+      "capital: fix > equity -> plafonat la equity (typo-safe)")
+check(_bot_capital_base({"capital_sync_mt5": True}, 0) == 0.0,
+      "capital: equity 0 + sync ON -> 0 (fail-safe, lot 0)")
+check(_bot_capital_base({"capital_sync_mt5": False, "capital_usd": "x"}, 1000.0) == 0.0,
+      "capital: capital_usd corupt -> 0 (fail-safe)")
+
+# _apply_profile_overrides plumb-uieste campurile de la nivel de PROFIL in session_cfg
+_write_runtime({"name": "T", "capital_sync_mt5": False, "capital_usd": 400,
+                "sessions": [{"session_key": "sessionCap"}]})
+_scfg = {"session_key": "sessionCap"}
+_apply_profile_overrides(_scfg, {"optional_criteria": {"rsi": {}}, "reward_ladder": {}}, log)
+check(_scfg.get("capital_sync_mt5") is False and _scfg.get("capital_usd") == 400.0,
+      "capital: profil top-level capital_sync/usd plumbuite in session_cfg")
+
+# profil fara campuri capital → session_cfg neatins (backward compat, default sync ON in helper)
+_write_runtime({"name": "T", "sessions": [{"session_key": "sessionCap"}]})
+_scfg2 = {"session_key": "sessionCap"}
+_apply_profile_overrides(_scfg2, {"optional_criteria": {"rsi": {}}, "reward_ladder": {}}, log)
+check("capital_sync_mt5" not in _scfg2, "capital: profil fara campuri -> nesetat (helper default sync ON)")
+
+# ---------------------------------------------------------------------------
 # Curatare + sumar
 # ---------------------------------------------------------------------------
 _remove_runtime()

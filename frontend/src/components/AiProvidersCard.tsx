@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Plus, Trash2, KeyRound, RefreshCw } from "lucide-react";
-import { useAiProviders, useAiSaveProviders, useAiTestProvider, useAiProviderModels } from "../api/hooks";
+import { useAiProviders, useAiSaveProviders, useAiTestProvider, useAiProviderModels, useAiTestAllProviders } from "../api/hooks";
 import type { AiProviderTestResult } from "../api/types";
+import type { AiTestAllResult } from "../api/hooks";
 
 /**
  * Surse AI (Consiliu) — registru multi-provider cu failover automat.
@@ -38,6 +39,8 @@ export function AiProvidersCard() {
   const { data } = useAiProviders();
   const save = useAiSaveProviders();
   const testMut = useAiTestProvider();
+  const testAllMut = useAiTestAllProviders();
+  const [testAll, setTestAll] = useState<AiTestAllResult | null>(null);
   const modelsMut = useAiProviderModels();
   const [testResults, setTestResults] = useState<Record<string, AiProviderTestResult>>({});
   const [testing, setTesting] = useState<string | null>(null);
@@ -116,11 +119,57 @@ export function AiProvidersCard() {
             failover automat pe Ollama · se aplică la următorul consiliu
           </span>
         </h3>
-        <button onClick={() => setShowAdd(s => !s)}
-          className="flex items-center gap-1 text-[11px] px-2 py-1 rounded-lg bg-surface-border/40 text-slate-300 hover:text-white">
-          <Plus size={12} /> Adaugă sursă
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => testAllMut.mutate(undefined, { onSuccess: r => setTestAll(r) })}
+            disabled={testAllMut.isPending}
+            title="Testează TOATE sursele în paralel (auth + disponibilitate + latență)"
+            className="flex items-center gap-1 text-[11px] px-2 py-1 rounded-lg bg-blue-500/20 text-blue-300 hover:bg-blue-500/30 disabled:opacity-50">
+            {testAllMut.isPending ? "Se testează..." : "🩺 Testează sursele"}
+          </button>
+          <button onClick={() => setShowAdd(s => !s)}
+            className="flex items-center gap-1 text-[11px] px-2 py-1 rounded-lg bg-surface-border/40 text-slate-300 hover:text-white">
+            <Plus size={12} /> Adaugă sursă
+          </button>
+        </div>
       </div>
+
+      {/* Rezultat "Testeaza sursele" — sumar sanatate + per sursa */}
+      {testAll && (
+        <div className={`rounded-lg border p-3 space-y-1.5 ${testAll.all_down ? "border-loss/50 bg-loss/10" : "border-surface-border bg-surface/60"}`}>
+          <div className="flex items-center gap-2 flex-wrap text-[11px]">
+            <span className="font-semibold text-white">Diagnostic surse:</span>
+            <span className="text-profit">{testAll.n_healthy} sănătoase</span>
+            <span className="text-slate-600">·</span>
+            <span className={testAll.failed.length ? "text-loss" : "text-slate-500"}>
+              {testAll.failed.length} picate
+            </span>
+            <span className="text-slate-600">din {testAll.n_total}</span>
+            {testAll.all_down && <span className="ml-auto text-loss font-semibold">⛔ NICIO SURSĂ DISPONIBILĂ</span>}
+          </div>
+          {testAll.healthy.length > 0 && (
+            <div className="text-[10px] text-slate-400">
+              Disponibile: <span className="text-profit font-mono">{testAll.healthy.join(", ")}</span>
+            </div>
+          )}
+          {testAll.roles_at_risk.length > 0 && (
+            <div className="text-[10px] text-amber-400">
+              ⚠ Roluri fără acoperire (sursă + Ollama picate): {testAll.roles_at_risk.join(", ")}
+            </div>
+          )}
+          <div className="space-y-0.5 pt-1">
+            {Object.entries(testAll.results).map(([name, r]) => (
+              <div key={name} className="flex items-center gap-2 text-[10px]">
+                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${r.ok ? "bg-profit" : "bg-loss"}`} />
+                <span className="font-mono text-slate-300 w-24 shrink-0">{name}</span>
+                {r.ok
+                  ? <span className="text-profit">✓ {r.latency_s}s{r.detail ? ` · ${r.detail}` : ""}</span>
+                  : <span className="text-loss truncate">✗ {r.kind ? `[${r.kind}] ` : ""}{r.detail}</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {showAdd && (
         <div className="border border-surface-border rounded-lg p-3 space-y-2 bg-surface/60">

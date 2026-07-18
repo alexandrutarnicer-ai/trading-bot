@@ -149,8 +149,11 @@ def _fetch_closed_trades_raw(mt5, days: int) -> list[dict]:
             "profit": 0.0, "commission": 0.0, "swap": 0.0,
             "has_out": False, "close_time": None, "symbol": d.symbol,
             "entry_price": None, "entry_time": None, "direction": None, "sl": None, "tp": None,
+            "magic": 0,
             "_out_px_vol": 0.0, "_out_vol": 0.0,
         })
+        if getattr(d, "magic", 0):
+            pos["magic"] = int(d.magic)   # sursa tranzactiei (770015 = AI Engine)
         pos["commission"] += float(d.commission or 0)
         pos["swap"] += float(d.swap or 0)
         if d.entry == 0:  # DEAL_ENTRY_IN
@@ -193,6 +196,7 @@ def _fetch_closed_trades_raw(mt5, days: int) -> list[dict]:
             "entry_price": pos["entry_price"], "entry_time": pos["entry_time"],
             "exit_price": exit_price, "close_time": pos["close_time"],
             "direction": pos["direction"], "sl": pos["sl"], "tp": pos["tp"],
+            "magic": pos["magic"],
             "result_r": result_r, "planned_r": planned_r,
         })
     return trades

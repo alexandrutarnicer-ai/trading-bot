@@ -123,6 +123,45 @@ def _build_report(df: pd.DataFrame, title: str) -> str:
     return "\n".join(lines)
 
 
+AI_MAGIC = 770015   # namespace-ul MT5 al motorului AI (ai_engine/config.py)
+
+
+def _ai_engine_section(date_from: date, date_to: date) -> str:
+    """
+    Sectiunea AI Engine a raportului — din istoricul REAL MT5 (magic 770015),
+    nu din ledger: prinde si tranzactiile plasate de alta masina (ex: laptop) pe
+    acelasi cont, unde ledger-ul local nu are decizia. Fail-safe: MT5 indisponibil
+    → sectiune goala (raportul botului pleaca oricum).
+    Fara aceasta sectiune, raportul zilnic acoperea DOAR sesiunile botului si
+    "pierdea" tranzactiile AI (vazut 17.07: raport 2 trades, real 6 — 4 erau AI).
+    """
+    try:
+        from api import mt5_pool
+        days = max(2, (date.today() - date_from).days + 2)
+        trades = [t for t in mt5_pool.get_closed_trades(days)
+                  if t.get("magic") == AI_MAGIC and t.get("close_time") is not None
+                  and date_from <= t["close_time"].date() < date_to]
+    except Exception:
+        return ""
+    if not trades:
+        return ""
+    wins   = sum(1 for t in trades if (t.get("profit") or 0) > 0)
+    losses = sum(1 for t in trades if (t.get("profit") or 0) < 0)
+    pnl    = round(sum((t.get("profit") or 0) + (t.get("commission") or 0)
+                       + (t.get("swap") or 0) for t in trades), 2)
+    sgn = f"+{pnl:.2f}" if pnl >= 0 else f"{pnl:.2f}"
+    lines = [f"\n🤖 <b>AI Engine:</b> {len(trades)} trades ({wins}W/{losses}L) · P&amp;L {sgn} $"]
+    per_sym: dict = {}
+    for t in trades:
+        s = per_sym.setdefault(t["symbol"], {"n": 0, "pnl": 0.0})
+        s["n"] += 1
+        s["pnl"] += (t.get("profit") or 0) + (t.get("commission") or 0) + (t.get("swap") or 0)
+    for sym, s in sorted(per_sym.items(), key=lambda kv: -kv[1]["pnl"]):
+        ps = f"+{s['pnl']:.2f}" if s["pnl"] >= 0 else f"{s['pnl']:.2f}"
+        lines.append(f"  • {sym}: {ps} $ ({s['n']}t)")
+    return "\n".join(lines)
+
+
 def send_daily_report(target_date: date | None = None) -> str:
     """Trimite raportul zilnic. target_date = azi daca None. Returneaza textul trimis."""
     if target_date is None:
@@ -131,6 +170,7 @@ def send_daily_report(target_date: date | None = None) -> str:
     label = target_date.strftime("%-d %B %Y") if os.name != "nt" else target_date.strftime("%d %B %Y")
     title = f"📅 Raport Zilnic — {label}"
     text  = _build_report(df, title)
+    text += _ai_engine_section(target_date, target_date + timedelta(days=1))
     telegram.send_message(text)
     log_notification(text)
     return text
@@ -147,6 +187,7 @@ def send_weekly_report(week_start: date | None = None) -> str:
     w_to   = (week_end - timedelta(days=1)).strftime("%d.%m.%Y")
     title  = f"📆 Raport Săptămânal — {w_from}–{w_to}"
     text   = _build_report(df, title)
+    text  += _ai_engine_section(week_start, week_end)
     telegram.send_message(text)
     log_notification(text)
     return text

@@ -516,10 +516,18 @@ function LotUsdEstimate({ symbol, lots }: { symbol: string; lots: number | null 
   const d = lotInfo.data;
   if (!d) return null;
   if (!d.ok) return <div className="text-[9px] text-amber-500/80" title={d.detail}>MT5 indisponibil</div>;
+  const eff = d.effective_lots ?? lots;
+  const snapped = d.snapped && eff !== lots;
   return (
-    <div className="text-[9px] text-slate-500 whitespace-nowrap"
-      title={`Marjă necesară pentru ${lots} loturi la prețul curent · risc $ = distanța SL × valoare/unitate. Marjă liberă: ${d.free_margin ?? "?"}$`}>
-      marjă ~<span className="text-slate-300 font-mono">{d.margin_usd != null ? `$${d.margin_usd}` : "?"}</span>
+    <div className="text-[9px] whitespace-nowrap"
+      title={`Marjă necesară pentru volumul REAL plasat (${eff} loturi) la prețul curent · risc $ = distanța SL × valoare/unitate. Marjă liberă: ${d.free_margin ?? "?"}$`}>
+      {snapped && (
+        <div className={d.below_min ? "text-amber-400" : "text-slate-500"}>
+          {d.below_min ? `⚠ sub minim → se plasează ${eff}` : `→ ${eff} loturi (aliniat broker)`}
+        </div>
+      )}
+      <span className="text-slate-500">marjă ~</span>
+      <span className="text-slate-300 font-mono">{d.margin_usd != null ? `$${d.margin_usd}` : "?"}</span>
       {d.value_per_price_unit_usd != null && (
         <> · <span className="text-slate-300 font-mono">${d.value_per_price_unit_usd}</span>/unit</>
       )}

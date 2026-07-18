@@ -34,8 +34,12 @@ DATA_DIR         = os.path.join(ROOT, "data")
 NEWS_PAUSED_FILE = os.path.join(DATA_DIR, "news_auto_paused.json")
 FINNHUB_CFG_FILE = os.path.join(DATA_DIR, "finnhub_config.json")
 
-POLL_INTERVAL = 300   # secunde intre iteratii
+POLL_INTERVAL = 300   # secunde intre iteratii (cat de des se REIMPROSPATEAZA lista)
 CACHE_TTL     = 270   # secunde TTL cache (expire inainte de urmatorul poll)
+# Orizontul de evenimente pe care guard-ul le scrie in avans, ca sesiunea sa poata
+# activa protectia EXACT la intrarea in fereastra chiar daca guard-ul n-a mai
+# poll-at recent. >> POLL_INTERVAL (5 min) → nicio fereastra nu se rateaza intre poll-uri.
+NEWS_HORIZON_MIN = 180
 
 FF_URLS = [
     "https://nfs.faireconomy.media/ff_calendar_thisweek.json",
@@ -126,21 +130,35 @@ def _parse_number(s: str) -> float | None:
         return None
 
 
-def _calc_sentiment(actual_str: str, forecast_str: str) -> int:
+# Indicatori INVERSATI: actual mai MARE = valuta mai SLABA (nu mai puternica).
+# Ex: rata somajului, cererile de ajutor de somaj, stocurile de titei (mai mult =
+# cerere slaba). Restul (CPI, GDP, retail, PMI, NFP, salarii) = actual mare bullish.
+_INVERTED_INDICATORS = (
+    "unemployment rate", "jobless", "initial claims", "continuing claims",
+    "claimant count", "misery", "crude oil inventories", "natural gas storage",
+)
+
+
+def _is_inverted_indicator(title: str) -> bool:
+    t = (title or "").lower()
+    return any(k in t for k in _INVERTED_INDICATORS)
+
+
+def _calc_sentiment(actual_str: str, forecast_str: str, title: str = "") -> int:
     """
-    +1 daca actual > forecast (valuta reportoare intarita),
-    -1 daca actual < forecast, 0 daca necunoscut sau egal.
-    Simplificat — nu tine cont de indicatori inversati (ex: somaj).
+    Sentimentul valutei reportoare din surpriza actual vs forecast:
+      +1 = valuta intarita, -1 = slabita, 0 = necunoscut/egal.
+    Pentru indicatorii INVERSATI (somaj, jobless claims etc.) semnul e rasturnat —
+    o valoare mai mare decat asteptarile e negativa pentru valuta.
     """
     actual   = _parse_number(actual_str or "")
     forecast = _parse_number(forecast_str or "")
-    if actual is None or forecast is None:
+    if actual is None or forecast is None or actual == forecast:
         return 0
-    if actual > forecast:
-        return 1
-    if actual < forecast:
-        return -1
-    return 0
+    sign = 1 if actual > forecast else -1
+    if _is_inverted_indicator(title):
+        sign = -sign
+    return sign
 
 
 def news_direction_for_symbol(symbol: str, events: list[dict]) -> int:
@@ -254,7 +272,7 @@ def _fetch_forexfactory() -> list[dict]:
                     "event_time": ev_time,
                     "actual":     actual_s,
                     "forecast":   forecast_s,
-                    "sentiment":  _calc_sentiment(actual_s, forecast_s),
+                    "sentiment":  _calc_sentiment(actual_s, forecast_s, ev.get("title", "")),
                     "_source":    "ff",
                 })
         except urllib.error.HTTPError as exc:
@@ -421,51 +439,122 @@ def _needs_refresh() -> bool:
         return (datetime.utcnow() - _cache_time).total_seconds() > CACHE_TTL
 
 
-# ─── Verificare protectie per sesiune ─────────────────────────────────────────
+# ─── Fereastra de protectie — logica PURA, deterministic-testabila ────────────
+#
+# PRINCIPIU DE PROIECTARE (redesign 2026-07-17):
+#   Fereastra de protectie a unui eveniment e [event_time - pre, event_time + post].
+#   "Esti in protectie ACUM" = un `now` dat cade in fereastra unui eveniment relevant.
+#   Aceasta e o FUNCTIE PURA de (evenimente, now, config) — nu depinde de CAND
+#   ruleaza guard-ul. Guard-ul (poll lent) doar tine lista de evenimente proaspata;
+#   ACTIVAREA o decide sesiunea, evaluand ferestrele fata de timpul CURENT la fiecare
+#   verificare. Asa, activarea e deterministica indiferent de intervalul de poll sau
+#   de offset-urile pre/post (chiar si pre=1 min e onorat exact).
+
+def market_currencies(markets: list[str]) -> set[str]:
+    ccy: set[str] = set()
+    for m in markets:
+        ccy.update(SYMBOL_CURRENCIES.get(str(m).upper(), []))
+    return ccy
+
+
+def event_window(ev_time: datetime, pre_minutes: int, post_minutes: int) -> tuple[datetime, datetime]:
+    """Fereastra [start, end] a unui eveniment: pre minute inainte, post minute dupa."""
+    return (ev_time - timedelta(minutes=max(0, pre_minutes)),
+            ev_time + timedelta(minutes=max(0, post_minutes)))
+
+
+def _relevant(ev: dict, currencies: set[str], impact_min: int) -> bool:
+    return (IMPACT_RANK.get(ev.get("impact", "Low"), 0) >= impact_min
+            and ev.get("currency") in currencies
+            and isinstance(ev.get("event_time"), datetime))
+
+
+def _slim_event(ev: dict, now_utc: datetime) -> dict:
+    ev_time = ev["event_time"]
+    return {
+        "title":      ev["title"],
+        "currency":   ev["currency"],
+        "impact":     ev["impact"],
+        "event_time": ev_time.strftime("%Y-%m-%dT%H:%M:%S"),   # UTC ISO
+        "minutes_to": round((ev_time - now_utc).total_seconds() / 60),
+        "actual":     ev.get("actual",   ""),
+        "forecast":   ev.get("forecast", ""),
+        "sentiment":  ev.get("sentiment", 0),
+    }
+
+
+def events_active_at(
+    events:       list[dict],
+    now_utc:      datetime,
+    currencies:   set[str],
+    impact_min:   int = 3,
+    pre_minutes:  int = 15,
+    post_minutes: int = 15,
+) -> list[dict]:
+    """
+    PUR: evenimentele a caror fereastra [ev-pre, ev+post] contine `now_utc`.
+    Sortate dupa apropierea de `now` (cel mai relevant primul). Nu atinge starea
+    globala — apelabil din teste cu evenimente sintetice si un `now` fix.
+    """
+    active: list[dict] = []
+    for ev in events:
+        if not _relevant(ev, currencies, impact_min):
+            continue
+        start, end = event_window(ev["event_time"], pre_minutes, post_minutes)
+        if start <= now_utc <= end:
+            active.append(ev)
+    active.sort(key=lambda e: abs((e["event_time"] - now_utc).total_seconds()))
+    return [_slim_event(e, now_utc) for e in active]
+
+
+def upcoming_relevant_for(
+    markets:      list[str],
+    now_utc:      datetime,
+    impact_min:   int = 3,
+    pre_minutes:  int = 15,
+    post_minutes: int = 15,
+    horizon_min:  int = 180,
+    events:       list[dict] | None = None,
+) -> list[dict]:
+    """
+    Evenimentele pe care sesiunea trebuie sa le CUNOASCA acum ca sa poata activa
+    protectia EXACT la intrarea in fereastra, chiar daca guard-ul nu mai poll-eaza
+    curand: fereastra activa ACUM SAU care incepe in urmatoarele `horizon_min` min
+    (>> intervalul de poll). Guard-ul le scrie in fisier; sesiunea re-evalueaza.
+    """
+    currencies = market_currencies(markets)
+    if not currencies:
+        return []
+    src = events if events is not None else _snapshot()
+    horizon_end = now_utc + timedelta(minutes=horizon_min)
+    out: list[dict] = []
+    for ev in src:
+        if not _relevant(ev, currencies, impact_min):
+            continue
+        start, end = event_window(ev["event_time"], pre_minutes, post_minutes)
+        # relevant daca fereastra nu s-a incheiat inca SI incepe pana la orizont
+        if end >= now_utc and start <= horizon_end:
+            out.append(_slim_event(ev, now_utc))
+    out.sort(key=lambda e: e["event_time"])
+    return out
+
 
 def active_events_for(
     markets:      list[str],
     impact_min:   int = 3,
     pre_minutes:  int = 15,
     post_minutes: int = 15,
+    now_utc:      datetime | None = None,
 ) -> list[dict]:
     """
-    Returneaza evenimentele active din fereastra de protectie pentru pietele date.
-    Lista goala = nicio protectie necesara acum.
+    Compat: evenimentele active ACUM pentru pietele date (fereastra contine now).
+    Reimplementat peste `events_active_at` (aceeasi logica pura).
     """
-    currencies: set[str] = set()
-    for m in markets:
-        currencies.update(SYMBOL_CURRENCIES.get(m.upper(), []))
+    currencies = market_currencies(markets)
     if not currencies:
         return []
-
-    now_utc      = datetime.utcnow()
-    window_start = now_utc - timedelta(minutes=post_minutes)
-    window_end   = now_utc + timedelta(minutes=pre_minutes)
-
-    active: list[dict] = []
-    for ev in _snapshot():
-        if IMPACT_RANK.get(ev.get("impact", "Low"), 0) < impact_min:
-            continue
-        if ev.get("currency") not in currencies:
-            continue
-        ev_time = ev.get("event_time")
-        if not isinstance(ev_time, datetime):
-            continue
-        if window_start <= ev_time <= window_end:
-            mins_to = round((ev_time - now_utc).total_seconds() / 60)
-            active.append({
-                "title":      ev["title"],
-                "currency":   ev["currency"],
-                "impact":     ev["impact"],
-                "event_time": ev_time.strftime("%Y-%m-%dT%H:%M:%S"),
-                "minutes_to": mins_to,
-                "actual":     ev.get("actual",   ""),
-                "forecast":   ev.get("forecast", ""),
-                "sentiment":  ev.get("sentiment", 0),
-            })
-
-    return active
+    return events_active_at(_snapshot(), now_utc or datetime.utcnow(),
+                            currencies, impact_min, pre_minutes, post_minutes)
 
 
 # ─── news_auto_paused.json ────────────────────────────────────────────────────
@@ -528,6 +617,7 @@ def run_guard(session_configs: list[dict], send_telegram=None) -> None:
             state   = _load_state()
             changed = False
 
+            now_utc = datetime.utcnow()
             for scfg in session_configs:
                 sk = scfg.get("session_key", "")
                 if not sk:
@@ -539,50 +629,58 @@ def run_guard(session_configs: list[dict], send_telegram=None) -> None:
                         changed = True
                     continue
 
-                active = active_events_for(
-                    markets      = scfg.get("markets", []),
-                    impact_min   = scfg.get("news_impact_level", 3),
-                    pre_minutes  = scfg.get("news_pre_minutes", 15),
-                    post_minutes = scfg.get("news_post_minutes", 15),
-                )
+                markets = scfg.get("markets", [])
+                impact  = scfg.get("news_impact_level", 3)
+                pre     = scfg.get("news_pre_minutes", 15)
+                post    = scfg.get("news_post_minutes", 15)
 
-                if active:
-                    was_paused = sk in state
-                    state[sk]  = {
-                        "paused_at": datetime.utcnow().isoformat(),
-                        "events":    active,
+                # Scriem TOATE evenimentele relevante apropiate (active acum SAU care
+                # incep in orizontul urmator) + config. Sesiunea re-evalueaza ferestrele
+                # fata de timpul curent → activare deterministica intre poll-uri.
+                upcoming = upcoming_relevant_for(markets, now_utc, impact, pre, post,
+                                                 horizon_min=NEWS_HORIZON_MIN)
+                active   = events_active_at(_snapshot(), now_utc, market_currencies(markets),
+                                            impact, pre, post)
+
+                if upcoming:
+                    state[sk] = {
+                        "updated_at": now_utc.isoformat(),
+                        "pre": pre, "post": post, "impact": impact,
+                        "markets": markets,
+                        "events": upcoming,
                     }
                     changed = True
+                elif sk in state:
+                    del state[sk]
+                    changed = True
 
-                    if not was_paused and send_telegram:
-                        top    = active[0]
+                # Notificare Telegram — pe tranzitia in fereastra activa (best-effort;
+                # activarea reala o face sesiunea la granularitate fina).
+                if active and send_telegram:
+                    top  = active[0]
+                    nkey = f"{top['title'][:30]}:{top['event_time'][:13]}"
+                    if _notified.get(sk) != nkey:
+                        _notified[sk] = nkey
                         mins   = top["minutes_to"]
                         timing = (f"in {mins} min" if mins >= 0 else f"acum {abs(mins)} min in urma")
-                        nkey   = f"{top['title'][:30]}:{top['event_time'][:13]}"
-                        if _notified.get(sk) != nkey:
-                            _notified[sk] = nkey
-                            try:
-                                send_telegram(
-                                    f"⚠️ <b>Protectie stiri — {sk.upper()} suspendat</b>\n"
-                                    f"Eveniment: <b>{top['title']}</b>\n"
-                                    f"Valuta: {top['currency']} | Impact: {top['impact']}\n"
-                                    f"Programat: {timing}\n"
-                                    f"Semnale noi suspendate temporar."
-                                )
-                            except Exception:
-                                pass
-                else:
-                    if sk in state:
-                        del state[sk]
-                        changed = True
-                        if _notified.pop(sk, None) and send_telegram:
-                            try:
-                                send_telegram(
-                                    f"✅ <b>Protectie stiri — {sk.upper()} reluata</b>\n"
-                                    f"Fereastra evenimentului a trecut."
-                                )
-                            except Exception:
-                                pass
+                        try:
+                            send_telegram(
+                                f"⚠️ <b>Protectie stiri — {sk.upper()} suspendat</b>\n"
+                                f"Eveniment: <b>{top['title']}</b>\n"
+                                f"Valuta: {top['currency']} | Impact: {top['impact']}\n"
+                                f"Programat: {timing}\n"
+                                f"Semnale noi suspendate temporar."
+                            )
+                        except Exception:
+                            pass
+                elif not active and _notified.pop(sk, None) and send_telegram:
+                    try:
+                        send_telegram(
+                            f"✅ <b>Protectie stiri — {sk.upper()} reluata</b>\n"
+                            f"Fereastra evenimentului a trecut."
+                        )
+                    except Exception:
+                        pass
 
             if changed:
                 _save_state(state)
