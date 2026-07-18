@@ -801,6 +801,21 @@ export const useAiTestProvider = () =>
       apiFetch("/ai/providers/test", { method: "POST", body: { name } }),
   });
 
+// Testeaza TOATE sursele in paralel (butonul "Testeaza sursele").
+export interface AiTestAllResult {
+  results: Record<string, AiProviderTestResult>;
+  healthy: string[];
+  failed: string[];
+  n_healthy: number;
+  n_total: number;
+  all_down: boolean;
+  roles_at_risk: string[];
+}
+export const useAiTestAllProviders = () =>
+  useMutation<AiTestAllResult, Error, void>({
+    mutationFn: () => apiFetch("/ai/providers/test-all", { method: "POST" }),
+  });
+
 // Descoperire LIVE de modele la o sursa (dropdown dinamic in AiProvidersCard).
 // Sursa existenta: {name}. Sursa noua (formularul de adaugare): {type, base_url?, key?}.
 export const useAiProviderModels = () =>

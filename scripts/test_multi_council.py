@@ -352,6 +352,13 @@ CFG = load_config()
 # gemini) ar ruta rolurile fake-registry-ului spre surse pe care nu le cunoaste →
 # WAIT fals. Testele de aici verifica MECANICA orchestratorului, nu rutarea userului.
 CFG["role_assignments"] = {}
+# Izolare de rolurile OPTIONALE ale userului (config-ul live poate avea quant/devil
+# activate) — altfel media consiliului include roluri suplimentare si testele cu
+# valori asteptate hardcodate (media 65 pe 3 roluri) devin fragile.
+CFG["role_quant_enabled"] = False
+CFG["role_devils_advocate_enabled"] = False
+# Prag fix pentru testele de gate (config-ul live al userului poate fi 65/68 etc.).
+CFG["consensus_threshold"] = 70
 SNAP = {"symbol": "EURUSD", "price": 1.0855, "atr": 0.0009}
 DESK = {"open_positions": 0, "daily_r": 0.0, "open_pos_desc": "none", "trigger": "test"}
 

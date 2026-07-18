@@ -202,6 +202,41 @@ def _update_outcomes(ledger: Ledger, cfg: dict) -> None:
                            f"{r_str} {pnl_str}\n(decizia #{dec['id']})")
 
 
+# Stare monitor surse AI (o singura notificare per tranzitie jos/revenit).
+_all_sources_down = [False]
+
+
+def _monitor_sources_health(registry) -> None:
+    """
+    Alerta Telegram cand TOATE sursele AI devin indisponibile (quota/picate/pauza),
+    inclusiv Ollama. Fara nicio sursa, consiliul da WAIT la tot — operatorul trebuie
+    instiintat imediat. Notifica o singura data per tranzitie si la revenire.
+    """
+    try:
+        usable = registry.usable_sources()
+    except Exception:
+        return
+    if not usable and not _all_sources_down[0]:
+        _all_sources_down[0] = True
+        snap = {}
+        try:
+            snap = registry.snapshot()
+        except Exception:
+            pass
+        detail = ", ".join(f"{n}:{h.get('status','?')}" for n, h in snap.items()) or "?"
+        log.error("TOATE sursele AI indisponibile — deciziile devin WAIT. [%s]", detail)
+        _send_telegram(
+            "🛑 <b>AI Engine — TOATE sursele AI indisponibile!</b>\n"
+            f"Nicio sursă sănătoasă (quota epuizată / picate / Ollama defect): {detail}\n"
+            "Consiliul dă WAIT la tot până revine cel puțin o sursă. "
+            "Verifică din tab-ul AI Engine → «Testează sursele».")
+    elif usable and _all_sources_down[0]:
+        _all_sources_down[0] = False
+        _send_telegram(
+            "✅ <b>AI Engine — sursele AI și-au revenit</b>\n"
+            f"Disponibile acum: {', '.join(usable)}. Deciziile se reiau normal.")
+
+
 def _weekend_guard(symbol: str, cfg: dict) -> bool:
     """
     Automatizarea de weekend pentru pietele FX/indici (cripto exceptat).
@@ -479,6 +514,12 @@ def run() -> None:
             except Exception as e:
                 log.error("config reload: %s", e)
                 _record_error("config_reload", str(e))
+
+            # Monitor sanatate surse AI: alerta imediata cand TOATE sursele sunt
+            # indisponibile (quota epuizata / picate) — inclusiv safety-net-ul Ollama.
+            # Fara nicio sursa, toate deciziile devin WAIT (fail-safe) → operatorul
+            # trebuie instiintat. O singura notificare per tranzitie (jos/revenit).
+            _monitor_sources_health(registry)
 
             try:
                 _update_outcomes(ledger, cfg)

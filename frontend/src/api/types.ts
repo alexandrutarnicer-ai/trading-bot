@@ -237,6 +237,9 @@ export interface Profile {
   start_balance: number;
   capital_protection_enabled?: boolean;
   capital_protection_threshold_pct?: number;
+  // Capital bot aliniat cu motorul AI: sync MT5 (default) sau capital fix alocat
+  capital_sync_mt5?: boolean;
+  capital_usd?: number;
 }
 
 export interface ProfileSummary {
@@ -736,10 +739,14 @@ export interface AiLotInfo {
   ok: boolean;
   detail?: string;
   symbol?: string;
-  lots?: number;
+  lots?: number;                           // volumul introdus de utilizator
+  effective_lots?: number;                 // volumul REAL plasat (snap la broker)
+  snapped?: boolean;                       // true daca eff != lots (a fost ajustat)
+  below_min?: boolean;                     // introdus sub volume_min
+  above_max?: boolean;                     // introdus peste volume_max
   price?: number;
-  margin_usd?: number | null;              // marja ceruta de broker pentru volum
-  value_per_price_unit_usd?: number | null; // USD per 1.0 unitate de pret la volumul dat
+  margin_usd?: number | null;              // marja pentru volumul EFECTIV
+  value_per_price_unit_usd?: number | null; // USD per 1.0 unitate de pret la volumul efectiv
   volume_min?: number;
   volume_step?: number;
   volume_max?: number;

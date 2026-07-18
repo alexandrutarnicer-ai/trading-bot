@@ -149,6 +149,13 @@ def update_profile(profile_id: str, body: dict):
     existing["start_balance"] = body.get("start_balance", existing.get("start_balance", 1000))
     existing["capital_protection_enabled"]       = body.get("capital_protection_enabled", existing.get("capital_protection_enabled", False))
     existing["capital_protection_threshold_pct"] = body.get("capital_protection_threshold_pct", existing.get("capital_protection_threshold_pct", 70.0))
+    # Capital bot aliniat cu motorul AI: sync MT5 (default) sau capital fix alocat.
+    existing["capital_sync_mt5"] = bool(body.get("capital_sync_mt5", existing.get("capital_sync_mt5", True)))
+    try:
+        _cap = float(body.get("capital_usd", existing.get("capital_usd", 1000)))
+        existing["capital_usd"] = max(10.0, min(1_000_000.0, _cap))
+    except (TypeError, ValueError):
+        existing["capital_usd"] = existing.get("capital_usd", 1000)
     _log_profile_change(profile_id, existing["name"], old_copy, existing)
     _save_profile(existing)
     return existing

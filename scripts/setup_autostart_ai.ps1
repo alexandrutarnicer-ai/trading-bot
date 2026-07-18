@@ -104,38 +104,52 @@ Write-Host ""
 $tgLine1 = 'for /f "delims=" %%i in (''powershell -NoProfile -Command "[Environment]::GetEnvironmentVariable(\"TELEGRAM_TOKEN\",\"User\")"'') do set "TELEGRAM_TOKEN=%%i"'
 $tgLine2 = 'for /f "delims=" %%i in (''powershell -NoProfile -Command "[Environment]::GetEnvironmentVariable(\"TELEGRAM_CHAT_ID\",\"User\")"'') do set "TELEGRAM_CHAT_ID=%%i"'
 
+# Redesign 2026-07-18 (bat-ul vechi a inghetat la boot fara nicio urma — 5h fara
+# motor, task blocat "Running"): (1) LOG la fiecare pas in data\ai\autostart.log
+# — orice viitor blocaj devine vizibil; (2) asteptarile folosesc ping -n, nu
+# timeout (timeout cere handle de consola interactiv si e fragil sub Task
+# Scheduler); (3) FARA pause si FARA rulare in foreground — motorul si watchdog-ul
+# se lanseaza DETASAT si bat-ul IESE (task-ul se incheie curat; supravegherea e
+# treaba watchdog-ului, care NU contracareaza Stop-ul din UI — acela opreste
+# intai watchdog-ul); (4) iesirea motorului e capturata in log (crash-urile
+# dinainte de logging nu mai sunt invizibile).
 $batLines = @(
     '@echo off',
     'chcp 65001 >nul',
     'title AI Engine -- Autostart',
-    'echo ==================================================',
-    'echo  AI Engine -- pornire automata',
-    'echo ==================================================',
+    "set `"AILOG=$BotDir\data\ai\autostart.log`"",
+    'echo [%date% %time%] ===== autostart AI pornit ===== >> "%AILOG%"',
     '',
     'rem Incarca variabilele Telegram din registry (User scope)',
     $tgLine1,
     $tgLine2,
+    'echo [%date% %time%] telegram env incarcat >> "%AILOG%"',
     '',
     'rem 1) Porneste Ollama daca nu ruleaza deja (idempotent)',
     'tasklist /FI "IMAGENAME eq ollama.exe" 2>nul | find /I "ollama.exe" >nul',
     'if errorlevel 1 (',
-    '    echo Pornesc Ollama...',
+    '    echo [%date% %time%] pornesc Ollama >> "%AILOG%"',
     "    start `"`" /B `"$ollamaExe`" serve",
-    '    timeout /t 10 /nobreak >nul',
+    '    ping -n 11 127.0.0.1 >nul',
     ')',
+    'echo [%date% %time%] ollama ok >> "%AILOG%"',
     '',
-    'rem 2) Asteapta ca MT5 sa fie deschis si conectat (dupa bot cu ~30s)',
-    'echo  Astept 120 secunde pentru conectare MT5...',
-    'timeout /t 120 /nobreak',
+    'rem 2) Asteapta ~120s ca MT5 sa fie deschis si conectat (dupa bot cu ~30s)',
+    'echo [%date% %time%] astept 120s pentru MT5 >> "%AILOG%"',
+    'ping -n 121 127.0.0.1 >nul',
     '',
     "cd /d `"$BotDir`"",
     '',
-    'rem 3) Watchdog (supervizor anti-crash, fereastra minimizata)',
+    'rem 3) Watchdog DETASAT (supervizor anti-crash; reporneste motorul daca moare,',
+    'rem    max 5 restarturi / verificare la 5 min — acopera si MT5 conectat lent)',
+    'echo [%date% %time%] pornesc watchdog >> "%AILOG%"',
     "start `"AI Engine Watchdog`" /MIN `"$PythonExe`" -m ai_engine.watchdog",
     '',
-    'rem 4) Motorul AI (foreground, log vizibil in aceasta fereastra)',
-    "`"$PythonExe`" -m ai_engine",
-    'pause'
+    'rem 4) Motorul AI — DETASAT, cu iesirea capturata in log (crash pre-logging vizibil)',
+    'echo [%date% %time%] pornesc motorul AI >> "%AILOG%"',
+    "start `"AI Engine`" /MIN cmd /c `"`"$PythonExe`" -m ai_engine >> `"%AILOG%`" 2>&1`"",
+    'echo [%date% %time%] autostart AI incheiat (motor + watchdog lansate detasat) >> "%AILOG%"',
+    'exit /b 0'
 )
 [System.IO.File]::WriteAllText($BatPath, ($batLines -join "`r`n") + "`r`n", [System.Text.Encoding]::UTF8)
 Write-Host "[OK] Creat: ai_engine\start_ai_engine_auto.bat" -ForegroundColor Green

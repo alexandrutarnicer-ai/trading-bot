@@ -684,6 +684,30 @@ def _ai_filter_check(sig: dict, session_cfg: dict, src, log) -> dict | None:
         return dict(_AI_UNAVAILABLE)
 
 
+def _bot_capital_base(session_cfg: dict, equity: float | None) -> float:
+    """
+    Baza de capital a BOTULUI pentru sizing, aliniata cu motorul AI
+    (executor.capital_base):
+      - capital_sync_mt5 True (DEFAULT): equity-ul REAL MT5 — comportament identic
+        cu cel de dinainte (sizing dinamic pe equity × account_fraction).
+      - capital_sync_mt5 False: capital FIX alocat botului (capital_usd), PLAFONAT
+        la equity cand acesta e disponibil (nu poti aloca mai mult decat exista;
+        util cand acelasi cont ruleaza si motorul AI / trade-uri manuale).
+    Peste aceasta baza se aplica in continuare account_fraction per sesiune.
+    `equity` None/0 (MT5 indisponibil) → capitalul fix ca atare / 0 la sync.
+    Campurile lipsesc din profil → sync ON (backward-compat total).
+    """
+    sync = session_cfg.get("capital_sync_mt5", True)
+    if sync:
+        return float(equity) if equity else 0.0
+    try:
+        cap = float(session_cfg.get("capital_usd") or 0.0)
+    except (TypeError, ValueError):
+        cap = 0.0
+    eq = float(equity) if equity else 0.0
+    return min(cap, eq) if eq > 0 else cap
+
+
 def _ai_strict_blocked(session_cfg: dict, verdict: dict | None) -> bool:
     """
     True cand modul STRICT (fail-closed, per sesiune) blocheaza ordinul: filtrul
@@ -754,6 +778,39 @@ def _sleep_to_next_bar(bar_minutes: int, log):
     if wait > 0:
         log.info(f"  Urmatoarea bara {bar_minutes}min @ {nxt.strftime('%H:%M:%S')} — {wait:.0f}s")
         time.sleep(wait)
+
+
+# Cadenta de verificare a protectiei la stiri INTRE bare. Semnalele se genereaza
+# doar la inchiderea barei (corect — se formeaza pe bare inchise), dar protectia
+# la stiri trebuie sa reactioneze la timp indiferent de timeframe (o sesiune H1
+# altfel ar verifica stirile o data/ora si ar rata complet o fereastra de 30 min).
+NEWS_CHECK_SECONDS = 30
+
+
+def _sleep_watching_news(bar_minutes: int, news_tick, log) -> None:
+    """
+    Doarme pana la urmatoarea bara, dar se trezeste la fiecare NEWS_CHECK_SECONDS
+    ca sa ruleze `news_tick()` (protectie stiri sub-bara: activare deterministica +
+    inchidere pe tranzitie + trailing). NU genereaza semnale — acelea raman aliniate
+    la bara in bucla principala. `news_tick` e best-effort: exceptiile nu opresc somnul.
+    """
+    nxt = _next_bar_close(bar_minutes)
+    remaining = (nxt - now_local()).total_seconds()
+    if remaining <= 0:
+        return
+    log.info(f"  Urmatoarea bara {bar_minutes}min @ {nxt.strftime('%H:%M:%S')} — "
+             f"{remaining:.0f}s (watch stiri la {NEWS_CHECK_SECONDS}s)")
+    while True:
+        remaining = (nxt - now_local()).total_seconds()
+        if remaining <= NEWS_CHECK_SECONDS:
+            if remaining > 0:
+                time.sleep(remaining)
+            return
+        time.sleep(NEWS_CHECK_SECONDS)
+        try:
+            news_tick()
+        except Exception as e:
+            log.warning(f"  [STIRI-WATCH] tick esuat: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -2328,18 +2385,43 @@ def _is_paused(session_key: str) -> bool:
 
 def _is_news_paused(session_key: str) -> tuple[bool, list]:
     """
-    Verifica daca sesiunea e pe pauza automata din protectie la stiri.
-    Returneaza (paused: bool, events: list) din data/news_auto_paused.json.
+    Protectie la stiri, evaluata DETERMINISTIC la timpul CURENT (redesign 2026-07-17).
+
+    Guard-ul (news_guard) scrie in data/news_auto_paused.json evenimentele relevante
+    APROPIATE + config (pre/post/impact/markets). Aici RE-EVALUAM ferestrele fata de
+    `datetime.utcnow()` la FIECARE apel — deci activarea nu mai depinde de cand a
+    poll-at ultima data guard-ul, ci de timpul real. O fereastra `pre` mica (chiar 1
+    min) e onorata exact, iar sesiunile H1 (care altfel ar verifica o data/ora) pot
+    fi apelate sub-bara (vezi _sleep_watching_news) fara sa rateze fereastra.
+
+    Returneaza (paused, active_events). Compat: fisier in formatul vechi (fara `pre`)
+    → prezenta = pauza (comportament de dinainte).
     """
     try:
-        if os.path.exists(_NEWS_PAUSED_FILE):
-            with open(_NEWS_PAUSED_FILE, encoding="utf-8") as f:
-                data = json.load(f)
-            if session_key in data:
-                return True, data[session_key].get("events", [])
+        if not os.path.exists(_NEWS_PAUSED_FILE):
+            return False, []
+        with open(_NEWS_PAUSED_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+        entry = data.get(session_key)
+        if not entry:
+            return False, []
+        events = entry.get("events", []) if isinstance(entry, dict) else []
+        # Format NOU (redesign): re-evalueaza ferestrele fata de timpul curent.
+        if isinstance(entry, dict) and "pre" in entry:
+            from live.news_guard import events_active_at, market_currencies, _to_utc
+            parsed = []
+            for ev in events:
+                et = _to_utc(str(ev.get("event_time", "")))
+                if et is not None:
+                    parsed.append({**ev, "event_time": et})
+            active = events_active_at(
+                parsed, datetime.utcnow(), market_currencies(entry.get("markets", [])),
+                int(entry.get("impact", 3)), int(entry.get("pre", 15)), int(entry.get("post", 15)))
+            return bool(active), active
+        # Format VECHI: prezenta in fisier = pauza (fallback backward-compat).
+        return bool(events), events
     except Exception:
-        pass
-    return False, []
+        return False, []
 
 
 # Cache mtime pentru re-citirea hot a lui execute_trades din runtime profile —
@@ -2659,7 +2741,7 @@ def _smart_news_place_order(
     if frac and _mt5_exec is not None:
         _ai = _mt5_exec.account_info()
         if _ai:
-            capital = float(_ai.equity) * float(frac)
+            capital = _bot_capital_base(session_cfg, _ai.equity) * float(frac)
     lots, risk_usd = _calc_lots(symbol, entry, sl, capital, risk_pct)
 
     sn_id = f"SN{state.get('sn_counter', 0) + 1}"
@@ -3029,6 +3111,18 @@ def _apply_profile_overrides(session_cfg: dict, cfg: dict, log) -> None:
         log.info(f"  [PROFIL] Sesiunea '{key}' nu e in profil — parametri hardcodati.")
         return
 
+    # --- capital la nivel de PROFIL (aliniat cu motorul AI) ---
+    # sync ON (default / camp lipsa) = sizing pe equity real MT5 (comportament
+    # identic cu inainte); sync OFF = capital fix alocat botului (plafonat la equity).
+    # Se aplica TUTUROR sesiunilor; peste el ramane account_fraction per sesiune.
+    if "capital_sync_mt5" in profile:
+        session_cfg["capital_sync_mt5"] = bool(profile["capital_sync_mt5"])
+    if "capital_usd" in profile:
+        try:
+            session_cfg["capital_usd"] = max(10.0, min(1_000_000.0, float(profile["capital_usd"])))
+        except (TypeError, ValueError):
+            pass
+
     # --- parametri sesiune (session_cfg) ---
     for field in ("pullback_enabled", "pullback_window", "session_start", "session_end",
                   "expire_bars", "execute_trades", "account_fraction", "risk_pct",
@@ -3378,6 +3472,50 @@ def run_generator(session_cfg: dict):
             f"<i>{now_local().strftime('%Y-%m-%d %H:%M:%S')}</i>"
         )
 
+    # ── Tick de protectie stiri (rulat la bara SI sub-bara via _sleep_watching_news) ──
+    # Re-evalueaza pauza la timpul CURENT, inchide/deschide pe tranzitie, ruleaza
+    # trailing-ul ordinelor de stire. Idempotent: tranzitia se trateaza o singura
+    # data (flag-ul _was_news_paused e partajat). NU genereaza semnale noi.
+    #
+    # GATING (cerinta explicita): Modul Inteligent (smart_news) functioneaza DOAR
+    # cu protectia la stiri ACTIVATA — fara news_protection_enabled, smart-ul e
+    # fortat OFF indiferent de toggle (defense-in-depth; oricum guard-ul nu scrie
+    # evenimente pentru sesiuni fara protectie, deci news_paused nu poate deveni
+    # True — dar gate-ul face regula explicita si imuna la stari vechi de fisier).
+    def _news_watch_tick() -> tuple[bool, list]:
+        nonlocal _was_news_paused
+        if not session_cfg.get("news_protection_enabled", False):
+            # Protectie dezactivata: zero munca de stiri. Trailing-ul ordinelor de
+            # stire ramase deschise (plasate cand protectia era activa) continua —
+            # au SL/TP in piata, dar gestionarea lor nu trebuie abandonata.
+            _was_news_paused = False
+            if state.get("smart_news_tickets"):
+                _smart_news_trailing_check(state=state,
+                                           session_id=session_cfg.get("session_id", ""), log=log)
+            return False, []
+        sk = session_cfg.get("session_key", "")
+        np_, nev_ = _is_news_paused(sk)
+        if np_ and not _was_news_paused:
+            log.info("  [STIRI] Tranzitie -> pauza: inchid ordine/pozitii active.")
+            _news_close_check(
+                state=state, outcomes_file=outcomes_file, log=log,
+                session_id=session_cfg.get("session_id", ""),
+                execute_trades=session_cfg.get("execute_trades", False),
+                # Smart DOAR cu protectia activata (gate-ul de mai sus garanteaza asta aici)
+                smart_news_enabled=session_cfg.get("smart_news_enabled", False),
+                news_events=nev_, session_cfg=session_cfg,
+            )
+            try:
+                with open(state_file, "wb") as f:
+                    pickle.dump(state, f)
+            except Exception:
+                pass
+        _was_news_paused = np_
+        if state.get("smart_news_tickets"):
+            _smart_news_trailing_check(state=state,
+                                       session_id=session_cfg.get("session_id", ""), log=log)
+        return np_, nev_
+
     try:
       while True:
         try:
@@ -3387,7 +3525,8 @@ def run_generator(session_cfg: dict):
 
             session_key    = session_cfg.get("session_key", "")
             manual_paused  = _is_paused(session_key)
-            news_paused, news_events = _is_news_paused(session_key)
+            # Protectie stiri: re-evaluata la timpul curent + tranzitie tratata aici.
+            news_paused, news_events = _news_watch_tick()
             session_paused = manual_paused or news_paused
 
             # Hot-reload execute_trades: un toggle observatie⇄live din UI se aplica
@@ -3413,31 +3552,8 @@ def run_generator(session_cfg: dict):
                 log.info(f"  [STIRI] Pauza automata — {top.get('title','?')} "
                          f"({top.get('currency','?')}, {top.get('impact','?')}, "
                          f"{top.get('minutes_to','?')} min)")
-
-            # La prima iteratie de pauza de stiri, inchide imediat ordine/pozitii active
-            if news_paused and not _was_news_paused:
-                log.info("  [STIRI] Tranzitie → pauza: inchid ordine/pozitii active.")
-                _news_close_check(
-                    state=state,
-                    outcomes_file=outcomes_file,
-                    log=log,
-                    session_id=session_cfg.get("session_id", ""),
-                    execute_trades=session_cfg.get("execute_trades", False),
-                    smart_news_enabled=session_cfg.get("smart_news_enabled", False),
-                    news_events=news_events,
-                    session_cfg=session_cfg,
-                )
-                with open(state_file, "wb") as f:
-                    pickle.dump(state, f)
-            _was_news_paused = news_paused
-
-            # Smart news trailing SL check (la fiecare iteratie)
-            if state.get("smart_news_tickets"):
-                _smart_news_trailing_check(
-                    state=state,
-                    session_id=session_cfg.get("session_id", ""),
-                    log=log,
-                )
+            # (tranzitia de pauza + trailing-ul sunt tratate in _news_watch_tick,
+            #  apelat mai sus la bara SI sub-bara in _sleep_watching_news)
 
             # Recuperare runtime pentru semnalele pending fara ticket MT5
             _recover_lost_outcomes(state, session_cfg, outcomes_file, log)
@@ -3611,15 +3727,17 @@ def run_generator(session_cfg: dict):
 
                     # Executie demo/live
                     if session_cfg.get("execute_trades", False):
-                        # Sizing dinamic: daca e setat account_fraction, foloseste
-                        # equity-ul real din MT5 × fractie, altfel session_capital fix.
+                        # Sizing dinamic: baza de capital (equity sync sau capital fix
+                        # alocat, aliniat cu motorul AI) × account_fraction per sesiune.
                         frac = session_cfg.get("account_fraction")
                         if frac and _mt5_exec is not None:
                             _ai = _mt5_exec.account_info()
-                            capital = (_ai.equity * frac) if _ai else session_cfg.get("session_capital", 1000)
+                            capital = (_bot_capital_base(session_cfg, _ai.equity) * frac
+                                       if _ai else session_cfg.get("session_capital", 1000))
                             log.debug(
-                                "sizing dinamic: equity=%.2f frac=%.3f capital=%.2f",
+                                "sizing dinamic: equity=%.2f frac=%.3f capital=%.2f (sync=%s)",
                                 _ai.equity if _ai else 0, frac, capital,
+                                session_cfg.get("capital_sync_mt5", True),
                             )
                         else:
                             capital = session_cfg.get("session_capital", 1000)
@@ -3680,7 +3798,7 @@ def run_generator(session_cfg: dict):
                     if frac and _mt5_exec is not None:
                         _ai = _mt5_exec.account_info()
                         if _ai:
-                            capital = _ai.equity * frac
+                            capital = _bot_capital_base(session_cfg, _ai.equity) * frac
 
                     for _sid, _p in list(state["pending"].get(symbol, {}).items()):
                         if _sid in state.get("mt5_tickets", {}):
@@ -3781,7 +3899,15 @@ def run_generator(session_cfg: dict):
             # Verifica sanatatea conexiunii MT5 si notifica la probleme
             _check_mt5_health(log, session_key, _expected_mt5_login)
 
-            _sleep_to_next_bar(bar_min, log)
+            # Somn pana la urmatoarea bara. Watch-ul sub-bara (30s) ruleaza DOAR cand
+            # are ceva de pazit: protectia la stiri e activata pe sesiune SAU exista
+            # ordine de stire deschise de gestionat (trailing). Altfel — somn simplu,
+            # zero treziri, zero cost (comportamentul de dinainte de redesign).
+            if (session_cfg.get("news_protection_enabled", False)
+                    or state.get("smart_news_tickets")):
+                _sleep_watching_news(bar_min, _news_watch_tick, log)
+            else:
+                _sleep_to_next_bar(bar_min, log)
 
         except KeyboardInterrupt:
             _stop_reason[0] = "manual"

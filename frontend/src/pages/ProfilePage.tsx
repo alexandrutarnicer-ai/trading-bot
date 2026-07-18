@@ -600,6 +600,33 @@ export function ProfilePage({
           <p className="text-[10px] text-slate-600 mt-2">
             Folosit pentru: P&L Real MT5 în Dashboard, prag Protecție Capital, capital implicit în Backtest Panel.
           </p>
+
+          {/* Baza de sizing bot — aliniat cu motorul AI (sync MT5 / capital fix) */}
+          <div className="mt-3 pt-3 border-t border-surface-border/40 space-y-2">
+            <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+              <input type="checkbox" className="accent-profit"
+                checked={draft.capital_sync_mt5 ?? true}
+                onChange={(e) => { setDraft({ ...draft, capital_sync_mt5: e.target.checked }); setDirty(true); }} />
+              Sync capital bot cu MT5 (equity real)
+              <InfoTooltip text={
+                "ON (default): sizing-ul folosește equity-ul real MT5 × alocarea per sesiune — comportamentul de până acum. " +
+                "OFF: botul primește un capital FIX (câmpul de mai jos), plafonat la equity — util când același cont rulează și motorul AI sau trade-uri manuale, ca botul să nu-și mărească pozițiile pe capitalul celorlalți. Se aplică la următoarea pornire a botului."
+              } />
+            </label>
+            {!(draft.capital_sync_mt5 ?? true) && (
+              <div className="flex items-center gap-2 text-xs">
+                <span className="text-slate-400">Capital alocat botului:</span>
+                <span className="text-slate-500">$</span>
+                <input type="number" min={10} max={1000000} step={10}
+                  value={draft.capital_usd ?? draft.start_balance}
+                  onChange={(e) => { setDraft({ ...draft, capital_usd: Math.max(10, Number(e.target.value)) }); setDirty(true); }}
+                  className="w-28 bg-surface border border-surface-border rounded px-2 py-1 text-sm text-white text-right focus:outline-none focus:border-blue-500" />
+                {mt5?.connected && mt5?.equity != null && (draft.capital_usd ?? 0) > mt5.equity && (
+                  <span className="text-[10px] text-amber-400">⚠ &gt; equity ({mt5.equity.toFixed(0)}$) — se folosește equity</span>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
