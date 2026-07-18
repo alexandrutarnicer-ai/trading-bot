@@ -73,13 +73,13 @@
     "hug1": {
       "type": "openai_compatible",
       "model": "zai-org/GLM-5.2:novita",
-      "enabled": true,
+      "enabled": false,
       "base_url": "https://router.huggingface.co/v1"
     },
     "hug2quen3": {
       "type": "openai_compatible",
       "model": "Qwen/Qwen3.6-27B:featherless-ai",
-      "enabled": true,
+      "enabled": false,
       "base_url": "https://router.huggingface.co/v1"
     },
     "mistral": {
@@ -94,11 +94,11 @@
     "risk": "groq",
     "technical": "cerebras",
     "head_trader": "gemini",
-    "devils_advocate": "hug1",
+    "devils_advocate": "openroute",
     "quant": "mistral"
   },
   "role_quant_enabled": true,
-  "consensus_threshold": 65,
+  "consensus_threshold": 67,
   "role_devils_advocate_enabled": false,
   "market_overrides": {
     "GBPUSD": {
