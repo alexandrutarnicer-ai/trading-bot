@@ -87,14 +87,20 @@
       "model": "mistral-small-latest",
       "enabled": true,
       "base_url": "https://api.mistral.ai/v1"
+    },
+    "nvidia": {
+      "type": "openai_compatible",
+      "model": "z-ai/glm-5.2",
+      "enabled": true,
+      "base_url": "https://integrate.api.nvidia.com/v1"
     }
   },
   "role_assignments": {
     "macro": "cerebras",
     "risk": "groq",
     "technical": "cerebras",
-    "head_trader": "gemini",
-    "devils_advocate": "hug1",
+    "head_trader": "nvidia",
+    "devils_advocate": "openroute",
     "quant": "mistral"
   },
   "role_quant_enabled": true,
