@@ -1,0 +1,27 @@
+{
+  "_comentariu": "Copiaza acest fisier la data/telegram_bridge.json si editeaza. Token-ul si chat_id-ul NU stau aici — se citesc din data/telegram_config.json. Whitelist gol = doar chat_id-ul din telegram_config.json. Toate campurile sunt optionale; ce lipseste ia valoarea default din telegram_bridge/config.py.",
+
+  "enabled": true,
+  "allowed_chat_ids": [],
+
+  "poll_timeout_s": 50,
+  "ignore_messages_older_than_s": 180,
+
+  "level_ai_enabled": true,
+  "level_claude_enabled": true,
+
+  "claude_binary": "",
+  "claude_timeout_s": 600,
+
+  "allow_writes": false,
+  "confirm_timeout_s": 300,
+
+  "fallback_claude_api": true,
+  "fallback_ai_sources": true,
+  "announce_fallback": true,
+
+  "copilot_enabled": false,
+
+  "single_task": true,
+  "api_base": "http://localhost:8000/api"
+}
