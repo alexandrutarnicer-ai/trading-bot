@@ -144,6 +144,13 @@ check("directie: EUR+1 & USD-1 → EURUSD LONG", ng.news_direction_for_symbol("E
 
 from live import signal_generator as sg
 
+# CRITIC: testele plaseaza ordine FALSE prin functiile reale, care trimit notificari
+# REALE (_send_telegram → Telegram + Notificari UI). Fara mock, fiecare rulare a
+# suitei trimitea utilizatorului „📰 Ordin Stire EURUSD/BTCUSD" cu datele sintetice
+# de test (bug raportat: notificare EURUSD Sambata — era din teste, nu de la bot).
+_TG_SENT: list[str] = []
+sg._send_telegram = lambda text: _TG_SENT.append(text)
+
 def _write_news_file(path, session_key, events, pre, post, impact, markets):
     data = {session_key: {
         "updated_at": NOW.isoformat(), "pre": pre, "post": post, "impact": impact,
@@ -258,7 +265,12 @@ class _Log:
 
 _fake = FakeMt5()
 _real_exec = sg._mt5_exec
+_real_now = sg.now_local
 sg._mt5_exec = _fake
+# Fixam ceasul pe VINERI (piata FX deschisa) ca sectiunea sa fie deterministica
+# indiferent de ziua in care ruleaza testul (altfel guard-ul de weekend ar bloca
+# plasarea in weekend si testul ar pica Sambata/Duminica).
+sg.now_local = lambda: datetime(2026, 7, 17, 12, 0, 0)   # Vineri
 try:
     scfg = {"session_id": "S9-USDJPY", "markets": ["EURUSD"], "account_fraction": 0.1,
             "risk_base": 0.01, "r_max": 4.5}
@@ -304,8 +316,105 @@ try:
         check("smart-close: pozitia CONTRA (LONG) a fost inchisa", "SIGL" not in remaining)
 
     sg._mt5_exec = _fake
+
+    # 6c. PIATA INCHISA — ordinul de stire NU se plaseaza in weekend (bug raportat:
+    # „Ordin Stire EURUSD" primit Sambata, cu FX inchis). Guard-ul _market_is_open.
+    sat = datetime(2026, 7, 18, 12, 0, 0)   # Sambata
+    fri = datetime(2026, 7, 17, 12, 0, 0)   # Vineri
+    check("market_open: EURUSD Sambata → INCHIS", sg._market_is_open("EURUSD", now=sat)[0] is False)
+    check("market_open: EURUSD Vineri → deschis", sg._market_is_open("EURUSD", now=fri)[0] is True)
+    check("market_open: BTCUSD Sambata → deschis (cripto 24/7)",
+          sg._market_is_open("BTCUSD", now=sat)[0] is True)
+    check("market_open: XRPUSD Duminica → deschis (cripto)",
+          sg._market_is_open("XRPUSD", now=datetime(2026, 7, 19, 3, 0, 0))[0] is True)
+
+    # end-to-end: cu ceasul pe Sambata, _smart_news_place_order NU trimite ordin
+    sg.now_local = lambda: sat
+    _fake_wknd = FakeMt5()
+    sg._mt5_exec = _fake_wknd
+    st_wknd = {"pending": {}, "sn_counter": 0}
+    sg._smart_news_place_order("EURUSD", -1, news_ev, st_wknd, scfg, _Log())
+    check("smart weekend: NICIUN ordin plasat cu piata inchisa", len(_fake_wknd.sent) == 0)
+    check("smart weekend: niciun ticket de stire inregistrat",
+          not st_wknd.get("smart_news_tickets"))
+    # cripto in weekend ramane permis
+    sg._smart_news_place_order("BTCUSD", 1,
+                               [{"title": "x", "currency": "USD", "impact": "High",
+                                 "event_time": "2026-07-18T12:00:00", "actual": "1", "forecast": "0",
+                                 "sentiment": 1}],
+                               st_wknd, {"session_id": "S3", "markets": ["BTCUSD"],
+                                         "account_fraction": 0.1, "risk_base": 0.01, "r_max": 4.5},
+                               _Log())
+    check("smart weekend: cripto (BTCUSD) TOT se plaseaza", len(_fake_wknd.sent) == 1)
+
+    # 6d. FILTRU AI pe ordinele de stire — aceeasi validare ca semnalele normale.
+    # _ai_filter_check e mock-uit (fara Ollama/surse reale); testam DECIZIA:
+    # aprobat → plasat, respins → neplasat, strict+AI picat → blocat, fail-open → plasat.
+    sg.now_local = lambda: fri            # Vineri — piata deschisa
+    _real_aif = sg._ai_filter_check
+    _aif_calls = []
+
+    def _aif_approved(sig, scfg_, src_, log_):
+        _aif_calls.append(dict(sig))
+        return {"approved": True, "confidence": 82, "threshold": 70}
+
+    scfg_ai = dict(scfg, ai_filter_enabled=True)
+    try:
+        sg._ai_filter_check = _aif_approved
+        _f_ok = FakeMt5(); sg._mt5_exec = _f_ok
+        st_ok = {"pending": {}, "sn_counter": 0}
+        _TG_SENT.clear()
+        sg._smart_news_place_order("EURUSD", -1, news_ev, st_ok, scfg_ai, _Log())
+        check("smart+AI aprobat: ordin plasat", len(_f_ok.sent) == 1)
+        check("smart+AI: filtrul a primit semnalul (signal_type=smart_news, SL/TP setate)",
+              _aif_calls and _aif_calls[0].get("signal_type") == "smart_news"
+              and _aif_calls[0].get("sl") and _aif_calls[0].get("tp"))
+        check("smart+AI aprobat: verdictul e atasat ticketului",
+              next(iter(st_ok["smart_news_tickets"].values()))["ai_filter"]["confidence"] == 82)
+        check("smart+AI aprobat: notificarea are sufixul AI",
+              _TG_SENT and "Filtru AI" in _TG_SENT[-1])
+
+        sg._ai_filter_check = lambda *a: {"approved": False, "confidence": 40, "threshold": 70}
+        _f_rej = FakeMt5(); sg._mt5_exec = _f_rej
+        st_rej = {"pending": {}, "sn_counter": 0}
+        _TG_SENT.clear()
+        sg._smart_news_place_order("EURUSD", -1, news_ev, st_rej, scfg_ai, _Log())
+        check("smart+AI respins: NICIUN ordin plasat", len(_f_rej.sent) == 0)
+        check("smart+AI respins: fara ticket in state", not st_rej.get("smart_news_tickets"))
+        check("smart+AI respins: notificare de respingere trimisa",
+              _TG_SENT and "RESPINS" in _TG_SENT[-1])
+
+        sg._ai_filter_check = lambda *a: {"approved": True, "confidence": None,
+                                          "threshold": 70, "error": "AI indisponibil"}
+        _f_strict = FakeMt5(); sg._mt5_exec = _f_strict
+        st_strict = {"pending": {}, "sn_counter": 0}
+        sg._smart_news_place_order("EURUSD", -1, news_ev, st_strict,
+                                   dict(scfg_ai, ai_filter_strict=True), _Log())
+        check("smart+AI Strict + AI picat: ordin BLOCAT (fail-closed)",
+              len(_f_strict.sent) == 0)
+
+        _f_fo = FakeMt5(); sg._mt5_exec = _f_fo
+        st_fo = {"pending": {}, "sn_counter": 0}
+        sg._smart_news_place_order("EURUSD", -1, news_ev, st_fo, scfg_ai, _Log())
+        check("smart+AI fail-open (fara Strict): ordin plasat (edge-ul e al botului)",
+              len(_f_fo.sent) == 1)
+
+        # filtrul DEZACTIVAT (default) → _ai_filter_check real intoarce None instant,
+        # comportament identic cu inainte de feature
+        sg._ai_filter_check = _real_aif
+        _f_off = FakeMt5(); sg._mt5_exec = _f_off
+        st_off = {"pending": {}, "sn_counter": 0}
+        sg._smart_news_place_order("EURUSD", -1, news_ev, st_off, scfg, _Log())
+        check("smart, filtru AI dezactivat (default): plasat fara consult AI",
+              len(_f_off.sent) == 1
+              and next(iter(st_off["smart_news_tickets"].values()))["ai_filter"] is None)
+    finally:
+        sg._ai_filter_check = _real_aif
+
+    sg._mt5_exec = _fake
 finally:
     sg._mt5_exec = _real_exec
+    sg.now_local = _real_now
 
 # ═════════════════════════════════════════════════════════════════════════════
 # 7. GATING: Mod Inteligent + watch sub-bara DOAR cu protectia activata

@@ -2691,6 +2691,52 @@ def _friday_close_check(
             log.warning(f"  [VINERI-SWEEP] {swept} ordine/pozitii netrackuite curatate pe {markets}")
 
 
+# Simboluri care se tranzactioneaza NON-STOP (inclusiv weekend) — cripto.
+# Aliniat cu ai_engine.executor._CRYPTO_TOKENS (tinut sincron, dar local ca sa nu
+# creeze dependenta bot → motor AI).
+_CRYPTO_TOKENS = ("BTC", "ETH", "XRP", "LTC", "DOGE", "ADA", "SOL", "BNB", "DOT")
+
+
+def _is_crypto_symbol(symbol: str) -> bool:
+    s = (symbol or "").upper()
+    return any(tok in s for tok in _CRYPTO_TOKENS)
+
+
+def _market_is_open(symbol: str, now=None) -> tuple[bool, str]:
+    """
+    (deschis, motiv) — piata e tranzactionabila ACUM pentru `symbol`?
+
+    Cripto = 24/7 (nu se inchide in weekend). FX/indici/metale = INCHISE in weekend
+    (Sambata/Duminica, ora RO). In plus, oricare piata cu `trade_mode` MT5 diferit de
+    FULL (dezactivata / close-only de broker — ex: mentenanta, sarbatoare) e tratata
+    inchisa. Motiv: brokerul ACCEPTA ordine pending (stop) chiar cu piata inchisa —
+    stau pana la redeschidere — deci retcode-ul DONE NU e o dovada ca piata e deschisa.
+    Fail-OPEN pe eroare de citire MT5 (nu blocam din cauza unui glitch de interogare).
+    """
+    now = now or now_local()
+
+    # 1. Tradeability broker (prinde simbol dezactivat / close-only / sarbatoare).
+    if _mt5_exec is not None:
+        try:
+            info = _mt5_exec.symbol_info(symbol)
+            full = getattr(_mt5_exec, "SYMBOL_TRADE_MODE_FULL", 4)
+            tm = getattr(info, "trade_mode", full) if info is not None else full
+            if tm != full:
+                return False, f"trade_mode={tm} (piata dezactivata/close-only in MT5)"
+        except Exception:
+            pass  # fail-open: un glitch de interogare nu inchide piata
+
+    # 2. Cripto ruleaza si in weekend.
+    if _is_crypto_symbol(symbol):
+        return True, "cripto 24/7"
+
+    # 3. FX / indici / metale: weekend inchis (5=Sambata, 6=Duminica — ora RO).
+    if now.weekday() >= 5:
+        return False, "weekend (piata FX/indici/metale inchisa)"
+
+    return True, "deschis"
+
+
 def _smart_news_place_order(
     symbol: str,
     direction: int,
@@ -2698,15 +2744,30 @@ def _smart_news_place_order(
     state: dict,
     session_cfg: dict,
     log,
+    src=None,
 ) -> None:
     """
     Mod Inteligent: plaseaza un ordin STOP in directia stirii.
     direction: +1 = LONG (BUY_STOP), -1 = SHORT (SELL_STOP)
     Risk: 1.5 × risk_base din session_cfg.
+
+    Gate-uri (in ordine): piata deschisa → Filtru AI Pre-Trade (daca
+    ai_filter_enabled per sesiune — ACEEASI validare ca semnalele normale,
+    inclusiv modul Strict) → sizing → ordin MT5.
+    `src` = Mt5DataSource-ul sesiunii, pentru briefing-ul filtrului (optional).
     """
     if _mt5_exec is None:
         return
     if direction == 0:
+        return
+
+    # Piata inchisa (ex: weekend pt FX) → NU plasa ordinul de stire. Brokerul ar
+    # accepta un pending stop cu piata inchisa (asteapta redeschiderea) si ar trimite
+    # o notificare „Ordin Stire" desi piata e inchisa — exact bug-ul raportat pt
+    # EURUSD in weekend. Fara ordin, fara notificare, doar un log.
+    is_open, why = _market_is_open(symbol)
+    if not is_open:
+        log.info(f"  [SN] {symbol}: piata inchisa ({why}) — ordin de stire NEPLASAT.")
         return
 
     tick = _mt5_exec.symbol_info_tick(symbol)
@@ -2720,6 +2781,7 @@ def _smart_news_place_order(
         entry = round(tick.ask + info.point, info.digits)   # BUY_STOP deasupra ask
     else:
         entry = round(tick.bid - info.point, info.digits)   # SELL_STOP sub bid
+    dir_str = "LONG" if direction == 1 else "SHORT"
 
     # SL: standard pip × atr sau fallback la 30 × point
     from strategy.signals import pip_size as _pip_size
@@ -2733,6 +2795,36 @@ def _smart_news_place_order(
         r_max = 4.5
     tp = entry + direction * sl_pips * pip * r_max
 
+    sn_id = f"SN{state.get('sn_counter', 0) + 1}"
+    state["sn_counter"] = state.get("sn_counter", 0) + 1
+
+    # ── Filtru AI Pre-Trade — ACEEASI validare ca semnalele normale ──
+    # ai_filter_enabled=False (default) → verdict None → comportament identic.
+    # Respins sau blocat de modul Strict → ordinul de stire NU se plaseaza.
+    # Verdictul se jurnalizeaza in ai_filter.jsonl (log_verdict, in _ai_filter_check).
+    _sn_sig = {"signal_id": sn_id, "symbol": symbol, "direction": direction,
+               "dir_str": dir_str, "entry": entry,
+               "sl": round(sl, info.digits), "tp": round(tp, info.digits),
+               "r_ratio": r_max, "signal_type": "smart_news", "time": now_local()}
+    verdict = _ai_filter_check(_sn_sig, session_cfg, src, log)
+    if verdict is not None and (not verdict.get("approved", True)
+                                or _ai_strict_blocked(session_cfg, verdict)):
+        conf = verdict.get("confidence")
+        if verdict.get("error"):
+            why_ai = (f"filtrul AI indisponibil ({str(verdict.get('error'))[:120]}) "
+                      "+ mod Strict activ")
+        else:
+            why_ai = (f"incredere {conf if conf is not None else '?'}% "
+                      f"sub prag {verdict.get('threshold')}%")
+        log.info(f"  [SN] {sn_id} {symbol}: RESPINS de Filtrul AI ({why_ai}) "
+                 "— ordin de stire NEPLASAT.")
+        _send_telegram(
+            f"⛔ <b>Filtru AI: Ordin Stire RESPINS — {dir_str} {symbol}</b>\n"
+            f"{why_ai}\n"
+            f"<i>{session_cfg.get('session_id', '')}</i>"
+        )
+        return
+
     # Sizing cu risc 1.5 × risk_base
     frac      = session_cfg.get("account_fraction")
     risk_base = session_cfg.get("risk_base", session_cfg.get("risk_pct", 0.01))
@@ -2743,9 +2835,6 @@ def _smart_news_place_order(
         if _ai:
             capital = _bot_capital_base(session_cfg, _ai.equity) * float(frac)
     lots, risk_usd = _calc_lots(symbol, entry, sl, capital, risk_pct)
-
-    sn_id = f"SN{state.get('sn_counter', 0) + 1}"
-    state["sn_counter"] = state.get("sn_counter", 0) + 1
 
     order_type = (_mt5_exec.ORDER_TYPE_BUY_STOP if direction == 1
                   else _mt5_exec.ORDER_TYPE_SELL_STOP)
@@ -2763,7 +2852,6 @@ def _smart_news_place_order(
     }
     result = _mt5_exec.order_send(request)
     if result and result.retcode == _mt5_exec.TRADE_RETCODE_DONE:
-        dir_str = "LONG" if direction == 1 else "SHORT"
         top = news_events[0] if news_events else {}
         log.info(f"  [SN] {sn_id} {symbol} {dir_str} @ {entry:.5f} SL={sl:.5f} TP={tp:.5f} #{result.order}")
         state.setdefault("smart_news_tickets", {})[sn_id] = {
@@ -2775,6 +2863,7 @@ def _smart_news_place_order(
             "tp":        round(tp, info.digits),
             "risk_usd":  risk_usd,
             "phase":     0,  # 0=watching, 1=3R SL moved, 2=4R SL moved
+            "ai_filter": verdict,   # None cand filtrul e dezactivat
         }
         _send_telegram(
             f"📰 <b>Ordin Stire [{dir_str}] {symbol}</b>\n"
@@ -2783,6 +2872,7 @@ def _smart_news_place_order(
             f"Entry: {entry:.5f} | SL: {sl:.5f} | TP: {tp:.5f} ({r_max:.1f}R)\n"
             f"Risk: {risk_pct*100:.2f}% — {risk_usd:.2f} USD\n"
             f"<i>{session_cfg.get('session_id', '')}</i>"
+            + _ai_note({"ai_filter": verdict})
         )
     else:
         rc = result.retcode if result else "None"
@@ -2894,6 +2984,7 @@ def _news_close_check(
     smart_news_enabled: bool = False,
     news_events: list | None = None,
     session_cfg: dict | None = None,
+    src=None,
 ) -> None:
     """
     La prima iteratie de pauza de stiri (tranzitia False → True):
@@ -2912,7 +3003,8 @@ def _news_close_check(
                 for market in session_cfg.get("markets", []):
                     nd = news_direction_for_symbol(market, news_events)
                     if nd != 0:
-                        _smart_news_place_order(market, nd, news_events, state, session_cfg, log)
+                        _smart_news_place_order(market, nd, news_events, state,
+                                                session_cfg, log, src=src)
             except Exception as _e:
                 log.warning(f"  [SN] Eroare ordin stire: {_e}")
         return
@@ -3069,7 +3161,8 @@ def _news_close_check(
                         for p in existing.values()
                     )
                     if not has_open_in_dir:
-                        _smart_news_place_order(market, nd, news_events, state, session_cfg, log)
+                        _smart_news_place_order(market, nd, news_events, state,
+                                                session_cfg, log, src=src)
         except Exception as _e:
             log.warning(f"  [SN] Eroare ordin stire post-close: {_e}")
 
@@ -3504,6 +3597,7 @@ def run_generator(session_cfg: dict):
                 # Smart DOAR cu protectia activata (gate-ul de mai sus garanteaza asta aici)
                 smart_news_enabled=session_cfg.get("smart_news_enabled", False),
                 news_events=nev_, session_cfg=session_cfg,
+                src=src,   # pentru briefing-ul Filtrului AI pe ordinele de stire
             )
             try:
                 with open(state_file, "wb") as f:

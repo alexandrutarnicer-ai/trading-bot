@@ -2,9 +2,8 @@
 chcp 65001 >nul 2>&1
 setlocal
 set "ROOT=%~dp0"
-:: %~dp0 include backslash final (ex: C:\trading-bot\).
-:: git -C nu accepta calea cu backslash + ghilimele: "C:\path\" devine "C:\path" fetch...
-:: Eliminam backslash-ul final pentru a evita eroarea.
+:: %~dp0 include backslash final (ex: C:\trading-bot\). git -C nu accepta calea cu
+:: backslash + ghilimele, deci il eliminam.
 set "GITROOT=%ROOT:~0,-1%"
 set "BRANCH=alex-pc-laptop"
 title Trading Bot Update - %BRANCH%
@@ -44,7 +43,7 @@ if errorlevel 1 (
 :: Asigura ca branch-ul local exista si este setat pe remote-ul corect
 git -C "%GITROOT%" rev-parse --verify "%BRANCH%" >nul 2>&1
 if errorlevel 1 (
-    echo  [1/4] Creare branch local pentru %BRANCH% ...
+    echo  [1/5] Creare branch local pentru %BRANCH% ...
     git -C "%GITROOT%" checkout -B "%BRANCH%" "origin/%BRANCH%" 2>&1
     if errorlevel 1 (
         echo  [!] Nu am putut crea sau comuta la branch-ul %BRANCH%.
@@ -52,7 +51,7 @@ if errorlevel 1 (
         exit /b 1
     )
 ) else (
-    echo  [1/4] Comutare pe branch-ul %BRANCH% ...
+    echo  [1/5] Comutare pe branch-ul %BRANCH% ...
     git -C "%GITROOT%" checkout "%BRANCH%" 2>&1
     if errorlevel 1 (
         echo  [!] Nu am putut comuta la branch-ul %BRANCH%.
@@ -64,7 +63,7 @@ if errorlevel 1 (
 :: Salveaza hash-ul curent pentru a detecta ce s-a schimbat
 for /f %%H in ('git -C "%GITROOT%" rev-parse HEAD 2^>nul') do set "OLD_HASH=%%H"
 
-echo  [2/4] Descarc modificarile din repository ...
+echo  [2/5] Descarc modificarile din repository ...
 git -C "%GITROOT%" fetch origin "%BRANCH%" 2>&1
 if errorlevel 1 (
     echo  [!] Eroare la fetch. Verifica conexiunea la internet.
@@ -83,36 +82,79 @@ if "%OLD_HASH%"=="%REMOTE_HASH%" (
     exit /b 0
 )
 
-echo  [3/4] Aplic modificarile (git pull) ...
+:: [3/5] Pune deoparte modificarile locale (config-ul tau) INAINTE de pull, ca sa
+::       nu intre in conflict; le reaplicam dupa update. Daca reaplicarea da
+::       conflict, pastram automat versiunea LOCALA (din stash).
+echo  [3/5] Salvez modificarile locale ^(git stash^) ...
+:: Detectam prin codul de iesire git (nu prin text, ca sa fie independent de limba):
+:: `git diff --quiet HEAD` iese cu 1 daca exista modificari locale (tracked), 0 daca e curat.
+git -C "%GITROOT%" diff --quiet HEAD
+if errorlevel 1 (
+    set "STASHED=1"
+    git -C "%GITROOT%" stash push -m "update_bot_auto_stash" 2>&1
+) else (
+    set "STASHED=0"
+    echo      Nimic de salvat - arbore de lucru curat.
+)
+
+echo  [3/5] Aplic modificarile ^(git pull^) ...
 git -C "%GITROOT%" pull origin "%BRANCH%" 2>&1
 if errorlevel 1 (
-    echo  [!] Eroare la pull. Poate exista un conflict local.
-    echo      Ruleaza manual: git status
+    echo  [!] Eroare la pull.
+    if "%STASHED%"=="1" (
+        echo      Restaurez modificarile locale ^(git stash pop^) ...
+        git -C "%GITROOT%" merge --abort >nul 2>&1
+        git -C "%GITROOT%" stash pop 2>&1
+    )
+    echo      Verifica manual: git status
     pause
     exit /b 1
 )
 
+:: Reaplica modificarile locale; la conflict pastreaza versiunea LOCALA (din stash)
+if "%STASHED%"=="0" goto after_stash
+echo  Reaplic modificarile locale ^(git stash pop^) ...
+git -C "%GITROOT%" stash pop 2>&1
+git -C "%GITROOT%" diff --name-only --diff-filter=U > "%TEMP%\ub_conf.txt" 2>nul
+for %%A in ("%TEMP%\ub_conf.txt") do if %%~zA GTR 0 goto resolve_conflicts
+del "%TEMP%\ub_conf.txt" >nul 2>&1
+goto after_stash
+
+:resolve_conflicts
+echo.
+echo  [i] Conflicte la reaplicare - pastrez versiunea LOCALA ^(din stash^):
+for /f "usebackq delims=" %%F in ("%TEMP%\ub_conf.txt") do (
+    git -C "%GITROOT%" checkout --theirs -- "%%F" >nul 2>&1
+    git -C "%GITROOT%" add -- "%%F" >nul 2>&1
+    echo      - %%F
+)
+del "%TEMP%\ub_conf.txt" >nul 2>&1
+:: git stash pop NU scoate stash-ul cand da conflict; il scoatem noi acum.
+git -C "%GITROOT%" stash drop >nul 2>&1
+echo.
+
+:after_stash
+
 :: Detecteaza daca requirements.txt s-a schimbat
 git -C "%GITROOT%" diff "%OLD_HASH%" HEAD -- requirements.txt 2>nul | find "+" >nul
 if not errorlevel 1 (
-    echo  [4/4] requirements.txt modificat - actualizez dependentele Python ...
+    echo  [4/5] requirements.txt modificat - actualizez dependentele Python ...
     py -m pip install -r "%ROOT%requirements.txt" --quiet 2>&1
 ) else (
-    echo  [4/4] requirements.txt neschimbat - skip pip install.
+    echo  [4/5] requirements.txt neschimbat - skip pip install.
 )
 
 :: Detecteaza daca package.json s-a schimbat
 git -C "%GITROOT%" diff "%OLD_HASH%" HEAD -- frontend/package.json 2>nul | find "+" >nul
 if not errorlevel 1 (
-    echo  [4/4] frontend/package.json modificat - actualizez dependentele Node.js ...
+    echo  [5/5] frontend/package.json modificat - actualizez dependentele Node.js ...
     pushd "%ROOT%frontend"
     npm install --silent 2>&1
     popd
 ) else (
-    echo  [4/4] frontend/package.json neschimbat - skip npm install.
+    echo  [5/5] frontend/package.json neschimbat - skip npm install.
 )
 
-:: Afiseaza ce commit-uri s-au adaugat
 echo.
 echo ============================================================
 echo   Update finalizat!
@@ -120,6 +162,8 @@ echo ============================================================
 echo.
 echo  Modificari aplicate:
 git -C "%GITROOT%" log --oneline "%OLD_HASH%..HEAD" 2>&1
+echo.
+if "%STASHED%"=="1" echo  Modificarile tale locale au fost pastrate ^(reaplicate din stash^).
 echo.
 echo  Porneste dashboard-ul cu start_ui.bat
 echo.

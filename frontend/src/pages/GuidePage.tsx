@@ -378,6 +378,7 @@ const TOC = [
   { id: "reports",       label: "10. Rapoarte" },
   { id: "ai-engine",     label: "11. AI Engine" },
   { id: "live",          label: "12. Cont live" },
+  { id: "telegram-bridge", label: "13. Punte Telegram" },
 ];
 
 // ── Page ──────────────────────────────────────────────────────────────────────
@@ -816,8 +817,10 @@ export function GuidePage() {
 
           <SubSection title="Mod Inteligent (Smart News Protection)" defaultOpen={false}>
             <p>
-              Extensie a protecției la știri — disponibil doar când „Pauză automată la știri" este activat.
-              În loc să închidă toate pozițiile, botul analizează sentimentul știrii și decide direcția.
+              Extensie a protecției la știri — <strong>funcționează DOAR când „Pauză automată la știri"
+              este activat</strong> pe sesiune (fără protecție, Modul Inteligent e forțat oprit în cod,
+              indiferent de toggle). În loc să închidă orb toate pozițiile, botul citește sentimentul
+              știrii (surpriza actual vs forecast) și decide direcția.
             </p>
             <div className="space-y-2 text-xs">
               <div>
@@ -826,14 +829,24 @@ export function GuidePage() {
                   <span>actual &gt; forecast</span><span className="text-profit">→ bullish pentru valuta raportoare</span>
                   <span>actual &lt; forecast</span><span className="text-loss">→ bearish pentru valuta raportoare</span>
                   <span>actual = null</span><span className="text-slate-500">→ eveniment nelansat, skip</span>
+                  <span>indicatori inversați</span><span className="text-cyan-300">→ semn răsturnat (vezi mai jos)</span>
                 </div>
               </div>
               <div>
-                <p className="font-medium text-white mb-1">Acțiuni la știre negativă (ex: USD bearish):</p>
+                <p className="font-medium text-white mb-1">La tranziția în fereastra de știri (o singură dată):</p>
                 <div className="grid grid-cols-1 gap-0.5">
-                  <KV k="LONG EURUSD deschis" v="Menținut (USD slab → EURUSD sus)" vColor="text-profit" />
-                  <KV k="SHORT EURUSD deschis" v="Închis imediat (contra sentimentului)" vColor="text-loss" />
-                  <KV k="Nicio poziție" v="Plasează BUY_STOP pe EURUSD (risc 1.5× base)" />
+                  <KV k="Poziție ALINIATĂ cu știrea" v="Menținută (ex: LONG EURUSD la USD slab)" vColor="text-profit" />
+                  <KV k="Poziție CONTRA știrii" v="Închisă imediat (status news_close)" vColor="text-loss" />
+                  <KV k="Pending neactivat" v="Anulat (status news_cancel)" />
+                  <KV k="Nicio poziție + direcție clară" v="Plasează ordin stop în direcția știrii (risc 1.5× base)" />
+                </div>
+              </div>
+              <div>
+                <p className="font-medium text-white mb-1">Ordinul de știre trece prin 3 porți, în ordine:</p>
+                <div className="grid grid-cols-1 gap-0.5">
+                  <KV k="1. Piață deschisă?" v="FX/indici/metale = închise sâmbăta/duminica → NU se plasează. Cripto (BTC/XRP…) = 24/7." vColor="text-cyan-300" />
+                  <KV k="2. Filtru AI (dacă activ)" v="Aceeași validare ca semnalele normale; respins → nu se plasează." vColor="text-indigo-300" />
+                  <KV k="3. Sizing + ordin MT5" v="BUY_STOP/SELL_STOP marcat SN, urmărit separat." />
                 </div>
               </div>
               <div>
@@ -845,9 +858,13 @@ export function GuidePage() {
               </div>
             </div>
             <Note>
-              Parsarea sentimentului este simplificată. Nu funcționează corect pentru indicatori inversați
-              (șomaj, CPI în context dovish/hawkish). Testează întotdeauna pe cont DEMO înainte de live.
+              <b>Guard piață închisă:</b> brokerul ACCEPTĂ un pending stop și cu piața închisă (așteaptă
+              redeschiderea) → ai primi o notificare „Ordin Știre" deși piața e închisă. De aceea ordinul
+              de știre e blocat în weekend pentru FX/indici/metale (cripto rulează 24/7).<br />
+              <b>Indicatori inversați:</b> pentru șomaj / jobless claims / stocuri de țiței, o valoare mai
+              mare = valută mai SLABĂ — sentimentul e răsturnat automat (lista <code>_INVERTED_INDICATORS</code>).<br />
               Ordinele de știri sunt marcate „SN" și urmărite separat față de semnalele pullback normale.
+              Testează întotdeauna pe cont DEMO înainte de live.
             </Note>
           </SubSection>
 
@@ -878,8 +895,12 @@ export function GuidePage() {
               Configurația AI e moștenită automat din tab-ul AI Engine — surse, chei API, role assignments.
               Nicio setare duplicată; schimbările de acolo se aplică imediat. FAIL-OPEN: dacă AI-ul e
               indisponibil (Ollama oprit, toate sursele picate), trade-ul este PERMIS și notificat ca atare —
-              filtrul nu poate bloca niciodată botul. Verdictele complete (cu transcriptul dezbaterii) se
-              salvează în data/live_signals/&lt;sesiune&gt;/ai_filter.jsonl.
+              filtrul nu poate bloca niciodată botul (excepție: modul <b>Strict</b> per sesiune = fail-closed,
+              blochează ordinul când AI-ul e indisponibil). Verdictele complete (cu transcriptul dezbaterii) se
+              salvează în data/live_signals/&lt;sesiune&gt;/ai_filter.jsonl.<br />
+              <b>Se aplică și ordinelor din Modul Inteligent (știri):</b> un ordin de știre trece prin exact
+              același consiliu AI înainte de plasare, cu aceeași decizie (respins → nu se plasează, aprobat →
+              verdict atașat + sufix „Filtru AI" pe notificare).
             </Note>
 
             <div className="space-y-1 text-xs mt-3">
@@ -1997,6 +2018,119 @@ export function GuidePage() {
             </Note>
             <Tip>
               Dacă după sync mai apar discrepanțe persistente, verifică în MT5 că ordinul comentariul include prefix-ul corect al sesiunii. ICMarketsEU trunchiază comentariile la 16 caractere — semnalele cu ID lung (ex: <code>S18-NZDJPY-H1-IB0010</code>) sunt stocate trunchiat în MT5.
+            </Tip>
+          </SubSection>
+        </Section>
+
+        {/* ── 13. PUNTE TELEGRAM ── */}
+        <Section id="telegram-bridge" title="13. Punte Telegram (control de pe telefon)">
+          <SubSection title="Ce este și cum pornește">
+            <p>
+              Un daemon <strong>separat</strong> care îți permite să comanzi botul de pe telefon, prin
+              chat-ul Telegram existent: comenzi instant de stare, întrebări rapide către sursele AI și
+              sesiuni complete de Claude Code (analiză cod, teste, rapoarte).
+            </p>
+            <Note>
+              Este <b>complet aditiv și izolat</b> — un proces separat care doar CITEȘTE starea (status.json,
+              API local) și nu modifică botul, motorul AI sau API-ul. Nu deschide o a doua conexiune MT5.
+              Pornirea e manuală și opțională — botul funcționează identic cu sau fără punte.
+            </Note>
+            <div className="grid grid-cols-1 gap-1.5 text-xs mt-2">
+              <KV k="Pornire" v="dublu-click start_telegram_bridge.bat  (sau: py -m telegram_bridge)" />
+              <KV k="Oprire" v="Ctrl+C în fereastra puntii" />
+              <KV k="Test offline" v="py -m telegram_bridge.selftest  (fără Telegram/MT5/Claude)" />
+              <KV k="Documentație" v="docs/TELEGRAM_BRIDGE.md" />
+            </div>
+          </SubSection>
+
+          <SubSection title="Cele 4 niveluri de comandă">
+            <div className="space-y-2 text-xs">
+              <div className="bg-surface rounded-lg border border-surface-border p-3 space-y-1">
+                <div className="flex items-center gap-2">
+                  <Badge color="bg-slate-600/30 text-slate-200" label="Instant" />
+                  <span className="text-slate-400">&lt;1s, fără AI</span>
+                </div>
+                <KV k="/status" v="bot + motor AI + cont MT5 + poziții deschise" />
+                <KV k="/raport" v="scorecardul motorului AI (W/L, R, expectancy)" />
+                <KV k="/piete" v="clasament per piață după R" />
+                <KV k="/pauza S7 · /reia S7" v="pauză/reia o sesiune (ca în UI, reversibil)" />
+                <KV k="/ajutor" v="lista completă de comenzi" />
+              </div>
+              <div className="bg-surface rounded-lg border border-surface-border p-3 space-y-1">
+                <div className="flex items-center gap-2">
+                  <Badge color="bg-emerald-600/30 text-emerald-200" label="ai …" />
+                  <span className="text-slate-400">~5–30s, sursele AI existente</span>
+                </div>
+                <p className="text-slate-300">
+                  <code>ai de ce e XRPUSD pe WAIT?</code> — întrebarea + context live (scorecard, poziții,
+                  erori) merge la prima sursă AI sănătoasă. Răspuns în proză.
+                </p>
+              </div>
+              <div className="bg-surface rounded-lg border border-surface-border p-3 space-y-1">
+                <div className="flex items-center gap-2">
+                  <Badge color="bg-indigo-600/30 text-indigo-200" label="claude …" />
+                  <span className="text-slate-400">agent complet, read-only implicit</span>
+                </div>
+                <p className="text-slate-300">
+                  <code>claude analizeaza de ce a picat S7 azi</code> — rulează Claude Code headless în repo,
+                  cu tools REALE dar limitate la o listă read-only (citește cod, git, rulează teste/rapoarte;
+                  NU poate edita). <code>claude+ …</code> continuă conversația (sau răspunzi direct la un mesaj
+                  al lui Claude).
+                </p>
+              </div>
+              <div className="bg-surface rounded-lg border border-surface-border p-3 space-y-1">
+                <div className="flex items-center gap-2">
+                  <Badge color="bg-amber-600/30 text-amber-200" label="claude! …" />
+                  <span className="text-slate-400">modificări de cod — OFF implicit, 2 pași</span>
+                </div>
+                <p className="text-slate-300">
+                  <code>claude! adauga un guard pentru X</code> → propune un PLAN + un cod de 6 cifre →
+                  răspunzi <code>CONFIRM 428173</code> (în 5 min) → execută. Activat doar cu
+                  <code> allow_writes: true</code>.
+                </p>
+              </div>
+            </div>
+          </SubSection>
+
+          <SubSection title="Lanț de fallback pentru „claude …”" defaultOpen={false}>
+            <p>Fiecare răspuns spune pe ce nivel/sursă a fost generat (ex: „— via Claude Code · $0.01 · 3 ture”):</p>
+            <div className="space-y-1 text-xs mt-1">
+              <KV k="1. Claude Code CLI" v="cu tools de repo — primar" />
+              <KV k="2. Claude API direct" v="degradat: doar din context injectat, fără tools de repo" />
+              <KV k="3. Surse AI existente" v="cerebras / mistral / ollama…" />
+              <KV k="4. Mesaj onest" v="doar comenzile locale disponibile acum" />
+            </div>
+          </SubSection>
+
+          <SubSection title="Securitate" defaultOpen={false}>
+            <div className="space-y-1 text-xs">
+              <KV k="Whitelist HARD" v="doar chat_id-ul tău; orice alt expeditor ignorat + alertă" vColor="text-emerald-300" />
+              <KV k="Read-only implicit" v="fără Edit/Write; scrierea gated de allow_writes + confirmare" />
+              <KV k="Un singur task greu" v="restul primesc „ocupat”; timeout 10 min per task Claude" />
+              <KV k="Mesaje vechi ignorate" v="la pornire/downtime, comenzile > 3 min nu se execută" />
+              <KV k="409 Conflict" v="dacă rulează 2 instanțe ale puntii, a doua se oprește singură" />
+            </div>
+            <Warn>
+              „claude cu tools, comandat de pe telefon” = execuție pe PC-ul tău. De aceea whitelist-ul e
+              hard, scrierea e OFF implicit și se cere confirmare în 2 pași. Recomandat: folosește read-only
+              câteva zile înainte de a activa <code>allow_writes</code>.
+            </Warn>
+          </SubSection>
+
+          <SubSection title="Ce chei trebuie activate" defaultOpen={false}>
+            <p>Aproape nimic — tot ce e necesar e deja configurat. Pornești cu dublu-click pe .bat.</p>
+            <div className="space-y-1 text-xs mt-1">
+              <KV k="Telegram + whitelist" v="data/telegram_config.json — deja setat, reutilizat" vColor="text-emerald-300" />
+              <KV k="ai … + fallback" v="data/ai/providers.json (cerebras/groq/gemini…) — deja setat" vColor="text-emerald-300" />
+              <KV k="claude … (agent)" v="login Claude Code pe acest PC — deja logat" vColor="text-emerald-300" />
+              <KV k="Fallback Claude API" v="opțional: activează sursa „claude” în tab-ul AI Engine" />
+              <KV k="Editări (claude!)" v="opțional: allow_writes: true în data/telegram_bridge.json" />
+              <KV k="copilot …" v="opțional: instalează copilot / gh copilot + copilot_enabled: true" />
+            </div>
+            <Tip>
+              Config-ul puntii (opțional) e în <code>data/telegram_bridge.json</code> — copiază-l din
+              <code> telegram_bridge/config.example.json</code>. Sesiunile <code>claude …</code> costă din
+              planul tău Claude — costul apare în fiecare răspuns.
             </Tip>
           </SubSection>
         </Section>
