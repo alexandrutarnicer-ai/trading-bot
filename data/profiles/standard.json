@@ -926,9 +926,9 @@
       "break_even_enabled": true,
       "be_phase2_enabled": true,
       "be_trigger_pct": 90,
-      "be_lock1_pct": 50,
-      "be_lock2_pct": 70,
-      "be_phase2_zone_pct": 60,
+      "be_lock1_pct": 60,
+      "be_lock2_pct": 75,
+      "be_phase2_zone_pct": 61,
       "flag_enabled": true,
       "flag_r_ratio": 2.5,
       "flag_risk_pct": 0.01,
@@ -1660,7 +1660,7 @@
       "ai_filter_strict": true
     }
   ],
-  "updated_at": "2026-07-20T12:22:04",
+  "updated_at": "2026-07-21T22:09:18",
   "capital_protection_enabled": true,
   "capital_protection_threshold_pct": 80,
   "capital_sync_mt5": true,
