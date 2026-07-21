@@ -74,7 +74,7 @@
       "ai_filter_enabled": true,
       "ai_filter_level": "strict",
       "ai_filter_primary_source": null,
-      "ai_filter_secondary_source": "cerebras",
+      "ai_filter_secondary_source": null,
       "ai_filter_tertiary_source": null,
       "ai_role_quant_enabled": true,
       "ai_role_devils_advocate_enabled": true,
@@ -124,7 +124,7 @@
       "risk_mid": 0.01,
       "risk_top": 0.012,
       "risk_max": 0.015,
-      "execute_trades": true,
+      "execute_trades": false,
       "rsi_enabled": true,
       "rsi_buy_min": 35,
       "rsi_buy_max": 70,
@@ -218,7 +218,7 @@
       "risk_mid": 0.01,
       "risk_top": 0.012,
       "risk_max": 0.015,
-      "execute_trades": true,
+      "execute_trades": false,
       "rsi_enabled": true,
       "rsi_buy_min": 40,
       "rsi_buy_max": 65,
@@ -416,7 +416,7 @@
       "inside_bar_r_ratio": 2,
       "inside_bar_risk_pct": 0.01,
       "ai_filter_enabled": true,
-      "ai_filter_level": "permissive",
+      "ai_filter_level": "balanced",
       "ai_filter_primary_source": null,
       "ai_filter_secondary_source": null,
       "ai_filter_tertiary_source": null,
@@ -577,8 +577,9 @@
       "ai_filter_primary_source": null,
       "ai_filter_secondary_source": "openroute",
       "ai_filter_tertiary_source": null,
-      "ai_role_quant_enabled": false,
-      "ai_role_devils_advocate_enabled": false
+      "ai_role_quant_enabled": true,
+      "ai_role_devils_advocate_enabled": true,
+      "ai_filter_strict": true
     },
     {
       "id": "S8",
@@ -663,7 +664,8 @@
       "ai_filter_secondary_source": null,
       "ai_filter_tertiary_source": null,
       "ai_role_quant_enabled": false,
-      "ai_role_devils_advocate_enabled": true
+      "ai_role_devils_advocate_enabled": true,
+      "ai_filter_strict": true
     },
     {
       "id": "S9",
@@ -748,12 +750,13 @@
       "inside_bar_r_ratio": 2,
       "inside_bar_risk_pct": 0.01,
       "ai_filter_enabled": true,
-      "ai_filter_level": "balanced",
+      "ai_filter_level": "strict",
       "ai_filter_primary_source": null,
       "ai_filter_secondary_source": null,
       "ai_filter_tertiary_source": null,
       "ai_role_quant_enabled": false,
-      "ai_role_devils_advocate_enabled": false
+      "ai_role_devils_advocate_enabled": false,
+      "ai_filter_strict": true
     },
     {
       "id": "S10",
@@ -798,7 +801,7 @@
       "risk_mid": 0.012,
       "risk_top": 0.012,
       "risk_max": 0.015,
-      "execute_trades": true,
+      "execute_trades": false,
       "rsi_enabled": false,
       "rsi_buy_min": 30,
       "rsi_buy_max": 70,
@@ -839,12 +842,13 @@
       "inside_bar_r_ratio": 2,
       "inside_bar_risk_pct": 0.01,
       "ai_filter_enabled": true,
-      "ai_filter_level": "balanced",
+      "ai_filter_level": "strict",
       "ai_filter_primary_source": null,
       "ai_filter_secondary_source": null,
       "ai_filter_tertiary_source": null,
       "ai_role_quant_enabled": false,
-      "ai_role_devils_advocate_enabled": false
+      "ai_role_devils_advocate_enabled": false,
+      "ai_filter_strict": true
     },
     {
       "id": "S11",
@@ -1010,13 +1014,14 @@
       "inside_bar_enabled": true,
       "inside_bar_r_ratio": 2,
       "inside_bar_risk_pct": 0.01,
-      "ai_filter_enabled": false,
+      "ai_filter_enabled": true,
       "ai_filter_level": "balanced",
       "ai_filter_primary_source": null,
       "ai_filter_secondary_source": null,
       "ai_filter_tertiary_source": null,
       "ai_role_quant_enabled": false,
-      "ai_role_devils_advocate_enabled": false
+      "ai_role_devils_advocate_enabled": true,
+      "ai_filter_strict": true
     },
     {
       "id": "S13",
@@ -1049,7 +1054,7 @@
       "risk_mid": 0.01,
       "risk_top": 0.012,
       "risk_max": 0.015,
-      "execute_trades": true,
+      "execute_trades": false,
       "rsi_enabled": true,
       "rsi_buy_min": 30,
       "rsi_buy_max": 70,
@@ -1090,12 +1095,13 @@
       "inside_bar_r_ratio": 2,
       "inside_bar_risk_pct": 0.01,
       "ai_filter_enabled": true,
-      "ai_filter_level": "balanced",
+      "ai_filter_level": "strict",
       "ai_filter_primary_source": null,
       "ai_filter_secondary_source": null,
       "ai_filter_tertiary_source": null,
-      "ai_role_quant_enabled": false,
-      "ai_role_devils_advocate_enabled": false
+      "ai_role_quant_enabled": true,
+      "ai_role_devils_advocate_enabled": false,
+      "ai_filter_strict": true
     },
     {
       "id": "S14",
@@ -1171,7 +1177,8 @@
       "ai_filter_secondary_source": null,
       "ai_filter_tertiary_source": null,
       "ai_role_quant_enabled": true,
-      "ai_role_devils_advocate_enabled": false
+      "ai_role_devils_advocate_enabled": false,
+      "ai_filter_strict": true
     },
     {
       "id": "S15",
@@ -1326,8 +1333,9 @@
       "ai_filter_primary_source": null,
       "ai_filter_secondary_source": null,
       "ai_filter_tertiary_source": null,
-      "ai_role_quant_enabled": false,
-      "ai_role_devils_advocate_enabled": false
+      "ai_role_quant_enabled": true,
+      "ai_role_devils_advocate_enabled": false,
+      "ai_filter_strict": true
     },
     {
       "id": "S17",
@@ -1404,7 +1412,8 @@
       "ai_filter_secondary_source": null,
       "ai_filter_tertiary_source": null,
       "ai_role_quant_enabled": false,
-      "ai_role_devils_advocate_enabled": false
+      "ai_role_devils_advocate_enabled": true,
+      "ai_filter_strict": true
     },
     {
       "id": "S18",
@@ -1556,12 +1565,13 @@
       "inside_bar_r_ratio": 2,
       "inside_bar_risk_pct": 0.01,
       "ai_filter_enabled": true,
-      "ai_filter_level": "balanced",
+      "ai_filter_level": "strict",
       "ai_filter_primary_source": null,
       "ai_filter_secondary_source": null,
       "ai_filter_tertiary_source": null,
       "ai_role_quant_enabled": false,
-      "ai_role_devils_advocate_enabled": true
+      "ai_role_devils_advocate_enabled": true,
+      "ai_filter_strict": true
     },
     {
       "id": "S20",
@@ -1600,7 +1610,7 @@
       "risk_mid": 0.01,
       "risk_top": 0.012,
       "risk_max": 0.015,
-      "execute_trades": true,
+      "execute_trades": false,
       "rsi_enabled": true,
       "rsi_buy_min": 40,
       "rsi_buy_max": 65,
@@ -1650,7 +1660,9 @@
       "ai_filter_strict": true
     }
   ],
-  "updated_at": "2026-07-17T12:11:05",
+  "updated_at": "2026-07-20T12:22:04",
   "capital_protection_enabled": true,
-  "capital_protection_threshold_pct": 80
+  "capital_protection_threshold_pct": 80,
+  "capital_sync_mt5": true,
+  "capital_usd": 1000.0
 }
