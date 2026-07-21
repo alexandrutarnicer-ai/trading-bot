@@ -119,6 +119,9 @@ export function TradingStatsPanel({ sessions, mt5, botStatus, source, onSourceCh
   const botCostBroker   = costItems.length > 0
     ? Math.round((botCommission + botSwap) * 100) / 100
     : null;
+  // Comisioane + swap azi / ieri — sursa Bot (din outcomes.csv, defalcat pe exit_time)
+  const botCostToday    = costsData?.today?.has_cost_data ? costsData.today.total_costs : null;
+  const botCostYest     = costsData?.yesterday?.has_cost_data ? costsData.yesterday.total_costs : null;
 
   // Trades/wins/losses — sursa "MT5" (calculate direct din history_deals_get, independent de bot).
   const mt5Connected      = mt5Stats?.connected ?? false;
@@ -138,6 +141,13 @@ export function TradingStatsPanel({ sessions, mt5, botStatus, source, onSourceCh
   const mt5Swap           = mt5Stats?.swap_total ?? 0;
   const mt5CostBroker     = mt5Connected && (mt5Stats?.commission_total != null || mt5Stats?.swap_total != null)
     ? Math.round((mt5Commission + mt5Swap) * 100) / 100
+    : null;
+  // Comisioane + swap azi / ieri — sursa MT5 (cont-wide → include si motorul AI)
+  const mt5CostToday      = mt5Connected && (mt5Stats?.commission_today != null || mt5Stats?.swap_today != null)
+    ? Math.round(((mt5Stats?.commission_today ?? 0) + (mt5Stats?.swap_today ?? 0)) * 100) / 100
+    : null;
+  const mt5CostYest       = mt5Connected && (mt5Stats?.commission_yesterday != null || mt5Stats?.swap_yesterday != null)
+    ? Math.round(((mt5Stats?.commission_yesterday ?? 0) + (mt5Stats?.swap_yesterday ?? 0)) * 100) / 100
     : null;
 
   const usingMt5 = source === "mt5";
@@ -168,6 +178,8 @@ export function TradingStatsPanel({ sessions, mt5, botStatus, source, onSourceCh
   const totalCommission = usingMt5 ? mt5Commission : botCommission;
   const totalSwap        = usingMt5 ? mt5Swap        : botSwap;
   const costBroker       = usingMt5 ? mt5CostBroker  : botCostBroker;
+  const costToday        = usingMt5 ? mt5CostToday   : botCostToday;
+  const costYest         = usingMt5 ? mt5CostYest    : botCostYest;
   const pnlTracked       = usingMt5 ? mt5TotalTrades : botPnlTracked;
 
   const fmtUsd = (v: number) =>
@@ -250,7 +262,7 @@ export function TradingStatsPanel({ sessions, mt5, botStatus, source, onSourceCh
                 <span className="text-[10px] text-slate-500 uppercase tracking-wider">Comisioane + Swap</span>
                 <span
                   className="text-[10px] text-slate-600 cursor-help"
-                  title={`Comisioane: ${fmtUsd(totalCommission)} · Swap: ${fmtUsd(totalSwap)}. Sursă: ${usingMt5 ? "MT5 direct (history_deals_get)" : "outcomes.csv"} — ${pnlTracked} trades.`}
+                  title={`Comisioane: ${fmtUsd(totalCommission)} · Swap: ${fmtUsd(totalSwap)}. Sursă: ${usingMt5 ? "MT5 direct (history_deals_get) — cont-wide, include și Motorul AI" : "outcomes.csv (botul pe reguli)"} — ${pnlTracked} trades.`}
                 >ⓘ</span>
               </div>
               <span className={`text-lg font-bold font-mono tabular-nums ${costBroker > 0 ? "text-profit" : costBroker < 0 ? "text-loss" : "text-slate-400"}`}>
@@ -259,6 +271,13 @@ export function TradingStatsPanel({ sessions, mt5, botStatus, source, onSourceCh
               <div className="text-[10px] text-slate-600 mt-0.5">
                 com: {fmtUsd(totalCommission)} · swap: {fmtUsd(totalSwap)}
               </div>
+              {(costToday != null || costYest != null) && (
+                <div className="flex items-center gap-1 mt-1 text-[10px]">
+                  <span className="text-slate-400">Azi: <strong className="text-slate-200">{costToday != null ? fmtUsd(costToday) : "—"}</strong></span>
+                  <span className="text-slate-600">/</span>
+                  <span className="text-slate-500">Ieri: {costYest != null ? fmtUsd(costYest) : "—"}</span>
+                </div>
+              )}
             </div>
           )}
         </div>

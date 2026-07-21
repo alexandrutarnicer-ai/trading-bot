@@ -50,6 +50,10 @@ export interface Mt5TradeStats {
   pnl_total: number | null;
   commission_total: number | null;
   swap_total: number | null;
+  commission_today: number | null;
+  swap_today: number | null;
+  commission_yesterday: number | null;
+  swap_yesterday: number | null;
   error: string | null;
 }
 
@@ -148,6 +152,11 @@ export interface ProfileSession {
   skip_weekdays: number[];
   expire_bars: number;
   account_fraction: number;
+  // Lot FIX per ordin (optional, oprit by default). Cand e activ, sizing-ul NU se
+  // mai face pe fractie/risc — se plaseaza volum fix, redus automat daca depaseste
+  // capitalul disponibil. Simetric cu market_overrides.fixed_lots din AI Engine.
+  fixed_lots_enabled?: boolean;
+  fixed_lots?: number | null;
   risk_pct: number;
   risk_base: number;
   risk_mid: number;
@@ -320,6 +329,8 @@ export interface PeriodStats {
   win_rate: number;
   max_dd_r: number;
   pnl_usd: number | null;
+  commission_usd?: number;
+  swap_usd?: number;
 }
 
 export interface WeeklyStats {
@@ -340,6 +351,8 @@ export interface Mt5PeriodStats {
   max_dd_usd: number;
   total_r: number | null;
   max_dd_r: number | null;
+  commission_usd?: number;
+  swap_usd?: number;
 }
 
 export interface Mt5WeeklyStats {
@@ -672,8 +685,18 @@ export interface CostStat {
   has_cost_data: boolean;
 }
 
+export interface CostsDayAggregate {
+  commission_usd: number;
+  swap_usd: number;
+  total_costs: number;
+  trades_with_cost: number;
+  has_cost_data: boolean;
+}
+
 export interface CostsResponse {
   items: CostStat[];
+  today?: CostsDayAggregate;
+  yesterday?: CostsDayAggregate;
 }
 
 export interface CostsDayEntry {

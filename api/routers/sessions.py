@@ -319,6 +319,8 @@ def weekly_stats():
         all_slices: list[pd.DataFrame] = []
         pnl_sum = 0.0
         pnl_any = False
+        comm_sum = 0.0
+        swap_sum = 0.0
         for s in SESSIONS:
             if not execute_map.get(s["id"], s["execute"]):
                 continue  # skip OBS sessions
@@ -342,11 +344,17 @@ def weekly_stats():
                 if len(pnl_vals):
                     pnl_sum += float(pnl_vals.sum())
                     pnl_any = True
+            if "commission_usd" in sub.columns:
+                comm_sum += float(pd.to_numeric(sub["commission_usd"], errors="coerce").dropna().sum())
+            if "swap_usd" in sub.columns:
+                swap_sum += float(pd.to_numeric(sub["swap_usd"], errors="coerce").dropna().sum())
             all_slices.append(sub[["_et", "result_r"]].copy())
         n = totals["trades"]
         totals["total_r"]  = round(totals["total_r"], 3)
         totals["win_rate"] = round(totals["wins"] / n * 100, 1) if n else 0.0
         totals["pnl_usd"]  = round(pnl_sum, 2) if pnl_any else None
+        totals["commission_usd"] = round(comm_sum, 2)
+        totals["swap_usd"]       = round(swap_sum, 2)
         # Drawdown maxim in R
         max_dd_r = 0.0
         if all_slices:

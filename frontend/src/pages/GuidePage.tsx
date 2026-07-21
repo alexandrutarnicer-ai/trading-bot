@@ -616,12 +616,14 @@ export function GuidePage() {
               <KV k="Câștiguri/Pierderi" v="Trades cu result_r > 0 / result_r < 0" />
               <KV k="Total R" v="Suma tuturor result_r din interval" />
               <KV k="P&L USD" v="Suma pnl_usd (profit real MT5) — apare doar când există date" />
+              <KV k="Comisioane" v="Comisioane + swap ale perioadei (curentă vs precedentă)" vColor="text-loss" />
               <KV k="-DD max R" v="Cel mai adânc jgheab de la peak-ul R al perioadei" vColor="text-loss" />
             </div>
             <Tip>
               Tab-ul Lună oferă o perspectivă mai stabilă decât săptămâna — fluctuațiile săptămânale
               sunt normale. P&L USD apare doar pentru sesiunile cu execute_trades=True care au ordine
-              închise prin MT5 (câmpul pnl_usd din outcomes.csv).
+              închise prin MT5 (câmpul pnl_usd din outcomes.csv). Rândul <b>Comisioane</b> respectă la fel
+              comutatorul de sursă: pe <b>MT5 direct</b> include și Motorul AI (cont-wide), pe <b>Bot</b> doar botul.
             </Tip>
           </SubSection>
 
@@ -640,9 +642,22 @@ export function GuidePage() {
               </div>
               <div className="bg-surface rounded-lg border border-surface-border p-3 space-y-1">
                 <div className="text-[11px] font-semibold text-slate-300">Comisioane + Swap</div>
-                <div className="text-slate-400">Suma comisioanelor și swap-ului din <code className="text-blue-300">outcomes.csv</code>. Detalii complete în tab-ul Rapoarte → Comisioane.</div>
+                <div className="text-slate-400">
+                  Comisioanele și swap-ul, cu total dezagregat (<em>com: X $ · swap: Y $</em>) plus un rând <b>Azi / Ieri</b>.
+                  Respectă comutatorul de sursă <Badge color="bg-surface-border text-slate-300" label="Bot" /> /
+                  <Badge color="bg-surface-border text-slate-300" label="MT5 direct" />:
+                </div>
+                <div className="mt-1 space-y-1 text-xs">
+                  <KV k="Sursă Bot" v="Doar botul pe reguli (din outcomes.csv)" />
+                  <KV k="Sursă MT5 direct" v="Tot contul (history_deals_get) — include și Motorul AI, și trade-urile manuale" />
+                </div>
               </div>
             </div>
+            <Note>
+              <b>Comisioanele Motorului AI</b> nu au un card separat — sunt incluse automat în totalul pe sursa
+              <Badge color="bg-surface-border text-slate-300" label="MT5 direct" /> (care numără tot contul: bot + AI + manual).
+              Acolo distincția nu contează; totalul reflectă costul real al contului.
+            </Note>
             <Note>
               Sesiunile de observație (<Badge color="bg-surface-border text-slate-500" label="OBS" />) sunt excluse din toate agregările. Excepție: dacă o sesiune a avut tranzacții reale MT5 (<code className="text-blue-300">pnl_usd ≠ 0</code>) și ulterior a fost oprită din execuție, tranzacțiile istorice rămân vizibile în statistici. MT5 este sursa de adevăr — dacă există <code className="text-blue-300">pnl_usd</code> real, trade-ul a fost executat indiferent de setarea curentă a profilului.
             </Note>
@@ -766,10 +781,20 @@ export function GuidePage() {
                 <div className="grid grid-cols-2 gap-1.5 text-xs">
                   <KV k="Account fraction" v="0.125 = 12.5% din equity MT5 alocat sesiunii" />
                   <KV k="Risk % per tier" v="Procent din capital riscat per trade (ex: 1%)" />
+                  <KV k="Lot fix" v="Volum FIX per ordin (opțional, oprit implicit)" />
                 </div>
                 <Tip>
                   Breakdown live sub câmpul account_fraction: <em>$capital sesiune · $X/piață + risc/trade ~$Y</em>
                 </Tip>
+                <Note>
+                  <b>Lot fix (înlocuiește fracția)</b> — un toggle opțional sub „Fracție cont", <b>oprit implicit</b>.
+                  Cât timp e oprit, sizing-ul rămâne exact ca înainte (calcul din <code className="text-blue-300">capital × risc%</code>).
+                  Când îl activezi și pui un volum (ex: 0.10 loturi), sesiunea plasează <b>exact acel volum</b> pe fiecare ordin —
+                  aliniat la pasul/minimul/maximul brokerului (identic cu MT5) — iar <b>fracția de cont și risc% sunt ignorate</b>.
+                  Sub câmp apare estimarea live din MT5 (marja necesară per piață). <b>Protecție:</b> dacă marja pentru acel volum
+                  ar depăși ~80% din capitalul liber, lotul e <b>redus automat</b> la cât încape și primești o notificare Telegram
+                  (nu poți deschide un ordin mai mare decât suportă contul). Util când același cont rulează și Motorul AI / trade-uri manuale.
+                </Note>
               </div>
             </div>
           </SubSection>
