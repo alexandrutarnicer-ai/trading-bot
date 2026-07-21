@@ -44,6 +44,8 @@ _EMPTY_TRADE_STATS = {
     "losses_today": 0, "losses_yesterday": 0,
     "pnl_today": None, "pnl_yesterday": None, "pnl_total": None,
     "commission_total": None, "swap_total": None,
+    "commission_today": None, "swap_today": None,
+    "commission_yesterday": None, "swap_yesterday": None,
 }
 
 
@@ -80,6 +82,12 @@ def mt5_trade_stats(days: int = 365):
         "pnl_total": round(sum(t["profit"] for t in trades), 2),
         "commission_total": round(sum(t["commission"] for t in trades), 2),
         "swap_total": round(sum(t["swap"] for t in trades), 2),
+        # Comisioane + swap defalcate pe azi / ieri (acelasi cont, deci INCLUD si
+        # tranzactiile motorului AI — history-ul MT5 e la nivel de cont).
+        "commission_today": round(sum(t["commission"] for t in today_trades), 2),
+        "swap_today": round(sum(t["swap"] for t in today_trades), 2),
+        "commission_yesterday": round(sum(t["commission"] for t in yest_trades), 2),
+        "swap_yesterday": round(sum(t["swap"] for t in yest_trades), 2),
         "error": None,
     }
 
@@ -117,6 +125,7 @@ _EMPTY_PERIOD = {
     "start": "", "end": "", "trades": 0, "wins": 0, "losses": 0,
     "win_rate": 0.0, "pnl_usd": 0.0, "max_dd_usd": 0.0,
     "total_r": None, "max_dd_r": None,
+    "commission_usd": 0.0, "swap_usd": 0.0,
 }
 _EMPTY_WEEKLY = {
     "current_week": _EMPTY_PERIOD, "previous_week": _EMPTY_PERIOD,
@@ -177,6 +186,9 @@ def mt5_weekly_stats():
             "win_rate": win_rate, "pnl_usd": pnl_sum,
             "max_dd_usd": round(max_dd, 2),
             "total_r": total_r, "max_dd_r": max_dd_r,
+            # Comisioane + swap ale perioadei (cont-wide → include si motorul AI).
+            "commission_usd": round(sum(t["commission"] for t in sub), 2),
+            "swap_usd": round(sum(t["swap"] for t in sub), 2),
         }
 
     return {

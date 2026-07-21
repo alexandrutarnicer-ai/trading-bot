@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { Pause, Play } from "lucide-react";
 import type { ProfileSession, Meta } from "../api/types";
-import { useMt5Markets, useMt5Status, useMarketAtr, useAiProviders } from "../api/hooks";
+import { useMt5Markets, useMt5Status, useMarketAtr, useAiProviders, useAiLotInfo } from "../api/hooks";
 import { BacktestPanel } from "./BacktestPanel";
 import { InfoTooltip } from "./InfoTooltip";
 import { ImageTooltip } from "./ImageTooltip";
@@ -90,6 +90,15 @@ const TIPS = {
     "Fiecare trade din sesiune riscă risk% din această sumă.",
     "",
     "Sesiunea poate tranzacționa simultan pe mai multe piețe — capitalul NU e împărțit per piață, ci fiecare trade folosește aceeași bază de calcul a lot-ului.",
+  ].join("\n"),
+  fixed_lots: [
+    "Volum FIX pe fiecare ordin (loturi), în loc de calculul dinamic din capital × risc%.",
+    "",
+    "Când e activ, fracția de cont și risc% sunt IGNORATE — se plasează exact acest volum, aliniat la pasul/minimul/maximul brokerului (identic cu MT5).",
+    "",
+    "Protecție: dacă marja necesară pentru acest volum depășește ~80% din capitalul liber, lotul este redus automat la cât încape și primești o notificare Telegram.",
+    "",
+    "Oprit implicit — cât timp e oprit, sizing-ul rămâne exact ca înainte (pe fracție).",
   ].join("\n"),
   execute_trades: [
     "ON → bot-ul plasează ordine reale BUY_STOP/SELL_STOP în MT5.",
@@ -317,6 +326,42 @@ function RRDiagram({ session, mt5Connected }: { session: ProfileSession; mt5Conn
         <p className="text-[10px] text-slate-600 px-1">
           Conectează MT5 pentru distanțe reale SL per piață.
         </p>
+      )}
+    </div>
+  );
+}
+
+// ── Estimare USD (din MT5) pentru un volum FIX pe o piata ────────────────────
+// Reutilizeaza endpoint-ul generic POST /ai/lot-info (symbol+lots → marja reala +
+// snap la broker). Debounce ca sa nu bombardam API-ul in timp ce tastezi.
+function FixedLotEstimate({ symbol, lots }: { symbol: string; lots: number | null | undefined }) {
+  const lotInfo = useAiLotInfo();
+  useEffect(() => {
+    if (!lots || lots <= 0 || !symbol) return;
+    const t = setTimeout(() => lotInfo.mutate({ symbol, lots }), 600);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [symbol, lots]);
+  if (!lots || lots <= 0) return null;
+  if (lotInfo.isPending) return <div className="text-[10px] text-slate-600">{symbol}: se calculează…</div>;
+  const d = lotInfo.data;
+  if (!d) return null;
+  if (!d.ok) return <div className="text-[10px] text-amber-500/80" title={d.detail}>{symbol}: MT5 indisponibil</div>;
+  const eff = d.effective_lots ?? lots;
+  const snapped = d.snapped && eff !== lots;
+  return (
+    <div className="text-[10px] whitespace-nowrap leading-relaxed"
+      title={`Marjă necesară pentru volumul REAL plasat (${eff} loturi) la prețul curent · valoare $ per 1.0 unitate de preț. Marjă liberă: ${d.free_margin ?? "?"}$`}>
+      <span className="font-mono text-slate-400">{symbol}</span>{" "}
+      {snapped && (
+        <span className={d.below_min ? "text-amber-400" : "text-slate-500"}>
+          {d.below_min ? `⚠ sub minim → ${eff} lot · ` : `→ ${eff} lot (aliniat broker) · `}
+        </span>
+      )}
+      <span className="text-slate-500">marjă ~</span>
+      <span className="text-slate-300 font-mono">{d.margin_usd != null ? `$${d.margin_usd}` : "?"}</span>
+      {d.value_per_price_unit_usd != null && (
+        <> · <span className="text-slate-300 font-mono">${d.value_per_price_unit_usd}</span>/unit</>
       )}
     </div>
   );
@@ -734,9 +779,10 @@ export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted,
               const riskBaseUsd = capital != null ? capital * rBase : null;
               const riskMaxUsd  = capital != null ? capital * rMax  : null;
               const fmt         = (v: number) => v >= 100 ? v.toFixed(0) : v.toFixed(2);
+              const fixedLotsActive = !!session.fixed_lots_enabled;
               return (
                 <div className="mb-4 p-3 rounded-lg border border-surface-border/50 bg-surface-border/10 space-y-2">
-                  <div className="flex items-center gap-3">
+                  <div className={`flex items-center gap-3 ${fixedLotsActive ? "opacity-40" : ""}`}>
                     <div className="max-w-[110px]">
                       <NumField
                         label="Fracție cont"
@@ -856,6 +902,47 @@ export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted,
                         </span>
                       )}
                     </div>
+                  </div>
+
+                  {/* Lot FIX — înlocuiește fracția (optional, oprit by default) */}
+                  <div className="pt-2 border-t border-surface-border/30 space-y-2">
+                    <Toggle
+                      label="Lot fix (înlocuiește fracția)"
+                      value={fixedLotsActive}
+                      tip={TIPS.fixed_lots}
+                      onChange={(v) => upd({
+                        fixed_lots_enabled: v,
+                        // La prima activare, seed cu 0.01 dacă nu e setat deja.
+                        ...(v && !(session.fixed_lots && session.fixed_lots > 0)
+                          ? { fixed_lots: 0.01 } : {}),
+                      })}
+                    />
+                    {fixedLotsActive && (
+                      <div className="flex items-start gap-3">
+                        <div className="max-w-[110px]">
+                          <NumField
+                            label="Volum (loturi)"
+                            value={session.fixed_lots ?? 0.01}
+                            min={0.01} step={0.01}
+                            onChange={(v) => upd({ fixed_lots: v > 0 ? v : 0.01 })}
+                          />
+                        </div>
+                        <div className="flex-1 pt-3 space-y-1">
+                          {session.markets.length > 0 ? (
+                            session.markets.map((m) => (
+                              <FixedLotEstimate key={m} symbol={m.toUpperCase()} lots={session.fixed_lots} />
+                            ))
+                          ) : (
+                            <span className="text-[10px] text-slate-600">Alege o piață pentru estimarea în USD.</span>
+                          )}
+                          <p className="text-[10px] text-warn/80 leading-relaxed">
+                            Volum FIX pe fiecare ordin — fracția de cont și risc% sunt ignorate.
+                            Dacă marja necesară depășește ~80% din capitalul liber, lotul este
+                            redus automat și primești o notificare.
+                          </p>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               );

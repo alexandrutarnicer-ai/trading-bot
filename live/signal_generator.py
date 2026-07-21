@@ -343,6 +343,129 @@ def _calc_lots(symbol: str, entry: float, sl: float,
     return lot, risk_usd
 
 
+# ── Sizing pe LOT FIX (per sesiune, optional, oprit by default) ───────────────
+# Cand `fixed_lots_enabled` e activ pentru o sesiune, botul plaseaza un volum FIX
+# per ordin (aliniat la specificatiile brokerului) in loc sa calculeze lotajul din
+# capital × risc%. Fractia de cont (account_fraction) NU se mai foloseste in acest
+# mod. Simetric cu motorul AI (ai_engine.executor.snap_fixed_lots).
+
+# Cand marja necesara pentru lotul fix depaseste aceasta fractie din marja libera,
+# botul REDUCE automat lotul la cel mai mare volum aliniat la step care incape si
+# NOTIFICA. 0.80 = lasa un tampon de 20% (evita stop-out instant), dar nu taie
+# loturi care incap confortabil in capital.
+_FIXED_LOT_MARGIN_CAP = 0.80
+
+
+def _fixed_lots_active(session_cfg: dict) -> bool:
+    """True cand sizing pe lot fix e activ pentru sesiune (toggle ON + valoare > 0)."""
+    try:
+        return (bool(session_cfg.get("fixed_lots_enabled"))
+                and float(session_cfg.get("fixed_lots") or 0) > 0)
+    except (TypeError, ValueError):
+        return False
+
+
+def _snap_lots_to_broker(info, lots: float) -> float:
+    """
+    Aliniaza `lots` la constrangerile brokerului: clamp la [volume_min, volume_max]
+    si rotunjire in JOS la volume_step (nu crestem niciodata expunerea peste ce a
+    cerut utilizatorul, cu exceptia lotului minim — sub el ordinul nu exista).
+    Floor cu epsilon: fara el, 0.5 / 0.01 = 49 (eroare float) → 0.49 in loc de 0.50.
+    """
+    step = info.volume_step if info.volume_step > 0 else 0.01
+    snapped = int(float(lots) / step + 1e-9) * step
+    snapped = max(info.volume_min, snapped)
+    if info.volume_max and info.volume_max > 0:
+        snapped = min(snapped, info.volume_max)
+    return round(snapped, 2)
+
+
+def _fixed_lot_size(symbol: str, entry: float, sl: float, direction: int,
+                    fixed_lots: float, log) -> tuple[float, float | None, dict | None]:
+    """
+    Sizing pe LOT FIX + auto-reducere la marja disponibila.
+
+    Returneaza (lots, risk_usd, reduction):
+      lots      — volumul final, aliniat la broker (0.01 daca MT5 indisponibil)
+      risk_usd  — riscul in USD la SL pentru `lots` (None daca nu se poate calcula)
+      reduction — None, SAU un dict cand lotul a fost redus pentru ca depasea
+                  capitalul existent: {requested, final, margin_need, free_margin}.
+                  Declanseaza o notificare la plasare.
+    """
+    if _mt5_exec is None:
+        return 0.01, None, None
+    info = _mt5_exec.symbol_info(symbol)
+    if info is None:
+        return 0.01, None, None
+
+    lots = _snap_lots_to_broker(info, fixed_lots)
+
+    # ── Auto-reducere daca marja necesara depaseste capitalul (marja libera) ──
+    reduction = None
+    try:
+        acc   = _mt5_exec.account_info()
+        otype = (_mt5_exec.ORDER_TYPE_BUY if direction == 1
+                 else _mt5_exec.ORDER_TYPE_SELL)
+        need  = _mt5_exec.order_calc_margin(otype, symbol, lots, entry)
+        if acc is not None and need is not None and need > 0:
+            free = float(acc.margin_free)
+            cap  = free * _FIXED_LOT_MARGIN_CAP
+            if cap > 0 and need > cap:
+                # Marja e ~liniara in volum → volumul maxim care incape sub `cap`.
+                step        = info.volume_step if info.volume_step > 0 else 0.01
+                margin_per_lot = need / lots
+                fitted      = int((cap / margin_per_lot) / step + 1e-9) * step
+                fitted      = max(info.volume_min, round(fitted, 2))
+                if fitted < lots:
+                    reduction = {"requested": lots, "final": fitted,
+                                 "margin_need": round(need, 2),
+                                 "free_margin": round(free, 2)}
+                    # info (nu warning) — notificarea user-facing vine O DATA din
+                    # mesajul de plasare (Telegram + Notificari). Aici doar audit in log.
+                    log.info(
+                        f"  [LOT-FIX] {symbol}: lot fix redus {lots} -> {fitted} "
+                        f"(marja necesara ${need:.0f} > {_FIXED_LOT_MARGIN_CAP*100:.0f}% "
+                        f"din marja libera ${free:.0f})")
+                    lots = fitted
+    except Exception as e:
+        log.warning(f"  [LOT-FIX] {symbol}: verificare marja esuata ({e}) — "
+                    "lot fix nemodificat")
+
+    # ── Risc USD la SL pentru lotul final (identic ca semantica cu _calc_lots) ──
+    risk_usd = None
+    dist = abs(entry - sl)
+    if dist > 0 and info.trade_tick_size and info.trade_tick_size > 0:
+        risk_usd = round(lots * dist * (info.trade_tick_value / info.trade_tick_size), 2)
+    return lots, risk_usd, reduction
+
+
+def _resolve_order_lots(symbol: str, entry: float, sl: float, direction: int,
+                        capital: float, risk_pct: float, session_cfg: dict,
+                        log) -> tuple[float, float | None, dict | None]:
+    """
+    Sizing unificat pentru un ordin al botului:
+      - fixed_lots_enabled + fixed_lots > 0 → LOT FIX (snap broker + auto-reducere
+        la marja + notificare). Fractia de cont (account_fraction) e IGNORATA.
+      - altfel → sizing dinamic pe capital × risk_pct (comportament IDENTIC cu
+        inainte — zero schimbare cand lotul fix e oprit, adica by default).
+    Returneaza (lots, risk_usd, reduction). reduction=None in modul dinamic.
+    """
+    if _fixed_lots_active(session_cfg):
+        return _fixed_lot_size(symbol, entry, sl, direction,
+                               float(session_cfg["fixed_lots"]), log)
+    lots, risk_usd = _calc_lots(symbol, entry, sl, capital, risk_pct)
+    return lots, risk_usd, None
+
+
+def _lot_reduction_note(reduction: dict | None) -> str:
+    """Sufix Telegram pentru un ordin al carui lot fix a fost redus automat."""
+    if not reduction:
+        return ""
+    return (f"\n⚠️ Lot fix redus automat: {reduction['requested']} → "
+            f"<b>{reduction['final']}</b> (marja necesară ${reduction['margin_need']:.0f} "
+            f"depășea capitalul disponibil ${reduction['free_margin']:.0f})")
+
+
 def _place_order(sig: dict, lots: float, expire_bars: int,
                  bar_minutes: int, log) -> int | None:
     """
@@ -2881,7 +3004,7 @@ def _smart_news_place_order(
         )
         return
 
-    # Sizing cu risc 1.5 × risk_base
+    # Sizing cu risc 1.5 × risk_base (mod dinamic) SAU lot fix daca e activ pe sesiune
     frac      = session_cfg.get("account_fraction")
     risk_base = session_cfg.get("risk_base", session_cfg.get("risk_pct", 0.01))
     risk_pct  = risk_base * 1.5
@@ -2890,7 +3013,8 @@ def _smart_news_place_order(
         _ai = _mt5_exec.account_info()
         if _ai:
             capital = _bot_capital_base(session_cfg, _ai.equity) * float(frac)
-    lots, risk_usd = _calc_lots(symbol, entry, sl, capital, risk_pct)
+    lots, risk_usd, _lot_reduction = _resolve_order_lots(
+        symbol, entry, sl, direction, capital, risk_pct, session_cfg, log)
 
     order_type = (_mt5_exec.ORDER_TYPE_BUY_STOP if direction == 1
                   else _mt5_exec.ORDER_TYPE_SELL_STOP)
@@ -2929,6 +3053,7 @@ def _smart_news_place_order(
             f"Risk: {risk_pct*100:.2f}% — {risk_usd:.2f} USD\n"
             f"<i>{session_cfg.get('session_id', '')}</i>"
             + _ai_note({"ai_filter": verdict})
+            + _lot_reduction_note(_lot_reduction)
         )
     else:
         rc = result.retcode if result else "None"
@@ -3275,6 +3400,8 @@ def _apply_profile_overrides(session_cfg: dict, cfg: dict, log) -> None:
     # --- parametri sesiune (session_cfg) ---
     for field in ("pullback_enabled", "pullback_window", "session_start", "session_end",
                   "expire_bars", "execute_trades", "account_fraction", "risk_pct",
+                  # Lot FIX per ordin (optional, oprit by default — inlocuieste fractia)
+                  "fixed_lots_enabled", "fixed_lots",
                   "risk_base", "risk_mid", "risk_top", "risk_max",
                   "r_mid_threshold", "r_top_threshold", "r_max_threshold",
                   # Pozitii simultane per piata
@@ -3899,8 +4026,10 @@ def run_generator(session_cfg: dict):
                             risk_pct = session_cfg.get("inside_bar_risk_pct", 0.01)
                         else:
                             risk_pct = _pick_risk_pct(sig.get("n_optional", 0), session_cfg)
-                        lots, risk_usd = _calc_lots(sig["symbol"], sig["entry"], sig["sl"],
-                                                    capital, risk_pct)
+                        # Sizing: lot FIX (daca activ pe sesiune) sau dinamic pe capital×risc.
+                        lots, risk_usd, _lot_reduction = _resolve_order_lots(
+                            sig["symbol"], sig["entry"], sig["sl"], sig["direction"],
+                            capital, risk_pct, session_cfg, log)
                         ticket = _place_order(sig, lots,
                                               session_cfg.get("expire_bars", 4),
                                               session_cfg["bar_minutes"], log)
@@ -3918,7 +4047,8 @@ def run_generator(session_cfg: dict):
                                 f"SL: <code>{format(sig['sl'], fmt)}</code>  "
                                 f"TP: <code>{format(sig['tp'], fmt)}</code>\n"
                                 f"Lot: {lots}  Ticket: #{ticket}"
-                                f"{_ai_note(state['pending'][symbol][sig['signal_id']])}\n"
+                                f"{_ai_note(state['pending'][symbol][sig['signal_id']])}"
+                                f"{_lot_reduction_note(_lot_reduction)}\n"
                                 f"<i>{session_cfg['session_id']}</i>"
                             )
                         elif ticket is None:
@@ -4000,7 +4130,9 @@ def run_generator(session_cfg: dict):
                             "tp":        _p["tp"],
                         }
                         _risk_pct = _pick_risk_pct(_p.get("n_optional", 0), session_cfg)
-                        _lots, _risk_usd = _calc_lots(symbol, _p["entry"], _p["sl"], capital, _risk_pct)
+                        _lots, _risk_usd, _lot_reduction = _resolve_order_lots(
+                            symbol, _p["entry"], _p["sl"], _p["direction"],
+                            capital, _risk_pct, session_cfg, log)
                         log.info(f"  [RETRY] {_sid}: incerc plasare ordin (bara precedenta → None)")
                         _ticket = _place_order(_sig_retry, _lots,
                                                session_cfg.get("expire_bars", 4),
@@ -4018,7 +4150,8 @@ def run_generator(session_cfg: dict):
                                 f"SL: <code>{format(_p['sl'], fmt)}</code>  "
                                 f"TP: <code>{format(_p['tp'], fmt)}</code>\n"
                                 f"Lot: {_lots}  Ticket: #{_ticket}"
-                                f"{_ai_note(_p)}\n"
+                                f"{_ai_note(_p)}"
+                                f"{_lot_reduction_note(_lot_reduction)}\n"
                                 f"<i>{session_cfg['session_id']}</i>"
                             )
                         elif _ticket is False:

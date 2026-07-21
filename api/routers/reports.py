@@ -241,8 +241,17 @@ def get_market_stats():
 @router.get("/costs")
 def get_costs():
     """Comisioane si swap agregate per piata (simbol) din toate sesiunile.
-    Returneaza doar randurile care au date reale MT5 (commission_usd sau swap_usd nenule)."""
+    Returneaza doar randurile care au date reale MT5 (commission_usd sau swap_usd nenule).
+    In plus, agregatele `today`/`yesterday` (defalcate pe data de inchidere) pentru
+    cardul Comisioane + Swap din Dashboard."""
     cost_stats: dict[str, dict] = {}
+    # Comisioane + swap defalcate pe azi / ieri (sursa Bot = outcomes.csv).
+    _today = date.today()
+    _yest  = _today - timedelta(days=1)
+    day_costs = {
+        "today":     {"commission_usd": 0.0, "swap_usd": 0.0, "trades_with_cost": 0},
+        "yesterday": {"commission_usd": 0.0, "swap_usd": 0.0, "trades_with_cost": 0},
+    }
 
     for s in _discover_outcome_sessions():
         df = _read_outcomes(s["id"])
@@ -256,6 +265,17 @@ def get_costs():
             closed["commission_usd"] = float("nan")
         if "swap_usd" not in closed.columns:
             closed["swap_usd"] = float("nan")
+        # Defalcare azi / ieri dupa data de inchidere (exit_time)
+        if "exit_time" in closed.columns:
+            _et = pd.to_datetime(closed["exit_time"], errors="coerce").dt.date
+            for _key, _d in (("today", _today), ("yesterday", _yest)):
+                _sub = closed[_et == _d]
+                if not _sub.empty:
+                    _cv = pd.to_numeric(_sub["commission_usd"], errors="coerce").dropna()
+                    _sv = pd.to_numeric(_sub["swap_usd"],       errors="coerce").dropna()
+                    day_costs[_key]["commission_usd"] += float(_cv.sum())
+                    day_costs[_key]["swap_usd"]       += float(_sv.sum())
+                    day_costs[_key]["trades_with_cost"] += int(len(_cv))
         for sym, grp in closed.groupby("symbol"):
             sym = str(sym)
             if sym not in cost_stats:
@@ -296,7 +316,22 @@ def get_costs():
         })
 
     results.sort(key=lambda x: x["total_costs"])  # cel mai scump primul (total_costs negativ)
-    return {"items": results}
+
+    def _fin(d: dict) -> dict:
+        comm = round(d["commission_usd"], 4)
+        swap = round(d["swap_usd"], 4)
+        return {
+            "commission_usd": comm, "swap_usd": swap,
+            "total_costs": round(comm + swap, 4),
+            "trades_with_cost": d["trades_with_cost"],
+            "has_cost_data": d["trades_with_cost"] > 0,
+        }
+
+    return {
+        "items": results,
+        "today":     _fin(day_costs["today"]),
+        "yesterday": _fin(day_costs["yesterday"]),
+    }
 
 
 @router.get("/costs-daily")

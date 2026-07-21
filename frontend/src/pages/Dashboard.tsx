@@ -25,10 +25,14 @@ interface ViewPeriod {
   pnl_usd: number | null;
   ddValue: number | null; ddUnit: "R" | "USD";
   totalR: number | null;
+  costs: number | null;   // comisioane + swap ale perioadei (null = fara date)
 }
+const _costs = (comm?: number, swap?: number): number | null =>
+  comm == null && swap == null ? null : Math.round(((comm ?? 0) + (swap ?? 0)) * 100) / 100;
 const toView = (p: PeriodStats): ViewPeriod => ({
   start: p.start, end: p.end, trades: p.trades, wins: p.wins, losses: p.losses,
   win_rate: p.win_rate, pnl_usd: p.pnl_usd, ddValue: p.max_dd_r, ddUnit: "R", totalR: p.total_r,
+  costs: _costs(p.commission_usd, p.swap_usd),
 });
 const toViewMt5 = (p: Mt5PeriodStats): ViewPeriod => ({
   start: p.start, end: p.end, trades: p.trades, wins: p.wins, losses: p.losses,
@@ -36,6 +40,7 @@ const toViewMt5 = (p: Mt5PeriodStats): ViewPeriod => ({
   ddValue: p.total_r != null ? p.max_dd_r : p.max_dd_usd,
   ddUnit: p.total_r != null ? "R" : "USD",
   totalR: p.total_r,
+  costs: _costs(p.commission_usd, p.swap_usd),
 });
 
 // Suprapune statisticile MT5-directe pe cardul de sesiune, pastrand SessionCard
@@ -204,6 +209,29 @@ function WeeklyStatsPanel({ source, onSourceChange }: { source: StatsSource; onS
           </div>
           <div className={`text-center text-[11px] font-mono ${prev.pnl_usd != null ? rColor(prev.pnl_usd) : "text-slate-600"}`}>
             {fmtUsd(prev.pnl_usd) ?? "—"}
+          </div>
+        </div>
+      )}
+
+      {/* Comisioane + swap ale perioadei (doar daca exista date reale) */}
+      {(cur.costs != null || prev.costs != null) && (
+        <div className="grid grid-cols-3 items-center">
+          <div className="text-[11px] text-slate-400 flex items-center gap-1">
+            Comisioane
+            <span
+              className="text-[10px] text-slate-600 cursor-help"
+              title={usingMt5
+                ? "Comisioane + swap ale perioadei, din MT5 (cont-wide — include și Motorul AI)."
+                : "Comisioane + swap ale perioadei, din outcomes.csv (botul pe reguli)."}
+            >ⓘ</span>
+          </div>
+          <div className="text-center">
+            {cur.costs != null
+              ? <span className={`text-xs font-mono font-semibold ${rColor(cur.costs)}`}>{fmtUsd(cur.costs)}</span>
+              : <span className="text-xs font-mono text-slate-600">—</span>}
+          </div>
+          <div className={`text-center text-[11px] font-mono ${prev.costs != null ? rColor(prev.costs) : "text-slate-600"}`}>
+            {fmtUsd(prev.costs) ?? "—"}
           </div>
         </div>
       )}
