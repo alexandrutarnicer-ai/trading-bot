@@ -1,0 +1,4 @@
+{
+  "_comentariu": "Copiaza la data/matrix_config.json (gitignored) si pune access token-ul Matrix. Il obtii din Element: Settings -> Help & About -> Advanced -> Access Token. NU il pune in git.",
+  "access_token": "syt_xxxxxxxxxxxxxxxxxxxxxxxx"
+}

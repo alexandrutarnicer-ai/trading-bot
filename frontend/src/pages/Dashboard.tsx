@@ -12,6 +12,7 @@ import { SignalFeed } from "../components/SignalFeed";
 import { EquityChart } from "../components/EquityChart";
 import { TradingStatsPanel } from "../components/TradingStatsPanel";
 import { TopMarketsWidget } from "../components/TopMarketsWidget";
+import { AiActivityCard } from "../components/AiActivityCard";
 import { SourceToggle } from "../components/SourceToggle";
 import { ActiveOrdersTable } from "../components/ActiveOrdersTable";
 
@@ -496,8 +497,9 @@ export function Dashboard() {
 
       {/* Bottom two columns */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Signal feed */}
-        <div className="bg-surface-card rounded-xl border border-surface-border p-4 flex flex-col min-h-[320px] max-h-[520px]">
+        {/* Coloana stanga: Tranzacții MT5 + Top 5 Piețe (sub tranzacții) */}
+        <div className="space-y-4">
+        <div className="bg-surface-card rounded-xl border border-surface-border p-4 flex flex-col h-[520px] overflow-hidden">
           <div className="flex items-center justify-between mb-4 flex-shrink-0">
             <h2 className="text-sm font-semibold text-white">
               {statsSource === "mt5"
@@ -541,6 +543,10 @@ export function Dashboard() {
           </div>
         </div>
 
+          {/* Top 5 piete — mutat sub Tranzacții MT5 */}
+          <TopMarketsWidget source={statsSource} onSourceChange={setStatsSource} />
+        </div>
+
         {/* Equity chart + stats */}
         <div className="space-y-4">
           <div className="bg-surface-card rounded-xl border border-surface-border p-4">
@@ -569,8 +575,8 @@ export function Dashboard() {
             <WeeklyStatsPanel source={statsSource} onSourceChange={setStatsSource} />
           </div>
 
-          {/* Top 5 piete */}
-          <TopMarketsWidget source={statsSource} onSourceChange={setStatsSource} />
+          {/* Motor AI — card separat cu activitatea motorului autonom */}
+          <AiActivityCard />
         </div>
       </div>
     </div>

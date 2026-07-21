@@ -15,12 +15,23 @@
 
   "allow_writes": false,
   "confirm_timeout_s": 300,
+  "idle_sleep_after_s": 3600,
 
   "fallback_claude_api": true,
   "fallback_ai_sources": true,
   "announce_fallback": true,
 
   "copilot_enabled": false,
+
+  "_editor_rezerva": "Editor gratuit de rezerva la claude! (cand Claude CLI e indisponibil). Aider (pip install aider-chat) foloseste cheia ta groq gratuita.",
+  "editor_fallback_enabled": true,
+  "aider_model": "groq/llama-3.3-70b-versatile",
+
+  "_matrix": "Al doilea canal (EU, gratuit). Token-ul sta in data/matrix_config.json, NU aici.",
+  "matrix_enabled": false,
+  "matrix_homeserver": "https://matrix.org",
+  "matrix_room_id": "",
+  "matrix_allowed_users": [],
 
   "single_task": true,
   "api_base": "http://localhost:8000/api"

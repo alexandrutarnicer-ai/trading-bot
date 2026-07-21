@@ -176,9 +176,10 @@ class BridgeState:
 
     # -- confirmari scriere --
 
-    def add_pending(self, code: str, session_id: str, prompt: str, ttl_s: int) -> None:
+    def add_pending(self, code: str, session_id: str | None, prompt: str, ttl_s: int,
+                    backend: str = "claude") -> None:
         self.pending_confirm[code] = {"session_id": session_id, "prompt": prompt,
-                                      "expires_at": time.time() + ttl_s}
+                                      "backend": backend, "expires_at": time.time() + ttl_s}
         self.save()
 
     def pop_valid_confirm(self, code: str) -> dict | None:

@@ -145,6 +145,13 @@ _MT5_HEALTH_ALERT_FILE = os.path.join("data", "mt5_health_alert.json")
 _MT5_HEALTH_NOTIFIER   = "session1"  # singura sesiune care trimite Telegram
 _MT5_HEALTH_MAX        = 2           # max 2 notificari per incident
 _MT5_HEALTH_REPEAT_S   = 600         # a 2-a notificare dupa 10 min daca persista
+# Deconectarile SCURTE (blip de reconectare pe partea brokerului) sunt frecvente si
+# inofensive — botul isi revine singur. Nu alertam pentru ele: trimitem prima
+# notificare DOAR daca deconectarea (broker sau IPC) persista peste acest prag.
+# Asa distingem un blip scurt de o problema reala prelungita, fara spam. Verificarea
+# de sanatate ruleaza la bara (session1 = M15), deci practic alertam daca inca e
+# cazuta la prima verificare de dupa prag.
+_MT5_DISCONNECT_GRACE_S = 300        # 5 min de persistenta inainte de prima alerta
 
 
 def _check_mt5_health(log, session_key: str, expected_login: int) -> None:
@@ -179,22 +186,40 @@ def _check_mt5_health(log, session_key: str, expected_login: int) -> None:
         e = alerts.get(key)
         return e if isinstance(e, dict) else {}
 
-    def _should_alert(key: str) -> bool:
+    def _mark_seen(key: str):
+        """Inregistreaza momentul primei detectari a problemei (pentru pragul de
+        persistenta), FARA sa trimita nimic. Doar notifier-ul urmareste (el alerteaza)."""
+        nonlocal changed
+        if not _can_notify:
+            return
+        e = _entry(key)
+        if "first_seen" not in e:
+            alerts[key] = {**e, "first_seen": now, "count": e.get("count", 0)}
+            changed = True
+
+    def _down_min(key: str) -> int:
+        return int((now - _entry(key).get("first_seen", now)) / 60)
+
+    def _should_alert(key: str, grace_s: float = 0) -> bool:
         if not _can_notify:
             return False
         e = _entry(key)
         count = e.get("count", 0)
         if count >= _MT5_HEALTH_MAX:
             return False                              # limita atinsa pentru acest incident
+        # Prag de persistenta: pentru prima alerta, problema trebuie sa dureze >= grace_s
+        # (blip scurt care se rezolva inainte → nicio alerta).
+        if grace_s > 0 and count == 0 and (now - e.get("first_seen", now)) < grace_s:
+            return False
         if count == 0:
-            return True                              # prima detectare — trimite imediat
+            return True                              # a depasit pragul — prima notificare
         return now - e.get("last_sent", 0) > _MT5_HEALTH_REPEAT_S  # reminder dupa 10 min
 
     def _fire(key: str, text: str):
         nonlocal changed
         e     = _entry(key)
         count = e.get("count", 0) + 1
-        alerts[key] = {"count": count, "last_sent": now}
+        alerts[key] = {"count": count, "last_sent": now, "first_seen": e.get("first_seen", now)}
         changed = True
         suffix = "\n<i>(reminder — problema persista)</i>" if count > 1 else ""
         log.warning(f"[MT5-HEALTH] {key} (#{count})")
@@ -214,25 +239,30 @@ def _check_mt5_health(log, session_key: str, expected_login: int) -> None:
     ti = _mt5_exec.terminal_info()
     if ti is None:
         log.warning("[MT5-HEALTH] terminal_info() = None — IPC pierdut")
-        if _should_alert("ipc_lost"):
+        _mark_seen("ipc_lost")
+        # Alerta DOAR daca IPC-ul e pierdut de peste pragul de persistenta (nu blip)
+        if _should_alert("ipc_lost", grace_s=_MT5_DISCONNECT_GRACE_S):
             _fire("ipc_lost",
                   "🔴 <b>MT5: Conexiune IPC pierduta</b>\n"
-                  "terminal_info() = None. Verifica ca MT5 terminal este deschis.")
+                  f"terminal_info() = None de peste {_down_min('ipc_lost')} min. "
+                  "Verifica ca MT5 terminal este deschis.")
         if changed:
             _write_health_alerts(alerts)
         return
 
-    # IPC recuperat — curata alerta IPC daca exista
+    # IPC recuperat — curata alerta IPC daca exista (fara mesaj daca a fost doar blip)
     _resolve("ipc_lost",
              "✅ <b>MT5: Conexiune IPC restabilita</b>\nBotul reia monitorizarea normala.")
 
-    # 1. Conexiune broker
+    # 1. Conexiune broker — alertam DOAR la deconectare SUSTINUTA (peste prag), nu la blip
     if not ti.connected:
         log.warning("[MT5-HEALTH] deconectat de la server broker")
-        if _should_alert("disconnected"):
+        _mark_seen("disconnected")
+        if _should_alert("disconnected", grace_s=_MT5_DISCONNECT_GRACE_S):
             _fire("disconnected",
                   "🔴 <b>MT5: Deconectat de la server broker</b>\n"
-                  "MT5 nu are conexiune cu ICMarketsEU.\n"
+                  f"Fara conexiune cu ICMarketsEU de peste {_down_min('disconnected')} min "
+                  "(deconectare sustinuta, nu un blip scurt).\n"
                   "Verifica internetul sau statusul serverului broker.")
     else:
         _resolve("disconnected",
@@ -719,6 +749,34 @@ def _ai_strict_blocked(session_cfg: dict, verdict: dict | None) -> bool:
             and verdict is not None
             and bool(verdict.get("approved", True))
             and bool(verdict.get("error")))
+
+
+def _ai_reject_cause(verdict: dict) -> str:
+    """
+    Descrie CAUZA respingerii filtrului AI fara sa induca in eroare.
+
+    Capcana pe care o evita: cand Head Trader-ul spune NU (`approve=false`), campul
+    `confidence` inseamna "cat de sigur e ca trade-ul e SLAB" — NU o incredere de
+    aprobare de comparat cu pragul. Afisand "Incredere 90% (prag 85%)" langa RESPINS
+    parea o contradictie (90>85 dar respins). Sursa de adevar a gate-ului e
+    `consensus_confidence` = increderea EFECTIVA (0 cand nu s-a aprobat nimic).
+
+    Trei cauze posibile (in ordinea verificarii):
+      1. veto Risk Manager cu cod valid
+      2. consiliul a decis NU (approve=false → consensus_confidence 0/None)
+      3. increderea de consens a fost sub prag (s-a aprobat, dar media < prag)
+    """
+    thr  = verdict.get("threshold")
+    conf = verdict.get("confidence")
+    if verdict.get("veto") and verdict.get("veto_code"):
+        return f"Veto Risk Manager ({verdict.get('veto_code')})"
+    cc = verdict.get("consensus_confidence")
+    if cc is None or cc < 1:
+        # nimic n-a fost aprobat → e o decizie de NU, nu o incredere sub prag
+        if conf and conf > 0:
+            return f"Consiliul AI a decis NU ({conf}% convins că e setup slab)"
+        return "Consiliul AI a decis NU (setup respins)"
+    return f"Încredere consens {round(cc)}% sub pragul {thr}%"
 
 
 def _ai_note(p: dict | None) -> str:
@@ -2809,13 +2867,11 @@ def _smart_news_place_order(
     verdict = _ai_filter_check(_sn_sig, session_cfg, src, log)
     if verdict is not None and (not verdict.get("approved", True)
                                 or _ai_strict_blocked(session_cfg, verdict)):
-        conf = verdict.get("confidence")
         if verdict.get("error"):
             why_ai = (f"filtrul AI indisponibil ({str(verdict.get('error'))[:120]}) "
                       "+ mod Strict activ")
         else:
-            why_ai = (f"incredere {conf if conf is not None else '?'}% "
-                      f"sub prag {verdict.get('threshold')}%")
+            why_ai = _ai_reject_cause(verdict)   # cauza reala (nu "incredere X% sub prag" derutant)
         log.info(f"  [SN] {sn_id} {symbol}: RESPINS de Filtrul AI ({why_ai}) "
                  "— ordin de stire NEPLASAT.")
         _send_telegram(
@@ -3762,11 +3818,12 @@ def run_generator(session_cfg: dict):
                                      f"și modul Strict e activ — fără verdict AI, "
                                      f"ordinul nu se plasează.\n")
                         else:
+                            # Cauza reala (nu "Incredere 90% (prag 85%)" derutant cand
+                            # Head Trader-ul a spus NU cu 90% convingere) — vezi _ai_reject_cause.
                             _head = (f"⛔ <b>Filtru AI: RESPINS — {sig['dir_str']} "
                                      f"{sig['symbol']}</b>\n"
-                                     f"Încredere: {_conf_str} (prag "
-                                     f"{_ai_verdict.get('threshold')}% — nivel "
-                                     f"{_ai_verdict.get('level')})\n"
+                                     f"{_html_esc(_ai_reject_cause(_ai_verdict))} · nivel "
+                                     f"{_ai_verdict.get('level')}\n"
                                      f"Motiv: {_html_esc(_ai_verdict.get('reason', ''))[:400]}\n")
                         _send_telegram(
                             _head +

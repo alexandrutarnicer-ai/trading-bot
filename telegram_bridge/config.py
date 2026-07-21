@@ -18,6 +18,8 @@ CFG_PATH  = os.path.join(DATA_DIR, "telegram_bridge.json")
 STATE_PATH = os.path.join(DATA_DIR, "telegram_bridge_state.json")
 TG_CFG    = os.path.join(DATA_DIR, "telegram_config.json")
 LOG_PATH  = os.path.join(DATA_DIR, "telegram_bridge.log")
+PID_PATH  = os.path.join(DATA_DIR, "telegram_bridge.pid")
+STATUS_PATH = os.path.join(DATA_DIR, "telegram_bridge_status.json")
 
 # Binarul Claude Code instalat de installer-ul nativ (nu e pe PATH-ul de sistem).
 _DEFAULT_CLAUDE = os.path.join(os.path.expanduser("~"), ".local", "bin", "claude.exe")
@@ -80,11 +82,20 @@ DEFAULTS: dict = {
     "claude_resume_window_s": 1800,  # reply la un raspuns mai vechi de atat → sesiune noua
     "claude_max_output_chars": 12000,  # taie raspunsuri uriase inainte de chunking
 
-    # ── Modul de SCRIERE (Faza 3) — OFF by default (siguranta) ──
+    # ── Modul de SCRIERE / EDIT (Faza 3) — OFF by default (siguranta) ──
+    # allow_writes se poate comuta si de pe telefon cu comanda `/edit on|off`
+    # (persistata aici) — pentru investigare / fix critic de la distanta.
     "allow_writes":       False,
     "write_tools":        _WRITE_TOOLS,
     "write_permission_mode": "acceptEdits",   # accepta editari; NU bypass total
     "confirm_timeout_s":  300,        # ai 5 min sa raspunzi CONFIRM <cod>
+    "kw_edit":            "/edit",    # comanda: /edit on | /edit off | /edit status
+
+    # ── Mod inactiv (economie) ──
+    # Long-polling e deja near-zero cost cand nu vin mesaje (blocheaza pe socket,
+    # se trezeste INSTANT la un mesaj). Dupa atata inactivitate marcam starea
+    # "inactiv" in status (vizibilitate) — bucla ramane responsiva la mesaje.
+    "idle_sleep_after_s": 3600,       # 1h fara mesaje → marcheaza inactiv
 
     # ── Lant de fallback pentru "claude ..." ──
     "fallback_claude_api": True,      # CLI picat → Claude API direct (sursa 'claude')
@@ -100,6 +111,25 @@ DEFAULTS: dict = {
     "copilot_enabled":  False,
     "kw_copilot":       "copilot",
     "copilot_binary":   "",          # "" = auto-detect (copilot → gh copilot)
+
+    # ── Editor de REZERVA (gratuit) pentru scriere — fallback la `claude!` ──
+    # Cand Claude CLI e indisponibil, fluxul de scriere foloseste un editor liber.
+    # Recomandat: Aider (open-source, gratuit) — foloseste cheile tale AI existente
+    # (ex: groq gratuit). `aider_model` alege modelul; cheia se injecteaza automat
+    # din data/ai/providers.json dupa prefixul modelului. Detectat automat (aider/copilot).
+    "editor_fallback_enabled": True,
+    "aider_binary":     "",          # "" = auto-detect ('aider' din PATH)
+    "aider_model":      "groq/llama-3.3-70b-versatile",   # gratuit prin cheia 'groq'
+
+    # ── Matrix / Element (al doilea canal, EU, gratuit — OPTIONAL, off by default) ──
+    # Acelasi Router (comenzi identice cu Telegram). Ruleaza intr-un thread separat
+    # in acelasi proces; pornit DOAR daca matrix_enabled + homeserver + room + token.
+    # Token-ul (secret) sta in data/matrix_config.json (gitignored), NU aici.
+    "matrix_enabled":      False,
+    "matrix_homeserver":   "https://matrix.org",   # sau un homeserver EU (ex: https://tchncs.de)
+    "matrix_room_id":      "",                       # !camera:homeserver (camera NEcriptata)
+    "matrix_allowed_users": [],                      # @tu:homeserver — gol = orice alt membru
+    "matrix_poll_timeout_s": 30,
 
     # Un singur task greu (claude/ai/copilot) simultan; restul primesc "ocupat".
     "single_task": True,
@@ -138,6 +168,26 @@ def load_credentials() -> tuple[str, str]:
             os.environ.get("TELEGRAM_CHAT_ID", "").strip())
 
 
+MATRIX_CFG = os.path.join(DATA_DIR, "matrix_config.json")
+
+
+def load_matrix_token() -> str:
+    """Access token Matrix (secret) — data/matrix_config.json, gitignored."""
+    try:
+        with open(MATRIX_CFG, encoding="utf-8") as f:
+            return (json.load(f).get("access_token") or "").strip()
+    except Exception:
+        return os.environ.get("MATRIX_TOKEN", "").strip()
+
+
+def matrix_ready(cfg: dict) -> bool:
+    """True daca Matrix e activat SI complet configurat (homeserver+room+token)."""
+    return bool(cfg.get("matrix_enabled")
+                and (cfg.get("matrix_homeserver") or "").strip()
+                and (cfg.get("matrix_room_id") or "").strip()
+                and load_matrix_token())
+
+
 def allowed_ids(cfg: dict) -> set[str]:
     """Setul de chat_id-uri autorizate. Gol in config → chat_id-ul din credentiale."""
     ids = {str(x).strip() for x in (cfg.get("allowed_chat_ids") or []) if str(x).strip()}
@@ -154,3 +204,20 @@ def save_default_config() -> None:
         os.makedirs(DATA_DIR, exist_ok=True)
         with open(CFG_PATH, "w", encoding="utf-8") as f:
             json.dump(DEFAULTS, f, indent=2, ensure_ascii=False)
+
+
+def set_config_value(key: str, value) -> None:
+    """Persista o singura cheie in data/telegram_bridge.json (fara a pierde restul)."""
+    os.makedirs(DATA_DIR, exist_ok=True)
+    cur: dict = {}
+    if os.path.isfile(CFG_PATH):
+        try:
+            with open(CFG_PATH, encoding="utf-8") as f:
+                cur = json.load(f)
+        except Exception:
+            cur = {}
+    cur[key] = value
+    tmp = CFG_PATH + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(cur, f, indent=2, ensure_ascii=False)
+    os.replace(tmp, CFG_PATH)

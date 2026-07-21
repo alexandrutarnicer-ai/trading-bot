@@ -225,6 +225,131 @@ def run_copilot(cfg: dict, prompt: str) -> RunResult | None:
         return RunResult(text=f"(Copilot a esuat: {e})", level="copilot", is_error=True)
 
 
+# ── Editor de REZERVA (gratuit): Aider + Copilot-write ────────────────────────
+
+# Prefix model Aider → (variabila de mediu asteptata de Aider, nume sursa in providers.json).
+# Injectam cheia ta existenta ca Aider sa foloseasca modelele tale gratuite fara setup extra.
+_AIDER_KEY_ENV = {
+    "groq":       ("GROQ_API_KEY", "groq"),
+    "gemini":     ("GEMINI_API_KEY", "gemini"),
+    "openai":     ("OPENAI_API_KEY", "chatgpt"),
+    "deepseek":   ("DEEPSEEK_API_KEY", "deepseek"),
+    "openrouter": ("OPENROUTER_API_KEY", "openroute"),
+    "anthropic":  ("ANTHROPIC_API_KEY", "claude"),
+    "mistral":    ("MISTRAL_API_KEY", "mistral"),
+}
+
+
+def aider_binary(cfg: dict) -> str | None:
+    import shutil as _sh
+    b = cfg.get("aider_binary") or ""
+    if b and (os.path.isfile(b) or _sh.which(b)):
+        return b
+    return _sh.which("aider")
+
+
+def _aider_env(cfg: dict) -> dict:
+    """Env pentru Aider, cu cheia AI injectata din providers.json dupa prefixul modelului."""
+    env = dict(os.environ)
+    model = (cfg.get("aider_model") or "").strip().lower()
+    prefix = model.split("/", 1)[0] if "/" in model else ""
+    ev = _AIDER_KEY_ENV.get(prefix)
+    if ev and ev[0] not in env:
+        try:
+            from ai_engine.config import load_keys
+            key = (load_keys() or {}).get(ev[1], "")
+            if key:
+                env[ev[0]] = key
+        except Exception:
+            pass
+    return env
+
+
+def run_aider(cfg: dict, prompt: str) -> RunResult | None:
+    """
+    Editor liber Aider (open-source, gratuit): editeaza fisierele + face commit.
+    Foloseste modelul din `aider_model` (implicit un model gratuit prin cheia ta groq).
+    None → aider neinstalat (fallback pe copilot / mesaj onest).
+    """
+    binary = aider_binary(cfg)
+    if not binary:
+        return None
+    cmd = [binary, "--yes-always", "--no-check-update", "--no-stream", "--message", prompt]
+    model = (cfg.get("aider_model") or "").strip()
+    if model:
+        cmd += ["--model", model]
+    try:
+        proc = subprocess.run(
+            cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
+            cwd=cfg.get("claude_cwd", config.ROOT), env=_aider_env(cfg),
+            timeout=cfg.get("claude_timeout_s", 600))
+    except subprocess.TimeoutExpired:
+        return RunResult(text="⏱ Aider a depasit timpul alocat.", level="aider", is_error=True)
+    except Exception as e:
+        return RunResult(text=f"(nu am putut porni Aider: {e})", level="aider", is_error=True)
+    text = (proc.stdout or "").strip() or (proc.stderr or "").strip() or f"(Aider a rulat, cod {proc.returncode})"
+    max_chars = cfg.get("claude_max_output_chars", 12000)
+    if len(text) > max_chars:
+        text = "…(inceput trunchiat)\n" + text[-max_chars:]   # pastreaza coada (rezumat/commit)
+    return RunResult(text=text, level="aider", source=f"aider·{model or 'default'}",
+                     is_error=proc.returncode != 0)
+
+
+def run_copilot_write(cfg: dict, prompt: str) -> RunResult | None:
+    """Copilot CLI in mod agentic (poate edita). None → Copilot neinstalat."""
+    base = copilot_binary(cfg)
+    if not base:
+        return None
+    # Doar CLI-ul agentic standalone poate edita; `gh copilot` e doar suggest/explain.
+    if not (base == ["copilot"] or (len(base) == 1 and base[0].endswith("copilot"))):
+        return None
+    try:
+        proc = subprocess.run(base + ["-p", prompt], capture_output=True, text=True,
+                              encoding="utf-8", errors="replace",
+                              cwd=cfg.get("claude_cwd", config.ROOT),
+                              timeout=cfg.get("claude_timeout_s", 600))
+        out = (proc.stdout or "").strip() or (proc.stderr or "").strip()
+        return RunResult(text=out or "(Copilot nu a intors nimic)", level="copilot",
+                         source="copilot-write", is_error=proc.returncode != 0)
+    except subprocess.TimeoutExpired:
+        return RunResult(text="⏱ Copilot a depasit timpul alocat.", level="copilot", is_error=True)
+    except Exception as e:
+        return RunResult(text=f"(Copilot a esuat: {e})", level="copilot", is_error=True)
+
+
+def available_editors(cfg: dict) -> dict:
+    """Ce editoare de scriere sunt disponibile ACUM (pentru /editors + fallback)."""
+    cop = copilot_binary(cfg)
+    cop_write = bool(cop and (cop == ["copilot"] or (len(cop) == 1 and cop[0].endswith("copilot"))))
+    return {"claude": claude_binary(cfg) is not None,
+            "aider":  aider_binary(cfg) is not None,
+            "copilot": cop_write}
+
+
+def reserve_editor_name(cfg: dict) -> str | None:
+    """Numele primului editor de REZERVA disponibil (dupa Claude): aider → copilot."""
+    if not cfg.get("editor_fallback_enabled", True):
+        return None
+    eds = available_editors(cfg)
+    if eds["aider"]:
+        return "aider"
+    if eds["copilot"]:
+        return "copilot"
+    return None
+
+
+def run_reserve_editor(cfg: dict, backend: str, prompt: str) -> RunResult:
+    """Ruleaza editorul de rezerva ales (aider/copilot) pe cererea data."""
+    fn = {"aider": run_aider, "copilot": run_copilot_write}.get(backend)
+    res = fn(cfg, prompt) if fn else None
+    if res is not None:
+        return res
+    return RunResult(
+        text="⚠️ Editorul de rezerva nu mai e disponibil. Instaleaza Aider "
+             "(pip install aider-chat) sau foloseste Claude.",
+        level="local", is_error=True)
+
+
 # ── Orchestrare "claude ..." cu fallback ──────────────────────────────────────
 
 def handle_claude(cfg: dict, prompt: str, resume: str | None = None,

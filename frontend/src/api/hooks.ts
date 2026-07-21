@@ -287,6 +287,96 @@ export const useAiAutostartDisable = () => {
   });
 };
 
+// ── Punte Telegram (control + autostart) ─────────────────────────────────────
+
+export interface TelegramBridgeStatus {
+  running: boolean;
+  pid: number | null;
+  configured: boolean;
+  ts: string | null;
+  idle: boolean;
+  allow_writes: boolean;
+  last_message_ts: string | null;
+  level_ai: boolean | null;
+  level_claude: boolean | null;
+  claude_detected: boolean | null;
+  matrix_enabled: boolean;
+}
+
+export const useBridgeStatus = () =>
+  useQuery<TelegramBridgeStatus>({
+    queryKey: ["bridge-status"],
+    queryFn:  () => apiFetch("/telegram-bridge/status"),
+    refetchInterval: 15_000,
+    refetchIntervalInBackground: false,
+  });
+
+export const useBridgeStart = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiFetch("/telegram-bridge/start", { method: "POST" }),
+    onSuccess: () => { setTimeout(() => qc.invalidateQueries({ queryKey: ["bridge-status"] }), 3000); },
+  });
+};
+
+export const useBridgeStop = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiFetch("/telegram-bridge/stop", { method: "POST" }),
+    onSuccess: () => { setTimeout(() => qc.invalidateQueries({ queryKey: ["bridge-status"] }), 1500); },
+  });
+};
+
+export const useBridgeAutostartStatus = () =>
+  useQuery<{ enabled: boolean }>({
+    queryKey: ["bridge-autostart-status"],
+    queryFn:  () => apiFetch("/telegram-bridge/autostart/status"),
+    refetchInterval: 30_000,
+  });
+
+export const useBridgeAutostartEnable = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiFetch("/telegram-bridge/autostart/enable", { method: "POST" }),
+    onSuccess: () => { setTimeout(() => qc.invalidateQueries({ queryKey: ["bridge-autostart-status"] }), 4000); },
+  });
+};
+
+export const useBridgeAutostartDisable = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiFetch("/telegram-bridge/autostart/disable", { method: "POST" }),
+    onSuccess: () => { setTimeout(() => qc.invalidateQueries({ queryKey: ["bridge-autostart-status"] }), 4000); },
+  });
+};
+
+// ── Al doilea canal Matrix (configurare) ─────────────────────────────────────
+
+export interface MatrixConfig {
+  enabled: boolean;
+  homeserver: string;
+  room_id: string;
+  allowed_users: string[];
+  token_set: boolean;
+}
+
+export const useMatrixConfig = () =>
+  useQuery<MatrixConfig>({
+    queryKey: ["matrix-config"],
+    queryFn:  () => apiFetch("/telegram-bridge/matrix-config"),
+    staleTime: 30_000,
+  });
+
+export const useSaveMatrixConfig = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { enabled: boolean; homeserver: string; room_id: string;
+                         allowed_users: string[]; access_token?: string }) =>
+      apiFetch("/telegram-bridge/matrix-config", { method: "PUT", body }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["matrix-config"] }),
+  });
+};
+
 // ── Bot start/stop ──────────────────────────────────────────────────────────
 
 export const useStartBot = () => {

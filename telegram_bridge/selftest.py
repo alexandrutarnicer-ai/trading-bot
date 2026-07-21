@@ -97,6 +97,8 @@ def _install_fakes(rec: _Recorder):
     router_mod.ai_answer = fake_ai_answer
     router_mod.executors.handle_claude = fake_handle_claude
     router_mod.commands = FakeCommands
+    # /edit persista in config — in teste il stubuim ca sa NU atingem fisierul real
+    router_mod.config.set_config_value = lambda k, v: rec.calls.append(("set_config", k, v))
 
 
 # ── teste ──────────────────────────────────────────────────────────────────────
@@ -228,6 +230,46 @@ def test_routing():
     tg, r = fresh(); r.handle("/foo", 1, None)
     check("/comanda necunoscuta → mesaj", "necunoscuta" in tg.last().lower())
 
+    # /edit on|off — comuta allow_writes live + persistat (cfg izolat pt test)
+    rec.calls.clear()
+    _cfg_e = dict(cfg); _cfg_e["allow_writes"] = False
+    _tg_e = FakeTG(); _r_e = SyncRouter(_cfg_e, state, _tg_e, "123")
+    _r_e.handle("/edit on", 1, None)
+    check("/edit on → allow_writes True + persistat",
+          _cfg_e["allow_writes"] is True
+          and ("set_config", "allow_writes", True) in rec.calls
+          and "ACTIVAT" in _tg_e.joined())
+    _r_e.handle("/edit off", 2, None)
+    check("/edit off → allow_writes False",
+          _cfg_e["allow_writes"] is False
+          and ("set_config", "allow_writes", False) in rec.calls)
+    _r_e.handle("/edit", 3, None)
+    check("/edit (fara arg) → arata starea", "EDIT" in _tg_e.last())
+
+    # claude! cu Claude INDISPONIBIL → editor de REZERVA (aider) prin plan→CONFIRM
+    rec2 = _Recorder()
+    _sav_hc = router_mod.executors.handle_claude
+    _sav_rn = getattr(router_mod.executors, "reserve_editor_name", None)
+    _sav_rr = getattr(router_mod.executors, "run_reserve_editor", None)
+    router_mod.executors.handle_claude = lambda cfg, prompt, resume=None, mode="read": (
+        RunResult(text="Claude indisponibil", level="local", is_error=True))
+    router_mod.executors.reserve_editor_name = lambda cfg: "aider"
+    router_mod.executors.run_reserve_editor = lambda cfg, backend, prompt: (
+        rec2.calls.append(("reserve", backend, prompt)) or RunResult(text="editat cu aider", level="aider"))
+    _cfgw = dict(cfg); _cfgw["allow_writes"] = True
+    _tgw = FakeTG(); _rw = SyncRouter(_cfgw, state, _tgw, "123")
+    _rw.handle("claude! fixeaza bug X", 1, None)
+    _m = re.search(r"CONFIRM (\d{6})", _tgw.joined())
+    check("claude! fara Claude → ofera rezerva «aider» + cod",
+          _m is not None and "aider" in _tgw.joined())
+    if _m:
+        _rw.handle(f"CONFIRM {_m.group(1)}", 2, None)
+        check("CONFIRM rezerva → run_reserve_editor(aider) apelat",
+              any(c[0] == "reserve" and c[1] == "aider" for c in rec2.calls))
+    router_mod.executors.handle_claude = _sav_hc
+    if _sav_rn: router_mod.executors.reserve_editor_name = _sav_rn
+    if _sav_rr: router_mod.executors.run_reserve_editor = _sav_rr
+
     try: os.remove(path)
     except OSError: pass
 
@@ -236,6 +278,83 @@ def test_whitelist():
     print("[whitelist]")
     cfg = dict(config.DEFAULTS); cfg["allowed_chat_ids"] = ["555", "666"]
     check("allowed_ids din config", config.allowed_ids(cfg) == {"555", "666"})
+
+
+def test_editors():
+    print("[editors]")
+    from telegram_bridge import executors as ex
+    cfg = config.load_config()
+
+    # aider command construction
+    cfg2 = dict(cfg); cfg2["aider_binary"] = "aider"; cfg2["aider_model"] = "groq/llama-3.3-70b-versatile"
+    import telegram_bridge.executors as exmod
+    _orig_which = exmod.shutil.which
+    # forteaza detectia aider "instalat" doar pt constructie
+    exmod.shutil.which = lambda name: "/usr/bin/aider" if name == "aider" else None
+    check("aider_binary detectat cand exista", ex.aider_binary(cfg2) is not None)
+    eds = ex.available_editors(cfg2)
+    check("available_editors: aider True", eds["aider"] is True)
+    check("reserve_editor_name → aider cand aider prezent", ex.reserve_editor_name(cfg2) == "aider")
+    exmod.shutil.which = lambda name: None
+    check("reserve_editor_name → None cand nimic instalat", ex.reserve_editor_name(cfg2) is None)
+    check("editor_fallback_enabled=False → fara rezerva",
+          ex.reserve_editor_name(dict(cfg2, editor_fallback_enabled=False)) is None)
+    exmod.shutil.which = _orig_which
+
+    # env injection: model groq → GROQ_API_KEY din providers (mock)
+    from ai_engine import config as aicfg
+    _lk = aicfg.load_keys
+    aicfg.load_keys = lambda: {"groq": "gsk_test"}
+    try:
+        env = ex._aider_env({"aider_model": "groq/llama-3.3-70b"})
+        check("aider env: GROQ_API_KEY injectat din providers", env.get("GROQ_API_KEY") == "gsk_test")
+    finally:
+        aicfg.load_keys = _lk
+
+
+def test_matrix():
+    print("[matrix]")
+    from telegram_bridge.matrix_io import MatrixClient, _strip_html
+
+    check("matrix_ready: off by default", config.matrix_ready({"matrix_enabled": False}) is False)
+    _orig = config.load_matrix_token
+    config.load_matrix_token = lambda: "tok123"
+    check("matrix_ready: enabled+hs+room+token → True",
+          config.matrix_ready({"matrix_enabled": True, "matrix_homeserver": "https://hs",
+                               "matrix_room_id": "!r:hs"}) is True)
+    check("matrix_ready: enabled dar fara room → False",
+          config.matrix_ready({"matrix_enabled": True, "matrix_homeserver": "https://hs",
+                               "matrix_room_id": ""}) is False)
+    config.load_matrix_token = _orig
+
+    check("strip_html", _strip_html("<b>hi</b> &lt;x&gt; &amp;") == "hi <x> &")
+
+    # sync parsing (mock _req)
+    c = MatrixClient("https://hs", "tok", "!room:hs")
+    c.user_id = "@bot:hs"
+    fake = {"next_batch": "s2", "rooms": {"join": {"!room:hs": {"timeline": {"events": [
+        {"type": "m.room.message", "sender": "@me:hs",
+         "content": {"msgtype": "m.text", "body": "/status"}, "origin_server_ts": 1000},
+        {"type": "m.room.message", "sender": "@bot:hs",
+         "content": {"msgtype": "m.text", "body": "echo propriu"}, "origin_server_ts": 1001},
+        {"type": "m.room.message", "sender": "@me:hs",
+         "content": {"msgtype": "m.image", "body": "poza"}, "origin_server_ts": 1002},
+    ]}}}}}
+    c._req = lambda *a, **k: fake
+    nb, msgs = c.sync(None, 0)
+    check("sync: next_batch extras", nb == "s2")
+    check("sync: doar TEXT de la user (ignora ecoul botului + non-text)",
+          len(msgs) == 1 and msgs[0]["text"] == "/status" and msgs[0]["sender"] == "@me:hs")
+
+    # send payload (mock _req)
+    sent = []
+    c2 = MatrixClient("https://hs", "tok", "!room:hs")
+    c2._req = lambda method, path, params=None, body=None, timeout=40: (sent.append((method, path, body)) or {})
+    c2.send("!room:hs", "<b>salut</b>", parse_mode="HTML")
+    check("send: PUT pe m.room.message", bool(sent) and sent[0][0] == "PUT"
+          and "send/m.room.message" in sent[0][1])
+    check("send: body plain (HTML stripat) + formatted_body HTML",
+          sent[0][2]["body"] == "salut" and sent[0][2].get("formatted_body") == "<b>salut</b>")
 
 
 def main() -> int:
@@ -249,6 +368,8 @@ def main() -> int:
     test_cli_cmd()
     test_routing()
     test_whitelist()
+    test_editors()
+    test_matrix()
     print()
     if _fails:
         print(f"[FAIL] {len(_fails)} teste PICATE: {_fails}")
