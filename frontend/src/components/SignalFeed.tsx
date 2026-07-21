@@ -53,12 +53,16 @@ function statusBadge(o: Outcome, riskUsd: number | null) {
   if (o.status === "expirat")  return <span className="text-[10px] text-slate-500">expirat</span>;
   if (o.status === "invalidat") return <span className="text-[10px] text-warn">invalidat</span>;
   if (o.status === "ai_reject") {
+    // Nu afisam procentul inline: la o respingere `confidence` e cat de sigur e
+    // consiliul ca trade-ul e SLAB (o convingere de NU), nu o incredere de aprobare
+    // de comparat cu pragul — afisarea "(90%)" langa "respins" era derutanta. Motivul
+    // complet (cauza + explicatia consiliului) e in Notificari si in ai_filter.jsonl.
     return (
       <span
         className="text-[10px] font-bold text-purple-400"
-        title={`Respins de Filtrul AI Pre-Trade${o.ai_confidence != null ? ` — încredere ${o.ai_confidence}%` : ""}`}
+        title="Respins de Filtrul AI Pre-Trade — vezi cauza și motivul complet în Notificări"
       >
-        ⛔ respins AI{o.ai_confidence != null ? <span className="font-normal opacity-75"> ({o.ai_confidence}%)</span> : null}
+        ⛔ respins AI
       </span>
     );
   }

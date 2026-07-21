@@ -19,7 +19,7 @@ import threading
 import time
 import logging
 
-from . import commands, executors
+from . import commands, config, executors
 from .ai_fast import answer as ai_answer
 
 log = logging.getLogger("telegram_bridge.router")
@@ -151,12 +151,51 @@ class Router:
                 self.state.last_claude_session = None
                 self.state.save()
                 self._reply("🔄 Conversatia Claude a fost resetata (urmatorul «claude» porneste curat).")
+            elif cmd == "edit":
+                self._handle_edit(arg)
+            elif cmd in ("editors", "editoare"):
+                eds = executors.available_editors(self.cfg)
+                res = executors.reserve_editor_name(self.cfg)
+                self._reply(
+                    "🛠 Editoare de scriere disponibile:\n"
+                    f"  • Claude Code: {'✅' if eds['claude'] else '❌'} (primar)\n"
+                    f"  • Aider (gratuit): {'✅' if eds['aider'] else '❌ (pip install aider-chat)'}\n"
+                    f"  • Copilot: {'✅' if eds['copilot'] else '❌'}\n"
+                    f"Rezervă activă: {res or 'niciuna'}. "
+                    f"Cand Claude e indisponibil, «claude! …» foloseste rezerva.")
             elif cmd in ("ajutor", "help", "start", "h"):
                 self._reply(commands.cmd_help(self.cfg))
             else:
                 self._reply(f"Comanda necunoscuta: /{cmd}. Trimite /ajutor.")
         except Exception as e:
             self._reply(f"⚠️ Eroare la /{cmd}: {e}")
+
+    def _handle_edit(self, arg: str) -> None:
+        """
+        /edit on|off|status — comuta modul EDIT (allow_writes) de pe telefon, pentru
+        investigare / fix critic de la distanta. Persistat in data/telegram_bridge.json
+        + aplicat LIVE pe cfg-ul partajat (fara restart de punte). Whitelist-ul deja a
+        filtrat expeditorul, deci doar tu poti apela asta.
+        """
+        a = (arg or "").strip().lower()
+        if a in ("on", "1", "activ", "activeaza", "true", "da"):
+            config.set_config_value("allow_writes", True)
+            self.cfg["allow_writes"] = True   # live pe dict-ul partajat de toate routerele
+            self._reply(
+                "🔓 <b>Mod EDIT ACTIVAT</b>\n"
+                "Acum «claude! &lt;cerere&gt;» propune un plan + cod, iar CONFIRM &lt;cod&gt; "
+                "îl execută cu modificări reale de cod.\n"
+                "⚠️ Folosește doar pentru investigare / fix critic. Oprește cu <code>/edit off</code>.",
+                parse_mode="HTML")
+        elif a in ("off", "0", "inactiv", "dezactiveaza", "false", "nu", "stop"):
+            config.set_config_value("allow_writes", False)
+            self.cfg["allow_writes"] = False
+            self._reply("🔒 <b>Mod EDIT dezactivat</b> — «claude» rămâne doar-citire (read-only).",
+                        parse_mode="HTML")
+        else:
+            st = "ACTIVAT 🔓" if self.cfg.get("allow_writes") else "dezactivat 🔒"
+            self._reply(f"Mod EDIT: <b>{st}</b>\nComenzi: <code>/edit on</code> · "
+                        f"<code>/edit off</code>", parse_mode="HTML")
 
     # ── nivelul AI rapid ──────────────────────────────────────────────────────
 
@@ -213,18 +252,33 @@ class Router:
     def _task_plan(self, prompt: str) -> None:
         self._reply("📝 Pregatesc un plan (read-only)…")
         res = executors.handle_claude(self.cfg, prompt, resume=None, mode="plan")
-        if res.level != "claude-cli" or not res.session_id:
-            self._reply(f"{res.text}\n\n⚠️ Nu pot rula fluxul de scriere fara Claude CLI. "
-                        "Modificarea nu a fost aplicata.")
-            return
-        code = f"{random.randint(0, 999999):06d}"
         ttl = self.cfg.get("confirm_timeout_s", 300)
-        self.state.add_pending(code, res.session_id, prompt, ttl)
-        self._reply(
-            f"{res.text}\n\n"
-            f"— {_footer(res)}\n\n"
-            f"✅ Ca sa EXECUT acest plan, raspunde:\n   {self.cfg.get('kw_confirm', 'CONFIRM')} {code}\n"
-            f"(valabil {ttl // 60} min · orice altceva anuleaza)")
+        code = f"{random.randint(0, 999999):06d}"
+
+        if res.level == "claude-cli" and res.session_id:
+            # Claude CLI disponibil — plan + confirmare pe sesiunea Claude (primar)
+            self.state.add_pending(code, res.session_id, prompt, ttl, backend="claude")
+            self._reply(
+                f"{res.text}\n\n"
+                f"— {_footer(res)}\n\n"
+                f"✅ Ca sa EXECUT acest plan, raspunde:\n   {self.cfg.get('kw_confirm', 'CONFIRM')} {code}\n"
+                f"(valabil {ttl // 60} min · orice altceva anuleaza)")
+            return
+
+        # Claude CLI indisponibil → editor de REZERVA (gratuit: Aider/Copilot)
+        reserve = executors.reserve_editor_name(self.cfg)
+        if reserve:
+            self.state.add_pending(code, None, prompt, ttl, backend=reserve)
+            self._reply(
+                f"⚠️ Claude CLI indisponibil — folosesc editorul de rezervă «{reserve}».\n"
+                f"Nu pot face un plan detaliat cu rezerva, dar pot edita direct.\n\n"
+                f"Cerere: {prompt[:300]}\n\n"
+                f"✅ Ca să EDITEZ cu «{reserve}», răspunde:\n   {self.cfg.get('kw_confirm', 'CONFIRM')} {code}\n"
+                f"(valabil {ttl // 60} min)")
+            return
+
+        self._reply(f"{res.text}\n\n⚠️ Nu pot rula scrierea: nici Claude CLI, nici editor de rezervă. "
+                    "Instalează Aider (pip install aider-chat) sau loghează Claude Code.")
 
     def _handle_confirm(self, raw: str) -> None:
         parts = raw.split()
@@ -238,17 +292,23 @@ class Router:
             return
         if not self._spawn(self._task_write, rec):
             # pune codul inapoi ca sa nu-l pierzi daca esti ocupat
-            self.state.add_pending(code, rec["session_id"], rec["prompt"],
-                                   self.cfg.get("confirm_timeout_s", 300))
+            self.state.add_pending(code, rec.get("session_id"), rec["prompt"],
+                                   self.cfg.get("confirm_timeout_s", 300),
+                                   backend=rec.get("backend", "claude"))
             self._busy_reply()
 
     def _task_write(self, rec: dict) -> None:
-        self._reply("⚙️ Execut planul confirmat…")
-        res = executors.handle_claude(
-            self.cfg,
-            "Executa EXACT planul pe care l-ai propus in mesajul anterior. "
-            "Nu extinde scopul. La final, rezuma pe scurt ce ai modificat.",
-            resume=rec["session_id"], mode="write")
+        backend = rec.get("backend", "claude")
+        if backend == "claude" and rec.get("session_id"):
+            self._reply("⚙️ Execut planul confirmat cu Claude…")
+            res = executors.handle_claude(
+                self.cfg,
+                "Executa EXACT planul pe care l-ai propus in mesajul anterior. "
+                "Nu extinde scopul. La final, rezuma pe scurt ce ai modificat.",
+                resume=rec["session_id"], mode="write")
+        else:
+            self._reply(f"⚙️ Editez cu «{backend}» (rezervă)…")
+            res = executors.run_reserve_editor(self.cfg, backend, rec["prompt"])
         footer = ("\n\n" + _footer(res)) if self.cfg.get("announce_fallback", True) else ""
         mid = self._reply(f"{res.text}{footer}")
         if res.session_id:

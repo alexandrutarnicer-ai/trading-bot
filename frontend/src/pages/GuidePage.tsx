@@ -2133,6 +2133,76 @@ export function GuidePage() {
               planul tău Claude — costul apare în fiecare răspuns.
             </Tip>
           </SubSection>
+
+          <SubSection title="Pornire din UI + autostart la boot" defaultOpen={false}>
+            <p>
+              În <strong>Profil</strong>, sub setările Telegram, apare cardul
+              <strong> „Punte Telegram — chat colaborare"</strong> — dar <strong>doar dacă Telegram
+              e configurat</strong> (token + Chat ID). De acolo:
+            </p>
+            <div className="space-y-1 text-xs mt-1">
+              <KV k="Pornește / Oprește" v="buton — pornește puntea fără terminal (îți trimite mesaj de start)" />
+              <KV k="Pornire automată la boot" v="toggle — ca la bot, pornește la fiecare login Windows (UAC). Dezactivat implicit." />
+              <KV k="Status live" v="activ/oprit · inactiv (economie) · mod edit · Claude CLI detectat" />
+            </div>
+            <Note>
+              Autostart-ul creează task-ul <code>TradingBot-TelegramBridge</code> (neelevat, la login+60s).
+              Puntea nu are nevoie de MT5/Ollama. Dezactivare din același toggle sau
+              <code> scripts/remove_autostart_bridge.ps1</code>.
+            </Note>
+          </SubSection>
+
+          <SubSection title="Mod EDIT de la distanță (fix critic de pe telefon)" defaultOpen={false}>
+            <p>
+              Modificările de cod (<code>claude!</code>) sunt oprite implicit. Le activezi de pe telefon,
+              doar cât ai nevoie, cu o comandă — util dacă ești plecat și apare un bug critic:
+            </p>
+            <div className="space-y-1 text-xs mt-1">
+              <KV k="/edit on" v="activează modul EDIT (persistat, aplicat live, fără restart)" vColor="text-amber-300" />
+              <KV k="/edit off" v="înapoi la read-only" />
+              <KV k="/edit" v="arată starea curentă" />
+            </div>
+            <Note>
+              Whitelist-ul te-a filtrat deja (doar chat-ul tău), deci doar tu poți da <code>/edit</code>.
+              Scrierea rămâne în 2 pași: <code>claude! …</code> → plan + cod → <code>CONFIRM &lt;cod&gt;</code>.
+              <br /><b>Editor de rezervă gratuit:</b> dacă Claude CLI e indisponibil, <code>claude!</code>
+              folosește automat <b>Aider</b> (gratuit: <code>pip install aider-chat</code>, cu cheia ta groq).
+              Vezi cu <code>/editors</code>.
+              <br /><b>Notificări MT5/piețe:</b> deja active — botul trimite alertă la conexiune MT5 pierdută,
+              broker deconectat, AutoTrading oprit; motorul AI la pierderea conexiunii MT5.
+            </Note>
+          </SubSection>
+
+          <SubSection title="Al doilea canal: Matrix / Element (EU, gratuit)" defaultOpen={false}>
+            <p>
+              Pe lângă Telegram, poți folosi <strong>Matrix</strong> (Element) — protocol deschis, <strong>EU</strong>
+              (Element/Londra; folosit de guvernul francez, Bundeswehr, NATO), GDPR, aplicație de telefon,
+              gratuit. <strong>Aceleași comenzi</strong> ca pe Telegram. Rulează izolat (un eșec Matrix nu
+              atinge Telegram-ul), <strong>oprit implicit</strong>.
+            </p>
+            <div className="space-y-1.5 mt-2">
+              {[
+                { step: "1", title: "Instalează Element + cont EU", desc: "App Store/Play. La înregistrare alege homeserver EU (ex: tchncs.de - Germania) sau matrix.org." },
+                { step: "2", title: "Creează o cameră NEcriptată", desc: "+ → New room → dezactivează 'end-to-end encryption' → copiază Room ID din Room info → Advanced (!xxx:tchncs.de). Puntea nu citește camere criptate." },
+                { step: "3", title: "Ia Access Token", desc: "Settings → Help & About → Advanced → Access Token → copiază (syt_...). Îl pui în data/matrix_config.json." },
+                { step: "4", title: "Config pe PC", desc: "În data/telegram_bridge.json: matrix_enabled:true, matrix_homeserver, matrix_room_id, matrix_allowed_users:[@tu:tchncs.de]. Repornește puntea." },
+              ].map(({ step, title, desc }) => (
+                <div key={step} className="flex gap-3 bg-surface rounded-lg border border-surface-border p-3">
+                  <div className="w-6 h-6 rounded-full bg-sky-600/20 border border-sky-500/40 flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <span className="text-[11px] font-bold text-sky-400">{step}</span>
+                  </div>
+                  <div className="space-y-0.5">
+                    <div className="text-xs font-semibold text-slate-200">{title}</div>
+                    <div className="text-[11px] text-slate-400 leading-relaxed">{desc}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <Tip>
+              Pași complet detaliați în <code>docs/TELEGRAM_BRIDGE.md</code>. La pornire îți trimite
+              „🤖 Punte Matrix pornită" în cameră; apoi <code>/ajutor</code> merge la fel ca pe Telegram.
+            </Tip>
+          </SubSection>
         </Section>
 
         {/* Footer */}

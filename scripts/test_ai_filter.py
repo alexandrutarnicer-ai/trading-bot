@@ -465,6 +465,25 @@ check("strict: ON + respins normal → nu e treaba strict-ului (respins oricum)"
 check("strict: ON dar filtru dezactivat (verdict None) → NU blocheaza",
       sg._ai_strict_blocked({"ai_filter_strict": True}, None) is False)
 
+# _ai_reject_cause — mesaj de respingere ne-inducand in eroare (incident AUDNZD S19:
+# head approve=false, confidence 90, prag 85 → parea contradictie). consensus_confidence
+# (increderea EFECTIVA) e sursa de adevar, nu `confidence` (convingerea head-ului in NU).
+_c_headno = sg._ai_reject_cause(
+    {"confidence": 90, "threshold": 85, "veto": False, "consensus_confidence": 0.0})
+check("cauza: head NU (conf 90, consens 0) → NU pomeneste pragul, zice decizie NU",
+      "NU" in _c_headno and "90%" in _c_headno and "prag" not in _c_headno.lower(), _c_headno)
+check("cauza: incredere sub prag (consens 72) → compara cu pragul",
+      "72%" in sg._ai_reject_cause({"confidence": 72, "threshold": 85,
+                                    "consensus_confidence": 72.0, "veto": False})
+      and "85%" in sg._ai_reject_cause({"confidence": 72, "threshold": 85,
+                                        "consensus_confidence": 72.0, "veto": False}))
+check("cauza: veto cu cod → mesaj de veto",
+      "Veto" in sg._ai_reject_cause({"veto": True, "veto_code": "EXTREME_VOL",
+                                     "consensus_confidence": 0.0, "confidence": 60, "threshold": 85}))
+check("cauza: head NU fara confidence → mesaj generic, fara procent inselator",
+      "%" not in sg._ai_reject_cause({"confidence": None, "threshold": 85,
+                                      "consensus_confidence": 0.0, "veto": False}))
+
 # profilele copiaza si ai_filter_strict in sesiunea live
 with tempfile.TemporaryDirectory() as td:
     profile = {"name": "T", "sessions": [{

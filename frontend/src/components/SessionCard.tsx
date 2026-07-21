@@ -142,17 +142,18 @@ export function SessionCard({ session: s, onClick, selected }: Props) {
         </div>
       </div>
 
-      {/* P&L USD azi / ieri */}
-      {(s.pnl_usd_today != null || s.pnl_usd_yesterday != null) && (
+      {/* P&L USD azi / ieri — afisat DOAR cand exista o valoare reala (nu 0.00) */}
+      {((s.pnl_usd_today != null && s.pnl_usd_today !== 0) ||
+        (s.pnl_usd_yesterday != null && s.pnl_usd_yesterday !== 0)) && (
         <div className={`mt-2 flex gap-3 text-[10px] ${isPaused || isNewsPaused ? "opacity-60" : ""}`}>
-          {s.pnl_usd_today != null && (
-            <span className={s.pnl_usd_today >= 0 ? "text-profit" : "text-loss"}>
-              {s.pnl_usd_today >= 0 ? "+" : ""}{s.pnl_usd_today.toFixed(2)} USD azi
+          {s.pnl_usd_today != null && s.pnl_usd_today !== 0 && (
+            <span className={s.pnl_usd_today > 0 ? "text-profit" : "text-loss"}>
+              {s.pnl_usd_today > 0 ? "+" : ""}{s.pnl_usd_today.toFixed(2)} USD azi
             </span>
           )}
-          {s.pnl_usd_yesterday != null && (
-            <span className={s.pnl_usd_yesterday >= 0 ? "text-profit/60" : "text-loss/60"}>
-              {s.pnl_usd_yesterday >= 0 ? "+" : ""}{s.pnl_usd_yesterday.toFixed(2)} ieri
+          {s.pnl_usd_yesterday != null && s.pnl_usd_yesterday !== 0 && (
+            <span className={s.pnl_usd_yesterday > 0 ? "text-profit/60" : "text-loss/60"}>
+              {s.pnl_usd_yesterday > 0 ? "+" : ""}{s.pnl_usd_yesterday.toFixed(2)} ieri
             </span>
           )}
         </div>

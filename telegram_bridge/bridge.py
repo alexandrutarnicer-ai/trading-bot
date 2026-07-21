@@ -8,9 +8,11 @@ doar fisiere de stare + API-ul local. Singurul consumator de getUpdates din proi
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import sys
+import threading
 import time
 
 from . import config, executors
@@ -18,6 +20,115 @@ from .telegram_io import TelegramClient, BridgeState
 from .router import Router
 
 log = logging.getLogger("telegram_bridge")
+
+
+def _write_pid() -> None:
+    try:
+        with open(config.PID_PATH, "w", encoding="utf-8") as f:
+            f.write(str(os.getpid()))
+    except Exception:
+        pass
+
+
+def _remove_pid() -> None:
+    try:
+        os.remove(config.PID_PATH)
+    except OSError:
+        pass
+
+
+def _write_status(cfg: dict, running: bool, idle: bool = False,
+                  last_msg_ts: float | None = None) -> None:
+    """Heartbeat pentru UI/API — running, allow_writes, idle, ultima activitate."""
+    try:
+        st = {
+            "running": running,
+            "pid": os.getpid(),
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "allow_writes": bool(cfg.get("allow_writes")),
+            "idle": idle,
+            "last_message_ts": (time.strftime("%Y-%m-%dT%H:%M:%S",
+                                              time.localtime(last_msg_ts))
+                                if last_msg_ts else None),
+            "level_ai": bool(cfg.get("level_ai_enabled")),
+            "level_claude": bool(cfg.get("level_claude_enabled")),
+            "claude_detected": executors.claude_binary(cfg) is not None,
+            "copilot_enabled": bool(cfg.get("copilot_enabled")),
+            "matrix_enabled": bool(cfg.get("matrix_enabled")),
+        }
+        tmp = config.STATUS_PATH + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(st, f, ensure_ascii=False, indent=1)
+        os.replace(tmp, config.STATUS_PATH)
+    except Exception:
+        pass
+
+
+def run_matrix(cfg: dict, state: BridgeState) -> None:
+    """
+    Al doilea canal (Matrix/Element) — thread separat, ACELASI Router ca Telegram.
+    Complet izolat: orice esec aici (retea, config, homeserver picat) e prins si NU
+    afecteaza canalul Telegram sau restul aplicatiei. Pornit doar daca matrix_ready.
+    """
+    from .matrix_io import MatrixClient
+    hs    = (cfg.get("matrix_homeserver") or "").strip()
+    room  = (cfg.get("matrix_room_id") or "").strip()
+    token = config.load_matrix_token()
+    if not (hs and room and token):
+        return
+    allowed = {str(u).strip() for u in (cfg.get("matrix_allowed_users") or []) if str(u).strip()}
+    client = MatrixClient(hs, token, room)
+    try:
+        me = client.whoami()
+        log.info("Matrix: conectat ca %s in camera %s", me, room)
+    except Exception as e:
+        log.error("Matrix: whoami esuat (%s) — canalul Matrix NU porneste "
+                  "(Telegram ramane neafectat).", e)
+        return
+
+    router = Router(cfg, state, client, room)   # transport-agnostic (are .send compatibil)
+    since = None
+    try:
+        since, _ = client.sync(None, 0)          # drenaj: nu procesa mesaje vechi
+    except Exception as e:
+        log.warning("Matrix: sync initial esuat (%s).", e)
+    try:
+        client.send(room, "🤖 Punte Matrix pornita — trimite /ajutor pentru comenzi.")
+    except Exception:
+        pass
+
+    poll_ms = int(cfg.get("matrix_poll_timeout_s", 30) * 1000)
+    _last_alert: dict[str, float] = {}
+    log.info("Canal Matrix activ (poll %ds).", poll_ms // 1000)
+    while True:
+        try:
+            since, msgs = client.sync(since, poll_ms)
+        except Exception as e:
+            log.warning("Matrix sync a esuat (%s) — reincerc in 10s.", e)
+            time.sleep(10)
+            continue
+        for m in msgs:
+            try:
+                sender = m.get("sender", "")
+                if allowed and sender not in allowed:
+                    now = time.time()
+                    if now - _last_alert.get(sender, 0) > 600:
+                        _last_alert[sender] = now
+                        log.warning("Matrix: mesaj NEAUTORIZAT de la %s ignorat.", sender)
+                    continue
+                if (time.time() - float(m.get("ts", 0))) > cfg.get("ignore_messages_older_than_s", 180):
+                    continue
+                router.handle(m.get("text", ""), None, None)
+            except Exception:
+                log.exception("Matrix: eroare la procesarea unui mesaj.")
+
+
+def _guarded_matrix(cfg: dict, state: BridgeState) -> None:
+    """Wrapper: orice exceptie din canalul Matrix e logata, NU propagata (izolare)."""
+    try:
+        run_matrix(cfg, state)
+    except Exception:
+        log.exception("Canal Matrix oprit de o eroare (Telegram ramane activ).")
 
 
 def _setup_logging() -> None:
@@ -69,6 +180,8 @@ def main() -> int:
 
     tg = TelegramClient(token)
     state = BridgeState()
+    _write_pid()
+    _write_status(cfg, running=True)
 
     # Drenaj backlog la prima rulare: nu executa comenzi vechi acumulate in Telegram.
     if state.offset == 0:
@@ -96,12 +209,32 @@ def main() -> int:
     except Exception:
         pass
 
+    # Al doilea canal Matrix (optional) — thread separat, izolat. Un esec aici nu
+    # atinge Telegram-ul (thread daemon, tot corpul in try/except).
+    if config.matrix_ready(cfg):
+        threading.Thread(target=lambda: _guarded_matrix(cfg, state),
+                         daemon=True, name="MatrixBridge").start()
+        log.info("Canal Matrix: pornit in thread separat.")
+
     log.info("Punte pornita. Whitelist=%s offset=%d", sorted(ids), state.offset)
 
     _last_alert: dict[str, float] = {}
     conflict_strikes = 0
+    last_activity = time.time()   # ultima activitate (mesaj autorizat)
+    idle_marked = False           # am marcat deja starea inactiva?
+    idle_after = cfg.get("idle_sleep_after_s", 3600)
 
     while True:
+        # Mod inactiv: long-polling e deja near-zero cost intre mesaje (blocheaza pe
+        # socket, se trezeste INSTANT la un mesaj). Dupa `idle_after` fara mesaje
+        # marcam starea (vizibilitate in UI); bucla ramane la fel de responsiva.
+        idle_now = (time.time() - last_activity) > idle_after
+        if idle_now and not idle_marked:
+            idle_marked = True
+            log.info("Mod inactiv (fara mesaje de %.0f min) — long-poll low-power, "
+                     "trezire instant la urmatorul mesaj.", idle_after / 60)
+        _write_status(cfg, running=True, idle=idle_now, last_msg_ts=last_activity)
+
         try:
             updates = tg.get_updates(state.offset, cfg.get("poll_timeout_s", 50))
             conflict_strikes = 0
@@ -157,6 +290,11 @@ def main() -> int:
                     log.info("Mesaj vechi (%.0fs) ignorat la executie.", age)
                     continue
 
+                # Mesaj autorizat → reactiveaza (iesire din mod inactiv)
+                last_activity = time.time()
+                if idle_marked:
+                    idle_marked = False
+                    log.info("Reactivat — mesaj primit dupa perioada inactiva.")
                 text = msg.get("text", "")
                 reply_to = (msg.get("reply_to_message") or {}).get("message_id")
                 router_for(chat_id or from_id).handle(text, msg.get("message_id"), reply_to)
@@ -180,3 +318,10 @@ def entry() -> int:
         except Exception:
             pass
         return 0
+    finally:
+        # curata markerul de proces + status running=false (best-effort)
+        try:
+            _write_status(config.load_config(), running=False)
+        except Exception:
+            pass
+        _remove_pid()

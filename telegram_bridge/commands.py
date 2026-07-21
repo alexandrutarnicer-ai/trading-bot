@@ -190,8 +190,10 @@ def cmd_help(cfg: dict) -> str:
         "     (sau raspunde direct la un mesaj al lui Claude)",
         "",
         f"Modificari de cod ({aw}):",
+        f"  /edit on · /edit off — activeaza/opreste modul EDIT (scriere) de aici",
         f"  {kw('kw_claude_write')} <cerere> — propune un plan + cod de confirmare",
         f"  {kw('kw_confirm')} <cod> — executa planul (in {cfg.get('confirm_timeout_s', 300)//60} min)",
+        "  /editors — ce editoare exista (Claude + rezerva gratuita Aider/Copilot)",
         "",
         "Mesajele fara cuvant cheie sunt ignorate.",
     ])
