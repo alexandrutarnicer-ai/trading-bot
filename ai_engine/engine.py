@@ -527,6 +527,14 @@ def run() -> None:
                 log.error("outcomes: %s", e)
                 _record_error("outcomes", str(e))
 
+            # Re-exporta trade-urile inchise in CSV-ul git-trackable (transfer PC↔laptop).
+            # Fail-safe: orice eroare de export NU trebuie sa afecteze motorul.
+            try:
+                from ai_engine.export import export_closed_outcomes
+                export_closed_outcomes()
+            except Exception as e:
+                log.debug("export ai_outcomes esuat (ignor): %s", e)
+
             failures = 0
             processed = 0
             for symbol in cfg["markets"]:

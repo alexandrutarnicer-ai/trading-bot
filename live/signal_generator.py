@@ -18,7 +18,7 @@ import logging
 import threading
 import subprocess
 import urllib.request
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from tz_helper import now_local
 
 import pandas as pd
@@ -42,6 +42,26 @@ try:
     import MetaTrader5 as _mt5_exec
 except ImportError:
     _mt5_exec = None
+
+
+def _mt5_epoch_to_local(epoch) -> datetime:
+    """
+    Converteste timestamp-ul unui deal/ordin MT5 (epoch `deal.time`/`order.time_done`)
+    in ora Romaniei — ALINIAT cu barele (adapters/mt5_source.py).
+
+    MT5 codeaza aceste timestamps ca ORA-DE-PERETE A SERVERULUI exprimata ca secunde
+    epoch, deci `datetime.fromtimestamp(epoch, tz=UTC)` reda acea ora de perete (naiv).
+    Pentru un broker EET/EEST (offset server == offset RO, cazul ICMarketsEU) aceasta
+    ESTE deja ora Romaniei — identic cu pasul 1 din `Mt5DataSource.load_bars`, iar
+    conversia offset serverului se anuleaza cu cea a Romaniei.
+
+    BUG reparat (2026-07-22): `datetime.fromtimestamp(epoch)` (fara UTC) interpreteaza
+    epoch-ul in fusul LOCAL si mai adauga o data offset-ul RO (dubla conversie, +3h) →
+    trade-urile care se inchid seara (~21:00-24:00 RO = 00:00-03:00 la server) primeau
+    data ZILEI URMATOARE in outcomes.csv, deci raportul zilnic le pierdea in ziua corecta
+    (le arata a doua zi). Ex: USDCAD +12.06 inchis 21.07 21:38 RO era scris 22.07 00:38.
+    """
+    return datetime.fromtimestamp(epoch, tz=timezone.utc).replace(tzinfo=None)
 
 # ---------------------------------------------------------------------------
 # Telegram — citit din variabile de mediu (setate o singura data in Windows)
@@ -1296,7 +1316,7 @@ def _check_mt5_position_closed(ticket: int, p: dict, log) -> dict | None:
         return None
 
     exit_price = close_deal.price
-    exit_time  = datetime.fromtimestamp(close_deal.time)
+    exit_time  = _mt5_epoch_to_local(close_deal.time)
     d          = p["direction"]
     risk_dist  = abs(p["entry"] - p["sl"])
 
@@ -2000,7 +2020,7 @@ def _recover_lost_outcomes(
             mt5_tickets[sig_id] = ticket
             sig["triggered"] = True
             if order.time_done:
-                sig["triggered_at"] = datetime.fromtimestamp(order.time_done).strftime(
+                sig["triggered_at"] = _mt5_epoch_to_local(order.time_done).strftime(
                     "%Y-%m-%d %H:%M:%S"
                 )
             log.info(f"  [RECOVER] {sig_id}: pozitie #{pos_id} deschisa → actualizat mt5_tickets+triggered")
@@ -2168,7 +2188,7 @@ def _scan_mt5_history_for_missing_outcomes(
 
             entry_price    = float(entry_deal.price if entry_deal else order.price_open)
             exit_price     = float(close_deal.price)
-            exit_time      = datetime.fromtimestamp(close_deal.time).strftime("%Y-%m-%d %H:%M:%S")
+            exit_time      = _mt5_epoch_to_local(close_deal.time).strftime("%Y-%m-%d %H:%M:%S")
             pnl_usd        = round(float(close_deal.profit), 4)
             commission_usd = round(
                 float(getattr(entry_deal, "commission", 0) or 0) +
@@ -2269,7 +2289,7 @@ def _scan_mt5_history_for_missing_outcomes(
 
             status       = "TP" if result_r > 0 else "SL"
             t_done       = getattr(order, "time_done", 0) or 0
-            triggered_at = datetime.fromtimestamp(
+            triggered_at = _mt5_epoch_to_local(
                 t_done if t_done else order.time_setup
             ).strftime("%Y-%m-%d %H:%M:%S")
 
@@ -2484,7 +2504,7 @@ def _detect_orphan_mt5_orders(
                             f"  [ORPHAN-RECOVER] Pozitie #{pos.ticket} comment trunchiat '{c}' "
                             f"→ {sig_id} (match prin pret {pos.price_open:.5f})"
                         )
-                t_open = datetime.fromtimestamp(pos.time).strftime("%Y-%m-%d %H:%M:%S")
+                t_open = _mt5_epoch_to_local(pos.time).strftime("%Y-%m-%d %H:%M:%S")
                 # Actualizeaza semnalul existent in pending daca exista; altfel creaza unul nou
                 existing_sig = state.get("pending", {}).get(symbol, {}).get(sig_id)
                 if existing_sig is not None:
@@ -2942,6 +2962,13 @@ def _smart_news_place_order(
     if direction == 0:
         return
 
+    # Un singur ordin de stire per piata per FEREASTRA de protectie. `_smart_news_window_check`
+    # apeleaza asta la fiecare tick sub-bara cat timp protectia e activa (ca sa prinda momentul
+    # in care apare `actual`) — guard-ul previne replasarea. Resetat la inceputul ferestrei
+    # (tranzitia False→True in _news_watch_tick).
+    if symbol in state.get("smart_news_window_done", set()):
+        return
+
     # Piata inchisa (ex: weekend pt FX) → NU plasa ordinul de stire. Brokerul ar
     # accepta un pending stop cu piata inchisa (asteapta redeschiderea) si ar trimite
     # o notificare „Ordin Stire" desi piata e inchisa — exact bug-ul raportat pt
@@ -3034,6 +3061,9 @@ def _smart_news_place_order(
     if result and result.retcode == _mt5_exec.TRADE_RETCODE_DONE:
         top = news_events[0] if news_events else {}
         log.info(f"  [SN] {sn_id} {symbol} {dir_str} @ {entry:.5f} SL={sl:.5f} TP={tp:.5f} #{result.order}")
+        # Marcheaza piata ca „plasata in aceasta fereastra" — nu se replaseaza pana la
+        # urmatoarea fereastra de stire (resetat la tranzitia False→True).
+        state.setdefault("smart_news_window_done", set()).add(symbol)
         state.setdefault("smart_news_tickets", {})[sn_id] = {
             "ticket":    result.order,
             "symbol":    symbol,
@@ -3058,6 +3088,42 @@ def _smart_news_place_order(
     else:
         rc = result.retcode if result else "None"
         log.warning(f"  [SN] {sn_id} {symbol} ordin esuat retcode={rc}")
+
+
+def _smart_news_window_check(state: dict, session_cfg: dict, news_events: list,
+                            log, src=None) -> None:
+    """
+    Mod Inteligent — plasare IN FEREASTRA de stire, cand `actual` devine disponibil.
+
+    Ruleaza la FIECARE tick cat timp protectia e activa (nu doar la tranzitie). Motivul
+    (bug reparat 2026-07-22): directia unei stiri (`news_direction_for_symbol`) vine din
+    surpriza `actual` vs `forecast`, dar `actual` NU exista inainte de publicare — iar
+    protectia se activeaza `pre_minutes` INAINTE. `_news_close_check` rula o singura data,
+    la tranzitie (pre-stire), deci vedea mereu sentiment 0 → Modul Inteligent nu plasa
+    niciodata nimic. Acum, dupa publicare (guardul reimprospateaza `actual` in
+    news_auto_paused.json), directia devine != 0 si ordinul se plaseaza in fereastra.
+
+    Guard: `smart_news_window_done` (setat pe piata la plasare) → un singur ordin per
+    piata per fereastra. Toate celelalte gate-uri (piata deschisa, Filtru AI, sizing)
+    raman in `_smart_news_place_order`.
+    """
+    if not (session_cfg.get("smart_news_enabled") and session_cfg.get("execute_trades")
+            and news_events):
+        return
+    try:
+        from live.news_guard import news_direction_for_symbol
+    except Exception:
+        return
+    done = state.get("smart_news_window_done", set())
+    for market in session_cfg.get("markets", []):
+        if market in done:
+            continue
+        try:
+            nd = news_direction_for_symbol(market, news_events)
+        except Exception:
+            nd = 0
+        if nd != 0:
+            _smart_news_place_order(market, nd, news_events, state, session_cfg, log, src=src)
 
 
 def _smart_news_trailing_check(
@@ -3773,6 +3839,9 @@ def run_generator(session_cfg: dict):
         np_, nev_ = _is_news_paused(sk)
         if np_ and not _was_news_paused:
             log.info("  [STIRI] Tranzitie -> pauza: inchid ordine/pozitii active.")
+            # Fereastra noua → reseteaza guardul de plasare Smart (o piata poate primi
+            # din nou un ordin de stire in aceasta fereastra).
+            state["smart_news_window_done"] = set()
             _news_close_check(
                 state=state, outcomes_file=outcomes_file, log=log,
                 session_id=session_cfg.get("session_id", ""),
@@ -3788,6 +3857,11 @@ def run_generator(session_cfg: dict):
             except Exception:
                 pass
         _was_news_paused = np_
+        # Mod Inteligent: cat timp protectia e activa, incearca plasarea in directia
+        # stirii la FIECARE tick — directia devine cunoscuta abia dupa publicarea `actual`,
+        # nu la tranzitie (pre-stire). Guard intern → un singur ordin per piata/fereastra.
+        if np_:
+            _smart_news_window_check(state, session_cfg, nev_, log, src=src)
         if state.get("smart_news_tickets"):
             _smart_news_trailing_check(state=state,
                                        session_id=session_cfg.get("session_id", ""), log=log)

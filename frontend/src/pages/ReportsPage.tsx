@@ -3,7 +3,7 @@ import {
   BarChart2, TrendingUp, TrendingDown, Clock, Settings,
   Filter, ChevronDown, ChevronRight, Trophy, Target, Minus,
   Terminal, AlertTriangle, AlertCircle, Info, RefreshCw, DollarSign,
-  Send, Calendar,
+  Send, Calendar, Download,
 } from "lucide-react";
 import {
   useTransactions, useMarketStats, useBotUptime, useSessionChanges,
@@ -114,15 +114,30 @@ function TransactionsTab({ source }: { source: StatsSource }) {
   const usingMt5 = source === "mt5";
   const [statusFilter, setStatusFilter] = useState("Toate");
   const [dirFilter,    setDirFilter]    = useState<"" | "LONG" | "SHORT">("");
+  const [dateFrom,     setDateFrom]     = useState("");
+  const [dateTo,       setDateTo]       = useState("");
   const [page,         setPage]         = useState(0);
   const PER_PAGE = 50;
 
   const botQuery = useTransactions({
     status:    !usingMt5 ? (STATUS_MAP[statusFilter] || undefined) : undefined,
     direction: !usingMt5 ? (dirFilter || undefined) : undefined,
+    date_from: dateFrom || undefined,
+    date_to:   dateTo   || undefined,
     limit:     PER_PAGE,
     offset:    page * PER_PAGE,
   });
+
+  // Descarcare CSV — acelasi endpoint de filtrare (bot outcomes), fara paginare.
+  function downloadCsv() {
+    const qs = new URLSearchParams();
+    const st = STATUS_MAP[statusFilter];
+    if (st)        qs.set("status", st);
+    if (dirFilter) qs.set("direction", dirFilter);
+    if (dateFrom)  qs.set("date_from", dateFrom);
+    if (dateTo)    qs.set("date_to", dateTo);
+    window.open(`http://localhost:8000/api/reports/transactions.csv?${qs.toString()}`, "_blank");
+  }
   const mt5Query = useMt5Transactions({
     status:    usingMt5 ? (STATUS_MAP[statusFilter] || undefined) : undefined,
     direction: usingMt5 ? (dirFilter || undefined) : undefined,
@@ -186,7 +201,28 @@ function TransactionsTab({ source }: { source: StatsSource }) {
             </button>
           ))}
         </div>
-        <span className="text-[10px] text-slate-500 ml-auto">{total} tranzacții</span>
+        {/* Interval de date + export CSV */}
+        <div className="flex items-center gap-1.5 ml-2">
+          <input type="date" value={dateFrom}
+            onChange={e => { setDateFrom(e.target.value); setPage(0); }}
+            title="De la data (inclusiv)"
+            className="bg-surface border border-surface-border rounded px-1.5 py-0.5 text-[10px] text-slate-300" />
+          <span className="text-slate-600 text-[10px]">→</span>
+          <input type="date" value={dateTo}
+            onChange={e => { setDateTo(e.target.value); setPage(0); }}
+            title="Până la data (inclusiv)"
+            className="bg-surface border border-surface-border rounded px-1.5 py-0.5 text-[10px] text-slate-300" />
+          {(dateFrom || dateTo) && (
+            <button onClick={() => { setDateFrom(""); setDateTo(""); setPage(0); }}
+              className="text-[10px] text-slate-500 hover:text-slate-300 px-1" title="Șterge intervalul">✕</button>
+          )}
+        </div>
+        <button onClick={downloadCsv}
+          title={usingMt5 ? "Exportă tranzacțiile botului (outcomes.csv) cu filtrele curente" : "Exportă tranzacțiile filtrate ca CSV"}
+          className="flex items-center gap-1 text-[10px] px-2.5 py-1 rounded-lg border border-surface-border text-slate-300 hover:border-blue-500/40 hover:text-blue-400 transition-colors">
+          <Download size={12} /> CSV
+        </button>
+        <span className="text-[10px] text-slate-500">{total} tranzacții</span>
       </div>
 
       {/* Table */}

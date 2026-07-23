@@ -1918,6 +1918,65 @@ export function GuidePage() {
               P&L-ul contului MT5 din Dashboard include TOT (bot + AI + manual), fiind citit direct din equity.
             </Warn>
           </SubSection>
+          <SubSection title="Consiliul AI — ce face fiecare rol">
+            <p>Fiecare decizie trece printr-o „masă de tranzacționare" de agenți AI, în această ordine:</p>
+            <div className="space-y-2 text-xs mt-1">
+              <div className="bg-surface rounded-lg border border-surface-border p-3 space-y-0.5">
+                <div className="text-[11px] font-semibold text-slate-200">1. 📈 Analist Tehnic</div>
+                <div className="text-slate-400">Citește structura pe 15 minute (trend, EMA, breakout, pullback). <b>Deține direcția.</b> Raportează <code className="text-blue-300">bias</code> (long/short/neutral) + <code className="text-blue-300">confidence</code> 0–100.</div>
+              </div>
+              <div className="bg-surface rounded-lg border border-surface-border p-3 space-y-0.5">
+                <div className="text-[11px] font-semibold text-slate-200">2. 🌍 Analist Macro / Știri</div>
+                <div className="text-slate-400">Evaluează contextul zilei: evenimente economice apropiate, sesiune, risc de știri. Raportează bias + confidence + <code className="text-blue-300">event_risk</code>.</div>
+              </div>
+              <div className="bg-surface rounded-lg border border-surface-border p-3 space-y-0.5">
+                <div className="text-[11px] font-semibold text-slate-200">3. 🛡️ Risk Manager <span className="text-loss">(VETO absolut)</span></div>
+                <div className="text-slate-400">Gestionează <b>expunerea</b>, NU reface analiza tehnică. Poate <b>bloca</b> trade-ul — dar veto-ul e onorat DOAR cu un cod de risc valid, aplicat în cod: <code className="text-blue-300">NEWS_IMMINENT / DAILY_STOP / MAX_POSITIONS / EXTREME_VOL / WEEKEND_GAP / BAD_GEOMETRY</code>. Un veto necalificat → prudență (risc redus), nu blocaj. Nu raportează încredere/direcție.</div>
+              </div>
+              <div className="bg-surface rounded-lg border border-surface-border p-3 space-y-0.5">
+                <div className="text-[11px] font-semibold text-slate-200">4. 🧮 Analist Cantitativ <span className="text-slate-500">(opțional)</span></div>
+                <div className="text-slate-400">NU dă direcția — presează <b>numerele</b>: valoare așteptată (EV), probabilitate de câștig, SL vs ATR. Raportează <code className="text-blue-300">assessment</code> (favorable/marginal/unfavorable) + confidence.</div>
+              </div>
+              <div className="bg-surface rounded-lg border border-surface-border p-3 space-y-0.5">
+                <div className="text-[11px] font-semibold text-slate-200">5. 😈 Avocatul Diavolului <span className="text-slate-500">(opțional)</span></div>
+                <div className="text-slate-400">Singurul lui rol e să argumenteze <b>ÎMPOTRIVA</b> trade-ului (pre-mortem, contra-teză) — expune riscurile pe care restul mesei le-ar putea rata. Nu raportează încredere.</div>
+              </div>
+              <div className="bg-surface rounded-lg border border-surface-border p-3 space-y-0.5">
+                <div className="text-[11px] font-semibold text-slate-200">6. 🎯 Head Trader</div>
+                <div className="text-slate-400">Ia decizia finală după ce ascultă masa. Deschide în direcția Analistului Tehnic când încrederea lui e ≥ 55. Produce <code className="text-blue-300">approve</code> + <code className="text-blue-300">risk_pct</code> + confidence — dar rails-urile hard din cod pot ajusta/respinge geometria.</div>
+              </div>
+            </div>
+            <Note>
+              Rolurile se distribuie pe surse AI (tab-ul <b>AI Engine → Surse AI</b>). Ordinea e mereu aceeași;
+              rolurile 4–5 rulează doar dacă le activezi. Vezi transcriptul complet cu click pe orice decizie.
+            </Note>
+          </SubSection>
+
+          <SubSection title="Cum funcționează Încrederea (confidence)">
+            <p>
+              Încrederea afișată/stocată a unei decizii = <b>media încrederilor membrilor care raportează una</b>
+              (Analist Tehnic + Macro + [Cantitativ] + Head Trader). Risk Manager și Avocatul Diavolului
+              <b> nu</b> raportează încredere. Se folosește <b>media</b>, nu doar părerea Head Trader-ului, fiindcă
+              Head-ul e sistematic mai optimist decât media analiză+macro — media e mai onestă.
+            </p>
+            <div className="space-y-1.5 text-xs mt-1">
+              <KV k="Prag (bara din UI)" v="consensus_threshold, implicit 70 — media sub prag → WAIT" />
+              <KV k="Încredere BUNĂ" v="Roluri de acord (tehnic + macro + head toate ridicate) → media ≥ prag → execută" vColor="text-profit" />
+              <KV k="Încredere SLABĂ" v="Analiștii se contrazic, event_risk mare, setup marginal → media < prag → WAIT" vColor="text-loss" />
+            </div>
+            <Note>
+              La o <b>respingere prin approve=false</b>, „confidence" = cât de sigur e consiliul că trade-ul e SLAB
+              (o convingere de NU), <b>nu</b> o încredere de aprobare — de aceea poate fi 90% și totuși RESPINS.
+              Sursa de adevăr a gate-ului e încrederea de consens (0 când nu s-a aprobat nimic).
+            </Note>
+            <Note>
+              În modul <b>consens multi-consiliu</b>, încrederile se combină prin media efectivă + veto absolut
+              (efectiv = încrederea dacă aprobă, altfel 0; orice veto valid → respins; altfel aprobat ⟺ media ≥ prag).
+              Filtrul AI Pre-Trade al botului folosește praguri fixe pe încrederea Head Trader-ului: <b>50</b> permisiv,
+              <b> 70</b> echilibrat, <b>85</b> strict.
+            </Note>
+          </SubSection>
+
           <SubSection title="Instalare pe alt dispozitiv (laptop)">
             <p>
               Rulează <code className="text-slate-300">setup_ai_engine.bat</code> — instalează automat Python,
