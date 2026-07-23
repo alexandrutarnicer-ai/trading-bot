@@ -2,6 +2,7 @@
 Reports router — tranzactii, statistici piete, uptime bot, istoricul modificarilor, system logs.
 """
 
+import io
 import json
 import os
 import re
@@ -11,6 +12,7 @@ from typing import Optional
 
 import pandas as pd
 from fastapi import APIRouter, Query
+from fastapi.responses import Response
 
 from api.config import DATA_DIR, SESSIONS, get_profile_execute_map
 from api.csv_cache import read_csv_cached
@@ -94,6 +96,69 @@ def _discover_obs_sessions() -> list[dict]:
     return result
 
 
+def _collect_transactions_df(
+    status: Optional[str], symbol: Optional[str], direction: Optional[str],
+    date_from: Optional[str], date_to: Optional[str],
+    session_id: Optional[str], obs_only: bool,
+) -> pd.DataFrame:
+    """
+    Descopera sesiunile, concateneaza outcomes, aplica filtrele (status/symbol/
+    directie/interval de date) si sorteaza descrescator dupa timp. Returneaza un
+    DataFrame (gol daca nu exista date). SURSA UNICA folosita atat de endpointul
+    JSON (paginat) cat si de exportul CSV — ca sa nu diverga logica de filtrare.
+    """
+    all_sessions = _discover_obs_sessions() if obs_only else _discover_outcome_sessions()
+    sessions_to_check = (
+        [s for s in all_sessions if s["id"] == session_id]
+        if session_id else all_sessions
+    )
+    rows = []
+    for s in sessions_to_check:
+        df = _read_outcomes(s["id"])
+        if df.empty:
+            continue
+        # .copy() — nu mutam frame-ul din csv_cache (evita poluarea cache-ului partajat)
+        df = df.copy()
+        df["session_id"]    = s["id"]
+        df["session_label"] = s["label"]
+        rows.append(df)
+
+    if not rows:
+        return pd.DataFrame()
+
+    all_df = pd.concat(rows, ignore_index=True)
+
+    if status:
+        statuses = [x.strip() for x in status.split(",")]
+        all_df = all_df[all_df["status"].isin(statuses)]
+    if symbol:
+        all_df = all_df[all_df["symbol"].str.upper() == symbol.upper()]
+    if direction:
+        dir_val = 1 if direction.upper() == "LONG" else -1
+        all_df = all_df[all_df["direction"] == dir_val]
+    if date_from or date_to:
+        et = pd.to_datetime(all_df.get("exit_time", pd.Series(index=all_df.index, dtype=str)), errors="coerce")
+        tc = pd.to_datetime(all_df.get("time_check", pd.Series(index=all_df.index, dtype=str)), errors="coerce")
+        ts = et.fillna(tc)
+        # Combina ambele limite intr-o singura masca (index aliniat cu all_df) — evita
+        # reindexarea fragila cand se aplica date_from apoi date_to pe un index redus.
+        mask = pd.Series(True, index=all_df.index)
+        if date_from:
+            mask &= (ts >= pd.Timestamp(date_from))
+        if date_to:
+            mask &= (ts <= pd.Timestamp(date_to) + pd.Timedelta(days=1))
+        all_df = all_df[mask]
+
+    sort_col = "exit_time" if "exit_time" in all_df.columns else "time_check"
+    try:
+        all_df = all_df.assign(_sort=pd.to_datetime(all_df[sort_col], errors="coerce")) \
+                       .sort_values("_sort", ascending=False, na_position="last") \
+                       .drop(columns=["_sort"])
+    except Exception:
+        pass
+    return all_df
+
+
 @router.get("/transactions")
 def get_transactions(
     status:    Optional[str] = Query(None, description="TP,SL,open,vineri_close,news_close"),
@@ -107,50 +172,9 @@ def get_transactions(
     offset:    int = Query(0),
 ):
     """Tranzactiile sesiunilor live (sau OBS cand obs_only=True). Descopera dinamic sesiunile."""
-    all_sessions = _discover_obs_sessions() if obs_only else _discover_outcome_sessions()
-    rows = []
-    sessions_to_check = (
-        [s for s in all_sessions if s["id"] == session_id]
-        if session_id else all_sessions
-    )
-    for s in sessions_to_check:
-        df = _read_outcomes(s["id"])
-        if df.empty:
-            continue
-        df["session_id"]    = s["id"]
-        df["session_label"] = s["label"]
-        rows.append(df)
-
-    if not rows:
+    all_df = _collect_transactions_df(status, symbol, direction, date_from, date_to, session_id, obs_only)
+    if all_df.empty:
         return {"items": [], "total": 0}
-
-    all_df = pd.concat(rows, ignore_index=True)
-
-    # Filtre
-    if status:
-        statuses = [x.strip() for x in status.split(",")]
-        all_df = all_df[all_df["status"].isin(statuses)]
-    if symbol:
-        all_df = all_df[all_df["symbol"].str.upper() == symbol.upper()]
-    if direction:
-        dir_val = 1 if direction.upper() == "LONG" else -1
-        all_df = all_df[all_df["direction"] == dir_val]
-    if date_from or date_to:
-        et = pd.to_datetime(all_df.get("exit_time", pd.Series(dtype=str)), errors="coerce")
-        tc = pd.to_datetime(all_df.get("time_check", pd.Series(dtype=str)), errors="coerce")
-        ts = et.fillna(tc)
-        if date_from:
-            all_df = all_df[ts >= pd.Timestamp(date_from)]
-        if date_to:
-            all_df = all_df[ts <= pd.Timestamp(date_to) + pd.Timedelta(days=1)]
-
-    # Sorteaza dupa timp descrescator (cele mai noi primele)
-    sort_col = "exit_time" if "exit_time" in all_df.columns else "time_check"
-    try:
-        all_df["_sort"] = pd.to_datetime(all_df[sort_col], errors="coerce")
-        all_df = all_df.sort_values("_sort", ascending=False, na_position="last")
-    except Exception:
-        pass
 
     total = len(all_df)
     page  = all_df.iloc[offset: offset + limit]
@@ -188,6 +212,56 @@ def get_transactions(
             "pnl_usd":       float(row["pnl_usd"]) if pd.notna(row.get("pnl_usd")) else None,
         })
     return {"items": items, "total": total}
+
+
+# Coloanele exportate in CSV, in ordine — subsetul stabil + prietenos al outcomes-urilor.
+_CSV_EXPORT_COLS = [
+    "session_id", "session_label", "symbol", "dir_str", "status",
+    "entry", "sl", "tp", "r_ratio",
+    "time_check", "triggered_at", "exit_price", "exit_time",
+    "result_r", "pnl_usd", "commission_usd", "swap_usd", "signal_id",
+]
+
+
+@router.get("/transactions.csv")
+def get_transactions_csv(
+    status:    Optional[str] = Query(None, description="TP,SL,open,vineri_close,news_close"),
+    symbol:    Optional[str] = Query(None),
+    direction: Optional[str] = Query(None, description="LONG,SHORT"),
+    date_from: Optional[str] = Query(None, description="YYYY-MM-DD"),
+    date_to:   Optional[str] = Query(None, description="YYYY-MM-DD"),
+    session_id: Optional[str] = Query(None),
+    obs_only:  bool = Query(False),
+):
+    """
+    Export CSV cu TOATE tranzactiile care trec de filtre (fara paginare) — pentru
+    descarcare din UI. Acelasi motor de filtrare ca `/transactions` (`_collect_transactions_df`),
+    inclusiv filtrul pe interval de date (date_from/date_to, inclusiv). Streamat ca
+    text/csv cu Content-Disposition attachment, deci browserul il salveaza direct.
+    """
+    all_df = _collect_transactions_df(status, symbol, direction, date_from, date_to, session_id, obs_only)
+
+    if all_df.empty:
+        export = pd.DataFrame(columns=_CSV_EXPORT_COLS)
+    else:
+        all_df = all_df.copy()
+        all_df["dir_str"] = all_df["direction"].map(lambda d: "LONG" if int(d) == 1 else "SHORT")
+        export = all_df.reindex(columns=_CSV_EXPORT_COLS)
+
+    buf = io.StringIO()
+    export.to_csv(buf, index=False)
+
+    parts = ["trades"]
+    if date_from:  parts.append(f"from-{date_from}")
+    if date_to:    parts.append(f"to-{date_to}")
+    if symbol:     parts.append(symbol.upper())
+    fname = "_".join(parts) + ".csv"
+
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
 
 
 @router.get("/market-stats")

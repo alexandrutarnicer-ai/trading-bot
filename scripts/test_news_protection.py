@@ -412,6 +412,45 @@ try:
         sg._ai_filter_check = _real_aif
 
     sg._mt5_exec = _fake
+
+    # 6e. Mod Inteligent — plasare IN FEREASTRA (bug reparat 2026-07-22): pre-stire nu se
+    # plasa nimic (actual necunoscut → sentiment 0); acum, cand apare `actual`, se plaseaza.
+    sg.now_local = lambda: datetime(2026, 7, 17, 12, 0, 0)   # Vineri (piata deschisa)
+    scfg_win = {"session_id": "S1", "markets": ["EURUSD"], "account_fraction": 0.1,
+                "risk_base": 0.01, "r_max": 4.5,
+                "smart_news_enabled": True, "execute_trades": True}
+
+    # (i) PRE-stire: actual gol → sentiment 0 → directie 0 → NIMIC (reproduce vechiul bug)
+    _f_pre = FakeMt5(); sg._mt5_exec = _f_pre
+    ev_pre = [{"title": "CPI", "currency": "USD", "impact": "High",
+               "event_time": "2026-07-17T12:00:00", "actual": "", "forecast": "3.0", "sentiment": 0}]
+    st_win = {"pending": {}, "sn_counter": 0, "smart_news_window_done": set()}
+    sg._smart_news_window_check(st_win, scfg_win, ev_pre, _Log())
+    check("window pre-stire (actual gol): NICIUN ordin (directie 0)", len(_f_pre.sent) == 0)
+
+    # (ii) POST-stire: actual disponibil → directie != 0 → ordin plasat
+    _f_post = FakeMt5(); sg._mt5_exec = _f_post
+    ev_post = [{"title": "CPI", "currency": "USD", "impact": "High",
+                "event_time": "2026-07-17T12:00:00", "actual": "3.2", "forecast": "3.0", "sentiment": 1}]
+    st_win2 = {"pending": {}, "sn_counter": 0, "smart_news_window_done": set()}
+    sg._smart_news_window_check(st_win2, scfg_win, ev_post, _Log())
+    check("window post-stire (actual aparut): ordin plasat", len(_f_post.sent) == 1)
+    check("window: piata marcata done dupa plasare",
+          "EURUSD" in st_win2.get("smart_news_window_done", set()))
+
+    # (iii) idempotent: al doilea tick NU replaseaza (guard per fereastra)
+    sg._smart_news_window_check(st_win2, scfg_win, ev_post, _Log())
+    check("window: al doilea tick NU replaseaza (guard fereastra)", len(_f_post.sent) == 1)
+
+    # (iv) smart OFF / execute OFF → nimic
+    _f_off2 = FakeMt5(); sg._mt5_exec = _f_off2
+    st_off2 = {"pending": {}, "sn_counter": 0, "smart_news_window_done": set()}
+    sg._smart_news_window_check(st_off2, {**scfg_win, "smart_news_enabled": False}, ev_post, _Log())
+    check("window: smart OFF → nimic plasat", len(_f_off2.sent) == 0)
+    sg._smart_news_window_check(st_off2, {**scfg_win, "execute_trades": False}, ev_post, _Log())
+    check("window: execute OFF → nimic plasat", len(_f_off2.sent) == 0)
+
+    sg._mt5_exec = _fake
 finally:
     sg._mt5_exec = _real_exec
     sg.now_local = _real_now

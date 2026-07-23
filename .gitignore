@@ -18,3 +18,9 @@ config/secrets*
 # Semnalele si outcome-urile live raman locale — nu se comit pe main.
 # Fiecare user/instanta are datele lor proprii.
 # Sync selectiv pe branch separat cand e necesar.
+
+# AI Engine — trade-urile ÎNCHISE (export din ledger) se comit pe branch pentru
+# transfer PC↔laptop. Restul din data/ai/ (ledger.db, providers.json...) ramane local.
+!data/ai/
+data/ai/*
+!data/ai/ai_outcomes.csv
