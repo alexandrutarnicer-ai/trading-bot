@@ -128,7 +128,7 @@ function TransactionsTab({ source }: { source: StatsSource }) {
     offset:    page * PER_PAGE,
   });
 
-  // Descarcare CSV — acelasi endpoint de filtrare (bot outcomes), fara paginare.
+  // Descarcare CSV — sursa curenta (Bot = outcomes.csv / MT5 = cont-wide), fara paginare.
   function downloadCsv() {
     const qs = new URLSearchParams();
     const st = STATUS_MAP[statusFilter];
@@ -136,7 +136,8 @@ function TransactionsTab({ source }: { source: StatsSource }) {
     if (dirFilter) qs.set("direction", dirFilter);
     if (dateFrom)  qs.set("date_from", dateFrom);
     if (dateTo)    qs.set("date_to", dateTo);
-    window.open(`http://localhost:8000/api/reports/transactions.csv?${qs.toString()}`, "_blank");
+    const path = usingMt5 ? "/mt5/transactions.csv" : "/reports/transactions.csv";
+    window.open(`http://localhost:8000/api${path}?${qs.toString()}`, "_blank");
   }
   const mt5Query = useMt5Transactions({
     status:    usingMt5 ? (STATUS_MAP[statusFilter] || undefined) : undefined,
@@ -218,9 +219,11 @@ function TransactionsTab({ source }: { source: StatsSource }) {
           )}
         </div>
         <button onClick={downloadCsv}
-          title={usingMt5 ? "Exportă tranzacțiile botului (outcomes.csv) cu filtrele curente" : "Exportă tranzacțiile filtrate ca CSV"}
+          title={usingMt5
+            ? "Exportă tranzacțiile MT5 (cont-wide: bot + AI + manual) cu filtrele curente"
+            : "Exportă tranzacțiile botului (outcomes.csv) cu filtrele curente"}
           className="flex items-center gap-1 text-[10px] px-2.5 py-1 rounded-lg border border-surface-border text-slate-300 hover:border-blue-500/40 hover:text-blue-400 transition-colors">
-          <Download size={12} /> CSV
+          <Download size={12} /> CSV{usingMt5 ? " (MT5)" : ""}
         </button>
         <span className="text-[10px] text-slate-500">{total} tranzacții</span>
       </div>

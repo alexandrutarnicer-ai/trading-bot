@@ -10,6 +10,8 @@ astfel incat cele ~9 endpointuri nu mai interogheaza MT5 fiecare separat.
 Vezi api/mt5_pool.py pentru detalii despre izolarea fata de bot/AI si cache.
 """
 
+import csv
+import io
 import sys
 import os
 from datetime import date as _date, datetime, timedelta
@@ -18,6 +20,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 sys.path.insert(0, ROOT)
 
 from fastapi import APIRouter
+from fastapi.responses import Response
 
 from api.config import SESSIONS
 from api import mt5_pool
@@ -325,6 +328,79 @@ def mt5_transactions(
         })
 
     return {"connected": True, "items": items, "total": total, "error": None}
+
+
+# Coloane exportate in CSV (sursa MT5, cont-wide — include bot + AI + manual).
+_MT5_CSV_COLS = [
+    "symbol", "dir_str", "status", "entry", "sl", "tp", "r_ratio",
+    "entry_time", "exit_price", "exit_time", "result_r", "pnl_usd",
+    "commission_usd", "swap_usd", "ticket",
+]
+
+
+@router.get("/transactions.csv")
+def mt5_transactions_csv(
+    status: str = "",
+    direction: str = "",
+    symbol: str = "",
+    date_from: str = "",
+    date_to: str = "",
+):
+    """
+    Export CSV cu TOATE tranzactiile inchise din MT5 (cont-wide: bot + AI + manual),
+    fara paginare — pendant al `/reports/transactions.csv` (sursa Bot). Aceleasi filtre
+    (status/directie/simbol + interval de date pe ora de inchidere). Streamat ca
+    text/csv cu attachment. Fail-safe: MT5 indisponibil → CSV cu doar antet.
+    """
+    try:
+        trades = mt5_pool.get_closed_trades(400)
+    except mt5_pool.Mt5Unavailable:
+        trades = []
+
+    if symbol:
+        trades = [t for t in trades if t["symbol"].upper() == symbol.upper()]
+    if direction:
+        want = 1 if direction.upper() == "LONG" else -1
+        trades = [t for t in trades if t["direction"] == want]
+    if status:
+        trades = [t for t in trades if _trade_status(t) == status]
+    if date_from or date_to:
+        df = _date.fromisoformat(date_from) if date_from else _date.min
+        dt = _date.fromisoformat(date_to) if date_to else _date.max
+        trades = [t for t in trades
+                  if t["close_time"] and df <= t["close_time"].date() <= dt]
+
+    trades = sorted(trades, key=lambda t: t["close_time"], reverse=True)
+
+    buf = io.StringIO()
+    w = csv.DictWriter(buf, fieldnames=_MT5_CSV_COLS, extrasaction="ignore")
+    w.writeheader()
+    for t in trades:
+        w.writerow({
+            "symbol":         t["symbol"],
+            "dir_str":        "LONG" if t["direction"] == 1 else "SHORT",
+            "status":         _trade_status(t),
+            "entry":          t["entry_price"],
+            "sl":             t["sl"],
+            "tp":             t["tp"],
+            "r_ratio":        t["planned_r"],
+            "entry_time":     t["entry_time"].strftime("%Y-%m-%d %H:%M") if t["entry_time"] else "",
+            "exit_price":     t["exit_price"],
+            "exit_time":      t["close_time"].strftime("%Y-%m-%d %H:%M") if t["close_time"] else "",
+            "result_r":       t["result_r"],
+            "pnl_usd":        round(t["profit"], 2),
+            "commission_usd": round(t["commission"], 2),
+            "swap_usd":       round(t["swap"], 2),
+            "ticket":         t["position_id"],
+        })
+
+    parts = ["trades_mt5"]
+    if date_from: parts.append(f"from-{date_from}")
+    if date_to:   parts.append(f"to-{date_to}")
+    if symbol:    parts.append(symbol.upper())
+    fname = "_".join(parts) + ".csv"
+    return Response(content=buf.getvalue(), media_type="text/csv",
+                    headers={"Content-Disposition": f'attachment; filename="{fname}"'})
 
 
 @router.get("/costs")
