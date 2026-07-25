@@ -2,7 +2,7 @@
   "id": "standard",
   "name": "Standard Profile",
   "description": "20 piete individuale — observare 1-2 luni. Fractii bazate pe capital minim necesar la lot min broker.",
-  "start_balance": 1000,
+  "start_balance": 200,
   "sessions": [
     {
       "id": "S1",
@@ -74,7 +74,7 @@
       "ai_filter_enabled": true,
       "ai_filter_level": "strict",
       "ai_filter_primary_source": null,
-      "ai_filter_secondary_source": "cerebras",
+      "ai_filter_secondary_source": null,
       "ai_filter_tertiary_source": null,
       "ai_role_quant_enabled": true,
       "ai_role_devils_advocate_enabled": true,
@@ -124,7 +124,7 @@
       "risk_mid": 0.01,
       "risk_top": 0.012,
       "risk_max": 0.015,
-      "execute_trades": true,
+      "execute_trades": false,
       "rsi_enabled": true,
       "rsi_buy_min": 35,
       "rsi_buy_max": 70,
@@ -218,7 +218,7 @@
       "risk_mid": 0.01,
       "risk_top": 0.012,
       "risk_max": 0.015,
-      "execute_trades": true,
+      "execute_trades": false,
       "rsi_enabled": true,
       "rsi_buy_min": 40,
       "rsi_buy_max": 65,
@@ -416,7 +416,7 @@
       "inside_bar_r_ratio": 2,
       "inside_bar_risk_pct": 0.01,
       "ai_filter_enabled": true,
-      "ai_filter_level": "permissive",
+      "ai_filter_level": "balanced",
       "ai_filter_primary_source": null,
       "ai_filter_secondary_source": null,
       "ai_filter_tertiary_source": null,
@@ -501,7 +501,9 @@
       "ai_filter_secondary_source": null,
       "ai_filter_tertiary_source": null,
       "ai_role_quant_enabled": false,
-      "ai_role_devils_advocate_enabled": false
+      "ai_role_devils_advocate_enabled": false,
+      "fixed_lots_enabled": false,
+      "fixed_lots": 0.01
     },
     {
       "id": "S7",
@@ -577,8 +579,9 @@
       "ai_filter_primary_source": null,
       "ai_filter_secondary_source": "openroute",
       "ai_filter_tertiary_source": null,
-      "ai_role_quant_enabled": false,
-      "ai_role_devils_advocate_enabled": false
+      "ai_role_quant_enabled": true,
+      "ai_role_devils_advocate_enabled": true,
+      "ai_filter_strict": true
     },
     {
       "id": "S8",
@@ -663,7 +666,8 @@
       "ai_filter_secondary_source": null,
       "ai_filter_tertiary_source": null,
       "ai_role_quant_enabled": false,
-      "ai_role_devils_advocate_enabled": true
+      "ai_role_devils_advocate_enabled": true,
+      "ai_filter_strict": true
     },
     {
       "id": "S9",
@@ -748,12 +752,13 @@
       "inside_bar_r_ratio": 2,
       "inside_bar_risk_pct": 0.01,
       "ai_filter_enabled": true,
-      "ai_filter_level": "balanced",
+      "ai_filter_level": "strict",
       "ai_filter_primary_source": null,
       "ai_filter_secondary_source": null,
       "ai_filter_tertiary_source": null,
       "ai_role_quant_enabled": false,
-      "ai_role_devils_advocate_enabled": false
+      "ai_role_devils_advocate_enabled": false,
+      "ai_filter_strict": true
     },
     {
       "id": "S10",
@@ -798,7 +803,7 @@
       "risk_mid": 0.012,
       "risk_top": 0.012,
       "risk_max": 0.015,
-      "execute_trades": true,
+      "execute_trades": false,
       "rsi_enabled": false,
       "rsi_buy_min": 30,
       "rsi_buy_max": 70,
@@ -839,12 +844,13 @@
       "inside_bar_r_ratio": 2,
       "inside_bar_risk_pct": 0.01,
       "ai_filter_enabled": true,
-      "ai_filter_level": "balanced",
+      "ai_filter_level": "strict",
       "ai_filter_primary_source": null,
       "ai_filter_secondary_source": null,
       "ai_filter_tertiary_source": null,
       "ai_role_quant_enabled": false,
-      "ai_role_devils_advocate_enabled": false
+      "ai_role_devils_advocate_enabled": false,
+      "ai_filter_strict": true
     },
     {
       "id": "S11",
@@ -922,9 +928,9 @@
       "break_even_enabled": true,
       "be_phase2_enabled": true,
       "be_trigger_pct": 90,
-      "be_lock1_pct": 50,
-      "be_lock2_pct": 70,
-      "be_phase2_zone_pct": 60,
+      "be_lock1_pct": 60,
+      "be_lock2_pct": 75,
+      "be_phase2_zone_pct": 61,
       "flag_enabled": true,
       "flag_r_ratio": 2.5,
       "flag_risk_pct": 0.01,
@@ -1010,13 +1016,14 @@
       "inside_bar_enabled": true,
       "inside_bar_r_ratio": 2,
       "inside_bar_risk_pct": 0.01,
-      "ai_filter_enabled": false,
+      "ai_filter_enabled": true,
       "ai_filter_level": "balanced",
       "ai_filter_primary_source": null,
       "ai_filter_secondary_source": null,
       "ai_filter_tertiary_source": null,
       "ai_role_quant_enabled": false,
-      "ai_role_devils_advocate_enabled": false
+      "ai_role_devils_advocate_enabled": true,
+      "ai_filter_strict": true
     },
     {
       "id": "S13",
@@ -1049,7 +1056,7 @@
       "risk_mid": 0.01,
       "risk_top": 0.012,
       "risk_max": 0.015,
-      "execute_trades": true,
+      "execute_trades": false,
       "rsi_enabled": true,
       "rsi_buy_min": 30,
       "rsi_buy_max": 70,
@@ -1090,12 +1097,13 @@
       "inside_bar_r_ratio": 2,
       "inside_bar_risk_pct": 0.01,
       "ai_filter_enabled": true,
-      "ai_filter_level": "balanced",
+      "ai_filter_level": "strict",
       "ai_filter_primary_source": null,
       "ai_filter_secondary_source": null,
       "ai_filter_tertiary_source": null,
-      "ai_role_quant_enabled": false,
-      "ai_role_devils_advocate_enabled": false
+      "ai_role_quant_enabled": true,
+      "ai_role_devils_advocate_enabled": false,
+      "ai_filter_strict": true
     },
     {
       "id": "S14",
@@ -1171,7 +1179,8 @@
       "ai_filter_secondary_source": null,
       "ai_filter_tertiary_source": null,
       "ai_role_quant_enabled": true,
-      "ai_role_devils_advocate_enabled": false
+      "ai_role_devils_advocate_enabled": false,
+      "ai_filter_strict": true
     },
     {
       "id": "S15",
@@ -1227,7 +1236,7 @@
       "news_impact_level": 3,
       "news_pre_minutes": 15,
       "news_post_minutes": 15,
-      "smart_news_enabled": false,
+      "smart_news_enabled": true,
       "max_concurrent_per_market": 1,
       "min_bars_between_trades": 0,
       "break_even_enabled": true,
@@ -1326,8 +1335,9 @@
       "ai_filter_primary_source": null,
       "ai_filter_secondary_source": null,
       "ai_filter_tertiary_source": null,
-      "ai_role_quant_enabled": false,
-      "ai_role_devils_advocate_enabled": false
+      "ai_role_quant_enabled": true,
+      "ai_role_devils_advocate_enabled": false,
+      "ai_filter_strict": true
     },
     {
       "id": "S17",
@@ -1383,7 +1393,7 @@
       "news_impact_level": 3,
       "news_pre_minutes": 15,
       "news_post_minutes": 15,
-      "smart_news_enabled": false,
+      "smart_news_enabled": true,
       "max_concurrent_per_market": 1,
       "min_bars_between_trades": 0,
       "break_even_enabled": true,
@@ -1404,7 +1414,8 @@
       "ai_filter_secondary_source": null,
       "ai_filter_tertiary_source": null,
       "ai_role_quant_enabled": false,
-      "ai_role_devils_advocate_enabled": false
+      "ai_role_devils_advocate_enabled": true,
+      "ai_filter_strict": true
     },
     {
       "id": "S18",
@@ -1540,7 +1551,7 @@
       "news_impact_level": 3,
       "news_pre_minutes": 15,
       "news_post_minutes": 15,
-      "smart_news_enabled": false,
+      "smart_news_enabled": true,
       "max_concurrent_per_market": 1,
       "min_bars_between_trades": 0,
       "break_even_enabled": true,
@@ -1556,12 +1567,13 @@
       "inside_bar_r_ratio": 2,
       "inside_bar_risk_pct": 0.01,
       "ai_filter_enabled": true,
-      "ai_filter_level": "balanced",
+      "ai_filter_level": "strict",
       "ai_filter_primary_source": null,
       "ai_filter_secondary_source": null,
       "ai_filter_tertiary_source": null,
       "ai_role_quant_enabled": false,
-      "ai_role_devils_advocate_enabled": true
+      "ai_role_devils_advocate_enabled": true,
+      "ai_filter_strict": true
     },
     {
       "id": "S20",
@@ -1600,7 +1612,7 @@
       "risk_mid": 0.01,
       "risk_top": 0.012,
       "risk_max": 0.015,
-      "execute_trades": true,
+      "execute_trades": false,
       "rsi_enabled": true,
       "rsi_buy_min": 40,
       "rsi_buy_max": 65,
@@ -1647,10 +1659,14 @@
       "ai_filter_tertiary_source": null,
       "ai_role_quant_enabled": true,
       "ai_role_devils_advocate_enabled": true,
-      "ai_filter_strict": true
+      "ai_filter_strict": true,
+      "fixed_lots_enabled": false,
+      "fixed_lots": 0.01
     }
   ],
-  "updated_at": "2026-07-17T12:11:05",
-  "capital_protection_enabled": true,
-  "capital_protection_threshold_pct": 80
+  "updated_at": "2026-07-25T12:48:14",
+  "capital_protection_enabled": false,
+  "capital_protection_threshold_pct": 85,
+  "capital_sync_mt5": true,
+  "capital_usd": 1000.0
 }

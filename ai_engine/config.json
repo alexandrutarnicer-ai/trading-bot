@@ -1,12 +1,10 @@
 {
   "markets": [
-    "EURUSD",
-    "USDJPY",
-    "GBPUSD",
-    "AUDUSD",
     "USDCAD",
-    "XRPUSD",
-    "USDCHF"
+    "NZDJPY",
+    "CHFJPY",
+    "AUDUSD",
+    "XRPUSD"
   ],
   "provider": "ollama",
   "ollama_url": "http://localhost:11434",
@@ -73,13 +71,13 @@
     "hug1": {
       "type": "openai_compatible",
       "model": "zai-org/GLM-5.2:novita",
-      "enabled": true,
+      "enabled": false,
       "base_url": "https://router.huggingface.co/v1"
     },
     "hug2quen3": {
       "type": "openai_compatible",
       "model": "Qwen/Qwen3.6-27B:featherless-ai",
-      "enabled": true,
+      "enabled": false,
       "base_url": "https://router.huggingface.co/v1"
     },
     "mistral": {
@@ -104,13 +102,9 @@
     "quant": "mistral"
   },
   "role_quant_enabled": true,
-  "consensus_threshold": 65,
+  "consensus_threshold": 67,
   "role_devils_advocate_enabled": false,
-  "market_overrides": {
-    "GBPUSD": {
-      "max_trades_per_day": 2
-    }
-  },
-  "capital_sync_mt5": true,
-  "capital_usd": 500.0
+  "market_overrides": {},
+  "capital_sync_mt5": false,
+  "capital_usd": 200.0
 }
