@@ -409,15 +409,26 @@ def ai_get_providers():
             "needs_key": spec.get("type") != "ollama",
             "is_default": name == "ollama",
         }
+    # Sanatatea surselor e REALA doar cat timp motorul ruleaza (o scrie in status.json
+    # la fiecare iteratie). Cu motorul OPRIT, health-ul e invechit (de la ultima rulare)
+    # → nu-l mai servim ca "live" (altfel pare ca sursele sunt consumate desi nu e nimic
+    # activ). UI-ul poate cere starea curenta on-demand cu "Testeaza sursele".
+    pid = _read_pid()
+    engine_running = bool(pid and _pid_alive(pid))
     health = {}
-    try:
-        with open(STATUS_FILE, encoding="utf-8") as f:
-            health = json.load(f).get("providers") or {}
-    except Exception:
-        pass
+    health_ts = None
+    if engine_running:
+        try:
+            with open(STATUS_FILE, encoding="utf-8") as f:
+                st = json.load(f)
+                health = st.get("providers") or {}
+                health_ts = st.get("ts")
+        except Exception:
+            pass
     return {"providers": providers,
             "role_assignments": cfg["role_assignments"],
-            "health": health, "default": "ollama"}
+            "health": health, "engine_running": engine_running,
+            "health_ts": health_ts, "default": "ollama"}
 
 
 @router.put("/providers")
