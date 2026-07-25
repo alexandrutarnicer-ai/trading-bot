@@ -350,6 +350,100 @@ export const useBridgeAutostartDisable = () => {
   });
 };
 
+// ── EMA — asistent vocal (control + pauza) ───────────────────────────────────
+
+export interface VoiceBridgeStatus {
+  running: boolean;
+  pid: number | null;
+  paused: boolean;
+  assistant_name: string;
+  mode: string | null;         // "name" / "wake" / "ptt"
+  listening: boolean;
+  voice_style: string | null;
+  stt_model: string | null;
+  read_only: boolean;
+  ts: string | null;
+}
+
+export const useVoiceStatus = () =>
+  useQuery<VoiceBridgeStatus>({
+    queryKey: ["voice-status"],
+    queryFn:  () => apiFetch("/voice-bridge/status"),
+    refetchInterval: 5_000,
+    refetchIntervalInBackground: false,
+  });
+
+export const useVoiceStart = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiFetch("/voice-bridge/start", { method: "POST" }),
+    onSuccess: () => { setTimeout(() => qc.invalidateQueries({ queryKey: ["voice-status"] }), 2500); },
+  });
+};
+
+export const useVoiceStop = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiFetch("/voice-bridge/stop", { method: "POST" }),
+    onSuccess: () => { setTimeout(() => qc.invalidateQueries({ queryKey: ["voice-status"] }), 1200); },
+  });
+};
+
+export const useVoicePause = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiFetch("/voice-bridge/pause", { method: "POST" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["voice-status"] }),
+  });
+};
+
+export const useVoiceResume = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiFetch("/voice-bridge/resume", { method: "POST" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["voice-status"] }),
+  });
+};
+
+export const useVoiceConfig = () =>
+  useQuery<{ wake_mode: string; language: string }>({
+    queryKey: ["voice-config"],
+    queryFn:  () => apiFetch("/voice-bridge/config"),
+    staleTime: 30_000,
+  });
+
+export const useSaveVoiceConfig = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { wake_mode?: string; language?: string }) =>
+      apiFetch("/voice-bridge/config", { method: "PUT", body }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["voice-config"] }),
+  });
+};
+
+export const useVoiceAutostartStatus = () =>
+  useQuery<{ enabled: boolean }>({
+    queryKey: ["voice-autostart-status"],
+    queryFn:  () => apiFetch("/voice-bridge/autostart/status"),
+    staleTime: 30_000,
+  });
+
+export const useVoiceAutostartEnable = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiFetch("/voice-bridge/autostart/enable", { method: "POST" }),
+    onSuccess: () => { setTimeout(() => qc.invalidateQueries({ queryKey: ["voice-autostart-status"] }), 4000); },
+  });
+};
+
+export const useVoiceAutostartDisable = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiFetch("/voice-bridge/autostart/disable", { method: "POST" }),
+    onSuccess: () => { setTimeout(() => qc.invalidateQueries({ queryKey: ["voice-autostart-status"] }), 4000); },
+  });
+};
+
 // ── Al doilea canal Matrix (configurare) ─────────────────────────────────────
 
 export interface MatrixConfig {

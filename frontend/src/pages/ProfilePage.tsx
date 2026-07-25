@@ -10,6 +10,7 @@ import { BotControl } from "../components/BotControl";
 import { TelegramSettings } from "../components/TelegramSettings";
 import { TelegramBridgeCard } from "../components/TelegramBridgeCard";
 import { MatrixSettings } from "../components/MatrixSettings";
+import { VoiceBridgeCard } from "../components/VoiceBridgeCard";
 import { LiveTradingCard } from "../components/LiveTradingCard";
 import { Mt5Status } from "../components/Mt5Status";
 import type { Profile, ProfileSession } from "../api/types";
@@ -408,6 +409,7 @@ export function ProfilePage({
       <TelegramSettings />
       <TelegramBridgeCard />
       <MatrixSettings />
+      <VoiceBridgeCard />
 
       <LiveTradingCard />
       <TimezoneSelector />
