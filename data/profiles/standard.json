@@ -2,7 +2,7 @@
   "id": "standard",
   "name": "Standard Profile",
   "description": "20 piete individuale — observare 1-2 luni. Fractii bazate pe capital minim necesar la lot min broker.",
-  "start_balance": 1000,
+  "start_balance": 200,
   "sessions": [
     {
       "id": "S1",
@@ -1664,9 +1664,9 @@
       "fixed_lots": 0.01
     }
   ],
-  "updated_at": "2026-07-22T19:19:11",
-  "capital_protection_enabled": true,
-  "capital_protection_threshold_pct": 80,
+  "updated_at": "2026-07-25T12:48:14",
+  "capital_protection_enabled": false,
+  "capital_protection_threshold_pct": 85,
   "capital_sync_mt5": true,
   "capital_usd": 1000.0
 }
