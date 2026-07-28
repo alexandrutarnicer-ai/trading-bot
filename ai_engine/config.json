@@ -105,6 +105,6 @@
   "consensus_threshold": 67,
   "role_devils_advocate_enabled": false,
   "market_overrides": {},
-  "capital_sync_mt5": false,
+  "capital_sync_mt5": true,
   "capital_usd": 200.0
 }
