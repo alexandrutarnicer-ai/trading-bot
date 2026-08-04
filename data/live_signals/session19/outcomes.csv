@@ -1,0 +1,5 @@
+signal_id,time_check,symbol,direction,status,entry,sl,tp,r_ratio,armed_at,triggered_at,exit_price,exit_time,result_r,pnl_usd,commission_usd,swap_usd
+S19-AUDNZD-IB0009,2026-07-27 15:16:04.354907,AUDNZD,1,ai_reject,1.20916,1.20822,1.21104,2.0,2026-07-27 15:00:00,,,,0.0,,,
+S19-AUDNZD-IB0010,2026-07-27 16:47:23.962591,AUDNZD,1,ai_reject,1.20904,1.20804,1.21104,2.0,2026-07-27 16:30:00,,,,0.0,,,
+S19-AUDNZD-IB0011,2026-07-27 17:32:21.158305,AUDNZD,1,ai_reject,1.20917,1.20813,1.21125,2.0,2026-07-27 17:15:00,,,,0.0,,,
+S19-AUDNZD-SIG0005,2026-07-27 17:47:24.981107,AUDNZD,1,ai_reject,1.20922,1.20798,1.2148,4.5,2026-07-27 17:30:00,,,,0.0,,,

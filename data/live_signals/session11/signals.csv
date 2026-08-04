@@ -1,0 +1,2 @@
+signal_id,time,symbol,direction,dir_str,entry,sl,tp,r_ratio,atr_pips,n_optional,rsi
+S11-USDCAD-IB0018,2026-07-27 09:00:00,USDCAD,1,LONG,1.4099,1.40807,1.41356,2.0,4.5,0,68.0

@@ -1,0 +1,3 @@
+signal_id,time_check,symbol,direction,status,entry,sl,tp,r_ratio,armed_at,triggered_at,exit_price,exit_time,result_r,pnl_usd,commission_usd,swap_usd
+S8-EURCAD-H1-FLG0001,2026-07-30 03:00:32.465535,EURCAD,1,ai_reject,1.61071,1.60856,1.61609,2.5,2026-07-30 01:00:00,,,,0.0,,,
+S8-EURCAD-H1-IB0012,2026-07-30 17:02:11.449108,EURCAD,1,ai_reject,1.6128,1.61012,1.61816,2.0,2026-07-30 15:00:00,,,,0.0,,,

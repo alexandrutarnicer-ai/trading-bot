@@ -1,0 +1,2 @@
+signal_id,time_check,symbol,direction,status,entry,sl,tp,r_ratio,armed_at,triggered_at,exit_price,exit_time,result_r,pnl_usd,commission_usd,swap_usd
+S11-USDCAD-IB0018,2026-07-29 17:00:05.401938,USDCAD,1,SL,1.4099,1.40807,1.41356,2.0,2026-07-27 09:00:00,2026-07-27 09:15:00,1.40807,2026-07-29 16:54:53,-1.0,-1.33,0.0,0.04
