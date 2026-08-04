@@ -450,6 +450,15 @@ export const useTestTelegram = () =>
     mutationFn: () => apiFetch("/settings/telegram/test", { method: "POST" }),
   });
 
+export const useSetTelegramImportantOnly = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (enabled: boolean) =>
+      apiFetch("/settings/telegram/important-only", { method: "PUT", body: { enabled } }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["telegram-config"] }),
+  });
+};
+
 // ── Backtest jobs (Audit) ────────────────────────────────────────────────────
 
 export const useBacktestJobs = () =>

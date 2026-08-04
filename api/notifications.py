@@ -42,7 +42,7 @@ def _categorize(text: str) -> str:
         return "session"
     if any(x in t for x in ["pornit", "oprit", "start", "stop", "bot trading", "watchdog"]):
         return "bot"
-    if any(x in t for x in ["tp", "sl", "inchis", "profit", "loss", "closed", "vineri"]):
+    if any(x in t for x in ["tp", "sl", "inchis", "profit", "loss", "close", "vineri"]):
         return "trade"
     return "system"
 
@@ -50,6 +50,82 @@ def _categorize(text: str) -> str:
 def _strip_html(text: str) -> str:
     """Elimina taguri HTML simple (bold, italic) din textul Telegram."""
     return re.sub(r"<[^>]+>", "", text).strip()
+
+
+# ─── Modul liniste (Telegram) — trimite doar notificarile importante ──────────
+# Cand flag-ul "important_only" din telegram_config.json e activ, se trimit pe
+# Telegram DOAR notificarile de trading + lifecycle bot + conexiune; restul
+# (sanatatea surselor AI, pauze manuale, mesaje de sistem) NU se mai trimit pe
+# telefon. TOATE notificarile raman logate in tab-ul Notificari — filtram doar
+# push-ul Telegram, nu jurnalul. Sursa unica de adevar pentru "important" e
+# reutilizata de api/telegram.py (API + motor AI) si live/signal_generator.py (bot).
+
+TG_CONFIG_FILE = os.path.join(DATA_DIR, "telegram_config.json")
+
+# Categorii pastrate in modul liniste (din _categorize): trading + lifecycle bot.
+# NOTA: "ai" e scos INTENTIONAT — categoria conflateaza doua lucruri diferite:
+#   (a) deciziile filtrului AI pe trade-uri (respins/aprobat) — TRADING, importante;
+#   (b) sanatatea surselor AI ("Sursa AI «x» revenit/defecta/pauza") — zgomot operational.
+# Ambele contin "ai" in _categorize, deci nu putem discrimina pe categorie. Pastram
+# doar (a) prin _AI_TRADE_KEYWORDS mai jos; (b) ramane suprimata (asta cerea userul).
+# "session" (pauze manuale) si "system" (incl. alerta agregata a surselor) sunt suprimate.
+_IMPORTANT_CATEGORIES = {"order", "trade", "signal", "news", "bot"}
+
+# Deciziile filtrului AI pe trade-uri sunt trading => importante. NU si sanatatea
+# surselor AI, care are tot categoria "ai" dar nu contine aceste cuvinte-cheie.
+_AI_TRADE_KEYWORDS = ("filtru ai", "ai filter")
+
+# Cuvinte-cheie de conexiune — mereu importante, indiferent de categorie
+# (mesajele MT5 pierdut/reconectat cad altfel in "system" si s-ar suprima).
+_CONNECTION_KEYWORDS = (
+    "conexiune", "reconect", "deconect", "ipc send", "ipc recv",
+    "mt5 pierdut", "mt5 conectat", "autotrading", "algo trading",
+    "connection lost", "disconnect",
+)
+
+
+def is_important_notification(text: str) -> bool:
+    """
+    True daca notificarea e trading / lifecycle bot / conexiune — deci se trimite
+    pe Telegram si in modul liniste. Restul (sanatatea surselor AI, pauze manuale,
+    sistem) => False.
+    """
+    if _categorize(text) in _IMPORTANT_CATEGORIES:
+        return True
+    t = (text or "").lower()
+    if any(k in t for k in _CONNECTION_KEYWORDS):
+        return True
+    # Deciziile filtrului AI pe trade-uri (respins/aprobat) sunt trading => importante.
+    # Sanatatea surselor AI ("Sursa AI «x» s-a revenit / defecta / in pauza") NU —
+    # ramane suprimata desi _categorize o pune tot in "ai".
+    return any(k in t for k in _AI_TRADE_KEYWORDS)
+
+
+def telegram_important_only() -> bool:
+    """
+    Citeste flag-ul 'important_only' din telegram_config.json.
+    Fail-open: la orice eroare -> False (trimite tot), ca sa nu suprime niciodata
+    din greseala o notificare importanta de trading/conexiune.
+    """
+    try:
+        with open(TG_CONFIG_FILE, encoding="utf-8") as f:
+            return bool(json.load(f).get("important_only", False))
+    except Exception:
+        return False
+
+
+def should_push_telegram(text: str) -> bool:
+    """
+    False => notificarea NU se trimite pe Telegram (modul liniste activ SI mesaj
+    neimportant). Ramane oricum logata in tab-ul Notificari de apelant.
+    Fail-open: orice eroare de citire a flag-ului => True (trimite).
+    """
+    try:
+        if not telegram_important_only():
+            return True
+        return is_important_notification(text)
+    except Exception:
+        return True
 
 
 def _read_all_entries() -> list[dict]:

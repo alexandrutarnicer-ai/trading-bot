@@ -224,6 +224,7 @@ export interface TelegramConfig {
   token_masked: string;
   chat_id: string;
   configured: boolean;
+  important_only: boolean;
 }
 
 export interface TimezoneOption {
