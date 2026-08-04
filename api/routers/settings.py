@@ -41,9 +41,10 @@ def get_telegram():
     token = cfg.get("token", "")
     masked = (token[:8] + "..." + token[-4:]) if len(token) > 12 else ("*" * len(token))
     return {
-        "token_masked": masked if token else "",
-        "chat_id":      cfg.get("chat_id", ""),
-        "configured":   bool(token and cfg.get("chat_id")),
+        "token_masked":   masked if token else "",
+        "chat_id":        cfg.get("chat_id", ""),
+        "configured":     bool(token and cfg.get("chat_id")),
+        "important_only": bool(cfg.get("important_only", False)),
     }
 
 
@@ -54,9 +55,33 @@ def save_telegram(body: dict):
     if not token or not chat_id:
         raise HTTPException(400, "token si chat_id sunt necesare")
     os.makedirs(DATA_DIR, exist_ok=True)
+    # Pastreaza campurile existente (ex: important_only) — nu suprascrie tot fisierul.
+    cfg = _load()
+    cfg["token"]   = token
+    cfg["chat_id"] = chat_id
     with open(TG_FILE, "w", encoding="utf-8") as f:
-        json.dump({"token": token, "chat_id": chat_id}, f, ensure_ascii=False, indent=2)
+        json.dump(cfg, f, ensure_ascii=False, indent=2)
     return {"ok": True}
+
+
+@router.put("/telegram/important-only")
+def set_important_only(body: dict):
+    """
+    Comuta modul liniste: cand e activ, se trimit pe Telegram DOAR notificarile
+    importante (trading + conexiune + lifecycle bot). Restul (sanatatea surselor
+    AI, pauze manuale, mesaje de sistem) raman doar in tab-ul Notificari.
+    Body: {enabled: bool}. Efect imediat (fara restart) — bot/motor citesc flag-ul
+    la fiecare notificare.
+    """
+    if "enabled" not in body:
+        raise HTTPException(400, "enabled: true/false obligatoriu")
+    enabled = bool(body.get("enabled"))
+    os.makedirs(DATA_DIR, exist_ok=True)
+    cfg = _load()
+    cfg["important_only"] = enabled
+    with open(TG_FILE, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, ensure_ascii=False, indent=2)
+    return {"ok": True, "important_only": enabled}
 
 
 @router.delete("/telegram")

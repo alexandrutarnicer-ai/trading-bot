@@ -31,10 +31,21 @@ def _load_credentials() -> tuple[str, str]:
 
 
 def send_message(text: str, parse_mode: str = "HTML") -> bool:
-    # Logheaza in notification store (independent de Telegram)
+    # Logheaza in notification store (independent de Telegram) — jurnalul ramane
+    # complet chiar si in modul liniste.
     try:
         from api.notifications import log_notification
         log_notification(text)
+    except Exception:
+        pass
+
+    # Modul liniste: daca e activ si mesajul nu e important (trading/conexiune),
+    # NU se trimite push-ul Telegram (ramane doar in tab-ul Notificari).
+    # Fail-open: orice eroare de evaluare => se trimite.
+    try:
+        from api.notifications import should_push_telegram
+        if not should_push_telegram(text):
+            return False
     except Exception:
         pass
 

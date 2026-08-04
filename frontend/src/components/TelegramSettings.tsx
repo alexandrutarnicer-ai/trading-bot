@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { useTelegramConfig, useSaveTelegram, useClearTelegram, useTestTelegram } from "../api/hooks";
+import { useTelegramConfig, useSaveTelegram, useClearTelegram, useTestTelegram,
+         useSetTelegramImportantOnly } from "../api/hooks";
 import { InfoTooltip } from "./InfoTooltip";
 
 const TG_GUIDE = [
@@ -30,6 +31,7 @@ export function TelegramSettings() {
   const clear = useClearTelegram();
 
   const test  = useTestTelegram();
+  const setImportantOnly = useSetTelegramImportantOnly();
 
   const [open, setOpen]           = useState(false);
   const [showGuide, setShowGuide] = useState(false);
@@ -135,6 +137,38 @@ export function TelegramSettings() {
                 {testErr && (
                   <span className="text-xs text-loss">{testErr}</span>
                 )}
+              </div>
+
+              {/* Mod liniste — doar notificari importante */}
+              <div className="flex items-start justify-between gap-3 pt-2.5 border-t border-profit/10">
+                <div className="text-xs space-y-0.5 flex-1">
+                  <div className="text-slate-300 font-medium flex items-center gap-1.5">
+                    Doar notificări importante
+                    <InfoTooltip
+                      text="Când e activ, pe Telegram se trimit DOAR notificările de trading (ordine, TP/SL, filtru AI, știri) și de conexiune (MT5 pierdut/reconectat, pornire/oprire bot). Se opresc mesajele de sistem — inclusiv «sursele AI indisponibile / și-au revenit» și pauzele manuale de sesiune. Toate notificările apar în continuare complet în tab-ul Notificări; se filtrează doar trimiterea pe telefon. Efect imediat, fără restart."
+                    />
+                  </div>
+                  <div className="text-slate-500">
+                    {cfg?.important_only
+                      ? "Se trimit doar trading + conexiune. Restul rămâne doar în tab-ul Notificări."
+                      : "Se trimit toate notificările pe Telegram."}
+                  </div>
+                </div>
+                <button
+                  role="switch"
+                  aria-checked={!!cfg?.important_only}
+                  disabled={setImportantOnly.isPending}
+                  onClick={() => setImportantOnly.mutate(!cfg?.important_only)}
+                  className={`relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${
+                    cfg?.important_only ? "bg-profit" : "bg-slate-600"
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                      cfg?.important_only ? "translate-x-4" : "translate-x-1"
+                    }`}
+                  />
+                </button>
               </div>
             </div>
           )}
