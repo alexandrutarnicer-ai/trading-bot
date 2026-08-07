@@ -46,6 +46,15 @@ FF_URLS = [
     "https://nfs.faireconomy.media/ff_calendar_nextweek.json",
 ]
 
+# ForexFactory e endpoint gratuit si raspunde cu 429 (Too Many Requests) la prea
+# multe cereri de pe acelasi IP. In loc sa batem la fiecare poll (si sa ramanem
+# blocati ore intregi), dupa un 429 asteptam progresiv mai mult (10→20→30 min,
+# plafon 30 min) inainte de a reincerca. `nextweek.json` se schimba rar → il
+# aducem mult mai rar (relevant doar Duminica seara pt evenimente de Luni).
+FF_BACKOFF_BASE_S = 600      # 10 min dupa primul 429
+FF_BACKOFF_CAP_S  = 1800     # plafon 30 min (recuperare marginita)
+NEXTWEEK_TTL_S    = 1800     # aducem nextweek.json cel mult o data la 30 min
+
 # Valutele afectate de fiecare simbol tranzactionat
 SYMBOL_CURRENCIES: dict[str, list[str]] = {
     "EURUSD":  ["EUR", "USD"],
@@ -216,10 +225,42 @@ _lock:          threading.Lock = threading.Lock()
 _cached:        list[dict]     = []
 _cache_time:    Optional[datetime] = None
 
+# Stare backoff ForexFactory (per proces). Vezi FF_BACKOFF_* de mai sus.
+_ff_fails:          int = 0
+_ff_backoff_until:  Optional[datetime] = None
+_nextweek_last:     Optional[datetime] = None   # ultima aducere reusita a nextweek.json
+
 
 def _snapshot() -> list[dict]:
     with _lock:
         return list(_cached)
+
+
+# ─── Backoff ForexFactory la 429 (pur, testabil cu `now` injectat) ───────────
+
+def _ff_should_skip(now: Optional[datetime] = None) -> bool:
+    """True cat timp suntem in fereastra de backoff dupa un 429 — sarim FF."""
+    now = now or datetime.utcnow()
+    with _lock:
+        return _ff_backoff_until is not None and now < _ff_backoff_until
+
+
+def _ff_note_429(now: Optional[datetime] = None) -> None:
+    """Inregistreaza un 429: creste contorul si intinde backoff-ul exponential (plafonat)."""
+    global _ff_fails, _ff_backoff_until
+    now = now or datetime.utcnow()
+    with _lock:
+        _ff_fails += 1
+        wait = min(FF_BACKOFF_BASE_S * (2 ** (_ff_fails - 1)), FF_BACKOFF_CAP_S)
+        _ff_backoff_until = now + timedelta(seconds=wait)
+
+
+def _ff_note_ok() -> None:
+    """Cerere FF reusita → reset backoff."""
+    global _ff_fails, _ff_backoff_until
+    with _lock:
+        _ff_fails = 0
+        _ff_backoff_until = None
 
 
 # ─── Parsare data ─────────────────────────────────────────────────────────────
@@ -248,8 +289,22 @@ def _fetch_forexfactory() -> list[dict]:
     Fara API key. Endpoint neoficial dar stabil, folosit de mii de traderi.
     Returnate: eventi normalizati cu: title, currency, impact, event_time (UTC naive).
     """
+    global _nextweek_last
+    # Backoff: cat timp suntem blocati de un 429 recent, nu mai lovim FF deloc
+    # (guard-ul cade pe cache-ul last-good — vezi _refresh). Reincercam dupa expirare.
+    if _ff_should_skip():
+        log.debug("FF in backoff dupa 429 — sar peste aceasta iteratie.")
+        return []
+
+    now = datetime.utcnow()
     events: list[dict] = []
+    got_ok = got_429 = False
     for url in FF_URLS:
+        # nextweek.json se schimba rar → il aducem cel mult o data la NEXTWEEK_TTL_S
+        # (reduce la jumatate cererile catre FF, deci si 429-urile).
+        if "nextweek" in url and _nextweek_last is not None \
+                and (now - _nextweek_last).total_seconds() < NEXTWEEK_TTL_S:
+            continue
         try:
             req = urllib.request.Request(
                 url,
@@ -257,6 +312,9 @@ def _fetch_forexfactory() -> list[dict]:
             )
             with urllib.request.urlopen(req, timeout=15) as r:
                 raw: list[dict] = json.loads(r.read())
+            got_ok = True
+            if "nextweek" in url:
+                _nextweek_last = now
 
             for ev in raw:
                 ev_time  = _to_utc(ev.get("date", ""))
@@ -280,10 +338,20 @@ def _fetch_forexfactory() -> list[dict]:
                 # nextweek.json nu e publicat mereu de FF — conditie normala,
                 # nu avertizam (thisweek.json acopera fereastra pre/post stiri).
                 log.debug(f"FF calendar ({url}): 404 (nepublicat inca)")
+            elif exc.code == 429:
+                got_429 = True
+                log.warning(f"FF calendar ({url}): 429 — backoff activat.")
+                break   # rate-limited: nu mai incerca alt URL in acest ciclu
             else:
                 log.warning(f"FF calendar ({url}): {exc}")
         except Exception as exc:
             log.warning(f"FF calendar ({url}): {exc}")
+
+    # Un 429 → intra in backoff; altfel, orice cerere reusita reseteaza backoff-ul.
+    if got_429:
+        _ff_note_429(now)
+    elif got_ok:
+        _ff_note_ok()
 
     return events
 
@@ -294,7 +362,13 @@ def _fetch_mt5() -> list[dict]:
     """
     Backup: calendarul economic built-in din MT5.
     Returneaza evenimentele HIGH importance programate in urmatoarele 24h.
-    Avantaj: 0 dependente externe, merge offline daca MT5 e conectat la broker.
+
+    ATENTIE (verificat 2026-08-06): pachetul Python `MetaTrader5` 5.0.5735 NU
+    expune API-ul de calendar (`calendar_event_by_importance` / `calendar_value_*`
+    lipsesc) — deci aceasta functie da AttributeError si intoarce [] (dead fallback).
+    ForexFactory ramane singura sursa reala de `actual`. Pentru o sursa de rezerva
+    FIABILA (cu `actual`) e nevoie de Finnhub (cheie gratuita) — vezi _fetch_finnhub.
+    Nu o stergem: daca un viitor pachet MT5 adauga calendarul, redevine functionala.
     """
     try:
         import MetaTrader5 as mt5
@@ -426,10 +500,22 @@ def _refresh() -> None:
             unique.append(ev)
 
     with _lock:
-        _cached     = unique
-        _cache_time = datetime.utcnow()
+        if unique:
+            _cached = unique
+            _cache_time = datetime.utcnow()
+        else:
+            # TOATE sursele au esuat/backoff (ex: FF 429 ore intregi). NU stergem
+            # cache-ul — altfel protectia la stiri s-ar OPRI complet in timpul unei
+            # caderi FF (sesiunile nu s-ar mai pauza deloc). Pastram ultima lista buna;
+            # `events_active_at` filtreaza oricum dupa fereastra, deci evenimentele
+            # trecute nu produc pauze false, iar cele viitoare raman acoperite.
+            _cache_time = datetime.utcnow()
 
-    log.info(f"[NEWS] Cache actualizat: {len(unique)} evenimente unice")
+    if unique:
+        log.info(f"[NEWS] Cache actualizat: {len(unique)} evenimente unice")
+    else:
+        log.warning(f"[NEWS] Nicio sursa disponibila — pastrez ultimul cache "
+                    f"({len(_cached)} evenimente) ca sa nu opresc protectia.")
 
 
 def _needs_refresh() -> bool:

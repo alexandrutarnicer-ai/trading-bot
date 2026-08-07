@@ -41,8 +41,14 @@ def _calendar() -> list[dict]:
     now = datetime.utcnow()
     if _cal_time is None or (now - _cal_time).total_seconds() > _CAL_TTL_S:
         try:
-            _cal_cache = _fetch_forexfactory()
-            _cal_time  = now
+            fresh = _fetch_forexfactory()
+            # Pastram ultima lista buna daca fetch-ul intoarce gol (FF 429/backoff) —
+            # altfel motorul AI pierde constiinta stirilor in timpul unei caderi FF
+            # si ar putea tranzactiona in stiri. `_fetch_forexfactory` inghite erorile
+            # si intoarce [], deci verificam explicit continutul, nu doar exceptia.
+            if fresh:
+                _cal_cache = fresh
+            _cal_time = now
         except Exception:
             # pastram cache-ul vechi (chiar expirat) — mai bun decat nimic
             _cal_time = now

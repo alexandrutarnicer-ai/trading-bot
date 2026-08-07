@@ -102,7 +102,7 @@
     "quant": "mistral"
   },
   "role_quant_enabled": true,
-  "consensus_threshold": 67,
+  "consensus_threshold": 69,
   "role_devils_advocate_enabled": false,
   "market_overrides": {},
   "capital_sync_mt5": false,
