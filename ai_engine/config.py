@@ -58,6 +58,12 @@ DEFAULTS: dict = {
     "role_quant_enabled":            False,  # Analist Cantitativ / Volatilitate (EV, win-prob)
     "role_devils_advocate_enabled":  False,  # Avocatul Diavolului (pre-mortem, contra-teza)
 
+    # ── Semnal de regim trend/chop in briefing (Feature: Regime Awareness) ──
+    # True → briefing-ul include eficienta de trend (Kaufman ER) + eticheta CHOPPY/
+    # TRENDING/NEUTRAL, iar consiliul o considera (evita breakout-uri in chop). False
+    # → briefing IDENTIC cu versiunea de dinainte. Hot-reload per iteratie.
+    "regime_aware":                  True,
+
     # ── Consiliu multiplu (Feature: Multi-Council Consensus) ──
     # Motorul autonom: consiliul PRIMAR construieste trade-ul; daca sunt configurate
     # surse secundare/tertiare, acele consilii REVIZUIESC trade-ul propus si executia

@@ -45,7 +45,12 @@ _TECH_SYS = _PREAMBLE + (
     "- Price pressing the edge of the 20-bar range WITH an M30 trend behind it is a "
     "directional setup (breakout continuation), not a neutral condition.\n"
     "- 'neutral' is reserved for genuine chop: no M30 trend AND price mid-range. "
-    "If you output neutral, say what specific price level would change your mind."
+    "If you output neutral, say what specific price level would change your mind.\n"
+    "- REGIME CHECK: if the briefing marks the regime CHOPPY (low trend efficiency), "
+    "range-edge breakouts are unreliable — in chop price usually pokes past the edge "
+    "then reverses (false breakout). Lower your confidence markedly, or output neutral, "
+    "even with an M30 trend behind it. Only a TRENDING or NEUTRAL regime supports full "
+    "breakout-continuation confidence."
 )
 _TECH_USER = (
     "{briefing}\n\n"
@@ -84,7 +89,10 @@ _RISK_SYS = _PREAMBLE + (
     "- BAD_GEOMETRY: no structural level exists for a sane stop-loss\n"
     "Anything else (mixed timeframes, neutral RSI, price near resistance, personal "
     "doubt) is NOT a veto — express it by lowering max_risk_pct to 0.0025. "
-    "A veto without one of these codes will be ignored by the desk's systems."
+    "A veto without one of these codes will be ignored by the desk's systems.\n"
+    "- REGIME: when the briefing marks the regime CHOPPY (low trend efficiency), "
+    "breakout entries are unreliable and are the desk's main losing pattern — set "
+    "max_risk_pct to 0.0025 (size DOWN) even though this is not a hard veto."
 )
 _RISK_USER = (
     "{briefing}\n\n"
@@ -130,8 +138,14 @@ _HEAD_SYS = _PREAMBLE + (
     "must always exceed risk.\n"
     "- If the Risk Manager vetoed WITH a valid code, the action MUST be WAIT (or "
     "CLOSE when reviewing a position that should be exited).\n"
-    "- WAIT is correct only when: no directional bias at all, valid risk veto, or no "
-    "structural level exists for the stop."
+    "- REGIME: the 'a stop order costs nothing' logic assumes the breakout can run. "
+    "If the briefing marks the regime CHOPPY (low trend efficiency), range-edge stop "
+    "entries frequently trigger on a false break and reverse straight into the stop — "
+    "this is the desk's single biggest losing pattern. In a CHOPPY regime, lower "
+    "confidence and prefer WAIT unless a strong structural reason justifies the "
+    "breakout. A CHOPPY regime IS a valid reason for WAIT.\n"
+    "- WAIT is correct only when: no directional bias at all, valid risk veto, a "
+    "choppy regime with no strong justification, or no structural level exists for the stop."
 )
 _HEAD_USER = (
     "{briefing}\n\n"

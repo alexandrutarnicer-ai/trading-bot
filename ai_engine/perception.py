@@ -81,6 +81,16 @@ def build_snapshot(src, symbol: str, n_news_hours: int = 24) -> dict:
     h20 = float(hist["high"].tail(20).max())
     l20 = float(hist["low"].tail(20).min())
 
+    # regim: eficienta de trend pe fereastra de breakout (20 bare) + percentila
+    efficiency = _efficiency_ratio(hist["close"].tail(_ER_WINDOW + 1).values)
+    eff_pctile = None
+    if efficiency is not None and len(hist) > 120:
+        roll = (hist["close"].tail(520)
+                .rolling(_ER_WINDOW + 1).apply(_eff_raw, raw=True).dropna())
+        if len(roll) > 20:
+            eff_pctile = float((roll < efficiency).mean() * 100)
+    regime = _regime_label(efficiency)
+
     def _ret(bars: int) -> float | None:
         if len(hist) <= bars:
             return None
@@ -123,6 +133,9 @@ def build_snapshot(src, symbol: str, n_news_hours: int = 24) -> dict:
         "ema_align":    _ema_alignment(row),
         "atr":          round(atr, 6),
         "atr_pctile":   round(atr_pctile, 1) if atr_pctile is not None else None,
+        "efficiency":   round(efficiency, 3) if efficiency is not None else None,
+        "efficiency_pctile": round(eff_pctile, 1) if eff_pctile is not None else None,
+        "regime":       regime,
         "swing_highs":  [round(x, 5) for x in sw_h],
         "swing_lows":   [round(x, 5) for x in sw_l],
         "high_20":      round(h20, 5),
@@ -144,18 +157,69 @@ def _ema_alignment(row) -> str:
     return "mixed"
 
 
+# ── Regim: trend vs chop (de ce esueaza breakout-urile intr-o saptamana choppy) ──
+# Kaufman Efficiency Ratio pe fereastra de breakout (20 bare, M15): |miscare neta| /
+# suma miscarilor absolute. ~1 = trend curat, ~0 = oscilatie. Praguri calibrate pe
+# distributia reala M15 20-bar (mediana ~0.19, p25 ~0.09, p75 ~0.32), consistenta pe
+# FX/crypto/metale — deci absolute, independente de instrument.
+_ER_WINDOW      = 20
+_ER_CHOPPY_MAX  = 0.15   # sub = CHOPPY (breakout-uri nesigure)
+_ER_TREND_MIN   = 0.35   # peste = TRENDING (miscare directionala)
+
+
+def _efficiency_ratio(closes) -> float | None:
+    """|net| / suma |diff|. None daca <3 puncte sau drum nul."""
+    c = np.asarray(closes, dtype=float)
+    if len(c) < 3:
+        return None
+    path = float(np.abs(np.diff(c)).sum())
+    if path <= 0:
+        return None
+    return float(abs(c[-1] - c[0]) / path)
+
+
+def _eff_raw(arr) -> float:
+    """Wrapper pentru rolling().apply(raw=True) — NaN in loc de None."""
+    r = _efficiency_ratio(arr)
+    return r if r is not None else float("nan")
+
+
+def _regime_label(er: float | None) -> str:
+    if er is None:
+        return "unknown"
+    if er < _ER_CHOPPY_MAX:
+        return "CHOPPY"
+    if er >= _ER_TREND_MIN:
+        return "TRENDING"
+    return "NEUTRAL"
+
+
 _WD = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 _TREND = {1: "UP", -1: "DOWN", 0: "FLAT"}
 
 
-def render_text(s: dict) -> str:
-    """Briefing compact, citibil de LLM. Doar fapte, zero interpretare."""
+def render_text(s: dict, regime_aware: bool = True) -> str:
+    """
+    Briefing compact, citibil de LLM. Doar fapte, zero interpretare.
+
+    `regime_aware=True` adauga o linie cu eficienta de trend (trend vs chop) — semnalul
+    care lipsea cand consiliul lua breakout-uri intr-o saptamana choppy. `regime_aware=False`
+    → briefing IDENTIC byte-cu-byte cu versiunea de dinainte (comutabil din config, hot-reload).
+    """
     lines = [
         f"MARKET BRIEFING — {s['symbol']} @ {s['price']} ({_WD[s['weekday']]}, {s['hour']:02d}:00 Romania time, bar close {s['bar_time']})",
         f"Trend M30 (EMA200): {_TREND[s['trend_m30']]} | Trend D1 (EMA200): {_TREND[s['trend_d1']]} | "
         f"Weekly (EMA50): {'UP' if s['weekly_up'] else 'DOWN/FLAT'} | D1 ADX>25: {'YES' if s['adx_d1_gt25'] else 'no'}",
         f"EMA 8/20/50 alignment: {s['ema_align']} | RSI(14): {s['rsi']}",
         f"ATR(14): {s['atr']} (percentile vs last 500 bars: {s['atr_pctile']}%)",
+    ]
+    if regime_aware and s.get("efficiency") is not None:
+        lines.append(
+            f"Trend efficiency (20-bar Kaufman ER): {s['efficiency']} "
+            f"(percentile vs 500 bars: {s['efficiency_pctile']}%) — regime: {s['regime']} "
+            f"[ER<{_ER_CHOPPY_MAX}=CHOPPY: price oscillates, breakouts/range-edge stop entries "
+            f"often trigger then reverse; ER>={_ER_TREND_MIN}=TRENDING: directional]")
+    lines += [
         f"Recent swing highs (resistance): {s['swing_highs']} | swing lows (support): {s['swing_lows']}",
         f"20-bar range: {s['low_20']} .. {s['high_20']}",
         f"Returns: 1h {s['ret_1h_pct']}% | 4h {s['ret_4h_pct']}% | 1d {s['ret_1d_pct']}%",
