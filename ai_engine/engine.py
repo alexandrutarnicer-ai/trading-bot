@@ -322,7 +322,7 @@ def _process_market(symbol: str, src: Mt5DataSource, registry: ProviderRegistry,
 
     log.info("CONSILIU pe %s — trigger: %s", symbol, trig)
     snap_id = ledger.add_snapshot(symbol, snap)
-    briefing = perception.render_text(snap)
+    briefing = perception.render_text(snap, regime_aware=cfg.get("regime_aware", True))
 
     today = datetime.now().date().isoformat()
     n_open = len(positions)
