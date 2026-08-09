@@ -15,9 +15,10 @@
       - Ambele creeaza acelasi task TradingBot-MT5 (idempotent, -Force) - deci
         activarea oricarui autostart (bot SAU AI) porneste MT5. Stergerea unuia
         NU sterge MT5 daca celalalt inca il foloseste (vezi remove_autostart_ai.ps1).
-      - AI Engine asteapta 120s (dupa botul cu 90s) ca MT5 sa fie conectat, apoi
-        porneste motorul. Motorul iese daca MT5/Ollama nu sunt gata la pornire -
-        watchdog-ul (max 5 reincercari/5 min) acopera cazul de conectare lenta.
+      - Bat-ul AI e minimal si iese instant: porneste Ollama + lanseaza
+        watchdog-ul. Watchdog-ul PORNESTE motorul si asteapta MT5/Ollama prin
+        retry (fereastra de boot ~15 min), apoi il reporneste daca moare.
+        Nicio pauza lunga in bat (ping-urile inghetau la boot - fix 2026-08-08).
 #>
 
 $BotDir  = Split-Path $PSScriptRoot -Parent
@@ -104,15 +105,15 @@ Write-Host ""
 $tgLine1 = 'for /f "delims=" %%i in (''powershell -NoProfile -Command "[Environment]::GetEnvironmentVariable(\"TELEGRAM_TOKEN\",\"User\")"'') do set "TELEGRAM_TOKEN=%%i"'
 $tgLine2 = 'for /f "delims=" %%i in (''powershell -NoProfile -Command "[Environment]::GetEnvironmentVariable(\"TELEGRAM_CHAT_ID\",\"User\")"'') do set "TELEGRAM_CHAT_ID=%%i"'
 
-# Redesign 2026-07-18 (bat-ul vechi a inghetat la boot fara nicio urma — 5h fara
-# motor, task blocat "Running"): (1) LOG la fiecare pas in data\ai\autostart.log
-# — orice viitor blocaj devine vizibil; (2) asteptarile folosesc ping -n, nu
-# timeout (timeout cere handle de consola interactiv si e fragil sub Task
-# Scheduler); (3) FARA pause si FARA rulare in foreground — motorul si watchdog-ul
-# se lanseaza DETASAT si bat-ul IESE (task-ul se incheie curat; supravegherea e
-# treaba watchdog-ului, care NU contracareaza Stop-ul din UI — acela opreste
-# intai watchdog-ul); (4) iesirea motorului e capturata in log (crash-urile
-# dinainte de logging nu mai sunt invizibile).
+# Redesign 2026-08-08 (bug: bat-ul VECHI inghetat pe pauzele `ping` la boot -
+# watchdog-ul era lansat DUPA acele pauze, deci cand bat-ul se bloca, nimic nu
+# mai pornea motorul; s-a intamplat de 6+ ori). ACUM bat-ul e minimal si FARA
+# pauze lungi: incarca env Telegram -> porneste Ollama (fara asteptare) -> lanseaza
+# DOAR watchdog-ul (detasat) -> iese instant. Toata asteptarea MT5/Ollama e MUTATA
+# in watchdog (Python, fiabil): el porneste motorul si reincearca pe o fereastra
+# de boot pana "prinde", apoi il reporneste daca moare. Un singur loc care
+# lanseaza motorul = watchdog-ul (fara dubluri). Vezi ai_engine/watchdog.py.
+# Fiecare pas ramane logat in data\ai\autostart.log (blocaj viitor = vizibil).
 $batLines = @(
     '@echo off',
     'chcp 65001 >nul',
@@ -125,30 +126,23 @@ $batLines = @(
     $tgLine2,
     'echo [%date% %time%] telegram env incarcat >> "%AILOG%"',
     '',
-    'rem 1) Porneste Ollama daca nu ruleaza deja (idempotent)',
+    'rem 1) Porneste Ollama daca nu ruleaza deja (idempotent, FARA asteptare -',
+    'rem    watchdog-ul asteapta prin retry ca Ollama+MT5 sa fie gata)',
     'tasklist /FI "IMAGENAME eq ollama.exe" 2>nul | find /I "ollama.exe" >nul',
     'if errorlevel 1 (',
     '    echo [%date% %time%] pornesc Ollama >> "%AILOG%"',
     "    start `"`" /B `"$ollamaExe`" serve",
-    '    ping -n 11 127.0.0.1 >nul',
     ')',
-    'echo [%date% %time%] ollama ok >> "%AILOG%"',
-    '',
-    'rem 2) Asteapta ~120s ca MT5 sa fie deschis si conectat (dupa bot cu ~30s)',
-    'echo [%date% %time%] astept 120s pentru MT5 >> "%AILOG%"',
-    'ping -n 121 127.0.0.1 >nul',
+    'echo [%date% %time%] ollama lansat (fara asteptare) >> "%AILOG%"',
     '',
     "cd /d `"$BotDir`"",
     '',
-    'rem 3) Watchdog DETASAT (supervizor anti-crash; reporneste motorul daca moare,',
-    'rem    max 5 restarturi / verificare la 5 min — acopera si MT5 conectat lent)',
+    'rem 2) Watchdog DETASAT - el PORNESTE motorul si asteapta MT5/Ollama (retry pe',
+    'rem    fereastra de boot), apoi il reporneste daca moare. NICIO pauza lunga in',
+    'rem    bat: ping-urile de asteptare inghetau la boot si watchdog-ul nu mai pornea.',
     'echo [%date% %time%] pornesc watchdog >> "%AILOG%"',
     "start `"AI Engine Watchdog`" /MIN `"$PythonExe`" -m ai_engine.watchdog",
-    '',
-    'rem 4) Motorul AI — DETASAT, cu iesirea capturata in log (crash pre-logging vizibil)',
-    'echo [%date% %time%] pornesc motorul AI >> "%AILOG%"',
-    "start `"AI Engine`" /MIN cmd /c `"`"$PythonExe`" -m ai_engine >> `"%AILOG%`" 2>&1`"",
-    'echo [%date% %time%] autostart AI incheiat (motor + watchdog lansate detasat) >> "%AILOG%"',
+    'echo [%date% %time%] autostart AI incheiat (watchdog lansat; el porneste motorul) >> "%AILOG%"',
     'exit /b 0'
 )
 [System.IO.File]::WriteAllText($BatPath, ($batLines -join "`r`n") + "`r`n", [System.Text.Encoding]::UTF8)
@@ -171,7 +165,8 @@ if ($mt5Exe) {
     }
 }
 
-# Task 2: AI Engine la login (via start_ai_engine_auto.bat, cu asteptare 120s interna)
+# Task 2: AI Engine la login (via start_ai_engine_auto.bat, minimal + iese instant;
+# watchdog-ul porneste motorul si asteapta MT5/Ollama prin retry)
 # RunLevel Limited (NU Highest) - proces elevat nu poate fi oprit/inlocuit de
 # UI-ul neelevat (Access Denied). Vezi nota din setup_autostart.ps1.
 try {
@@ -182,7 +177,7 @@ try {
           -ExecutionTimeLimit (New-TimeSpan -Days 2)
     Register-ScheduledTask -TaskName "TradingBot-AIEngine" `
         -Action $a2 -Trigger $t2 -Settings $s2 -RunLevel Limited -Force | Out-Null
-    Write-Host "[OK] Task TradingBot-AIEngine  - motorul AI porneste la login + 120s (neelevat)" -ForegroundColor Green
+    Write-Host "[OK] Task TradingBot-AIEngine  - watchdog-ul porneste motorul AI la login (neelevat)" -ForegroundColor Green
 } catch {
     Write-Host "[EROARE] Task AIEngine: $_" -ForegroundColor Red
 }
@@ -195,10 +190,10 @@ if ($mt5Exe) {
     Write-Host "  1. MT5 porneste automat la login"
 }
 Write-Host "  2. Ollama porneste (daca nu ruleaza deja)"
-Write-Host "  3. Dupa 120 secunde: motorul AI + watchdog-ul pornesc"
-Write-Host "  4. O fereastra CMD ramane deschisa cu logul motorului AI"
+Write-Host "  3. Watchdog-ul porneste imediat si PORNESTE motorul AI"
+Write-Host "  4. Watchdog-ul asteapta MT5/Ollama prin retry (pana ~15 min) pana motorul prinde"
 Write-Host ""
-Write-Host "  Watchdog-ul reporneste motorul daca moare (max 5x/5min)."
+Write-Host "  Watchdog-ul reporneste apoi motorul daca moare (max 5x/5min)."
 Write-Host "  Log motor:    data\ai\engine.log"
 Write-Host "  Log watchdog: data\ai\watchdog.log"
 Write-Host ""

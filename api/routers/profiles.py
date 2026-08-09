@@ -24,6 +24,7 @@ AVAILABLE_MARKETS = [
     "USDCHF", "USDCAD", "AUDUSD", "NZDUSD", "EURGBP", "GBPJPY",
     "BTCUSD", "ETHUSD", "XRPUSD", "LTCUSD",
     "GER40", "US30", "US500", "UK100", "XAUUSD",
+    "CSCO.NAS", "SOFI.NAS",   # actiuni CFD (stock)
 ]
 
 TIMEFRAMES    = ["M5", "M15", "M30", "H1", "H4", "D1"]

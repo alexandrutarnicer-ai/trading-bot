@@ -519,10 +519,14 @@ export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted,
               className="w-full bg-surface border border-surface-border rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-blue-500" />
           </div>
 
-          {/* Piețe predefinite */}
+          {/* Piețe predefinite + orice simbol deja selectat care nu e in lista
+              predefinita (ex: actiuni CSCO.NAS/SOFI.NAS adaugate prin cautarea MT5)
+              — altfel piata aleasa nu apare ca bifata in aceasta zona. */}
           <Section label="Piețe" tip={TIPS.markets}>
             <div className="flex flex-wrap gap-2">
-              {meta.available_markets.map((m) => (
+              {[...meta.available_markets,
+                ...session.markets.filter((m) => !meta.available_markets.includes(m)),
+               ].map((m) => (
                 <button key={m} onClick={() => toggleMarket(m)}
                   className={`text-xs px-2 py-0.5 rounded border transition-colors ${
                     session.markets.includes(m)

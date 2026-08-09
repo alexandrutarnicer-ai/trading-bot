@@ -4,6 +4,8 @@ _INDEX_PIP = {
     "FRA40": 1.0, "AUS200": 1.0,
     "XAUUSD": 1.0,   # 1 punct = $1 price move, pip_val=$100/lot
     "BTCUSD": 0.01, "ETHUSD": 0.01, "XRPUSD": 0.00001,  # tick_size real
+    # Stock CFDs (tick_size real din MT5) — pip = 1 tick de pret
+    "CSCO.NAS": 0.01, "SOFI.NAS": 0.001,
 }
 
 

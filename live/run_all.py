@@ -133,6 +133,14 @@ SESSIONS = [
          script=os.path.join(ROOT, "live", "session20_xauusd.py"),
          sig_dir=os.path.join(DATA_DIR, "live_signals", "session20"),
          hours="0-24h obs", validated=True),
+    dict(id="S21", label="S21 CSCO.NAS M15 LONG obs",
+         script=os.path.join(ROOT, "live", "session21_csco.py"),
+         sig_dir=os.path.join(DATA_DIR, "live_signals", "session21"),
+         hours="16-23h RO obs", validated=True),
+    dict(id="S22", label="S22 SOFI.NAS M15 LONG obs",
+         script=os.path.join(ROOT, "live", "session22_sofi.py"),
+         sig_dir=os.path.join(DATA_DIR, "live_signals", "session22"),
+         hours="16-23h RO obs", validated=True),
 ]
 
 STATUS_INTERVAL = 300   # afiseaza status la fiecare 5 minute
