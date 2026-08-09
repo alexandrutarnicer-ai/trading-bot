@@ -4,7 +4,8 @@
     "NZDJPY",
     "CHFJPY",
     "AUDUSD",
-    "XRPUSD"
+    "XRPUSD",
+    "SOFI.NAS"
   ],
   "provider": "ollama",
   "ollama_url": "http://localhost:11434",
