@@ -1,1 +1,2 @@
 signal_id,time_check,symbol,direction,status,entry,sl,tp,r_ratio,armed_at,triggered_at,exit_price,exit_time,result_r,pnl_usd,commission_usd,swap_usd
+S18-NZDJPY-H1-IB0014,2026-08-07 18:02:26.999772,NZDJPY,1,ai_reject,92.993,92.693,93.593,2.0,2026-08-07 17:00:00,,,,0.0,,,

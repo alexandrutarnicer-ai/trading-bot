@@ -1,1 +1,2 @@
 signal_id,time,symbol,direction,dir_str,entry,sl,tp,r_ratio,atr_pips,n_optional,rsi
+S18-NZDJPY-H1-IB0014,2026-08-07 17:00:00,NZDJPY,1,LONG,92.993,92.693,93.593,2.0,14.3,0,51.9
