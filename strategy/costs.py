@@ -20,6 +20,10 @@ _INDEX_TICK = {
     "GER40":  (0.01, 0.010800),   # $1.08/pt/lot  (EUR profit @ EUR/USD=1.08)
     "DE40":   (0.01, 0.010800),   # alias broker pt GER40
     "XAUUSD": (0.01, 1.000000),   # $100.00/pt/lot  (100 oz, tick_val=$1/tick)
+    # Stock CFDs (tick_size, tick_value_usd din MT5) — live-ul citeste MT5 direct;
+    # astea sunt pentru acuratetea backtestului.
+    "CSCO.NAS": (0.01,  0.010000),   # Cisco
+    "SOFI.NAS": (0.001, 0.001000),   # SoFi
 }
 
 # Crypto: 1 lot = 1 moneda. pip_value = tick_value_usd direct (nu /tick_size ca indicii).

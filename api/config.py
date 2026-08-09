@@ -252,6 +252,30 @@ SESSIONS = [
         "capital_pct": 10.0,
         "score":       None,
     },
+    {
+        "id":          "session21",
+        "label":       "S21 — CSCO.NAS M15 LONG obs",
+        "markets":     ["CSCO.NAS"],
+        "direction":   "LONG",
+        "tf":          "M15+M30",
+        "hours":       "16–23h RO (skip 19-20)",
+        "validated":   False,
+        "execute":     False,
+        "capital_pct": 5.0,
+        "score":       None,
+    },
+    {
+        "id":          "session22",
+        "label":       "S22 — SOFI.NAS M15 LONG obs",
+        "markets":     ["SOFI.NAS"],
+        "direction":   "LONG",
+        "tf":          "M15+M30",
+        "hours":       "16–23h RO (skip 20)",
+        "validated":   False,
+        "execute":     False,
+        "capital_pct": 5.0,
+        "score":       None,
+    },
 ]
 
 SESSION_MAP = {s["id"]: s for s in SESSIONS}
