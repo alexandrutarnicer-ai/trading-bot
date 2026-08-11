@@ -1,1 +1,2 @@
 signal_id,time,symbol,direction,dir_str,entry,sl,tp,r_ratio,atr_pips,n_optional,rsi
+S17-AUDCAD-H1-IB0006,2026-08-11 16:00:00,AUDCAD,1,LONG,0.9854,0.98376,0.98868,2.0,9.2,0,63.0
