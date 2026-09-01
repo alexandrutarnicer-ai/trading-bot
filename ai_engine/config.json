@@ -78,7 +78,7 @@
     "hug2quen3": {
       "type": "openai_compatible",
       "model": "Qwen/Qwen3.6-27B:featherless-ai",
-      "enabled": false,
+      "enabled": true,
       "base_url": "https://router.huggingface.co/v1"
     },
     "mistral": {
@@ -105,7 +105,11 @@
   "role_quant_enabled": true,
   "consensus_threshold": 69,
   "role_devils_advocate_enabled": false,
-  "market_overrides": {},
+  "market_overrides": {
+    "USDCAD": {
+      "isolated": true
+    }
+  },
   "capital_sync_mt5": true,
   "capital_usd": 200.0
 }

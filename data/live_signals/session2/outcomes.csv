@@ -1,1 +1,4 @@
 signal_id,time_check,symbol,direction,status,entry,sl,tp,r_ratio,armed_at,triggered_at,exit_price,exit_time,result_r,pnl_usd,commission_usd,swap_usd
+S2-AUDJPY-IB0001,2026-08-12 01:15:49.768339,AUDJPY,1,ai_reject,112.518,112.333,112.888,2.0,2026-08-12 01:00:00,,,,0.0,,,
+S2-AUDJPY-IB0002,2026-08-12 06:16:12.188771,AUDJPY,1,ai_reject,112.562,112.467,112.752,2.0,2026-08-12 06:00:00,,,,0.0,,,
+S2-AUDJPY-IB0003,2026-08-12 10:01:26.017625,AUDJPY,1,ai_reject,112.542,112.455,112.716,2.0,2026-08-12 09:45:00,,,,0.0,,,

@@ -1,1 +1,3 @@
 signal_id,time,symbol,direction,dir_str,entry,sl,tp,r_ratio,atr_pips,n_optional,rsi
+S3-BTC-BOTH-IB0001,2026-08-14 05:45:00,BTCUSD,-1,SHORT,63385.75,63497.92,63161.41,2.0,11052.1,0,46.4
+S3-BTC-BOTH-IB0002,2026-08-14 07:45:00,BTCUSD,-1,SHORT,63289.35,63363.78,63140.49,2.0,10537.2,0,42.4

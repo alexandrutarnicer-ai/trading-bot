@@ -1,1 +1,2 @@
 signal_id,time_check,symbol,direction,status,entry,sl,tp,r_ratio,armed_at,triggered_at,exit_price,exit_time,result_r,pnl_usd,commission_usd,swap_usd
+S13-EURJPY-IB0001,2026-08-12 10:17:16.823598,EURJPY,1,ai_reject,183.93,183.814,184.162,2.0,2026-08-12 10:00:00,,,,0.0,,,

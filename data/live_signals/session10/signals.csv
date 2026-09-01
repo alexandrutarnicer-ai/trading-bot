@@ -1,1 +1,2 @@
 signal_id,time,symbol,direction,dir_str,entry,sl,tp,r_ratio,atr_pips,n_optional,rsi
+S10-GBPCAD-H1-IB0001,2026-08-14 03:00:00,GBPCAD,1,LONG,1.87928,1.87838,1.88108,2.0,11.3,0,41.7

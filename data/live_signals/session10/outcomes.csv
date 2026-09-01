@@ -1,1 +1,2 @@
 signal_id,time_check,symbol,direction,status,entry,sl,tp,r_ratio,armed_at,triggered_at,exit_price,exit_time,result_r,pnl_usd,commission_usd,swap_usd
+S10-GBPCAD-H1-IB0001,2026-08-14 05:00:13.726860,GBPCAD,1,ai_reject,1.87928,1.87838,1.88108,2.0,2026-08-14 03:00:00,,,,0.0,,,
