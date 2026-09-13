@@ -54,13 +54,13 @@
     "groq": {
       "enabled": true,
       "type": "openai_compatible",
-      "model": "llama-3.3-70b-versatile",
+      "model": "groq/compound",
       "base_url": "https://api.groq.com/openai/v1"
     },
     "cerebras": {
       "type": "openai_compatible",
       "model": "gemma-4-31b",
-      "enabled": true,
+      "enabled": false,
       "base_url": "https://api.cerebras.ai/v1"
     },
     "openroute": {
@@ -72,13 +72,13 @@
     "hug1": {
       "type": "openai_compatible",
       "model": "zai-org/GLM-5.2:novita",
-      "enabled": true,
+      "enabled": false,
       "base_url": "https://router.huggingface.co/v1"
     },
     "hug2quen3": {
       "type": "openai_compatible",
       "model": "Qwen/Qwen3.6-27B:featherless-ai",
-      "enabled": true,
+      "enabled": false,
       "base_url": "https://router.huggingface.co/v1"
     },
     "mistral": {
@@ -90,17 +90,17 @@
     "nvidia": {
       "type": "openai_compatible",
       "model": "z-ai/glm-5.2",
-      "enabled": true,
+      "enabled": false,
       "base_url": "https://integrate.api.nvidia.com/v1"
     }
   },
   "role_assignments": {
     "macro": "cerebras",
-    "risk": "groq",
-    "technical": "cerebras",
-    "head_trader": "nvidia",
-    "devils_advocate": "openroute",
-    "quant": "mistral"
+    "risk": "ollama",
+    "technical": "gemini",
+    "head_trader": "groq",
+    "devils_advocate": "gemini",
+    "quant": "gemini"
   },
   "role_quant_enabled": true,
   "consensus_threshold": 69,
