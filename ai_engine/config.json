@@ -95,14 +95,14 @@
     }
   },
   "role_assignments": {
-    "macro": "cerebras",
+    "macro": "ollama",
     "risk": "ollama",
-    "technical": "gemini",
-    "head_trader": "groq",
+    "technical": "ollama",
+    "head_trader": "ollama",
     "devils_advocate": "gemini",
     "quant": "gemini"
   },
-  "role_quant_enabled": true,
+  "role_quant_enabled": false,
   "consensus_threshold": 69,
   "role_devils_advocate_enabled": false,
   "market_overrides": {
@@ -111,5 +111,6 @@
     }
   },
   "capital_sync_mt5": true,
-  "capital_usd": 200.0
+  "capital_usd": 200.0,
+  "council_primary_source": null
 }
