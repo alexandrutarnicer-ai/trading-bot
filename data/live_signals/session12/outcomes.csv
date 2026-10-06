@@ -1,3 +1,5 @@
 signal_id,time_check,symbol,direction,status,entry,sl,tp,r_ratio,armed_at,triggered_at,exit_price,exit_time,result_r,pnl_usd,commission_usd,swap_usd
 S12-EURAUD-H1-IB0006,2026-07-30 14:02:20.362650,EURAUD,-1,ai_reject,1.6435,1.64623,1.63804,2.0,2026-07-30 12:00:00,,,,0.0,,,
 S12-EURAUD-H1-IB0007,2026-08-04 13:02:52.105302,EURAUD,-1,ai_reject,1.63825,1.64076,1.63323,2.0,2026-08-04 11:00:00,,,,0.0,,,
+S12-EURAUD-H1-IB0008,2026-10-01 14:00:44.292927,EURAUD,-1,ai_reject,1.62509,1.62947,1.61633,2.0,2026-10-01 12:00:00,,,,0.0,,,
+S12-EURAUD-H1-IB0009,2026-10-05 12:47:54.704417,EURAUD,-1,ai_reject,1.60849,1.6121,1.60127,2.0,2026-10-05 11:00:00,,,,0.0,,,

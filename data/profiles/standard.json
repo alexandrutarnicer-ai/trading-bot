@@ -72,7 +72,7 @@
       "inside_bar_r_ratio": 2,
       "inside_bar_risk_pct": 0.01,
       "ai_filter_enabled": true,
-      "ai_filter_level": "strict",
+      "ai_filter_level": "balanced",
       "ai_filter_primary_source": null,
       "ai_filter_secondary_source": null,
       "ai_filter_tertiary_source": null,
@@ -576,7 +576,7 @@
       "inside_bar_risk_pct": 0.01,
       "ai_filter_enabled": true,
       "ai_filter_level": "balanced",
-      "ai_filter_primary_source": null,
+      "ai_filter_primary_source": "gemini",
       "ai_filter_secondary_source": null,
       "ai_filter_tertiary_source": null,
       "ai_role_quant_enabled": false,
@@ -937,13 +937,14 @@
       "inside_bar_enabled": true,
       "inside_bar_r_ratio": 2,
       "inside_bar_risk_pct": 0.01,
-      "ai_filter_enabled": false,
-      "ai_filter_level": "balanced",
-      "ai_filter_primary_source": null,
+      "ai_filter_enabled": true,
+      "ai_filter_level": "permissive",
+      "ai_filter_primary_source": "gemini",
       "ai_filter_secondary_source": null,
       "ai_filter_tertiary_source": null,
       "ai_role_quant_enabled": false,
-      "ai_role_devils_advocate_enabled": false
+      "ai_role_devils_advocate_enabled": false,
+      "ai_filter_strict": true
     },
     {
       "id": "S12",
@@ -1332,10 +1333,10 @@
       "inside_bar_risk_pct": 0.01,
       "ai_filter_enabled": true,
       "ai_filter_level": "balanced",
-      "ai_filter_primary_source": null,
+      "ai_filter_primary_source": "gemini",
       "ai_filter_secondary_source": null,
       "ai_filter_tertiary_source": null,
-      "ai_role_quant_enabled": true,
+      "ai_role_quant_enabled": false,
       "ai_role_devils_advocate_enabled": false,
       "ai_filter_strict": true
     },
@@ -1818,7 +1819,7 @@
       "pullback_enabled": false
     }
   ],
-  "updated_at": "2026-09-14T13:45:28",
+  "updated_at": "2026-09-29T13:53:04",
   "capital_protection_enabled": false,
   "capital_protection_threshold_pct": 85,
   "capital_sync_mt5": true,
