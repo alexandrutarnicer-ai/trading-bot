@@ -23,8 +23,8 @@ DEFAULTS: dict = {
     # Sursa de adevar noua este registrul "providers" de mai jos.
     "provider":     "ollama",
     "ollama_url":   "http://localhost:11434",
-    "model":        "qwen3:8b",
-    "model_opts":   {"temperature": 0.3, "num_ctx": 8192},
+    "model":        "qwen3:1.7b",
+    "model_opts":   {"temperature": 0.3, "num_ctx": 4096},
 
     # ── Registru deschis de surse AI (vezi docs/PLAN_SURSE_AI_MULTI_PROVIDER.md)
     # Tipuri: ollama | anthropic | gemini | openai_compatible.
@@ -32,7 +32,7 @@ DEFAULTS: dict = {
     # dezactivata sau stearsa. Cheile API NU stau aici — vezi data/ai/providers.json.
     "providers": {
         "ollama": {"enabled": True,  "type": "ollama",
-                   "model": "qwen3:8b", "url": "http://localhost:11434"},
+                   "model": "qwen3:1.7b", "url": "http://localhost:11434"},
         "claude": {"enabled": False, "type": "anthropic",
                    "model": "claude-haiku-4-5"},
         "gemini": {"enabled": False, "type": "gemini",

@@ -9,10 +9,10 @@
   ],
   "provider": "ollama",
   "ollama_url": "http://localhost:11434",
-  "model": "qwen3:8b",
+  "model": "qwen3:1.7b",
   "model_opts": {
     "temperature": 0.3,
-    "num_ctx": 8192
+    "num_ctx": 4096
   },
   "bar_minutes": 15,
   "heartbeat_hours": 24,
@@ -32,7 +32,7 @@
     "ollama": {
       "enabled": true,
       "type": "ollama",
-      "model": "qwen3:8b",
+      "model": "qwen3:1.7b",
       "url": "http://localhost:11434"
     },
     "claude": {
@@ -98,7 +98,7 @@
     "macro": "ollama",
     "risk": "ollama",
     "technical": "ollama",
-    "head_trader": "ollama",
+    "head_trader": "gemini",
     "devils_advocate": "gemini",
     "quant": "gemini"
   },
@@ -107,6 +107,9 @@
   "role_devils_advocate_enabled": false,
   "market_overrides": {
     "USDCAD": {
+      "isolated": true
+    },
+    "XRPUSD": {
       "isolated": true
     }
   },
