@@ -209,7 +209,7 @@ class OllamaProvider(BaseProvider):
             with urllib.request.urlopen(req, timeout=5) as r:
                 tags = json.loads(r.read())
             names = [m.get("name", "") for m in tags.get("models", [])]
-            return any(n.startswith(self.model.split(":")[0]) for n in names)
+            return self.model in names
         except Exception:
             return False
 
