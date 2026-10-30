@@ -3,7 +3,8 @@
     "EURUSD",
     "NZDJPY",
     "CHFJPY",
-    "SOFI.NAS"
+    "SOFI.NAS",
+    "GBPUSD"
   ],
   "provider": "ollama",
   "ollama_url": "http://localhost:11434",
@@ -101,13 +102,10 @@
     "quant": "gemini"
   },
   "role_quant_enabled": false,
-  "consensus_threshold": 69,
+  "consensus_threshold": 75,
   "role_devils_advocate_enabled": false,
   "market_overrides": {
     "SOFI.NAS": {
-      "isolated": true
-    },
-    "EURUSD": {
       "isolated": true
     }
   },
