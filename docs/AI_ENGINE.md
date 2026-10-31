@@ -1,5 +1,7 @@
 # AI Engine — motorul de trading autonom bazat pe AI
 
+> **Stare 2026-10-31:** surse AI = DOAR ollama + gemini (restul scoase din config); rolurile Quant / Avocatul Diavolului ELIMINATE din cod; consiliile multiple fortate OFF; piete CHFJPY + GBPUSD, max 2 pozitii; trigger-e breakout_tension / heartbeat / vol_spike oprite; `isolated` inlocuit de modul Observatie. Sursa de adevar actuala: CLAUDE.md (sectiunea ai_engine) si Ghidul din aplicatie (sect. 11).
+
 **Versiune:** 0.3 · **Status:** experiment pe cont DEMO · **Cost de rulare:** $0 (LLM local; surse API optionale)
 
 ## Surse AI multiple (v0.3) — consiliul pe mai multe "creiere"

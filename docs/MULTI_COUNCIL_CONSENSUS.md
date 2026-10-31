@@ -1,5 +1,7 @@
 # Multi-Council Consensus + Roluri AI suplimentare
 
+> **Stare 2026-10-31:** DORMANT — consiliile multiple sunt fortate OFF (motor + filtru), iar rolurile Quant / Avocatul Diavolului au fost ELIMINATE din cod. Codul consensus / orchestrator ramane testat (scripts/test_multi_council.py). Documentul descrie designul istoric.
+
 Extinderea zonei de „consiliu" a motorului AI cu doua capabilitati **optionale**,
 **dezactivate by default** si **complet backward-compatible**:
 

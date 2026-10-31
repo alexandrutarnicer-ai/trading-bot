@@ -1,5 +1,7 @@
 # News Protection + Intelligent Mode — Analiză, Redesign și Cercetare
 
+> **Stare 2026-10-31:** protectia la stiri (activare deterministica, watch sub-bara) e ACTIVA; Modul Inteligent e DORMANT (fortat OFF in run_generator, scos din UI). Pragurile se combina cu Setarile Globale (cea mai stricta castiga).
+
 **Data:** 2026-07-17  
 **Autor:** Claude (Opus 4.8)  
 **Scope:** `live/news_guard.py`, `live/signal_generator.py` (protecția la știri + Modul Inteligent)
