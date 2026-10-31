@@ -1,0 +1,32 @@
+{
+  "capital_protection": {
+    "enabled": false,
+    "threshold_pct": 85.0,
+    "start_balance": null
+  },
+  "circuit_breaker": {
+    "enabled": false,
+    "max_consecutive_losses": 3,
+    "max_daily_loss_pct": 0.0
+  },
+  "friday_close": {
+    "enabled": false,
+    "hour": 20,
+    "exclude_crypto": true
+  },
+  "news_protection": {
+    "enabled": false,
+    "impact_level": 3,
+    "pre_minutes": 15,
+    "post_minutes": 15
+  },
+  "max_concurrent_per_market": {
+    "enabled": false,
+    "max": 1
+  },
+  "ai_filter": {
+    "enabled": false,
+    "level": "balanced",
+    "strict": false
+  }
+}
