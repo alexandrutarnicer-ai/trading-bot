@@ -112,6 +112,60 @@ def mt5_trade_stats(days: int = 365, source: str = "all"):
     }
 
 
+def _perf(trades: list) -> dict:
+    """Aceleasi definitii ca restul Dashboard-ului: pozitii INCHISE (dedup pe position_id in
+    mt5_pool), win = profit > 0, win rate = wins / (wins + losses) (break-even exclus),
+    profit = profitul deal-urilor de iesire; comision + swap raportate separat, plus net."""
+    wins = [t for t in trades if t["profit"] > 0]
+    losses = [t for t in trades if t["profit"] < 0]
+    decided = len(wins) + len(losses)
+    gross_p = sum(t["profit"] for t in wins)
+    gross_l = sum(t["profit"] for t in losses)
+    costs = sum(t["commission"] + t["swap"] for t in trades)
+    rs = [t["result_r"] for t in trades if t.get("result_r") is not None]
+    by_sym: dict[str, float] = {}
+    for t in trades:
+        by_sym[t["symbol"]] = by_sym.get(t["symbol"], 0.0) + t["profit"]
+    top = sorted(by_sym.items(), key=lambda kv: -abs(kv[1]))[:4]
+    return {"trades": len(trades), "wins": len(wins), "losses": len(losses),
+            "avg_r": round(sum(rs) / len(rs), 3) if rs else None,
+            "symbols": [{"symbol": s, "pnl": round(v, 2)} for s, v in top],
+            "win_rate": round(100 * len(wins) / decided, 1) if decided else None,
+            "profit": round(gross_p, 2), "loss": round(gross_l, 2),
+            "pnl": round(gross_p + gross_l, 2), "costs": round(costs, 2),
+            "net": round(gross_p + gross_l + costs, 2),
+            "first": min((t["close_time"] for t in trades), default=None),
+            "last": max((t["close_time"] for t in trades), default=None)}
+
+
+@router.get("/engine-performance")
+def mt5_engine_performance(days: int = 365):
+    """
+    Cele 4 carduri de performanta ale Dashboard-ului: TOTAL (Custom + AI + Daily) + cate unul
+    per engine, din ACEEASI lista MT5 ca /mt5/stats si /mt5/transactions (cache-ul pool-ului,
+    zero interogari MT5 in plus). Tranzactiile manuale NU intra in TOTAL-ul engine-urilor —
+    sunt raportate separat ca sa se lege cu totalul contului.
+    """
+    try:
+        trades = mt5_pool.get_closed_trades(days)
+    except mt5_pool.Mt5Unavailable as e:
+        return {"connected": False, "error": str(e)}
+    st = mt5_pool.get_status()
+    by = {s: [t for t in trades if t.get("source") == s] for s in _SOURCES}
+    engines = by["bot"] + by["ai"] + by["daily"]
+    out = {"connected": True, "error": None, "days": days, "currency": st.get("currency"),
+           "is_demo": st.get("is_demo"),
+           "total": _perf(engines), "custom": _perf(by["bot"]), "ai": _perf(by["ai"]),
+           "daily": _perf(by["daily"]), "manual": _perf(by["manual"]),
+           "account": _perf(trades)}
+    for v in out.values():
+        if isinstance(v, dict):
+            for k in ("first", "last"):
+                if v.get(k) is not None:
+                    v[k] = v[k].strftime("%Y-%m-%d")
+    return out
+
+
 @router.get("/equity-curve")
 def mt5_equity_curve(days: int = 365, metric: str = "usd", source: str = "all"):
     """
