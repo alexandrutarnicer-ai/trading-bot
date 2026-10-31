@@ -96,9 +96,15 @@ function MarketCard({ m, score, bt }: {
   );
 }
 
-function ModeSwitch({ mode, execution }: { mode?: string; execution?: { active: boolean; reason: string } }) {
+function ModeSwitch({ mode, execution, running }: { mode?: string; execution?: { active: boolean; reason: string }; running?: boolean }) {
   const set = useDailySetMode();
   const exec = mode === "execute";
+  // Selector cu doua stari explicite: un singur comutator „on/off” parea ca SHADOW e dezactivat
+  // (gri = EXECUTIA oprita = SHADOW activ), iar click-ul cerea confirmarea pentru EXECUTIE.
+  function choose(target: "shadow" | "execute") {
+    if (target === mode || set.isPending) return;
+    toggle();
+  }
   function toggle() {
     if (!exec) {
       if (!window.confirm("Treci Daily Engine pe EXECUȚIE?\n\nDe la următoarea fereastră (Londra 10:00 / New York 16:30 RO) " +
@@ -110,12 +116,21 @@ function ModeSwitch({ mode, execution }: { mode?: string; execution?: { active: 
   }
   return (
     <div className={`rounded-xl border p-4 flex items-center gap-3 flex-wrap ${exec ? "bg-loss/5 border-loss/40" : "bg-surface border-surface-border"}`}>
-      <button onClick={toggle} disabled={set.isPending}
-        className={`relative w-10 h-5 rounded-full transition-colors shrink-0 ${exec ? "bg-loss" : "bg-surface-border"}`}>
-        <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${exec ? "left-5" : "left-0.5"}`} />
-      </button>
+      <div className="flex rounded-lg border border-surface-border overflow-hidden shrink-0 text-xs font-semibold">
+        <button onClick={() => choose("shadow")} disabled={set.isPending}
+          className={`px-3 py-1.5 transition-colors ${!exec ? "bg-cyan-500/20 text-cyan-300" : "text-slate-500 hover:text-slate-300"}`}>
+          {!exec ? "● " : ""}SHADOW
+        </button>
+        <button onClick={() => choose("execute")} disabled={set.isPending}
+          className={`px-3 py-1.5 border-l border-surface-border transition-colors ${exec ? "bg-loss/20 text-loss" : "text-slate-500 hover:text-slate-300"}`}>
+          {exec ? "● " : ""}EXECUȚIE
+        </button>
+      </div>
       <div className="text-xs">
-        <div className="font-semibold text-white">Mod: {exec ? "EXECUȚIE (ordine reale)" : "SHADOW (virtual)"}</div>
+        <div className="font-semibold text-white">
+          Mod activ: {exec ? "EXECUȚIE (ordine reale)" : "SHADOW (virtual)"}
+          {running === false && <span className="ml-2 text-amber-400 font-normal">— engine-ul e OPRIT: modul se aplică doar după Start</span>}
+        </div>
         <div className="text-[11px] text-slate-500">
           {exec
             ? (execution?.active ? `Activ — ${execution.reason}. ` : `Blocat — ${execution?.reason ?? "?"}. `)
@@ -187,7 +202,7 @@ export function DailyEnginePage() {
         )}
       </div>
 
-      <ModeSwitch mode={st?.mode} execution={st?.execution} />
+      <ModeSwitch mode={st?.mode} execution={st?.execution} running={st?.running} />
 
       <div className="text-[11px] text-slate-500 bg-surface rounded-xl border border-surface-border px-4 py-2">
         Un trade pe zi pe piață, închis obligatoriu în aceeași zi (niciodată peste noapte). Orele urmează ora bursei —
