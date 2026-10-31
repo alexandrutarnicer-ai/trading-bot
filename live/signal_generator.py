@@ -32,6 +32,7 @@ from strategy.preparation import _enrich
 from strategy.structure import detect_setup
 from strategy.patterns import detect_flag, detect_inside_bar
 from strategy.signals import pip_size, count_optional, reward_R
+from live import global_guard
 
 
 # ---------------------------------------------------------------------------
@@ -706,6 +707,35 @@ def _close_position_robust(symbol: str, volume: float, order_type,
                         f"retcode={result.retcode} — incercam alt filling")
     # Ultima sansa: fara type_filling
     return _mt5_exec.order_send(base_req)
+
+
+def _close_fill(result, request_price: float) -> tuple[float, float | None]:
+    """
+    Pretul real de iesire + profitul net (USD) al unei inchideri DONE.
+
+    ICMarketsEU intoarce `result.price == 0` la TRADE_ACTION_DEAL (inchideri
+    news_close / vineri_close) — folosit direct, dadea result_r de ordinul
+    -1000R si pnl_usd de -1300 $ in outcomes.csv (bug 2026-10-30, 13 randuri).
+    Ordine: pretul din result (daca > 0) → deal-ul de inchidere din istoricul MT5
+    (si profitul lui real) → pretul tick-ului trimis in request (mereu > 0).
+    """
+    price  = float(getattr(result, "price", 0) or 0)
+    profit = None
+    deal_ticket = int(getattr(result, "deal", 0) or 0)
+    if deal_ticket and _mt5_exec is not None:
+        try:
+            deals = _mt5_exec.history_deals_get(ticket=deal_ticket) or []
+            if deals:
+                d = deals[0]
+                if price <= 0 and float(d.price or 0) > 0:
+                    price = float(d.price)
+                profit = round(float(d.profit or 0) + float(d.commission or 0)
+                               + float(d.swap or 0), 2)
+        except Exception:
+            pass
+    if price <= 0:
+        price = float(request_price)
+    return price, profit
 
 
 def _cancel_mt5_order(ticket: int, sig_id: str, reason: str, log) -> bool:
@@ -2795,7 +2825,7 @@ def _friday_close_check(
                     close_price, "vineri_close", log
                 )
                 if result and result.retcode == _mt5_exec.TRADE_RETCODE_DONE:
-                    exit_price = result.price
+                    exit_price, deal_pnl = _close_fill(result, close_price)
                     risk_dist  = abs(p["entry"] - p["sl"])
                     result_r   = (round((exit_price - p["entry"]) * d / risk_dist, 3)
                                   if risk_dist > 0 else 0.0)
@@ -2809,7 +2839,8 @@ def _friday_close_check(
                         "exit_time":    now,
                         "triggered_at": p.get("triggered_at", now),
                         "time_check":   now,
-                        "pnl_usd":      _pnl(result_r, p.get("risk_usd")),
+                        "pnl_usd":      (deal_pnl if deal_pnl is not None
+                                         else _pnl(result_r, p.get("risk_usd"))),
                     })
                     state.get("mt5_tickets", {}).pop(sig_id, None)
                     sigs_to_remove.append((symbol, sig_id))
@@ -3025,6 +3056,11 @@ def _smart_news_place_order(
                "dir_str": dir_str, "entry": entry,
                "sl": round(sl, info.digits), "tp": round(tp, info.digits),
                "r_ratio": r_max, "signal_type": "smart_news", "time": now_local()}
+    _gblock = _global_block(symbol, session_cfg, log)
+    if _gblock:
+        log.info(f"  [SN] {sn_id} {symbol}: blocat global — {_gblock}")
+        _notify_global_block(session_cfg.get("session_id", ""), _sn_sig, _gblock)
+        return
     verdict = _ai_filter_check(_sn_sig, session_cfg, src, log)
     if verdict is not None and (not verdict.get("approved", True)
                                 or _ai_strict_blocked(session_cfg, verdict)):
@@ -3324,7 +3360,7 @@ def _news_close_check(
                     close_price, "news_close", log
                 )
                 if result and result.retcode == _mt5_exec.TRADE_RETCODE_DONE:
-                    exit_price = result.price
+                    exit_price, deal_pnl = _close_fill(result, close_price)
                     risk_dist  = abs(p["entry"] - p["sl"])
                     result_r   = (round((exit_price - p["entry"]) * d / risk_dist, 3)
                                   if risk_dist > 0 else 0.0)
@@ -3338,7 +3374,8 @@ def _news_close_check(
                         "exit_time":    now,
                         "triggered_at": p.get("triggered_at", now),
                         "time_check":   now,
-                        "pnl_usd":      _pnl(result_r, p.get("risk_usd")),
+                        "pnl_usd":      (deal_pnl if deal_pnl is not None
+                                         else _pnl(result_r, p.get("risk_usd"))),
                     })
                     state.get("mt5_tickets", {}).pop(sig_id, None)
                     sigs_to_remove.append((symbol, sig_id))
@@ -3429,6 +3466,62 @@ def _news_close_check(
 # Aplicare parametri profil activ
 # ---------------------------------------------------------------------------
 
+def _apply_global_fields(session_cfg: dict, base: dict, markets: list, log) -> None:
+    """
+    Setari Globale („cea mai stricta castiga") peste campurile sesiunii: vineri,
+    stiri, filtru AI. Global oprit → valorile sesiunii (byte-identic cu inainte).
+    Orice eroare → valorile sesiunii raman (fail-safe pe comportamentul existent).
+    """
+    try:
+        eff = global_guard.effective_session_fields(base, markets)
+    except Exception as e:
+        log.warning(f"  [GLOBAL] Setari globale ignorate (eroare: {e})")
+        eff = dict(base)
+    changed = []
+    for k in global_guard.GLOBAL_SESSION_FIELDS:
+        old = session_cfg.get(k, None)
+        if k in eff:
+            session_cfg[k] = eff[k]
+        else:
+            session_cfg.pop(k, None)
+        if session_cfg.get(k, None) != old:
+            changed.append(f"{k}={session_cfg.get(k)}")
+    if changed:
+        log.info(f"  [GLOBAL] Valori efective: {', '.join(changed)}")
+
+
+def _global_block(symbol: str, session_cfg: dict, log) -> str | None:
+    """
+    Gate GLOBAL inainte de orice ordin NOU (protectie capital, circuit breaker
+    global + al sesiunii, pozitii simultane pe cont). None = permis.
+    """
+    if _mt5_exec is None:
+        return None
+    ok, reason = global_guard.check_open(
+        _mt5_exec, "bot", symbol, session_cfg.get("session_key"),
+        int(session_cfg.get("circuit_breaker", 0) or 0))
+    if not ok:
+        return reason
+    if reason:
+        log.warning(f"  [GLOBAL] {reason}")
+    return None
+
+
+_GLOBAL_BLOCK_NOTIFIED: dict = {}
+
+
+def _notify_global_block(session_id: str, sig: dict, reason: str) -> None:
+    """Telegram o data pe zi per (sesiune, tip de blocaj) — fara flood la fiecare semnal."""
+    key = (session_id, reason.split(":")[0], now_local().date())
+    if key in _GLOBAL_BLOCK_NOTIFIED:
+        return
+    _GLOBAL_BLOCK_NOTIFIED[key] = True
+    _send_telegram(f"🛡 <b>Setări Globale: ordin BLOCAT — {sig.get('dir_str', '')} "
+                   f"{sig.get('symbol', '')}</b>\n{_html_esc(reason)}\n"
+                   f"<i>{session_id} | {sig.get('signal_id', '')} — următoarele blocaje "
+                   f"de același tip azi nu mai sunt notificate</i>")
+
+
 def _apply_profile_overrides(session_cfg: dict, cfg: dict, log) -> None:
     """
     Daca botul a fost pornit din UI cu un profil, aplica parametrii profilului
@@ -3462,6 +3555,14 @@ def _apply_profile_overrides(session_cfg: dict, cfg: dict, log) -> None:
         log.info(f"  [PROFIL] Sesiunea '{key}' nu e in profil — parametri hardcodati.")
         return
 
+    # TF-urile NU se suprascriu din profil (vin din script). Daca difera, UI-ul si
+    # backtestul arata alta strategie decat ruleaza live (caz S14: H1/H4 vs H1/D1).
+    for tf_field in ("entry_tf", "trend_tf"):
+        if ps.get(tf_field) and session_cfg.get(tf_field) and ps[tf_field] != session_cfg[tf_field]:
+            log.warning(f"  [PROFIL] {key}: {tf_field} din profil = {ps[tf_field]}, dar live "
+                        f"ruleaza {session_cfg[tf_field]} (din script) — profilul/backtestul "
+                        f"nu reflecta ce ruleaza.")
+
     # --- capital la nivel de PROFIL (aliniat cu motorul AI) ---
     # sync ON (default / camp lipsa) = sizing pe equity real MT5 (comportament
     # identic cu inainte); sync OFF = capital fix alocat botului (plafonat la equity).
@@ -3483,6 +3584,8 @@ def _apply_profile_overrides(session_cfg: dict, cfg: dict, log) -> None:
                   "r_mid_threshold", "r_top_threshold", "r_max_threshold",
                   # Pozitii simultane per piata
                   "max_concurrent_per_market", "min_bars_between_trades",
+                  # Circuit breaker per sesiune (N pierderi consecutive azi → stop)
+                  "circuit_breaker",
                   "break_even_enabled", "be_phase2_enabled",
                   "be_trigger_pct", "be_lock1_pct",
                   "be_lock2_pct", "be_phase2_zone_pct",
@@ -3714,6 +3817,19 @@ def run_generator(session_cfg: dict):
 
     # Aplica parametrii din profilul activ (daca botul a fost pornit din UI)
     _apply_profile_overrides(session_cfg, cfg, log)
+    # Valorile SESIUNII pentru campurile pe care Setarile Globale le pot inaspri;
+    # la fiecare bara se recalculeaza valorile efective peste ele (hot-reload).
+    _global_base = {k: session_cfg[k] for k in global_guard.GLOBAL_SESSION_FIELDS
+                    if k in session_cfg}
+    # Mod Inteligent la stiri ELIMINAT (2026-10-31): n-a plasat niciun ordin (FF nu
+    # da `actual` fiabil) iar fara sentiment se comporta identic cu protectia standard.
+    # Fortat OFF indiferent de profil/script; protectia la stiri ramane neschimbata.
+    session_cfg["smart_news_enabled"] = False
+    # Consilii multiple + roluri suplimentare (Quant / Avocatul Diavolului) ELIMINATE
+    # (2026-10-31): latenta dubla, depasiri de buget → blocaje Strict, fara valoare
+    # dovedita. Ramane UN consiliu: sursa primara aleasa → failover → Ollama.
+    session_cfg["ai_filter_secondary_source"] = None
+    session_cfg["ai_filter_tertiary_source"] = None
 
     log.info("=" * 65)
     log.info(f"  {session_cfg['session_id']} — {session_cfg['description']}")
@@ -3886,6 +4002,7 @@ def run_generator(session_cfg: dict):
                      f"@ {now_local().strftime('%H:%M:%S')} ---")
 
             session_key    = session_cfg.get("session_key", "")
+            _apply_global_fields(session_cfg, _global_base, list(resolved.values()), log)
             manual_paused  = _is_paused(session_key)
             # Protectie stiri: re-evaluata la timpul curent + tranzitie tratata aici.
             news_paused, news_events = _news_watch_tick()
@@ -3984,6 +4101,30 @@ def run_generator(session_cfg: dict):
                                 _sig_exists = True
                                 break
                     if _sig_exists:
+                        continue
+
+                    # ── Setari Globale: protectie capital / circuit breaker / pozitii
+                    # simultane pe cont. Toate oprite implicit → None → identic.
+                    # Inaintea filtrului AI (un ordin blocat nu consuma consiliul).
+                    _gblock = (_global_block(symbol, session_cfg, log)
+                               if session_cfg.get("execute_trades", False) else None)
+                    if _gblock:
+                        pd.DataFrame([sig]).reindex(columns=_SIGNALS_COLS).to_csv(
+                            signals_file, mode="a", header=False, index=False)
+                        pd.DataFrame([{
+                            "signal_id": sig["signal_id"], "time_check": now_local(),
+                            "symbol": symbol, "direction": sig["direction"],
+                            "status": "global_block",
+                            "entry": sig["entry"], "sl": sig["sl"], "tp": sig["tp"],
+                            "r_ratio": sig["r_ratio"], "armed_at": sig["time"],
+                            "triggered_at": None, "exit_price": None, "exit_time": None,
+                            "result_r": 0.0, "pnl_usd": None,
+                        }]).reindex(columns=_OUTCOMES_COLS).to_csv(
+                            outcomes_file, mode="a", header=False, index=False)
+                        log.warning(f"  *** SEMNAL BLOCAT GLOBAL: {sig['signal_id']} "
+                                    f"{symbol} {sig['dir_str']} — {_gblock}")
+                        _notify_global_block(session_cfg["session_id"], sig, _gblock)
+                        new_sigs += 1
                         continue
 
                     # ── Filtru AI Pre-Trade — validarea FINALA inainte de MT5 ──
@@ -4205,6 +4346,11 @@ def run_generator(session_cfg: dict):
                                     f"<i>{session_cfg['session_id']}</i>"
                                 )
                                 continue
+                        # Setari Globale — blocaj → ramane in pending (expira normal)
+                        _rblock = _global_block(symbol, session_cfg, log)
+                        if _rblock:
+                            log.info(f"  [RETRY] {_sid}: blocat global — {_rblock}")
+                            continue
                         # Reconstituie sig dict minimal pentru _place_order
                         _sig_retry = {
                             "symbol":    symbol,

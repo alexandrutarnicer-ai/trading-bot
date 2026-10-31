@@ -213,3 +213,35 @@ def set_live_trading(body: dict):
     return {"ok": True, "flags": flags,
             "note": "Se aplica la urmatoarea conectare MT5 a componentei "
                     "(restart bot/motor daca ruleaza)."}
+
+
+# ─── Setari Globale — punct unic de control pentru Bot Engine + AI Engine ────
+# data/global_settings.json (sincronizat prin git). Toate sectiunile OPRITE
+# implicit. Regula: „cea mai stricta castiga" peste setarile per sesiune/piata.
+# Hot-reload: ambele engine-uri il recitesc la fiecare bara (fara restart).
+
+@router.get("/global")
+def get_global_settings():
+    from live import global_guard
+    return global_guard.load_settings()
+
+
+@router.put("/global")
+def put_global_settings(body: dict):
+    from live import global_guard
+    before = global_guard.load_settings()
+    merged = {**before, **{k: {**before.get(k, {}), **v} for k, v in (body or {}).items()
+                           if isinstance(v, dict) and k in global_guard.DEFAULTS}}
+    saved = global_guard.save_settings(merged)
+    changes = [f"{sec}.{k}: {before[sec][k]} → {saved[sec][k]}"
+               for sec in saved for k in saved[sec] if before[sec].get(k) != saved[sec][k]]
+    if changes:
+        try:
+            from api.telegram import send_message
+            import threading
+            text = ("⚙️ <b>Setări Globale modificate</b>\n" + "\n".join(changes[:20]) +
+                    "\n<i>Se aplică de la următoarea bară (Bot + AI), fără restart.</i>")
+            threading.Thread(target=send_message, args=(text,), daemon=True).start()
+        except Exception:
+            pass
+    return saved

@@ -693,8 +693,11 @@ def run_guard(session_configs: list[dict], send_telegram=None) -> None:
     _notified: dict[str, str] = {}  # session_key -> cheie eveniment notificat
 
     while True:
+        # Protectia GLOBALA (global_guard) peste cea per sesiune — re-evaluata la
+        # fiecare poll (hot-reload). Global oprit → config-urile sesiunilor neschimbate.
+        eff_configs = _effective_configs(session_configs)
         try:
-            if _needs_refresh():
+            if any(c.get("news_protection_enabled") for c in eff_configs) and _needs_refresh():
                 _refresh()
         except Exception as exc:
             log.error(f"[NEWS GUARD] Refresh esuat: {exc}")
@@ -704,7 +707,7 @@ def run_guard(session_configs: list[dict], send_telegram=None) -> None:
             changed = False
 
             now_utc = datetime.utcnow()
-            for scfg in session_configs:
+            for scfg in eff_configs:
                 sk = scfg.get("session_key", "")
                 if not sk:
                     continue
@@ -775,6 +778,20 @@ def run_guard(session_configs: list[dict], send_telegram=None) -> None:
             log.error(f"[NEWS GUARD] Iteratie esuata: {exc}")
 
         time.sleep(POLL_INTERVAL)
+
+
+def _effective_configs(session_configs: list[dict]) -> list[dict]:
+    """Aplica news_protection GLOBAL („cea mai stricta castiga") pe fiecare sesiune."""
+    try:
+        from live import global_guard
+        settings = global_guard.load_settings()
+    except Exception:
+        return session_configs
+    out = []
+    for scfg in session_configs:
+        eff = global_guard.effective_session_fields(scfg, scfg.get("markets"), settings)
+        out.append({**scfg, **{k: v for k, v in eff.items() if k.startswith("news_")}})
+    return out
 
 
 def start_guard(session_configs: list[dict], send_telegram=None) -> threading.Thread:

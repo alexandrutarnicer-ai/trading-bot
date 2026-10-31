@@ -150,7 +150,9 @@ RUNTIME_PROFILE = os.path.join(DATA_DIR, "active_profile_runtime.json")
 
 def _load_news_guard_configs() -> list[dict]:
     """
-    Citeste profilul activ si returneaza sesiunile cu news_protection_enabled=True.
+    Citeste profilul activ si returneaza TOATE sesiunile cu config-ul lor de stiri.
+    Guard-ul aplica la fiecare poll protectia GLOBALA (global_guard, „cea mai
+    stricta castiga") si ignora sesiunile fara protectie efectiva.
     Fara profil activ (bot pornit direct din CLI) returneaza lista goala.
     """
     if not os.path.exists(RUNTIME_PROFILE):
@@ -160,12 +162,10 @@ def _load_news_guard_configs() -> list[dict]:
             profile = json.load(f)
         configs = []
         for s in profile.get("sessions", []):
-            if not s.get("news_protection_enabled", False):
-                continue
             configs.append({
                 "session_key":           s.get("session_key", ""),
                 "markets":               s.get("markets", []),
-                "news_protection_enabled": True,
+                "news_protection_enabled": bool(s.get("news_protection_enabled", False)),
                 "news_impact_level":     s.get("news_impact_level", 3),
                 "news_pre_minutes":      s.get("news_pre_minutes", 15),
                 "news_post_minutes":     s.get("news_post_minutes", 15),
@@ -410,9 +410,9 @@ def main():
     guard_configs = _load_news_guard_configs()
     if guard_configs:
         start_guard(guard_configs, _send_telegram)
-        print(f"  [+] News Guard pornit — {len(guard_configs)} sesiuni monitorizate")
+        print(f"  [+] News Guard pornit — {len(guard_configs)} sesiuni (protectie per sesiune + globala)")
     else:
-        print("  [~] News Guard inactiv (nicio sesiune cu protectie la stiri configurata)")
+        print("  [~] News Guard inactiv (fara profil activ)")
 
     n = len(sp_list)
     print(f"\n  {n} sesiune{'a' if n==1 else 'i'} pornite. "

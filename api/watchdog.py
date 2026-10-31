@@ -121,12 +121,20 @@ def _check_capital_protection(ap: dict) -> None:
     except Exception:
         return
 
-    if not profile.get("capital_protection_enabled", False):
+    # Sursa unica = Setarile Globale (migrate din profil 2026-10-31). Ambele
+    # engine-uri blocheaza ordinele noi singure (global_guard.check_open), deci
+    # merg si fara API; watchdog-ul ramane strat suplimentar (pauza + notificare).
+    try:
+        from live import global_guard
+        cp = global_guard.load_settings()["capital_protection"]
+    except Exception:
+        return
+    if not cp["enabled"]:
         _protection_triggered.discard(profile_id)
         return
 
-    threshold_pct   = float(profile.get("capital_protection_threshold_pct", 70.0))
-    start_balance   = float(profile.get("start_balance", 1000))
+    threshold_pct   = float(cp["threshold_pct"])
+    start_balance   = float(cp["start_balance"] or profile.get("start_balance", 1000))
     threshold_value = start_balance * threshold_pct / 100.0
 
     equity = _get_mt5_equity()
