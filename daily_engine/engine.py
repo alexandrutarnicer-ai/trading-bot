@@ -1,0 +1,326 @@
+"""Daily Engine — motor intraday ORB, mod SHADOW (trade-uri virtuale, ZERO ordine reale).
+
+Bucla (la `poll_seconds`):
+  1. pentru fiecare piata activa: barele M5 INCHISE de azi din fereastra bursei (ora locala, DST-corect)
+  2. `strategy.evaluate_day` recalculeaza starea zilei de la zero (restart-safe)
+  3. evenimente noi (intrare / inchidere / zi sarita) -> log + Telegram, o singura data (state.json)
+  4. trade-urile inchise -> data/daily_engine/trades.jsonl; heartbeat -> status.json
+
+Izolare: conexiune MT5 proprie, DOAR citire (copy_rates / symbol_info / tick). Modulul nu contine
+niciun apel de plasare ordine — verificat de selftest. Merge pe cont real sau demo fara risc.
+Ora serverului: detectata din tick-ul proaspat (server − UTC), nu presupusa.
+"""
+from __future__ import annotations
+
+import ctypes
+import json
+import logging
+import os
+import sys
+import threading
+import time
+from datetime import datetime, timezone, timedelta
+from logging.handlers import RotatingFileHandler
+from zoneinfo import ZoneInfo
+
+import numpy as np
+import pandas as pd
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
+
+from daily_engine.config import DATA_DIR, ENTRY_MODES, load_config, save_default_config, hm_to_min  # noqa: E402
+from daily_engine.strategy import evaluate_day  # noqa: E402
+
+PID_FILE = os.path.join(DATA_DIR, "daily_engine.pid")
+STATUS_FILE = os.path.join(DATA_DIR, "status.json")
+STATE_FILE = os.path.join(DATA_DIR, "state.json")
+TRADES_FILE = os.path.join(DATA_DIR, "trades.jsonl")
+LOG_FILE = os.path.join(DATA_DIR, "engine.log")
+RO = ZoneInfo("Europe/Bucharest")
+_MUTEX_NAMES = ("Global\\TradingBot_DailyEngine_SingleInstance", "Local\\TradingBot_DailyEngine_SingleInstance")
+_mutex_handle = None
+log = logging.getLogger("daily_engine")
+
+
+# ── utilitare ────────────────────────────────────────────────────────────────
+
+def _setup_logging() -> None:
+    os.makedirs(DATA_DIR, exist_ok=True)
+    if log.handlers:
+        return
+    log.setLevel(logging.INFO)
+    fh = RotatingFileHandler(LOG_FILE, maxBytes=2_000_000, backupCount=3, encoding="utf-8")
+    fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+    log.addHandler(fh)
+    sh = logging.StreamHandler(sys.stdout)
+    sh.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
+    log.addHandler(sh)
+
+
+def _acquire_single_instance(names=_MUTEX_NAMES) -> bool:
+    """Mutex Windows numit (eliberat de OS si la taskkill). Non-Windows: nu blocheaza."""
+    global _mutex_handle
+    if os.name != "nt":
+        return True
+    try:
+        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        k32.CreateMutexW.restype = ctypes.c_void_p
+        k32.CreateMutexW.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_wchar_p]
+    except Exception:
+        return True
+    for name in names:
+        hnd = k32.CreateMutexW(None, False, name)
+        err = ctypes.get_last_error()
+        if not hnd:
+            continue
+        if err == 183:                      # ERROR_ALREADY_EXISTS
+            k32.CloseHandle(ctypes.c_void_p(hnd))
+            return False
+        _mutex_handle = hnd
+        return True
+    return True
+
+
+def _read_json(path: str, default):
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return default
+
+
+def _write_json(path: str, data) -> None:
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False, default=str)
+    os.replace(tmp, path)
+
+
+def _notify(cfg: dict, text: str) -> None:
+    """Telegram + tab Notificari, non-blocant. Esecul nu afecteaza motorul."""
+    if not cfg.get("notify_telegram", True):
+        return
+
+    def _send():
+        try:
+            from api.telegram import send_message
+            send_message(text)
+        except Exception as e:  # pragma: no cover
+            log.warning(f"Telegram esuat: {e}")
+    threading.Thread(target=_send, daemon=True).start()
+
+
+def load_trades() -> list[dict]:
+    out = []
+    try:
+        with open(TRADES_FILE, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    out.append(json.loads(line))
+    except FileNotFoundError:
+        pass
+    return out
+
+
+def scorecard(trades: list[dict]) -> dict:
+    def _sc(ts):
+        rs = [t["R"] for t in ts]
+        n = len(rs)
+        w = sum(1 for r in rs if r > 0)
+        return {"trades": n, "wins": w, "losses": sum(1 for r in rs if r < 0),
+                "total_R": round(sum(rs), 3), "expectancy_R": round(sum(rs) / n, 3) if n else None,
+                "win_rate": round(w / n, 3) if n else None}
+    syms = sorted({t["symbol"] for t in trades})
+    return {**_sc(trades), "by_symbol": {s: _sc([t for t in trades if t["symbol"] == s]) for s in syms}}
+
+
+# ── timp ────────────────────────────────────────────────────────────────────
+
+def window_times(m: dict, day_local) -> tuple[datetime, datetime]:
+    """(deschidere, sfarsit ultima bara) ca datetime aware in fusul bursei, pentru ziua data."""
+    tz = ZoneInfo(m["tz"])
+    o, lb = hm_to_min(m["open"]), hm_to_min(m["last_bar"]) + 5
+    base = datetime(day_local.year, day_local.month, day_local.day, tzinfo=tz)
+    return base + timedelta(minutes=o), base + timedelta(minutes=lb)
+
+
+def bars_today(rates, server_offset_s: int, m: dict, now_utc: datetime) -> pd.DataFrame:
+    """Barele M5 INCHISE de azi (zi locala a bursei) din fereastra pietei."""
+    if rates is None or len(rates) == 0:
+        return pd.DataFrame(columns=["mins", "open", "high", "low", "close", "spread"])
+    d = pd.DataFrame(rates)
+    start_utc = pd.to_datetime(d["time"] - server_offset_s, unit="s", utc=True)
+    closed = start_utc + pd.Timedelta(minutes=5) <= pd.Timestamp(now_utc)
+    loc = start_utc.dt.tz_convert(m["tz"])
+    today = pd.Timestamp(now_utc).tz_convert(m["tz"]).date()
+    d["mins"] = loc.dt.hour * 60 + loc.dt.minute
+    keep = closed & (loc.dt.date == today) & (d["mins"] >= hm_to_min(m["open"])) & \
+        (d["mins"] <= hm_to_min(m["last_bar"]))
+    return d[keep].reset_index(drop=True)
+
+
+# ── motor ───────────────────────────────────────────────────────────────────
+
+class DailyEngine:
+    def __init__(self, mt5_module=None):
+        if mt5_module is None:
+            import MetaTrader5 as mt5_module
+        self.mt5 = mt5_module
+        self.cfg = load_config()
+        self.state = _read_json(STATE_FILE, {"events": {}})
+        self.server_offset_s: int | None = None
+        self.errors: list[str] = []
+        self.account: dict = {}
+
+    # MT5 — DOAR citire
+    def connect(self) -> bool:
+        if not self.mt5.initialize():
+            self._err(f"MT5 initialize esuat: {self.mt5.last_error()}")
+            return False
+        a = self.mt5.account_info()
+        if a is not None:
+            demo = getattr(a, "trade_mode", None) == 0
+            self.account = {"login": a.login, "server": a.server, "is_demo": demo}
+        for m in self.cfg["markets"]:
+            self.mt5.symbol_select(m["symbol"], True)
+        return True
+
+    def _err(self, msg: str) -> None:
+        log.warning(msg)
+        self.errors = (self.errors + [f"{datetime.now(RO):%d.%m %H:%M} {msg}"])[-10:]
+
+    def _refresh_offset(self, symbol: str, now_utc: datetime) -> None:
+        tick = self.mt5.symbol_info_tick(symbol)
+        if tick is None or not tick.time:
+            return
+        diff = tick.time - now_utc.timestamp()
+        hours = round(diff / 3600)
+        # tick proaspat (< 3 min dupa scaderea offset-ului) => offset de incredere
+        if abs(diff - hours * 3600) < 180:
+            self.server_offset_s = int(hours * 3600)
+
+    def process_market(self, m: dict, now_utc: datetime) -> dict:
+        sym = m["symbol"]
+        tz = ZoneInfo(m["tz"])
+        now_loc = now_utc.astimezone(tz)
+        day = now_loc.date()
+        w_open, w_end = window_times(m, day)
+        info = {"symbol": sym, "label": m.get("label", ""), "role": m.get("role", ""),
+                "enabled": m.get("enabled", True), "entry_mode": m["entry"], "or_minutes": m["or_minutes"],
+                "day": str(day),
+                "window_local": f"{m['open']}–{w_end:%H:%M} ({m['tz'].split('/')[-1].replace('_', ' ')})",
+                "window_ro": f"{w_open.astimezone(RO):%H:%M}–{w_end.astimezone(RO):%H:%M}"}
+        if not m.get("enabled", True):
+            return {**info, "phase": "disabled"}
+        if now_loc.weekday() >= 5:
+            return {**info, "phase": "weekend"}
+        if now_loc < w_open:
+            return {**info, "phase": "waiting_open"}
+
+        self._refresh_offset(sym, now_utc)
+        if self.server_offset_s is None:
+            return {**info, "phase": "waiting_open", "note": "astept un tick proaspat (ora serverului)"}
+        rates = self.mt5.copy_rates_from_pos(sym, self.mt5.TIMEFRAME_M5, 0, 200)
+        b = bars_today(rates, self.server_offset_s, m, now_utc)
+        si = self.mt5.symbol_info(sym)
+        point = si.point if si else 0.0
+        day_complete = now_loc >= w_end + timedelta(minutes=2)
+        if day_complete and len(b) == 0:
+            return {**info, "phase": "skipped", "reason": "piata inchisa azi (fara bare)"}
+        st = evaluate_day(b.open, b.high, b.low, b.close, b.spread * point, b.mins,
+                          open_min=hm_to_min(m["open"]), or_minutes=m["or_minutes"],
+                          mode=ENTRY_MODES[m["entry"]], rr=m.get("rr"), slip=m["slip"],
+                          comm=m["comm"], day_complete=day_complete)
+        self._events(m, str(day), st)
+        return {**info, **{k: (v.item() if isinstance(v, np.generic) else v) for k, v in st.items()}}
+
+    def _events(self, m: dict, day: str, st: dict) -> None:
+        sym, ev = m["symbol"], self.state.setdefault("events", {})
+        key = f"{day}|{sym}"
+        sent = ev.setdefault(key, [])
+        side = {1: "LONG", -1: "SHORT"}.get(st.get("side"), "")
+        if st["phase"] in ("in_position", "closed") and "entry" not in sent:
+            sent.append("entry")
+            msg = (f"🧪 <b>Daily SHADOW — {sym} {side}</b> (virtual, fără ordin)\n"
+                   f"Intrare {st['entry']:.5g} | SL {st['sl']:.5g} | interval {st['or_lo']:.5g}–{st['or_hi']:.5g}")
+            log.info(msg.replace("<b>", "").replace("</b>", ""))
+            _notify(self.cfg, msg)
+        if st["phase"] == "closed" and "closed" not in sent:
+            sent.append("closed")
+            rec = {"day": day, "symbol": sym, "side": side, "entry": st["entry"], "sl": st["sl"],
+                   "exit": st["exit"], "R": round(st["R"], 4), "reason": st["reason"],
+                   "or_hi": st["or_hi"], "or_lo": st["or_lo"], "risk": st["risk"],
+                   "mode": self.cfg["mode"], "recorded_at": datetime.now(RO).isoformat(timespec="seconds")}
+            with open(TRADES_FILE, "a", encoding="utf-8") as f:
+                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+            icon = "✅" if st["R"] > 0 else "❌"
+            msg = (f"{icon} <b>Daily SHADOW — {sym} {side} închis</b> ({st['reason']})\n"
+                   f"{st['entry']:.5g} → {st['exit']:.5g} = <b>{st['R']:+.2f}R</b> (virtual)")
+            log.info(msg.replace("<b>", "").replace("</b>", ""))
+            _notify(self.cfg, msg)
+        if st["phase"] == "skipped" and "skipped" not in sent:
+            sent.append("skipped")
+            log.info(f"{sym} {day}: zi sarita — {st.get('reason')}")
+        # pastreaza doar ultimele ~60 de chei
+        if len(ev) > 60:
+            for k in sorted(ev)[:-60]:
+                ev.pop(k, None)
+        _write_json(STATE_FILE, self.state)
+
+    def iteration(self, now_utc: datetime | None = None) -> dict:
+        self.cfg = load_config()                        # hot-reload
+        now_utc = now_utc or datetime.now(timezone.utc)
+        markets = []
+        for m in self.cfg["markets"]:
+            try:
+                markets.append(self.process_market(m, now_utc))
+            except Exception as e:
+                self._err(f"{m.get('symbol')}: {type(e).__name__}: {e}")
+                markets.append({"symbol": m.get("symbol"), "phase": "error", "reason": str(e)})
+        trades = load_trades()
+        status = {"running": True, "mode": self.cfg["mode"], "pid": os.getpid(),
+                  "heartbeat": datetime.now(RO).isoformat(timespec="seconds"),
+                  "server_offset_h": None if self.server_offset_s is None else self.server_offset_s / 3600,
+                  "account": self.account, "markets": markets, "scorecard": scorecard(trades),
+                  "errors": self.errors}
+        _write_json(STATUS_FILE, status)
+        return status
+
+
+def run() -> None:
+    _setup_logging()
+    if not _acquire_single_instance():
+        log.error("Daily Engine ruleaza deja (mutex detinut) — a doua instanta NU porneste.")
+        return
+    save_default_config()
+    cfg = load_config()
+    if cfg["mode"] != "shadow":
+        log.error(f"Mod '{cfg['mode']}' nesuportat — Daily Engine ruleaza DOAR in shadow.")
+        return
+    with open(PID_FILE, "w") as f:
+        f.write(str(os.getpid()))
+    eng = DailyEngine()
+    log.info("Daily Engine pornit — mod SHADOW (trade-uri virtuale, zero ordine reale)")
+    _notify(cfg, "🧪 <b>Daily Engine pornit</b> — mod SHADOW (fără ordine reale)\n"
+                 + "\n".join(f"• {m['symbol']}: {m.get('label', '')}" for m in cfg["markets"] if m.get("enabled", True)))
+    while not eng.connect():
+        _write_json(STATUS_FILE, {"running": True, "mode": "shadow", "pid": os.getpid(),
+                                  "heartbeat": datetime.now(RO).isoformat(timespec="seconds"),
+                                  "markets": [], "errors": eng.errors, "scorecard": scorecard(load_trades())})
+        time.sleep(60)
+    fails = 0
+    while True:
+        try:
+            eng.iteration()
+            fails = 0
+        except Exception as e:
+            fails += 1
+            eng._err(f"iteratie esuata: {type(e).__name__}: {e}")
+            if fails >= 3:
+                eng.mt5.shutdown()
+                eng.connect()
+                fails = 0
+        time.sleep(eng.cfg.get("poll_seconds", 15))
