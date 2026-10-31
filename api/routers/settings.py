@@ -184,7 +184,7 @@ def get_live_trading():
 def set_live_trading(body: dict):
     """
     Comuta deblocarea LIVE pentru o componenta: body {component, allowed}.
-    Componente valide: "bot", "ai_engine". Trimite Telegram la fiecare schimbare
+    Componente valide: "bot", "ai_engine", "daily_engine". Trimite Telegram la fiecare schimbare
     (activarea tranzactionarii cu bani reali nu e niciodata tacuta).
     """
     from live_guard import set_live, COMPONENTS, live_flags
@@ -200,7 +200,8 @@ def set_live_trading(body: dict):
         try:
             from api.telegram import send_message
             import threading
-            name = "BOT (sesiunile pe reguli)" if component == "bot" else "AI Engine"
+            name = {"bot": "Custom Engine (sesiunile pe reguli)", "ai_engine": "AI Engine",
+                    "daily_engine": "Daily Engine"}.get(component, component)
             text = (f"🔴 <b>Trading LIVE ACTIVAT — {name}</b>\n"
                     f"Componenta poate tranzacționa pe cont REAL pe această mașină. "
                     f"Se aplică la următoarea pornire/reconectare."

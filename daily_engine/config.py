@@ -16,7 +16,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CFG_PATH = os.path.join(ROOT, "daily_engine", "config.json")
 DATA_DIR = os.path.join(ROOT, "data", "daily_engine")
 
-MODES = ("shadow",)          # DOAR shadow in aceasta versiune — zero ordine reale
+MODES = ("shadow", "execute")  # shadow = virtual (implicit); execute = ordine reale (DEMO, sau REAL deblocat)
 ENTRY_MODES = {"breakout": "brk", "direction": "dir"}
 MAGIC = 880001               # rezervat pentru ordinele reale viitoare (api/mt5_pool.DAILY_MAGIC)
 

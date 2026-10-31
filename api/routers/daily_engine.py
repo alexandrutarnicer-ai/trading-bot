@@ -138,6 +138,41 @@ def daily_config():
     return load_config()
 
 
+@router.put("/config")
+def daily_config_save(body: dict):
+    """Schimba modul: {"mode": "shadow" | "execute"} (+ optional "sizing"). Hot-reload — engine-ul il
+    citeste la iteratia urmatoare. Executia reala porneste abia de la urmatoarea fereastra (ziua
+    trebuie armata inainte de formarea intervalului); pe cont REAL cere si deblocarea din Trading LIVE."""
+    from daily_engine.config import CFG_PATH, MODES, _sanitize
+    import json as _json
+    try:
+        with open(CFG_PATH, encoding="utf-8") as f:
+            raw = _json.load(f)
+    except Exception:
+        raw = load_config()
+    before = raw.get("mode", "shadow")
+    if "mode" in body:
+        if body["mode"] not in MODES:
+            raise HTTPException(400, f"mode: una din {list(MODES)}")
+        raw["mode"] = body["mode"]
+    if isinstance(body.get("sizing"), dict):
+        raw["sizing"] = {**(raw.get("sizing") or {}), **body["sizing"]}
+    clean = _sanitize(raw)
+    raw["mode"], raw["sizing"] = clean["mode"], clean["sizing"]
+    with open(CFG_PATH, "w", encoding="utf-8") as f:
+        _json.dump(raw, f, indent=2, ensure_ascii=False)
+    if before != raw["mode"]:
+        try:
+            from api.telegram import send_message
+            send_message("🟢 <b>Daily Engine — mod EXECUȚIE</b>\nOrdine reale de la următoarea fereastră "
+                         "(DEMO, sau REAL dacă e deblocat în Trading LIVE)." if raw["mode"] == "execute" else
+                         "🧪 <b>Daily Engine — mod SHADOW</b>\nFără ordine noi; pozițiile reale deschise azi sunt "
+                         "închise la finalul ferestrei.")
+        except Exception:
+            pass
+    return clean
+
+
 @router.get("/logs")
 def daily_logs(lines: int = 100):
     try:

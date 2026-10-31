@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { CalendarClock, Loader2, Play, Square, FlaskConical } from "lucide-react";
 import { PositionSizingCard } from "../components/PositionSizingCard";
-import { useDailyStatus, useDailyTrades, useDailyLogs, useDailyStart, useDailyStop } from "../api/hooks";
+import { useDailyStatus, useDailyTrades, useDailyLogs, useDailyStart, useDailyStop, useDailySetMode } from "../api/hooks";
 import type { DailyMarketStatus, DailyScore } from "../api/types";
 
 // Daily Engine — motor intraday ORB pe deschiderea Londrei (dimineata) si New York (dupa-amiaza).
@@ -96,6 +96,38 @@ function MarketCard({ m, score, bt }: {
   );
 }
 
+function ModeSwitch({ mode, execution }: { mode?: string; execution?: { active: boolean; reason: string } }) {
+  const set = useDailySetMode();
+  const exec = mode === "execute";
+  function toggle() {
+    if (!exec) {
+      if (!window.confirm("Treci Daily Engine pe EXECUȚIE?\n\nDe la următoarea fereastră (Londra 10:00 / New York 16:30 RO) " +
+        "plasează ORDINE REALE în contul MT5 conectat: GBPUSD ordine stop pe margini, US500 ordin la piață, SL atașat, " +
+        "închidere obligatorie în aceeași zi.\n\nPe un cont REAL trebuie în plus deblocat „Daily Engine” în Settings → Trading LIVE.")) return;
+      if (!window.confirm("Confirmare finală: Daily Engine va tranzacționa cu ordine reale. Continui?")) return;
+    } else if (!window.confirm("Revii pe SHADOW? Nu se mai deschid ordine; pozițiile reale de azi se închid la finalul ferestrei.")) return;
+    set.mutate(exec ? "shadow" : "execute");
+  }
+  return (
+    <div className={`rounded-xl border p-4 flex items-center gap-3 flex-wrap ${exec ? "bg-loss/5 border-loss/40" : "bg-surface border-surface-border"}`}>
+      <button onClick={toggle} disabled={set.isPending}
+        className={`relative w-10 h-5 rounded-full transition-colors shrink-0 ${exec ? "bg-loss" : "bg-surface-border"}`}>
+        <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${exec ? "left-5" : "left-0.5"}`} />
+      </button>
+      <div className="text-xs">
+        <div className="font-semibold text-white">Mod: {exec ? "EXECUȚIE (ordine reale)" : "SHADOW (virtual)"}</div>
+        <div className="text-[11px] text-slate-500">
+          {exec
+            ? (execution?.active ? `Activ — ${execution.reason}. ` : `Blocat — ${execution?.reason ?? "?"}. `)
+            : "Trade-uri virtuale pe prețuri reale, zero ordine. "}
+          Se aplică de la următoarea fereastră (ziua trebuie activată înainte de formarea intervalului). Magic 880001 — apare ca „Daily” în Tranzacții.
+        </div>
+      </div>
+      {set.isError && <span className="text-[11px] text-loss">{(set.error as Error).message}</span>}
+    </div>
+  );
+}
+
 export function DailyEnginePage() {
   const { data: st } = useDailyStatus();
   const { data: trades } = useDailyTrades();
@@ -120,9 +152,15 @@ export function DailyEnginePage() {
                 <span className={`w-2 h-2 rounded-full ${running ? "bg-profit animate-pulse" : "bg-slate-600"}`} />
                 {running ? "ACTIV" : "OPRIT"}
               </span>
-              <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-violet-500/15 text-violet-300 font-semibold">
-                <FlaskConical size={11} /> SHADOW — fără ordine reale
-              </span>
+              {st?.mode === "execute" ? (
+                <span className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-semibold ${st?.execution?.active ? "bg-loss/20 text-loss" : "bg-warn/15 text-warn"}`}>
+                  ● EXECUȚIE — {st?.execution?.active ? `ordine reale (${st.execution.reason})` : `blocată: ${st?.execution?.reason ?? "?"}`}
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-violet-500/15 text-violet-300 font-semibold">
+                  <FlaskConical size={11} /> SHADOW — fără ordine reale
+                </span>
+              )}
             </div>
             <div className="text-[11px] text-slate-500">
               {running
@@ -148,6 +186,8 @@ export function DailyEnginePage() {
           <div className="w-full text-[11px] text-loss">{String((start.error ?? stop.error)?.message)}</div>
         )}
       </div>
+
+      <ModeSwitch mode={st?.mode} execution={st?.execution} />
 
       <div className="text-[11px] text-slate-500 bg-surface rounded-xl border border-surface-border px-4 py-2">
         Un trade pe zi pe piață, închis obligatoriu în aceeași zi (niciodată peste noapte). Orele urmează ora bursei —

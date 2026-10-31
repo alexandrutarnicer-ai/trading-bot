@@ -17,6 +17,11 @@ from zoneinfo import ZoneInfo
 
 import numpy as np
 
+try:
+    sys.stdout.reconfigure(encoding="utf-8")
+except Exception:
+    pass
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
@@ -152,18 +157,44 @@ def t_time():
 
 class _FakeMt5:
     TIMEFRAME_M5 = 5
+    TRADE_ACTION_DEAL, TRADE_ACTION_PENDING, TRADE_ACTION_REMOVE = 1, 5, 8
+    ORDER_TYPE_BUY, ORDER_TYPE_SELL, ORDER_TYPE_BUY_STOP, ORDER_TYPE_SELL_STOP = 0, 1, 4, 5
+    ORDER_TIME_GTC, TRADE_RETCODE_DONE, TRADE_RETCODE_PLACED, POSITION_TYPE_BUY = 0, 10009, 10008, 0
+    trade_mode = 0          # 0 = DEMO, 2 = REAL
 
     def __init__(self, rates, offset_h):
         self.rates, self.offset_h, self.now = rates, offset_h, None
+        self.sent, self.positions, self.orders, self._tk = [], [], [], 100
+
+    def positions_get(self, symbol=None): return [p for p in self.positions if symbol in (None, p.symbol)]
+    def orders_get(self, symbol=None): return [o for o in self.orders if symbol in (None, o.symbol)]
+
+    def order_send(self, req):
+        self.sent.append(dict(req))
+        self._tk += 1
+        if req["action"] == self.TRADE_ACTION_DEAL and "position" in req:
+            self.positions = [p for p in self.positions if p.ticket != req["position"]]
+        elif req["action"] == self.TRADE_ACTION_DEAL:
+            self.positions.append(SimpleNamespace(ticket=self._tk, symbol=req["symbol"], magic=req["magic"],
+                                                  comment=req["comment"], volume=req["volume"],
+                                                  type=0 if req["type"] == self.ORDER_TYPE_BUY else 1))
+        elif req["action"] == self.TRADE_ACTION_PENDING:
+            self.orders.append(SimpleNamespace(ticket=self._tk, symbol=req["symbol"], magic=req["magic"],
+                                               comment=req["comment"], type=req["type"], price_open=req["price"]))
+        elif req["action"] == self.TRADE_ACTION_REMOVE:
+            self.orders = [o for o in self.orders if o.ticket != req["order"]]
+        return SimpleNamespace(retcode=10009, order=self._tk)
 
     def initialize(self): return True
     def shutdown(self): pass
     def last_error(self): return (0, "ok")
-    def account_info(self): return SimpleNamespace(login=1, server="Fake", trade_mode=0, equity=206.0, currency="USD")
+    def account_info(self): return SimpleNamespace(login=1, server="Fake", trade_mode=self.trade_mode, equity=206.0, currency="USD")
     def symbol_select(self, s, f): return True
     def symbol_info(self, s): return SimpleNamespace(point=0.01, volume_min=0.1, volume_step=0.1, volume_max=100.0,
-                                                     trade_tick_size=0.01, trade_tick_value=0.01)
-    def symbol_info_tick(self, s): return SimpleNamespace(time=int(self.now.timestamp()) + self.offset_h * 3600)
+                                                     trade_tick_size=0.01, trade_tick_value=0.01, digits=2, filling_mode=2)
+    def symbol_info_tick(self, s):
+        px = getattr(self, "px", 6031.0)
+        return SimpleNamespace(time=int(self.now.timestamp()) + self.offset_h * 3600, ask=px + 0.25, bid=px - 0.25)
     def copy_rates_from_pos(self, s, tf, a, n): return self.rates
 
 
@@ -210,15 +241,94 @@ def t_engine():
 
 
 def t_no_orders():
-    print("5. Zero ordine reale")
+    print("5. Ordinele reale sunt izolate")
     d = os.path.dirname(os.path.abspath(__file__))
     bad = []
     for fn in os.listdir(d):
-        if fn.endswith(".py") and fn != "selftest.py":
+        if fn.endswith(".py") and fn not in ("selftest.py", "executor.py"):
             src = open(os.path.join(d, fn), encoding="utf-8").read()
             if "order_send" in src or "order_check" in src:
                 bad.append(fn)
-    check("niciun apel order_send/order_check in daily_engine/", not bad, bad)
+    check("order_send DOAR in daily_engine/executor.py", not bad, bad)
+
+
+def _exec_day(mode, trade_mode=0, live=False, arm_late=False, market="US500"):
+    """O zi prin motor cu MT5 simulat; intoarce (fake, status final)."""
+    tmp = tempfile.mkdtemp()
+    for name in ("STATUS_FILE", "STATE_FILE", "TRADES_FILE"):
+        setattr(E, name, os.path.join(tmp, os.path.basename(getattr(E, name))))
+    E._notify = lambda cfg, text: None
+    import live_guard
+    live_guard.live_allowed = lambda comp: live
+    m = next(x for x in DEFAULTS["markets"] if x["symbol"] == market)
+    cfg = {"mode": mode, "poll_seconds": 15, "notify_telegram": True, "markets": [m],
+           "sizing": {"capital_sync_mt5": True, "capital_usd": None, "fraction": 1.0, "risk_pct": 0.01}}
+    E.load_config = lambda: cfg
+    tz = ZoneInfo(m["tz"])
+    open_loc = datetime(2026, 11, 3, *map(int, m["open"].split(":")), tzinfo=tz)
+    n = (hm_to_min(m["last_bar"]) - hm_to_min(m["open"])) // 5 + 1
+    rates = _fake_rates(open_loc, n, 7 if market == "US500" else 7, lambda i: (6000 + i, 6001.5 + i, 5999.5 + i, 6001 + i))
+    fake = _FakeMt5(rates, 7)
+    fake.trade_mode = trade_mode
+    eng = E.DailyEngine(mt5_module=fake)
+    eng.connect()
+    or_m = m["or_minutes"]
+    steps = (-10, or_m - 4, or_m + 1, 120, 300, hm_to_min(m["last_bar"]) - hm_to_min(m["open"]) + 6)
+    st = None
+    for i, mins in enumerate(steps):
+        if arm_late and i < 2:
+            continue                         # modul pornit DUPA formarea intervalului
+        fake.now = (open_loc + timedelta(minutes=mins)).astimezone(timezone.utc)
+        # in interval / imediat dupa: pretul sta intre margini (ordinele stop au sens)
+        fake.px = 6000.5 if mins <= or_m + 1 and m["entry"] == "breakout" else 6000 + max(0, mins) / 5 + 1
+        st = eng.iteration(fake.now)
+    return fake, st
+
+
+def t_execution():
+    print("6. Executie reala (MT5 simulat)")
+    chk = lambda cond, name, d="": check(name, cond, d)   # ordinea (conditie, nume) din aceasta sectiune
+    fake, st = _exec_day("shadow")
+    chk(not fake.sent, "SHADOW: zero ordine trimise", fake.sent)
+    fake, st = _exec_day("execute", trade_mode=2, live=False)
+    chk(not fake.sent and "nedeblocat" in st["execution"]["reason"],
+          "cont REAL nedeblocat: zero ordine + motiv vizibil", (fake.sent, st.get("execution")))
+    fake, st = _exec_day("execute", trade_mode=0)
+    deals = [r for r in fake.sent if r["action"] == fake.TRADE_ACTION_DEAL]
+    entry = deals[0] if deals else {}
+    chk(len(deals) == 2 and "position" not in entry and "position" in deals[1],
+          "DEMO, US500: o intrare la piață + închiderea la finalul ferestrei", fake.sent)
+    chk(entry.get("magic") == 880001 and entry.get("comment") == "D-US500-1103" and entry.get("sl") == 5999.5
+          and entry.get("type") == fake.ORDER_TYPE_BUY, "magic 880001, comment D-, SL = marginea opusă, LONG", entry)
+    # 1% din $206 = $2,06 / (6007,65 − 5999,5 = 8,15 pct × $1/pct/lot) = 0,25 → pas 0,1 → 0,2 loturi
+    chk(entry.get("volume") == 0.2 and not fake.positions, "lot din dimensionarea comună (0,2); nicio poziție peste noapte",
+          (entry.get("volume"), fake.positions))
+    fake, st = _exec_day("execute", trade_mode=2, live=True)
+    chk(any(r["action"] == fake.TRADE_ACTION_DEAL for r in fake.sent), "cont REAL deblocat: execută")
+    fake, st = _exec_day("execute", trade_mode=0, arm_late=True)
+    chk(not fake.sent, "modul pornit DUPĂ formarea intervalului: ziua rămâne shadow (zero ordine)", fake.sent)
+    fake, st = _exec_day("execute", trade_mode=0, market="GBPUSD")
+    pend = [r for r in fake.sent if r["action"] == fake.TRADE_ACTION_PENDING]
+    chk(len(pend) == 2 and {r["type"] for r in pend} == {fake.ORDER_TYPE_BUY_STOP, fake.ORDER_TYPE_SELL_STOP},
+          "GBPUSD: BUY_STOP + SELL_STOP pe marginile intervalului", pend)
+    chk(not fake.orders and not fake.positions, "final de fereastră: ordinele rămase anulate", (fake.orders, fake.positions))
+    # OCO: o margine umpluta -> cealalta anulata
+    eng = E.DailyEngine(mt5_module=fake)
+    fake.orders = [SimpleNamespace(ticket=1, symbol="GBPUSD", magic=880001, comment="D-GBPUSD-1104", type=5)]
+    fake.positions = [SimpleNamespace(ticket=2, symbol="GBPUSD", magic=880001, comment="D-GBPUSD-1104", volume=0.01, type=0)]
+    fake.sent = []
+    m = next(x for x in DEFAULTS["markets"] if x["symbol"] == "GBPUSD")
+    from datetime import date as _d
+    eng._execute(m, _d(2026, 11, 4), {"phase": "in_position"}, None,
+                 datetime(2026, 11, 4, 9, 0, tzinfo=ZoneInfo("Europe/London")),
+                 datetime(2026, 11, 4, 14, 30, tzinfo=ZoneInfo("Europe/London")))
+    chk([r["action"] for r in fake.sent] == [fake.TRADE_ACTION_REMOVE], "OCO: poziție deschisă → cealaltă margine anulată", fake.sent)
+    # plasa de siguranta: pozitie Daily din alta zi -> inchisa
+    fake.positions = [SimpleNamespace(ticket=3, symbol="US500", magic=880001, comment="D-US500-1101", volume=0.1, type=0)]
+    fake.orders, fake.sent = [], []
+    eng.cfg = E.load_config()
+    eng.sweep_stale(datetime(2026, 11, 3, 15, 0, tzinfo=timezone.utc))
+    chk(fake.sent and "position" in fake.sent[0] and not fake.positions, "poziție Daily din altă zi → închisă (niciodată overnight)", fake.sent)
 
 
 if __name__ == "__main__":
@@ -227,5 +337,6 @@ if __name__ == "__main__":
     t_time()
     t_engine()
     t_no_orders()
+    t_execution()
     print(f"\n{PASS} OK, {FAIL} FAIL")
     sys.exit(1 if FAIL else 0)

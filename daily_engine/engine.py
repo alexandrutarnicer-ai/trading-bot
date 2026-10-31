@@ -34,6 +34,7 @@ if ROOT not in sys.path:
 from daily_engine.config import DATA_DIR, ENTRY_MODES, load_config, save_default_config, hm_to_min  # noqa: E402
 from daily_engine.strategy import evaluate_day  # noqa: E402
 import position_sizing as ps  # noqa: E402
+from daily_engine import executor as X  # noqa: E402
 
 PID_FILE = os.path.join(DATA_DIR, "daily_engine.pid")
 STATUS_FILE = os.path.join(DATA_DIR, "status.json")
@@ -152,6 +153,9 @@ def window_times(m: dict, day_local) -> tuple[datetime, datetime]:
     return base + timedelta(minutes=o), base + timedelta(minutes=lb)
 
 
+X_MODE = ENTRY_MODES
+
+
 def bars_today(rates, server_offset_s: int, m: dict, now_utc: datetime) -> pd.DataFrame:
     """Barele M5 INCHISE de azi (zi locala a bursei) din fereastra pietei."""
     if rates is None or len(rates) == 0:
@@ -223,7 +227,8 @@ class DailyEngine:
         if now_loc.weekday() >= 5:
             return {**info, "phase": "weekend"}
         if now_loc < w_open:
-            return {**info, "phase": "waiting_open"}
+            self._arm(sym, day)
+            return {**info, "phase": "waiting_open", **self._exec_info(sym, day)}
 
         self._refresh_offset(sym, now_utc)
         if self.server_offset_s is None:
@@ -239,8 +244,150 @@ class DailyEngine:
                           open_min=hm_to_min(m["open"]), or_minutes=m["or_minutes"],
                           mode=ENTRY_MODES[m["entry"]], rr=m.get("rr"), slip=m["slip"],
                           comm=m["comm"], day_complete=day_complete)
+        if st["phase"] in ("waiting_open", "forming_or"):
+            self._arm(sym, day)
         self._events(m, str(day), st)
-        return {**info, **{k: (v.item() if isinstance(v, np.generic) else v) for k, v in st.items()}}
+        try:
+            self._execute(m, day, st, b, now_loc, w_end)
+        except Exception as e:                       # o eroare de executie nu opreste shadow-ul
+            self._err(f"{sym} executie: {type(e).__name__}: {e}")
+        return {**info, **{k: (v.item() if isinstance(v, np.generic) else v) for k, v in st.items()},
+                **self._exec_info(sym, day)}
+
+    # ── EXECUTIE REALA (doar mode=execute + cont permis + zi armata) ──────────
+
+    def exec_state(self) -> tuple[bool, str]:
+        if self.cfg.get("mode") != "execute":
+            return False, "mod SHADOW (fără ordine)"
+        from live_guard import live_allowed
+        return X.execution_allowed(self.mt5, live_allowed)
+
+    def _arm(self, sym: str, day) -> None:
+        """Ziua devine REALA doar daca modul Executie era activ INAINTE de formarea intervalului."""
+        ok, _ = self.exec_state()
+        ev = self.state.setdefault("events", {})
+        k = f"{day}|{sym}|armed"
+        if ok and not ev.get(k):
+            ev[k] = True
+            log.info(f"{sym} {day}: zi ARMATA pentru executie reala")
+
+    def _exec_info(self, sym: str, day) -> dict:
+        ev = self.state.get("events", {})
+        return {"exec_armed": bool(ev.get(f"{day}|{sym}|armed")), "exec_placed": ev.get(f"{day}|{sym}|placed")}
+
+    def _execute(self, m: dict, day, st: dict, b, now_loc, w_end) -> None:
+        sym = m["symbol"]
+        ev = self.state.setdefault("events", {})
+        key = f"{day}|{sym}"
+        tag = X.day_tag(sym, day)
+        pos, ords = X.own(self.mt5, sym)
+        pos_t = [p for p in pos if (p.comment or "").startswith(tag)]
+        ord_t = [o for o in ords if (o.comment or "").startswith(tag)]
+        # 1) final de fereastra: anuleaza tot, inchide tot — niciodata peste noapte
+        if now_loc >= w_end:
+            for o in ord_t:
+                X.cancel(self.mt5, o)
+            for p in pos_t:
+                ok, res = X.close(self.mt5, p)
+                self._exec_note(sym, f"închis la final de fereastră ({'ok' if ok else 'EȘUAT ' + str(getattr(res, 'retcode', res))})")
+            return
+        # 2) o pozitie deschisa -> anuleaza cealalta margine (OCO)
+        if pos_t and ord_t:
+            for o in ord_t:
+                X.cancel(self.mt5, o)
+            return
+        if pos_t or ord_t or ev.get(f"{key}|placed") or not ev.get(f"{key}|armed"):
+            return
+        ok, why = self.exec_state()
+        if not ok or st["phase"] not in ("waiting_entry",) or st.get("or_hi") is None:
+            return
+        hi, lo = st["or_hi"], st["or_lo"]
+        info, tick = self.mt5.symbol_info(sym), self.mt5.symbol_info_tick(sym)
+        if info is None or tick is None:
+            return
+        spread = tick.ask - tick.bid
+        if hi - lo < 2 * (spread + m["slip"] + m["comm"]):
+            ev[f"{key}|placed"] = "skip"
+            self._exec_note(sym, f"zi sărită: interval {hi - lo:.5g} < 2× cost")
+            return
+        # protectiile globale (capital, circuit breaker, max pozitii / piata) + stiri globale
+        from live import global_guard
+        ok_g, reason = global_guard.check_open(self.mt5, "daily", sym)
+        if ok_g:
+            try:
+                from live.news_guard import _fetch_forexfactory
+                if global_guard.news_window_active(sym, _fetch_forexfactory()):
+                    ok_g, reason = False, "fereastră de știri (Setări Globale)"
+            except Exception:
+                pass
+        if not ok_g:
+            ev[f"{key}|placed"] = "blocked"
+            self._exec_note(sym, f"BLOCAT: {reason}")
+            return
+        mode = X_MODE[m["entry"]]
+        sz = self.cfg.get("sizing") or {}
+        acc = self.mt5.account_info()
+        cap = ps.capital_base(sz.get("capital_sync_mt5", True), sz.get("capital_usd"),
+                              getattr(acc, "equity", 0) if acc else 0) * ps.clamp_fraction(sz.get("fraction", 1.0))
+        results = []
+        if mode == "dir":
+            o0 = float(b.open.iloc[0])
+            c_last = float(b.close.iloc[m["or_minutes"] // 5 - 1])
+            if c_last == o0:
+                ev[f"{key}|placed"] = "skip"
+                return
+            side = 1 if c_last > o0 else -1
+            entry, sl = (tick.ask, lo) if side == 1 else (tick.bid, hi)
+            r = ps.size_by_risk(info, entry, sl, cap, sz.get("risk_pct", 0.01))
+            if not r["lots"]:
+                ev[f"{key}|placed"] = "skip"
+                self._exec_note(sym, f"nu plasez: {r['reason']}")
+                return
+            ok_o, res = X.place_market(self.mt5, sym, side, r["lots"], sl, tag)
+            results.append((("LONG" if side == 1 else "SHORT") + " piață", r, ok_o, res))
+        else:
+            for side, lvl, sl in ((1, hi, lo), (-1, lo, hi)):
+                r = ps.size_by_risk(info, lvl, sl, cap, sz.get("risk_pct", 0.01))
+                if not r["lots"]:
+                    continue
+                beyond = (side == 1 and tick.ask >= lvl) or (side == -1 and tick.bid <= lvl)
+                if beyond:      # pretul a trecut deja de margine -> ca in backtest: umplere la piata
+                    ok_o, res = X.place_market(self.mt5, sym, side, r["lots"], sl, tag)
+                    results.append((("LONG" if side == 1 else "SHORT") + " piață (gap)", r, ok_o, res))
+                    break
+                ok_o, res = X.place_stop(self.mt5, sym, side, lvl, r["lots"], sl, tag)
+                results.append((("BUY_STOP" if side == 1 else "SELL_STOP") + f" @ {lvl:.5g}", r, ok_o, res))
+        ev[f"{key}|placed"] = "yes" if any(x[2] for x in results) else "failed"
+        cur = getattr(acc, "currency", "USD") if acc else "USD"
+        lines = [f"{'✅' if ok_o else '❌'} {what} · {r['lots']} loturi · SL · risc {r['risk_money']:.2f} {cur}"
+                 + ("" if ok_o else f" — retcode {getattr(res, 'retcode', res)}") for what, r, ok_o, res in results]
+        self._exec_note(sym, "ORDINE REALE (" + why + ")\n" + "\n".join(lines), important=True)
+        _write_json(STATE_FILE, self.state)
+
+    def _exec_note(self, sym: str, text: str, important: bool = False) -> None:
+        msg = f"🟢 <b>Daily EXECUȚIE — {sym}</b>\n{text}"
+        log.info(msg.replace("<b>", "").replace("</b>", ""))
+        _notify(self.cfg, msg)
+
+    def sweep_stale(self, now_utc: datetime) -> None:
+        """Orice pozitie / ordin Daily din ALTA zi decat cea curenta a pietei lui -> inchis / anulat
+        (plasa de siguranta: restart peste noapte, fereastra ratata). Ruleaza in orice mod."""
+        try:
+            pos, ords = X.own(self.mt5)
+        except Exception:
+            return
+        tags = {}
+        for m in self.cfg["markets"]:
+            d = now_utc.astimezone(ZoneInfo(m["tz"])).date()
+            tags[m["symbol"]] = X.day_tag(m["symbol"], d)
+        for o in ords:
+            if not (o.comment or "").startswith(tags.get(o.symbol, "\0")):
+                X.cancel(self.mt5, o)
+                self._exec_note(o.symbol, f"ordin rămas din altă zi anulat ({o.comment})")
+        for p in pos:
+            if not (p.comment or "").startswith(tags.get(p.symbol, "\0")):
+                ok, _ = X.close(self.mt5, p)
+                self._exec_note(p.symbol, f"poziție rămasă din altă zi închisă ({p.comment}) — {'ok' if ok else 'EȘUAT'}", True)
 
     def _events(self, m: dict, day: str, st: dict) -> None:
         sym, ev = m["symbol"], self.state.setdefault("events", {})
@@ -301,6 +448,7 @@ class DailyEngine:
         self.cfg = load_config()                        # hot-reload
         now_utc = now_utc or datetime.now(timezone.utc)
         markets = []
+        self.sweep_stale(now_utc)
         for m in self.cfg["markets"]:
             try:
                 markets.append(self.process_market(m, now_utc))
@@ -308,7 +456,9 @@ class DailyEngine:
                 self._err(f"{m.get('symbol')}: {type(e).__name__}: {e}")
                 markets.append({"symbol": m.get("symbol"), "phase": "error", "reason": str(e)})
         trades = load_trades()
+        ex_ok, ex_why = self.exec_state()
         status = {"running": True, "mode": self.cfg["mode"], "pid": os.getpid(),
+                  "execution": {"active": ex_ok, "reason": ex_why},
                   "heartbeat": datetime.now(RO).isoformat(timespec="seconds"),
                   "server_offset_h": None if self.server_offset_s is None else self.server_offset_s / 3600,
                   "account": self.account, "markets": markets, "scorecard": scorecard(trades),
@@ -338,16 +488,14 @@ def _run() -> None:
         return
     save_default_config()
     cfg = load_config()
-    if cfg["mode"] != "shadow":
-        log.error(f"Mod '{cfg['mode']}' nesuportat — Daily Engine ruleaza DOAR in shadow.")
-        return
     with open(PID_FILE, "w") as f:
         f.write(str(os.getpid()))
     _write_json(DESIRED_FILE, {"running": True, "since": datetime.now(RO).isoformat(timespec="seconds"),
                                "pid": os.getpid()})
     eng = DailyEngine()
-    log.info("Daily Engine pornit — mod SHADOW (trade-uri virtuale, zero ordine reale)")
-    _notify(cfg, "🧪 <b>Daily Engine pornit</b> — mod SHADOW (fără ordine reale)\n"
+    mode_txt = "EXECUȚIE (ordine reale, dacă contul o permite)" if cfg["mode"] == "execute" else "SHADOW (fără ordine reale)"
+    log.info(f"Daily Engine pornit — mod {mode_txt}")
+    _notify(cfg, f"🧪 <b>Daily Engine pornit</b> — mod {mode_txt}\n"
                  + "\n".join(f"• {m['symbol']}: {m.get('label', '')}" for m in cfg["markets"] if m.get("enabled", True)))
     while not eng.connect():
         _write_json(STATUS_FILE, {"running": True, "mode": "shadow", "pid": os.getpid(),

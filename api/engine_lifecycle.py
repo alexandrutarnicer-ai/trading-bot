@@ -77,7 +77,8 @@ def _status(eid: str) -> dict:
     s = daily_engine.daily_status()
     mk = [m.get("symbol") for m in (s.get("markets") or []) if m.get("symbol")]
     return {"running": bool(s.get("running")), "pid": s.get("pid"),
-            "detail": (", ".join(mk) if mk else "GBPUSD, US500") + " · shadow",
+            "detail": (", ".join(mk) if mk else "GBPUSD, US500") + (" · EXECUȚIE" + ("" if (s.get("execution") or {}).get("active") else " (blocată)")
+                                                                     if s.get("mode") == "execute" else " · shadow"),
             "mode": s.get("mode", "shadow")}
 
 

@@ -108,5 +108,24 @@ W._check_daily_engine()
 check(len(restarts) == 3 and "nu rămâne pornit" in sent[-1], "a 4-a cadere in 1h -> alerta, fara repornire", sent[-1])
 check(not os.path.exists(DE.DESIRED_FILE), "starea dorita stearsa -> nu bucleaza")
 
+print("4. Daily: comutatorul Shadow / Executie (config temporar, fara Telegram)")
+import json as _json  # noqa: E402
+import daily_engine.config as DC  # noqa: E402
+import api.telegram as _tg  # noqa: E402
+_tg.send_message = lambda *a, **k: True
+DC.CFG_PATH = os.path.join(tempfile.mkdtemp(), "config.json")
+_json.dump(DC.DEFAULTS, open(DC.CFG_PATH, "w"))
+r = DE.daily_config_save({"mode": "execute"})
+check(r["mode"] == "execute" and _json.load(open(DC.CFG_PATH))["mode"] == "execute", "mode=execute salvat (hot-reload)")
+try:
+    DE.daily_config_save({"mode": "live_now"})
+    check(False, "mod invalid respins")
+except HTTPException as e:
+    check(e.status_code == 400, "mod invalid -> 400")
+r = DE.daily_config_save({"mode": "shadow"})
+check(r["mode"] == "shadow", "revenire la shadow")
+import live_guard as LG  # noqa: E402
+check("daily_engine" in LG.COMPONENTS, "Trading LIVE are componenta daily_engine (deblocare separata)")
+
 print(f"\nREZULTAT: {PASS} PASS / {FAIL} FAIL")
 sys.exit(1 if FAIL else 0)

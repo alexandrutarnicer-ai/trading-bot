@@ -15,7 +15,7 @@ export function LiveTradingCard() {
   if (!data) return null;
   const { flags, account } = data;
 
-  const toggle = (component: "bot" | "ai_engine", label: string) => {
+  const toggle = (component: "bot" | "ai_engine" | "daily_engine", label: string) => {
     const on = !flags[component];
     if (on) {
       if (!confirm(`⚠️ ACTIVEZI tranzacționarea pe CONT REAL pentru ${label}?\n\n` +
@@ -29,9 +29,9 @@ export function LiveTradingCard() {
   };
 
   const Row = ({ component, label, desc }: {
-    component: "bot" | "ai_engine"; label: string; desc: string;
+    component: "bot" | "ai_engine" | "daily_engine"; label: string; desc: string;
   }) => {
-    const on = flags[component];
+    const on = !!flags[component];
     return (
       <div className="flex items-center gap-3 flex-wrap">
         <button onClick={() => toggle(component, label)} disabled={setLive.isPending}
@@ -49,16 +49,18 @@ export function LiveTradingCard() {
   };
 
   return (
-    <div className={`rounded-xl border p-4 space-y-3 ${(flags.bot || flags.ai_engine) ? "bg-loss/5 border-loss/40" : "bg-surface border-surface-border"}`}>
+    <div className={`rounded-xl border p-4 space-y-3 ${(flags.bot || flags.ai_engine || flags.daily_engine) ? "bg-loss/5 border-loss/40" : "bg-surface border-surface-border"}`}>
       <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-        <ShieldAlert size={15} className={(flags.bot || flags.ai_engine) ? "text-loss" : "text-slate-400"} />
+        <ShieldAlert size={15} className={(flags.bot || flags.ai_engine || flags.daily_engine) ? "text-loss" : "text-slate-400"} />
         Trading LIVE (cont real)
         <span className="text-[10px] text-slate-500 font-normal">per mașină · se aplică la următoarea pornire a componentei</span>
       </h3>
-      <Row component="bot" label="Bot (sesiuni)"
-        desc="cele 20 de sesiuni pe reguli — recomandat doar sesiunile cu edge validat" />
+      <Row component="bot" label="Custom Engine"
+        desc="cele 22 de sesiuni pe reguli — recomandat doar sesiunile cu edge validat" />
       <Row component="ai_engine" label="AI Engine"
         desc="motorul autonom AI — recomandat să rămână pe DEMO până demonstrează edge" />
+      <Row component="daily_engine" label="Daily Engine"
+        desc="ORB intraday — permite modul Execuție pe cont real (modul se alege în tab-ul Daily Engine; implicit Shadow)" />
       <div className="text-[10px] text-slate-500 border-t border-surface-border/40 pt-2">
         Cont MT5 curent:{" "}
         {account.connected

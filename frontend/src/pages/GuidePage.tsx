@@ -310,9 +310,9 @@ export function GuidePage() {
                   convocat pe trigger-e → decizie validată de reguli hard (rails). Piețe curente: CHFJPY, GBPUSD. Magic 770015.</div>
               </div>
               <div className="bg-cyan-500/5 border border-cyan-500/30 rounded-lg p-3">
-                <div className="font-semibold text-cyan-300">Daily Engine (intraday, mod SHADOW)</div>
+                <div className="font-semibold text-cyan-300">Daily Engine (intraday — implicit SHADOW)</div>
                 <div className="text-slate-400">Opening Range Breakout la deschiderea Londrei (GBPUSD, 10:00 RO) și New York (US500, 16:30 RO),
-                  un trade pe zi pe piață, închis în aceeași zi. Momentan doar trade-uri <b>virtuale</b> — nu plasează ordine.
+                  un trade pe zi pe piață, închis în aceeași zi. Implicit trade-uri <b>virtuale</b>; poate trece pe Execuție (ordine reale) din tab-ul lui.
                   Magic rezervat 880001.</div>
               </div>
             </div>
@@ -1409,7 +1409,7 @@ export function GuidePage() {
         </Section>
 
         {/* ── 12. DAILY ENGINE ── */}
-        <Section id="daily-engine" title="12. Daily Engine (intraday, SHADOW)">
+        <Section id="daily-engine" title="12. Daily Engine (intraday — Shadow sau Execuție)">
           <SubSection title="Ce face">
             <p>Tranzacționare în aceeași zi la deschiderea burselor, când intră volumul mare. Un trade pe zi pe piață,
               închis obligatoriu în aceeași zi (niciodată peste noapte). Fără RSI/EMA — doar preț și oră.</p>
@@ -1420,6 +1420,20 @@ export function GuidePage() {
               <KV k="Zi sărită" v="Interval fără direcție, ambele margini în aceeași bară, risc < 2× cost, piață închisă" />
               <KV k="Fus orar" v="Pe ora bursei: în săptămânile cu decalaj SUA/RO fereastra NY se mută singură la 15:30" />
             </div>
+          </SubSection>
+
+          <SubSection title="Shadow → Execuție (ordine reale)">
+            <div className="space-y-1 text-xs">
+              <KV k="Unde" v="Tab Daily Engine → comutatorul „Mod” (două confirmări; revenirea la Shadow cere o confirmare)" />
+              <KV k="Cont DEMO" v="Execuția merge direct" />
+              <KV k="Cont REAL" v="În plus: Settings → Trading LIVE → „Daily Engine” deblocat (per mașină). Altfel: „Execuție blocată” + motivul" />
+              <KV k="De când" v="De la următoarea fereastră — ziua trebuie activată înainte de formarea intervalului (comutat mai târziu → ziua rămâne shadow)" />
+              <KV k="GBPUSD" v="BUY_STOP + SELL_STOP pe marginile intervalului; la umplerea uneia cealaltă se anulează" />
+              <KV k="US500" v="Ordin la piață la 17:00 RO pe direcția intervalului" />
+              <KV k="Mereu" v="SL atașat, lot din dimensionarea comună, Setări Globale + știri respectate, închidere la finalul ferestrei, nimic peste noapte" />
+              <KV k="În Dashboard" v="Tranzacțiile reale apar ca „DAILY” (magic 880001) în Tranzacții, carduri și rapoarte" />
+            </div>
+            <Warn>Recomandarea rămâne: 2–3 luni de shadow înainte de execuție pe cont real — edge-ul din backtest e mic.</Warn>
           </SubSection>
 
           <SubSection title="Mod SHADOW — de ce și ce înseamnă">
@@ -1441,8 +1455,8 @@ export function GuidePage() {
         <Section id="live" title="13. Demo / Live">
           <SubSection title="Cum se deblochează contul real">
             <p>Implicit totul e DEMO-only: Custom Engine și AI Engine refuză un cont real. Deblocarea e explicită, per componentă
-              și per mașină: <b>Settings → Trading LIVE</b> (două confirmări). Daily Engine e doar citire (shadow), deci rulează pe
-              orice cont fără risc.</p>
+              și per mașină: <b>Settings → Trading LIVE</b> (două confirmări). Daily Engine în shadow e doar citire, deci rulează pe
+              orice cont fără risc. Pentru modul Execuție pe cont real există un switch separat „Daily Engine” în Trading LIVE.</p>
             <div className="space-y-1 text-xs">
               <KV k="Fișier" v="data/live_trading.json (nu se sincronizează prin git)" />
               <KV k="La prima conectare reală" v="Telegram „⚠️🔴 CONT LIVE” o dată per proces" />

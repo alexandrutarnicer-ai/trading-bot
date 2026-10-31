@@ -166,7 +166,7 @@ function TradesList({ sessionId, source = "all", symbol }: {
       <div>{header}
         <div className="text-center py-8 text-slate-500 text-sm">
           {source === "daily"
-            ? "Daily Engine rulează în mod SHADOW — nu plasează ordine reale, deci nu are tranzacții MT5. Trade-urile virtuale sunt în tab-ul Daily Engine."
+            ? "Nicio tranzacție reală Daily Engine (magic 880001). În mod Shadow nu plasează ordine — trade-urile virtuale sunt în tab-ul Daily Engine."
             : "Nicio tranzacție închisă înregistrată"}
         </div>
       </div>

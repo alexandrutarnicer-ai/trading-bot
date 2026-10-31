@@ -843,6 +843,8 @@ export interface DailyMarketStatus {
   window_local?: string;
   phase: DailyPhase;
   reason?: string;
+  exec_armed?: boolean;
+  exec_placed?: string | null;
   note?: string;
   or_hi?: number;
   or_lo?: number;
@@ -878,6 +880,7 @@ export interface DailyStatus {
   errors?: string[];
   backtest_ref?: Record<string, { trades: number; expectancy_R: number; period: string; verdict: string }>;
   sizing?: { capital_sync_mt5: boolean; capital_usd: number | null; fraction: number; risk_pct: number };
+  execution?: { active: boolean; reason: string };
 }
 
 export interface DailyTrade {
