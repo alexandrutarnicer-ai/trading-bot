@@ -13,6 +13,7 @@ Ora serverului: detectata din tick-ul proaspat (server − UTC), nu presupusa.
 from __future__ import annotations
 
 import ctypes
+import faulthandler
 import json
 import logging
 import os
@@ -292,6 +293,19 @@ class DailyEngine:
 
 def run() -> None:
     _setup_logging()
+    # crash-uri native (ex. modulul MetaTrader5) -> traceback in fisier, nu dispar fara urma
+    try:
+        faulthandler.enable(open(os.path.join(DATA_DIR, "crash.log"), "a", encoding="utf-8"))
+    except Exception:
+        pass
+    try:
+        _run()
+    except BaseException as e:                       # inclusiv SystemExit / KeyboardInterrupt
+        log.exception(f"Daily Engine s-a oprit neasteptat: {type(e).__name__}: {e}")
+        raise
+
+
+def _run() -> None:
     if not _acquire_single_instance():
         log.error("Daily Engine ruleaza deja (mutex detinut) — a doua instanta NU porneste.")
         return

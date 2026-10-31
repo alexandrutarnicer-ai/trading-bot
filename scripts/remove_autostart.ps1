@@ -35,9 +35,9 @@ if ($task) {
     Write-Host "[--] Task TradingBot-RunAll nu exista (deja sters sau neinstalat)" -ForegroundColor Gray
 }
 
-# MT5 partajat — sterge DOAR daca motorul AI (TradingBot-AIEngine) nu-l mai
+# MT5 partajat - sterge DOAR daca motorul AI (TradingBot-AIEngine) nu-l mai
 # foloseste. Altfel autostart-ul AI ar ramane fara MT5 la pornire.
-$aiStillUsesMt5 = [bool](Get-ScheduledTask -TaskName "TradingBot-AIEngine" -ErrorAction SilentlyContinue)
+$aiStillUsesMt5 = [bool](Get-ScheduledTask -TaskName "TradingBot-AIEngine" -ErrorAction SilentlyContinue) -or [bool](Get-ScheduledTask -TaskName "TradingBot-DailyEngine" -ErrorAction SilentlyContinue)
 if ($aiStillUsesMt5) {
     Write-Host "[--] Task TradingBot-MT5 pastrat (motorul AI TradingBot-AIEngine inca il foloseste)" -ForegroundColor Yellow
 } else {

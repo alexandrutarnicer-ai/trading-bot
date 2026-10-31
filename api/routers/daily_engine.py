@@ -84,8 +84,10 @@ def daily_start():
     os.makedirs(DATA_DIR, exist_ok=True)
     save_default_config()
     flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+    # stdout/stderr in fisier: o eroare inainte de logging (import, crash) ramane vizibila
+    out = open(os.path.join(DATA_DIR, "stdout.log"), "a", encoding="utf-8")
     proc = subprocess.Popen([sys.executable, "-m", "daily_engine"], cwd=ROOT, creationflags=flags,
-                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True)
+                            stdout=out, stderr=subprocess.STDOUT, close_fds=True)
     return {"ok": True, "pid": proc.pid, "note": "Mod SHADOW — trade-uri virtuale, zero ordine reale"}
 
 

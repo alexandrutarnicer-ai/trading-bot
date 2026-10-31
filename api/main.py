@@ -22,6 +22,7 @@ from api.routers import bot, sessions, profiles, backtest, markets, data_downloa
 from api.routers import backtest_history, notifications, reports, ai_engine
 from api.routers import telegram_bridge
 from api.routers import daily_engine
+from api import engine_lifecycle
 from api.watchdog import start_watchdog
 from api.notifications import migrate_to_jsonl
 from api.scheduled_reports import start_scheduler as start_reports_scheduler
@@ -57,6 +58,7 @@ app.include_router(reports.router,            prefix="/api")
 app.include_router(ai_engine.router,          prefix="/api")
 app.include_router(telegram_bridge.router,    prefix="/api")
 app.include_router(daily_engine.router,       prefix="/api")
+app.include_router(engine_lifecycle.router,   prefix="/api")
 
 
 @app.get("/api/health")

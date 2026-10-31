@@ -39,7 +39,7 @@ if ($task) {
 }
 
 # 2. MT5 partajat - sterge DOAR daca botul nu-l mai foloseste
-$botStillUsesMt5 = [bool](Get-ScheduledTask -TaskName "TradingBot-RunAll" -ErrorAction SilentlyContinue)
+$botStillUsesMt5 = [bool](Get-ScheduledTask -TaskName "TradingBot-RunAll" -ErrorAction SilentlyContinue) -or [bool](Get-ScheduledTask -TaskName "TradingBot-DailyEngine" -ErrorAction SilentlyContinue)
 if ($botStillUsesMt5) {
     Write-Host "[--] Task TradingBot-MT5 pastrat (botul TradingBot-RunAll inca il foloseste)" -ForegroundColor Yellow
 } else {
