@@ -35,7 +35,7 @@ def section(title):
 section("1. pip_size simboluri active (sesiunile 1-20)")
 KNOWN = {
     "EURUSD": 0.0001, "GBPUSD": 0.0001, "AUDJPY": 0.01,
-    "BTCUSD": 0.01,   "XRPUSD": 0.0001, "GER40":  1.0,
+    "BTCUSD": 0.01,   "XRPUSD": 0.00001, "GER40":  1.0,   # XRPUSD = tick_size real (fix 641f693)
     "US30":   1.0,    "USDCHF": 0.0001, "EURCAD": 0.0001,
     "USDJPY": 0.01,   "GBPCAD": 0.0001, "USDCAD": 0.0001,
     "EURAUD": 0.0001, "EURJPY": 0.01,   "CHFJPY": 0.01,
@@ -101,7 +101,7 @@ from strategy.costs import pip_value_usd
 pv_checks = [
     ("EURUSD", 1.10,  None, 10.0),    # $10/pip/lot standard
     ("USDJPY", 150.0, 150.0, 0.01 * 100000 / 150.0),  # JPY quote
-    ("GER40",  18000, None, 0.011519/0.01),  # EUR profit, convertit de MT5 → 1.1519
+    ("GER40",  18000, None, 1.08),  # EUR profit × BASE_USD_APROX["EUR"]=1.08 (aprox. statica backtest; live citeste MT5)
     ("US30",   39000, None, 0.010000/0.01),  # $1.00/pt/lot → 1.0
     ("BTCUSD", 60000, None, 0.01),    # tick_value direct din _CRYPTO_TICK
     ("XAUUSD", 2000,  None, 1.0/0.01),  # $100/pt/lot

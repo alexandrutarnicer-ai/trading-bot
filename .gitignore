@@ -4,6 +4,7 @@ data/*
 data/profiles/*
 !data/profiles/standard.json
 !data/crypto_specs.json
+!data/global_settings.json
 !data/live_signals/
 data/live_signals/**
 !data/live_signals/session*/
@@ -24,3 +25,9 @@ config/secrets*
 !data/ai/
 data/ai/*
 !data/ai/ai_outcomes.csv
+
+# Carti/materiale cu drepturi de autor (locale, nu se publica)
+docs/books/
+
+# Artefacte de build generate (TypeScript incremental)
+*.tsbuildinfo
