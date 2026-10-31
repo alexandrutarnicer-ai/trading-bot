@@ -24,6 +24,8 @@ except Exception:
     pass
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import live.global_guard as _GG_iso  # izolare: limita globala de risc reala nu influenteaza testul
+_GG_iso.risk_cap_pct = lambda settings=None: None
 
 import live.signal_generator as sg
 from live.signal_generator import (
@@ -266,11 +268,12 @@ std_path = os.path.join(DATA_DIR, "profiles", "standard.json")
 if os.path.exists(std_path):
     with open(std_path, encoding="utf-8") as f:
         std = json.load(f)
-    any_active = any(
-        bool(s.get("fixed_lots_enabled")) and float(s.get("fixed_lots") or 0) > 0
-        for s in std.get("sessions", []))
-    check(not any_active,
-          "nicio sesiune din profilul standard nu are lot fix activ (comportament neschimbat)")
+    # Lotul fix e o alegere per sesiune a userului (OFF by default la introducere);
+    # testul doar raporteaza sesiunile care il folosesc — nu impune o stare a profilului.
+    active = [(s.get("session_key"), s.get("fixed_lots")) for s in std.get("sessions", [])
+              if bool(s.get("fixed_lots_enabled")) and float(s.get("fixed_lots") or 0) > 0]
+    print(f"  INFO  sesiuni cu lot fix activ in profil: {active or 'niciuna'}")
+    check(all(float(v) > 0 for _, v in active), "loturile fixe active din profil sunt pozitive")
 else:
     print("  SKIP  standard.json absent")
 

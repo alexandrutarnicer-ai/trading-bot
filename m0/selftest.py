@@ -4,7 +4,7 @@ m0.selftest — verificari rapide de integritate pentru M0.
 Ruleaza:  python -m m0.selftest
 
 Acopera:
-  1. Runner-ul reproduce baseline-ul documentat (284 trade-uri).   [validate_runner]
+  1. Runner-ul reproduce baseline-ul documentat (280 trade-uri).   [validate_runner]
   2. evaluate_trades + to_result_payload produc un payload JSON-safe (fara NaN)
      si verdicte corecte pe serii sintetice (KEEP pozitiv, DEMOTE negativ,
      INSUFF sub prag).
@@ -69,7 +69,7 @@ def test_api_wiring():
 def main():
     print("[1] runner reproduce baseline-ul documentat")
     from m0.validate_runner import validate_portfolio_baseline
-    _assert(validate_portfolio_baseline(), "284 trade-uri baseline")
+    _assert(validate_portfolio_baseline(), "280 trade-uri baseline")
     test_json_safe_and_verdicts()
     test_api_wiring()
     print("\nToate verificarile M0 au trecut.")

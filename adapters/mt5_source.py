@@ -20,6 +20,7 @@ Utilizare:
         m30 = src.load_bars("EURUSD", "M30")
 """
 
+import time
 from datetime import datetime, timezone, timedelta
 
 import MetaTrader5 as mt5
@@ -64,6 +65,7 @@ class Mt5DataSource:
         # Offset-ul serverului fata de UTC, detectat la primul load_bars().
         # None = nu a fost detectat inca.
         self._server_offset_h: int | None = None
+        self._offset_next_check: float = 0.0   # monotonic — re-detectie periodica
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -170,12 +172,20 @@ class Mt5DataSource:
         # Offsetul va fi re-detectat la urmatorul apel load_bars() din sesiune.
         return 0
 
+    def _refresh_server_offset(self, symbol: str) -> None:
+        now = time.monotonic()
+        if self._server_offset_h is not None and now < self._offset_next_check:
+            return
+        det = self._detect_server_offset_h(symbol)
+        if det != 0 or self._server_offset_h is None:
+            self._server_offset_h = det
+        self._offset_next_check = now + (1800 if self._server_offset_h else 900)
+
     def server_offset_h(self, symbol: str = "EURUSD") -> int:
-        """Returneaza offset-ul serverului (il detecteaza daca nu e inca cunoscut)."""
+        """Returneaza offset-ul serverului (re-detectat periodic, vezi load_bars)."""
         if not self._connected:
             self.connect()
-        if self._server_offset_h is None:
-            self._server_offset_h = self._detect_server_offset_h(symbol)
+        self._refresh_server_offset(symbol)
         return self._server_offset_h
 
     # ------------------------------------------------------------------
@@ -220,9 +230,13 @@ class Mt5DataSource:
         # Pasul 1: epoch MT5 → server time (naive, fara tzinfo)
         df["time"] = pd.to_datetime(df["time"], unit="s")
 
-        # Pasul 2: detecteaza offset-ul serverului o singura data per sesiune
-        if self._server_offset_h is None:
-            self._server_offset_h = self._detect_server_offset_h(symbol)
+        # Pasul 2: offset-ul serverului, RE-DETECTAT periodic (2026-10-31). Inainte se
+        # detecta o singura data per proces: (a) pornit cu piata inchisa (weekend/noapte)
+        # → 0 memorat pentru totdeauna → bare ramase pe ora serverului; (b) la schimbarea
+        # de ora a serverului (DST US ≠ EU) offset-ul vechi ramanea → bare decalate 1h
+        # pana la restart. Acum: re-detectie la 30 min; un 0 (piata inchisa, detectie
+        # neconcludenta) NU suprascrie o valoare buna; cat timp e 0, reincearca la 15 min.
+        self._refresh_server_offset(symbol)
 
         # Pasul 3: server time → UTC → fusul orar configurat (naive)
         # Daca offset=0 (nedetectat sau server real UTC), sarim conversia.

@@ -1,9 +1,9 @@
 """
 m0.validate_runner — dovada ca runner-ul reproduce baseline-urile documentate.
 
-CLAUDE.md fixeaza: portfolio_backtest.py -> S1: 284 trades, Exp +0.025R.
+CLAUDE.md fixeaza: portfolio_backtest.py -> S1: 280 trades, Exp +0.012R (baseline 2026-10-31, fara lookahead).
 Daca run_with_params, apelat cu ACEIASI parametri ca portfolio_backtest.py,
-da 284 trade-uri, atunci apelul de engine din m0 este mecanic corect si
+da 280 trade-uri, atunci apelul de engine din m0 este mecanic corect si
 putem avea incredere in run_profile_session pentru toate cele 20 de sesiuni.
 
 Rulare:  python -m m0.validate_runner
@@ -19,7 +19,7 @@ def validate_portfolio_baseline() -> bool:
     with open(CONFIG, encoding="utf-8") as f:
         cfg = json.load(f)
 
-    # Parametri IDENTICI cu portfolio_backtest.py (baseline S1: 284 trades).
+    # Parametri IDENTICI cu portfolio_backtest.py (baseline S1: 280 trades).
     params = {
         "spread_pips":           {"EURUSD": 0.5, "GBPUSD": 0.8, "EURJPY": 1.5},
         "leverage":              30,
@@ -40,10 +40,10 @@ def validate_portfolio_baseline() -> bool:
     df = run_with_params(cfg, params, ["EURUSD", "GBPUSD", "EURJPY"])
     n = len(df)
     exp = df["R"].mean() if n else float("nan")
-    expected = 284
+    expected = 280
     ok = (n == expected)
     print(f"portfolio_backtest baseline: {n} trades (asteptat {expected}) | "
-          f"expectancy {exp:+.3f}R (asteptat ~+0.025R)")
+          f"expectancy {exp:+.3f}R (asteptat ~+0.012R)")
     print("  " + ("OK — runner corect" if ok else "MISMATCH — verifica engine/mapping"))
     return ok
 

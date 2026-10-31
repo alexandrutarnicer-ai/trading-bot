@@ -1,5 +1,7 @@
 # Filtrul AI Pre-Trade
 
+> **Stare 2026-10-31:** filtrul ruleaza UN singur consiliu (consens multi-consiliu fortat OFF), fara rolurile Quant / Avocatul Diavolului (eliminate). Pragurile 50/70/85, fail-open si modul Strict raman valabile.
+
 Validarea finală, opțională, a fiecărui semnal generat de botul pe reguli — înainte ca
 ordinul să fie trimis în MT5. Un strat de „second opinion" AI peste edge-ul statistic
 existent, construit integral pe infrastructura motorului AI (`ai_engine/`).

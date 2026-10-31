@@ -1,5 +1,7 @@
 # Surse AI gratuite — cercetare & recomandări pentru redundanță
 
+> **Stare 2026-10-31:** cercetare istorica; configuratia curenta foloseste DOAR ollama + gemini.
+
 **Data:** 2026-07-17 · **Autor:** Claude (Opus 4.8)
 
 > ⚠️ **Notă:** limitele free-tier se schimbă des. Cifrele de mai jos sunt din cunoștințele mele (cutoff ian. 2026) și trebuie **verificate la înscriere**. Toate sursele recomandate sunt **compatibile OpenAI** → se adaugă în motorul nostru cu adaptorul existent `openai_compatible` (doar `base_url` + cheie + model), fără cod nou.

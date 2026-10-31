@@ -27,6 +27,7 @@ Izolare totala fata de bot si AI:
 """
 
 import atexit
+import re
 import threading
 import time
 from datetime import datetime, timedelta, timezone
@@ -61,7 +62,7 @@ def _ensure_mt5():
 
     Apeleaza `mt5.initialize()` la fiecare acces necache-uit: cand conexiunea e
     deja vie e o revalidare ieftina (sub-ms); daca alt modul din API a facut
-    `shutdown()` intre timp (markets/data_download/mt5_sync), reconecteaza
+    `shutdown()` intre timp (markets/data_download), reconecteaza
     automat. NU face niciodata shutdown — conexiunea ramane calda.
     """
     try:
@@ -149,7 +150,7 @@ def _fetch_closed_trades_raw(mt5, days: int) -> list[dict]:
             "profit": 0.0, "commission": 0.0, "swap": 0.0,
             "has_out": False, "close_time": None, "symbol": d.symbol,
             "entry_price": None, "entry_time": None, "direction": None, "sl": None, "tp": None,
-            "magic": 0,
+            "magic": 0, "comment": "",
             "_out_px_vol": 0.0, "_out_vol": 0.0,
         })
         if getattr(d, "magic", 0):
@@ -157,6 +158,10 @@ def _fetch_closed_trades_raw(mt5, days: int) -> list[dict]:
         pos["commission"] += float(d.commission or 0)
         pos["swap"] += float(d.swap or 0)
         if d.entry == 0:  # DEAL_ENTRY_IN
+            # Comentariul de pe deal-ul de intrare = sig_id-ul botului (trunchiat la
+            # 16 caractere de ICMarketsEU, ex: "S15-GBPUSD-IB002") sau "AI-<id>".
+            # Cel de pe deal-ul de iesire e "[sl ...]"/"news_close" — nu identifica sursa.
+            pos["comment"] = str(getattr(d, "comment", "") or "")
             pos["entry_price"] = float(d.price)
             pos["entry_time"] = _mt5_ts_to_local(d.time, offset_h, tz_name)
             pos["direction"] = 1 if d.type == 0 else -1
@@ -196,10 +201,61 @@ def _fetch_closed_trades_raw(mt5, days: int) -> list[dict]:
             "entry_price": pos["entry_price"], "entry_time": pos["entry_time"],
             "exit_price": exit_price, "close_time": pos["close_time"],
             "direction": pos["direction"], "sl": pos["sl"], "tp": pos["tp"],
-            "magic": pos["magic"],
+            "magic": pos["magic"], "comment": pos["comment"],
             "result_r": result_r, "planned_r": planned_r,
+            **classify_trade(pos["magic"], pos["comment"]),
         })
     return trades
+
+
+# ── Atribuire tranzactie → engine / sesiune / strategie ──────────────────────
+# MT5 e sursa de adevar pentru rezultate; atribuirea vine din magic + comment-ul
+# ordinului de intrare, scrise de engine-uri la plasare:
+#   AI Engine   : magic 770015, comment "AI-<id>"
+#   Daily Engine: magic 880001, comment "D-<simbol>-<zi>" — REZERVAT: in mod SHADOW engine-ul
+#                 nu plaseaza ordine, deci nu exista (inca) tranzactii daily in MT5
+#   Bot Engine  : magic 0,      comment "S<n>-<SIMBOL>-<SIG|IB|FLG|SN><nr>" (trunchiat la 16)
+#   altceva     : manual (nicio sursa nu e ghicita)
+
+AI_MAGIC = 770015
+DAILY_MAGIC = 880001        # tinut sincron cu daily_engine/config.py::MAGIC
+_BOT_COMMENT_RE = re.compile(r"^S(\d+)-")
+_SMART_NEWS_RE  = re.compile(r"^SN\d+$")
+_STRATEGY_TAGS  = (("SIG", "pullback"), ("IB", "inside_bar"), ("FLG", "flag"))
+
+
+def _strategy_from_comment(comment: str) -> str | None:
+    """
+    Strategia din ultimul segment al sig_id-ului ("...-IB0012" → inside_bar).
+    Trunchierea la 16 caractere poate taia si eticheta (sesiunile H1:
+    "S18-NZDJPY-H1-SI") — un prefix nevid al etichetei e suficient.
+    """
+    seg = comment.rsplit("-", 1)[-1].rstrip("0123456789")
+    if not seg:
+        return None
+    for tag, name in _STRATEGY_TAGS:
+        if tag.startswith(seg):
+            return name
+    return None
+
+
+def classify_trade(magic: int, comment: str) -> dict:
+    """{source: bot|ai|daily|manual, session_id: 'sessionN'|None, strategy: str|None}."""
+    if magic == AI_MAGIC:
+        return {"source": "ai", "session_id": None, "strategy": None}
+    if magic == DAILY_MAGIC:
+        return {"source": "daily", "session_id": None, "strategy": "orb"}
+    m = _BOT_COMMENT_RE.match(comment or "")
+    if not m:
+        # Ordinele "Mod Inteligent" la stiri au comment "SN<nr>" (fara prefix de sesiune)
+        if _SMART_NEWS_RE.match(comment or ""):
+            return {"source": "bot", "session_id": None, "strategy": "smart_news"}
+        return {"source": "manual", "session_id": None, "strategy": None}
+    return {
+        "source": "bot",
+        "session_id": f"session{int(m.group(1))}",
+        "strategy": _strategy_from_comment(comment),
+    }
 
 
 def get_closed_trades(days: int) -> list[dict]:
@@ -286,6 +342,8 @@ def _classify_source(magic: int, comment: str) -> str:
     """Clasifica originea unui ordin/pozitii: bot (sesiuni reguli) / ai / manual."""
     if magic == _AI_MAGIC or (comment or "").startswith("AI-"):
         return "ai"
+    if magic == DAILY_MAGIC:
+        return "daily"
     c = (comment or "").strip()
     if c.startswith("S") and "-" in c:
         return "bot"

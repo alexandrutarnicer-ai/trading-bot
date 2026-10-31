@@ -119,7 +119,7 @@ class FakeRegistry:
         self.fail_role = fail_role
         self.calls = []
 
-    def call_role(self, role, assignments, system, user, required):
+    def call_role(self, role, assignments, system, user, required, deadline=None):
         self.calls.append(role)
         if role == self.fail_role:
             raise ProviderError("sursa simulata picata", kind="network")
@@ -342,11 +342,12 @@ with tempfile.TemporaryDirectory() as td:
     finally:
         sg.DATA_DIR = _old_dd
 
-# ai_reject NU e status inchis (nu intra in statistici)
-from api.routers.sessions import _CLOSED_STATUSES as _CS_SESS
-from api.routers.reports import _CLOSED_STATUSES as _CS_REP
-check("ai_reject exclus din _CLOSED_STATUSES (sessions)", "ai_reject" not in _CS_SESS)
-check("ai_reject exclus din _CLOSED_STATUSES (reports)", "ai_reject" not in _CS_REP)
+# ai_reject NU intra in statistici: statisticile de tranzactionare vin exclusiv din
+# MT5 (un semnal respins nu ajunge niciodata in MT5). In API, statusul ramane doar
+# eticheta semnalului (lista "Semnale" din Dashboard).
+from api.routers import sessions as _sess_router
+check("API: nu mai exista statistici din outcomes.csv (_outcome_stats eliminat)",
+      not hasattr(_sess_router, "_outcome_stats"))
 
 # categorizarea notificarilor
 from api.notifications import _categorize

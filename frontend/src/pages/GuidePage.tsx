@@ -98,96 +98,6 @@ function KV({ k, v, vColor }: { k: string; v: string; vColor?: string }) {
   );
 }
 
-// ── Architecture Diagram ──────────────────────────────────────────────────────
-
-function ArchDiagram() {
-  return (
-    <div className="bg-surface rounded-xl border border-surface-border p-4 overflow-x-auto">
-      <svg viewBox="0 0 720 260" className="w-full max-w-2xl mx-auto" style={{ minWidth: 480 }}>
-        {/* MT5 */}
-        <rect x="10" y="90" width="120" height="50" rx="8" fill="#1e293b" stroke="#3b82f6" strokeWidth="1.5" />
-        <text x="70" y="111" textAnchor="middle" fill="#93c5fd" fontSize="11" fontWeight="600">MetaTrader 5</text>
-        <text x="70" y="127" textAnchor="middle" fill="#64748b" fontSize="9">DEMO / LIVE</text>
-
-        {/* Arrow MT5 → live session */}
-        <path d="M 130 115 L 180 115" stroke="#3b82f6" strokeWidth="1.5" markerEnd="url(#arrowBlue)" fill="none" />
-        <text x="155" y="108" textAnchor="middle" fill="#64748b" fontSize="8">bare OHLC</text>
-
-        {/* Live Session */}
-        <rect x="180" y="70" width="140" height="90" rx="8" fill="#1e293b" stroke="#22d3ee" strokeWidth="1.5" />
-        <text x="250" y="93" textAnchor="middle" fill="#67e8f9" fontSize="11" fontWeight="600">signal_generator</text>
-        <text x="250" y="108" textAnchor="middle" fill="#64748b" fontSize="9">_check_signals()</text>
-        <text x="250" y="120" textAnchor="middle" fill="#64748b" fontSize="9">_update_outcomes()</text>
-        <text x="250" y="132" textAnchor="middle" fill="#64748b" fontSize="9">_place_order()</text>
-        <text x="250" y="149" textAnchor="middle" fill="#475569" fontSize="8">sessions 1–20</text>
-
-        {/* Arrow live → MT5 (orders) */}
-        <path d="M 180 100 Q 155 65 130 100" stroke="#f59e0b" strokeWidth="1.5" markerEnd="url(#arrowYellow)" fill="none" />
-        <text x="142" y="72" textAnchor="middle" fill="#f59e0b" fontSize="8">ordine</text>
-
-        {/* Arrow live → CSV */}
-        <path d="M 320 115 L 380 115" stroke="#22d3ee" strokeWidth="1.5" markerEnd="url(#arrowCyan)" fill="none" />
-        <text x="350" y="108" textAnchor="middle" fill="#64748b" fontSize="8">signals + outcomes</text>
-
-        {/* CSV Storage */}
-        <rect x="380" y="85" width="130" height="60" rx="8" fill="#1e293b" stroke="#475569" strokeWidth="1.5" />
-        <text x="445" y="107" textAnchor="middle" fill="#94a3b8" fontSize="11" fontWeight="600">CSV Storage</text>
-        <text x="445" y="122" textAnchor="middle" fill="#64748b" fontSize="9">signals.csv</text>
-        <text x="445" y="135" textAnchor="middle" fill="#64748b" fontSize="9">outcomes.csv</text>
-
-        {/* Arrow CSV → API */}
-        <path d="M 510 115 L 560 115" stroke="#475569" strokeWidth="1.5" markerEnd="url(#arrowGray)" fill="none" />
-
-        {/* API */}
-        <rect x="560" y="90" width="100" height="50" rx="8" fill="#1e293b" stroke="#a855f7" strokeWidth="1.5" />
-        <text x="610" y="111" textAnchor="middle" fill="#d8b4fe" fontSize="11" fontWeight="600">FastAPI</text>
-        <text x="610" y="127" textAnchor="middle" fill="#64748b" fontSize="9">port 8000</text>
-
-        {/* Arrow API → Frontend */}
-        <path d="M 610 90 L 610 55" stroke="#a855f7" strokeWidth="1.5" markerEnd="url(#arrowPurple)" fill="none" />
-
-        {/* Frontend */}
-        <rect x="555" y="10" width="110" height="40" rx="8" fill="#1e293b" stroke="#a855f7" strokeWidth="1.5" />
-        <text x="610" y="28" textAnchor="middle" fill="#d8b4fe" fontSize="11" fontWeight="600">React UI</text>
-        <text x="610" y="43" textAnchor="middle" fill="#64748b" fontSize="9">port 5173</text>
-
-        {/* Arrow MT5 → API direct (mt5status) */}
-        <path d="M 70 90 Q 70 20 560 20" stroke="#3b82f6" strokeWidth="1" strokeDasharray="4 3" fill="none" markerEnd="url(#arrowBlue)" />
-        <text x="300" y="13" textAnchor="middle" fill="#3b82f6" fontSize="8">status / balance (direct)</text>
-
-        {/* Labels below */}
-        <text x="250" y="185" textAnchor="middle" fill="#334155" fontSize="9">run_all.py pornește S1–S20 ca subprocese</text>
-        <text x="250" y="198" textAnchor="middle" fill="#334155" fontSize="9">news_guard.py rulează ca daemon thread</text>
-
-        {/* Strategy box */}
-        <rect x="180" y="210" width="140" height="40" rx="8" fill="#0f172a" stroke="#334155" strokeWidth="1" />
-        <text x="250" y="228" textAnchor="middle" fill="#475569" fontSize="10" fontWeight="600">strategy/</text>
-        <text x="250" y="243" textAnchor="middle" fill="#334155" fontSize="9">preparation · signals · structure</text>
-        <path d="M 250 210 L 250 160" stroke="#334155" strokeWidth="1" strokeDasharray="3 2" fill="none" />
-
-        {/* Arrow markers */}
-        <defs>
-          <marker id="arrowBlue" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
-            <path d="M 0 0 L 6 3 L 0 6 Z" fill="#3b82f6" />
-          </marker>
-          <marker id="arrowYellow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
-            <path d="M 0 0 L 6 3 L 0 6 Z" fill="#f59e0b" />
-          </marker>
-          <marker id="arrowCyan" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
-            <path d="M 0 0 L 6 3 L 0 6 Z" fill="#22d3ee" />
-          </marker>
-          <marker id="arrowGray" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
-            <path d="M 0 0 L 6 3 L 0 6 Z" fill="#475569" />
-          </marker>
-          <marker id="arrowPurple" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto">
-            <path d="M 0 0 L 6 3 L 0 6 Z" fill="#a855f7" />
-          </marker>
-        </defs>
-      </svg>
-    </div>
-  );
-}
-
 // ── Strategy Diagram ──────────────────────────────────────────────────────────
 
 function StrategyDiagram() {
@@ -228,7 +138,7 @@ function StrategyDiagram() {
         <text x="502" y="123" textAnchor="middle" fill="#64748b" fontSize="9">maximul pullback</text>
 
         {/* Optional criteria */}
-        <text x="350" y="155" textAnchor="middle" fill="#475569" fontSize="9" fontStyle="italic">Criterii opționale: RSI · EMA alignment · Body Strength → cresc R/R (2.5R → 5.5R)</text>
+        <text x="350" y="155" textAnchor="middle" fill="#475569" fontSize="9" fontStyle="italic">Filtre opționale: RSI · EMA alignment · TP fix pe nivelul R:R al pieței (2R / 3R / 4R)</text>
 
         {/* Bottom labels */}
         <text x="67" y="165" textAnchor="middle" fill="#334155" fontSize="8">TF trend: M30/D1</text>
@@ -246,70 +156,6 @@ function StrategyDiagram() {
           </marker>
         </defs>
       </svg>
-    </div>
-  );
-}
-
-// ── R-Ladder Diagram ──────────────────────────────────────────────────────────
-
-function RLadderDiagram() {
-  return (
-    <div className="bg-surface rounded-xl border border-surface-border p-4">
-      <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-3">
-        Exemplu R-Ladder (configurare implicită)
-      </div>
-      <div className="grid grid-cols-4 gap-2">
-        {[
-          { tier: "Base", r: "2.5R", crit: "0 criterii opt.", color: "border-slate-500 text-slate-300" },
-          { tier: "Mid",  r: "3.5R", crit: "≥ 1 criteriu",   color: "border-blue-500 text-blue-300" },
-          { tier: "Top",  r: "4.5R", crit: "≥ 2 criterii",   color: "border-profit text-profit" },
-          { tier: "Max",  r: "5.5R", crit: "≥ 3 criterii",   color: "border-yellow-400 text-yellow-300" },
-        ].map(({ tier, r, crit, color }) => (
-          <div key={tier} className={`border rounded-lg p-3 text-center ${color}`}>
-            <div className="text-[10px] text-slate-500 uppercase tracking-wider">{tier}</div>
-            <div className="text-lg font-mono font-bold mt-1">{r}</div>
-            <div className="text-[10px] text-slate-500 mt-1">{crit}</div>
-          </div>
-        ))}
-      </div>
-      <div className="mt-3 text-xs text-slate-500">
-        <strong className="text-slate-400">Criterii opționale:</strong>{" "}
-        RSI în range configurabil · EMA8 &gt; EMA20 &gt; EMA50 (LONG) · Body strength &gt; ATR × factor
-      </div>
-    </div>
-  );
-}
-
-// ── Week Stats Diagram ────────────────────────────────────────────────────────
-
-function WeekStatsDiagram() {
-  return (
-    <div className="bg-surface rounded-xl border border-surface-border p-4">
-      <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-3">
-        Structura Indice Săptămânal
-      </div>
-      <div className="grid grid-cols-3 text-[10px] text-slate-500 mb-2 px-2">
-        <span>Metric</span>
-        <span className="text-center">Săpt. curentă</span>
-        <span className="text-center">Săpt. anterioară</span>
-      </div>
-      {[
-        { label: "Trades",   cur: "12",       prev: "8",       curColor: "text-white", prevColor: "text-slate-500" },
-        { label: "Câștiguri",cur: "7",        prev: "5",       curColor: "text-profit", prevColor: "text-slate-500" },
-        { label: "Pierderi", cur: "5",        prev: "3",       curColor: "text-loss",  prevColor: "text-slate-500" },
-        { label: "Win Rate", cur: "58.3%",    prev: "62.5%",   curColor: "text-white", prevColor: "text-slate-500" },
-        { label: "Total R",  cur: "+1.250R",  prev: "+0.875R", curColor: "text-profit", prevColor: "text-slate-500" },
-        { label: "-DD max",   cur: "-2.0%",    prev: "-1.0%",   curColor: "text-loss",  prevColor: "text-slate-500" },
-      ].map(({ label, cur, prev, curColor, prevColor }) => (
-        <div key={label} className="grid grid-cols-3 items-center py-1.5 px-2 border-t border-surface-border/30">
-          <span className="text-[11px] text-slate-400">{label}</span>
-          <span className={`text-center text-[11px] font-mono font-semibold ${curColor}`}>{cur}</span>
-          <span className={`text-center text-[11px] font-mono ${prevColor}`}>{prev}</span>
-        </div>
-      ))}
-      <div className="mt-2 text-[10px] text-slate-600">
-        ▲ TrendingUp = mai bine față de săptămâna trecută · ▼ TrendingDown = mai rău · — egal
-      </div>
     </div>
   );
 }
@@ -366,19 +212,22 @@ function SignalLifecycleDiagram() {
 // ── Table of contents ─────────────────────────────────────────────────────────
 
 const TOC = [
-  { id: "overview",      label: "1. Prezentare generală" },
-  { id: "dashboard",     label: "2. Dashboard" },
-  { id: "profile",       label: "3. Profile & Sesiuni" },
-  { id: "audit",         label: "4. Audit & Backteste" },
-  { id: "strategy",      label: "5. Strategia" },
-  { id: "risk",          label: "6. Gestionare risc" },
-  { id: "config",        label: "7. Configurare avansată" },
-  { id: "signals",       label: "8. Semnale & Ordine" },
-  { id: "notifications", label: "9. Notificări" },
-  { id: "reports",       label: "10. Rapoarte" },
-  { id: "ai-engine",     label: "11. AI Engine" },
-  { id: "live",          label: "12. Cont live" },
-  { id: "telegram-bridge", label: "13. Punte Telegram" },
+  { id: "overview",        label: "1. Prezentare generală" },
+  { id: "dashboard",       label: "2. Dashboard" },
+  { id: "profile",         label: "3. Custom Engine" },
+  { id: "audit",           label: "4. Audit & Backteste" },
+  { id: "strategy",        label: "5. Strategia" },
+  { id: "risk",            label: "6. Risc & Setări Globale" },
+  { id: "config",          label: "7. Start / Autostart" },
+  { id: "signals",         label: "8. Semnale & Ordine" },
+  { id: "notifications",   label: "9. Notificări" },
+  { id: "reports",         label: "10. Rapoarte" },
+  { id: "ai-engine",       label: "11. AI Engine" },
+  { id: "daily-engine",    label: "12. Daily Engine" },
+  { id: "live",            label: "13. Demo / Live" },
+  { id: "data-recovery",   label: "14. Date & Recovery" },
+  { id: "telegram-bridge", label: "15. Punte Telegram" },
+  { id: "removed",         label: "16. Eliminat / Dormant" },
 ];
 
 // ── Page ──────────────────────────────────────────────────────────────────────
@@ -422,7 +271,7 @@ export function GuidePage() {
           <BookOpen size={20} className="text-blue-400" />
           <div>
             <h1 className="text-lg font-bold text-white">Ghid Trading Bot</h1>
-            <p className="text-xs text-slate-500">Documentație completă — interfață, strategie și configurare</p>
+            <p className="text-xs text-slate-500">Documentație completă — cele 3 engine-uri, Dashboard, protecții, date (actualizat 31.10.2026)</p>
           </div>
         </div>
 
@@ -441,565 +290,251 @@ export function GuidePage() {
 
         {/* ── 1. PREZENTARE GENERALĂ ── */}
         <Section id="overview" title="1. Prezentare generală">
-          <SubSection title="Ce este botul?">
+          <SubSection title="Ce este aplicația?">
             <p>
-              Botul este un sistem automatizat de trading bazat pe strategia <strong className="text-white">pullback-in-trend</strong>.
-              Detectează structuri de piață în timp real folosind date MT5, plasează ordine pending (BUY_STOP / SELL_STOP)
-              în MetaTrader 5 și monitorizează continuu evoluția lor.
+              Un sistem de trading automat pe <strong className="text-white">MetaTrader 5</strong>, cu
+              <strong className="text-white"> trei engine-uri independente</strong> care rulează ca procese separate și
+              un dashboard web (API + UI) care le controlează și le afișează rezultatele. Fiecare engine are propria
+              conexiune MT5, propriile fișiere de stare și propriul jurnal — un engine căzut nu le afectează pe celelalte.
             </p>
-            <p>
-              Rulează <strong className="text-white">20 de sesiuni</strong> independente simultan, fiecare pe o piață
-              diferită (EURUSD, BTCUSD, GER40 etc.) cu timeframe-uri și parametri proprii.
-              Fiecare sesiune are propriul proces Python separat, fișiere de stare și log propriu.
-            </p>
+            <div className="space-y-2 text-xs">
+              <div className="bg-emerald-500/5 border border-emerald-500/30 rounded-lg p-3">
+                <div className="font-semibold text-emerald-300">Custom Engine (botul pe reguli)</div>
+                <div className="text-slate-400">22 de sesiuni, câte o piață fiecare (M15+M30 sau H1+D1). Strategii: pullback-in-trend,
+                  Inside Bar, Flag. Ordine BUY_STOP / SELL_STOP, TP pe 3 niveluri R:R (2R / 3R / 4R). Pornire: tab Custom Engine
+                  sau cardul de pe Dashboard. Identificare în MT5: comment <code>S&lt;n&gt;-…</code>.</div>
+              </div>
+              <div className="bg-purple-500/5 border border-purple-500/30 rounded-lg p-3">
+                <div className="font-semibold text-purple-300">AI Engine (motorul autonom)</div>
+                <div className="text-slate-400">Percepție numerică la fiecare bară M15 → consiliu de 4 roluri AI (Ollama local + Gemini)
+                  convocat pe trigger-e → decizie validată de reguli hard (rails). Piețe curente: CHFJPY, GBPUSD. Magic 770015.</div>
+              </div>
+              <div className="bg-cyan-500/5 border border-cyan-500/30 rounded-lg p-3">
+                <div className="font-semibold text-cyan-300">Daily Engine (intraday — implicit SHADOW)</div>
+                <div className="text-slate-400">Opening Range Breakout la deschiderea Londrei (GBPUSD, 10:00 RO) și New York (US500, 16:30 RO),
+                  un trade pe zi pe piață, închis în aceeași zi. Implicit trade-uri <b>virtuale</b>; poate trece pe Execuție (ordine reale) din tab-ul lui.
+                  Magic rezervat 880001.</div>
+              </div>
+            </div>
             <Note>
-              Botul <strong>nu</strong> modifică niciodată fișierele de strategie sau de configurare în timp ce rulează.
-              Toate schimbările intră în vigoare la bara următoare (max 15 min pentru M15).
+              Modificările de configurație intră în vigoare fără restart: Custom Engine la bara următoare (execuție, pauză,
+              Setări Globale), AI Engine și Daily Engine la iterația următoare (config recitit). Excepție: codul Python nou cere
+              repornirea procesului respectiv (API-ul rulează fără <code>--reload</code>).
             </Note>
           </SubSection>
 
-          <SubSection title="Arhitectura sistemului">
-            <ArchDiagram />
-            <div className="grid grid-cols-2 gap-3 text-xs">
+          <SubSection title="Arhitectura și fluxurile">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
               <div className="space-y-1">
-                <KV k="MT5 → Bot" v="Bare OHLC live (M15/H1) prin API Python" />
-                <KV k="Bot → MT5" v="Ordine BUY_STOP / SELL_STOP via mt5.order_send()" />
-                <KV k="Bot → CSV" v="signals.csv + outcomes.csv per sesiune" />
+                <KV k="MT5 → engine-uri" v="Bare + prețuri, fiecare engine cu conexiune proprie" />
+                <KV k="Custom → MT5" v="Ordine pending; jurnal în data/live_signals/session*/" />
+                <KV k="AI → MT5" v="Ordine stop (magic 770015); ledger SQLite data/ai/ledger.db" />
+                <KV k="Daily → jurnal" v="Doar citire MT5; trade-uri virtuale în data/daily_engine/trades.jsonl" />
               </div>
               <div className="space-y-1">
-                <KV k="API port" v="8000 (FastAPI/uvicorn)" />
-                <KV k="UI port" v="5173 (React/Vite)" />
-                <KV k="Poll interval" v="15s sesiuni, 2s backteste în curs" />
+                <KV k="MT5 → Dashboard" v="Rezultatele de trading vin EXCLUSIV din istoricul MT5" />
+                <KV k="API" v="FastAPI pe portul 8000 (pool MT5 propriu, cache)" />
+                <KV k="UI" v="React/Vite pe portul 5173" />
+                <KV k="Telegram" v="Notificări + punte de control de pe telefon (opțional)" />
               </div>
             </div>
+            <Note>
+              <b>MT5 = sursa unică pentru rezultate.</b> Jurnalele engine-urilor (signals.csv, outcomes.csv, ledger) servesc
+              doar funcționării lor (deduplicare, recuperare după restart). Atribuirea fiecărei tranzacții pe engine se face din
+              <code> magic</code> + <code>comment</code>-ul ordinului; o tranzacție fără sursă cunoscută rămâne „Manual” — nu se ghicește.
+            </Note>
           </SubSection>
 
           <SubSection title="Pornire rapidă">
-            <p>Cel mai simplu mod de a porni tot:</p>
             <div className="bg-surface rounded-lg border border-surface-border p-3 font-mono text-xs text-slate-300 space-y-1">
-              <div><span className="text-slate-600"># Dublu-click pe:</span></div>
+              <div><span className="text-slate-600"># Dashboard (API + UI + browser):</span></div>
               <div className="text-white">start_ui.bat</div>
-              <div className="text-slate-600 mt-2"># Sau manual:</div>
-              <div>python api/main.py  <span className="text-slate-600"># API pe portul 8000</span></div>
-              <div>cd frontend &amp;&amp; npm run dev  <span className="text-slate-600"># UI pe portul 5173</span></div>
+              <div className="text-slate-600 mt-2"># Engine-urile — din cardurile de pe Dashboard (Start/Stop) sau manual:</div>
+              <div>python live/run_all.py        <span className="text-slate-600"># Custom Engine</span></div>
+              <div>python -m ai_engine           <span className="text-slate-600"># AI Engine (cere Ollama pornit)</span></div>
+              <div>python -m daily_engine        <span className="text-slate-600"># Daily Engine (shadow)</span></div>
             </div>
-            <Warn>MT5 trebuie să fie <strong>deschis și conectat</strong> pe cont DEMO înainte de a porni botul.
-              Dacă MT5 e deconectat, bara galbenă "Algo Trading dezactivat" apare în Dashboard.</Warn>
+            <Warn>MT5 trebuie să fie <strong>deschis și logat</strong>. Contul conectat acum este <b>REAL</b> — Custom Engine și
+              AI Engine plasează ordine reale doar dacă au fost deblocate explicit în Settings → Trading LIVE.</Warn>
           </SubSection>
         </Section>
 
         {/* ── 2. DASHBOARD ── */}
         <Section id="dashboard" title="2. Dashboard">
-          <SubSection title="Header — Cont MT5 și Status Bot">
-            <p>
-              Zona de sus afișează informații live despre contul MT5 și starea botului:
-            </p>
-            <div className="space-y-2">
-              <KV k="Profil activ" v="Profilul selectat curent (ex: Standard Profile)" />
-              <KV k="Cont" v="Numărul contului MT5 conectat" />
-              <KV k="Balance" v="Soldul contului (fără tranzacții deschise)" />
-              <KV k="Equity" v="Soldul real (balance ± profit/pierdere deschisă)" vColor="text-profit" />
-              <KV k="Bot Status" v="Verde pulsant = activ; gri = oprit cu ora ultimei opriri" />
-            </div>
-            <Note>
-              <strong>Equity &gt; Balance</strong> = tranzacții deschise în profit.
-              <strong> Equity &lt; Balance</strong> = tranzacții deschise în pierdere.
-              Equity se afișează în <span className="text-profit">verde</span> sau <span className="text-loss">roșu</span> față de balance.
-            </Note>
-          </SubSection>
-
-          <SubSection title="Banner Algo Trading dezactivat">
-            <p>
-              Dacă apare un banner galben <strong className="text-warn">⚠ Algo Trading dezactivat în MT5!</strong>,
-              înseamnă că butonul <em>AutoTrading</em> din MT5 este dezactivat.
-              Botul detectează semnale în continuare, <strong className="text-white">dar nu plasează ordine</strong>.
-            </p>
-            <Tip>Activează butonul verde "Algo Trading" din bara de sus a MetaTrader 5 (toolbar).</Tip>
-          </SubSection>
-
-          <SubSection title="Carduri Frecvență Estimată">
-            <p>
-              Deasupra grilei de sesiuni, două carduri afișează frecvența estimată de trading:
-            </p>
-            <div className="grid grid-cols-2 gap-3 text-xs">
-              <div className="bg-surface rounded-lg border border-surface-border p-3 text-center">
-                <div className="text-[10px] text-slate-500 uppercase mb-1">Estimat / săptămână</div>
-                <div className="text-xl font-mono font-bold text-white">~11.5 <span className="text-sm text-slate-400">trades</span></div>
-              </div>
-              <div className="bg-surface rounded-lg border border-surface-border p-3 text-center">
-                <div className="text-[10px] text-slate-500 uppercase mb-1">Estimat / lună</div>
-                <div className="text-xl font-mono font-bold text-white">~50 <span className="text-sm text-slate-400">trades</span></div>
-              </div>
-            </div>
-            <p className="text-xs text-slate-400 mt-2">
-              Calculul se bazează pe cele mai recente backteste finalizate din Audit, pe sesiunile
-              cu <code className="bg-surface-border/40 px-1 rounded">execute_trades: true</code>.
-              Sesiunile pe pauză și cele de observație (OBS) sunt excluse automat.
-            </p>
-            <div className="bg-warn/5 border border-warn/20 rounded-lg p-3 mt-2 text-xs space-y-1.5">
-              <p className="text-warn font-medium">Badge „X fără date" — buton de acțiune</p>
-              <p className="text-slate-400">
-                Când unele sesiuni nu au backtest recent, apare un badge portocaliu{" "}
-                <Badge color="bg-warn/20 text-warn" label="▶ 2 fără date" />{" "}
-                în cardul Estimat / săptămână.
-              </p>
-              <p className="text-slate-400">
-                <strong className="text-slate-300">Click pe badge</strong> → pornește automat backtestele lipsă
-                (range 5 ani, toți parametrii din profilul activ). Rezultatele apar în tab-ul Audit.
-                Badge-ul dispare după ce backtestele se finalizează și frecvența se actualizează.
-              </p>
-              <p className="text-slate-400">
-                Butonul Refresh <span className="font-mono text-slate-300">↻</span> din header invalidează
-                toate query-urile, inclusiv frecvența estimată — folosit pentru actualizare manuală imediată.
-              </p>
-            </div>
-          </SubSection>
-
-          <SubSection title="Grila Sesiuni">
-            <p>
-              Fiecare card de sesiune afișează:
-            </p>
-            <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-xs">
-              <KV k="Label" v="Ex: S3 — BTCUSD M15 BOTH" />
-              <KV k="Badge LIVE/OBS" v="LIVE = ordine plasate real; OBS = observație (execute_trades=False, doar semnale)" />
-              <KV k="Dot verde/galben" v="Verde = running; galben = pe pauză" />
-              <KV k="Badge PAUZA" v="Sesiunea nu mai deschide poziții noi" />
-              <KV k="Semnale azi" v="Numărul de setup-uri detectate azi" />
-              <KV k="Total semnale" v="Cumulate de la pornirea sesiunii" />
-              <KV k="Win Rate %" v="(Câștiguri / Total tranzacții) × 100" />
-              <KV k="TF + Direcție" v="Ex: M15+M30 · BOTH (LONG și SHORT)" />
-            </div>
-            <p className="mt-2 text-xs text-slate-400">
-              <strong className="text-slate-300">Butonul ⏸/▶</strong> în colțul dreapta-sus al cardului pune/reia sesiunea.
-              Efectul intră la bara următoare — nu este nevoie de restart bot.
-            </p>
-          </SubSection>
-
-          <SubSection title="Signal Feed">
-            <p>
-              Panoul din stânga-jos listează semnalele recente. Implicit afișează <strong className="text-white">toate sesiunile</strong> (butonul <Badge color="bg-blue-500/20 text-blue-300" label="ALL" /> activ). Poți selecta o sesiune individuală din rândul de butoane de mai jos.
-            </p>
-            <div className="space-y-1.5 text-xs">
-              <div className="flex items-center gap-3">
-                <Badge color="bg-profit/20 text-profit" label="LONG" />
-                <span className="text-slate-400">sau</span>
-                <Badge color="bg-loss/20 text-loss" label="SHORT" />
-                <span className="text-slate-400">— direcția tranzacției</span>
-              </div>
-              <KV k="Simbol + Timp" v="Ex: EURUSD · 14:30" />
-              <KV k="Entry → TP" v="Prețurile de intrare și ieșire" />
-              <KV k="+3.5R TP" v="Tranzacție câștigată cu 3.5× riscul asumat" vColor="text-profit" />
-              <KV k="-1R SL" v="Tranzacție pierdută la stop loss" vColor="text-loss" />
-              <KV k="+175 USD" v="Profit în USD (dacă MT5 conectat și execute=true)" vColor="text-profit" />
-            </div>
-            <Note>
-              În modul ALL, suma USD nu se afișează (nu există un singur capital%). Suma în USD se calculează din: <code className="text-blue-300">balance × capital% × 1% risc × R</code> — disponibilă doar când e selectată o sesiune individuală.
-            </Note>
-          </SubSection>
-
-          <SubSection title="Grafic Performanță (R cumulat)">
-            <p>
-              Graficul din dreapta-jos arată evoluția <strong className="text-white">R cumulat</strong> pentru toate sesiunile active.
-              Linia <span className="text-profit">verde</span> = profit total acumulat. Linia <span className="text-loss">roșie</span> = pierdere.
-            </p>
-            <p className="text-xs text-slate-400">
-              R = unitate de risc. Dacă riscai 50 USD/trade și ai +5R, ai câștigat ~250 USD total.
-              Graficul combină toate sesiunile sortate cronologic după <code className="text-blue-300">exit_time</code>.
-            </p>
-          </SubSection>
-
-          <SubSection title="Indice Periodic (Săptămânal / Lunar)">
-            <WeekStatsDiagram />
-            <div className="mt-3 space-y-1.5 text-xs">
-              <KV k="Tab Săptămână / Lună" v="Comutare între intervalul curent și cel precedent" />
-              <KV k="Trades" v="Tranzacții cu status final (TP/SL/vineri/news)" />
-              <KV k="Câștiguri/Pierderi" v="Trades cu result_r > 0 / result_r < 0" />
-              <KV k="Total R" v="Suma tuturor result_r din interval" />
-              <KV k="P&L USD" v="Suma pnl_usd (profit real MT5) — apare doar când există date" />
-              <KV k="Comisioane" v="Comisioane + swap ale perioadei (curentă vs precedentă)" vColor="text-loss" />
-              <KV k="-DD max R" v="Cel mai adânc jgheab de la peak-ul R al perioadei" vColor="text-loss" />
-            </div>
-            <Tip>
-              Tab-ul Lună oferă o perspectivă mai stabilă decât săptămâna — fluctuațiile săptămânale
-              sunt normale. P&L USD apare doar pentru sesiunile cu execute_trades=True care au ordine
-              închise prin MT5 (câmpul pnl_usd din outcomes.csv). Rândul <b>Comisioane</b> respectă la fel
-              comutatorul de sursă: pe <b>MT5 direct</b> include și Motorul AI (cont-wide), pe <b>Bot</b> doar botul.
-            </Tip>
-          </SubSection>
-
-          <SubSection title="P&L Real MT5 și Comisioane">
-            <p>
-              Sub grila de statistici, două carduri secundare afișează date financiare agregate:
-            </p>
-            <div className="space-y-2 text-xs mt-2">
-              <div className="bg-surface rounded-lg border border-surface-border p-3 space-y-1">
-                <div className="text-[11px] font-semibold text-slate-300">P&L Real MT5</div>
-                <div className="text-slate-400">
-                  <code className="text-blue-300">equity curentă MT5 − capital inițial din profil</code>
-                  {" "}— sursa de adevăr absolut. Include toate tranzacțiile, comisioane, swap și cele fără date în bot.
-                </div>
-                <Tip>Setează <strong className="text-white">Capital Inițial</strong> corect în Profile înainte de prima pornire — sau folosește butonul <Badge color="bg-blue-600/20 text-blue-400" label="↓ Import din MT5" /> pentru a prelua equity curentă.</Tip>
-              </div>
-              <div className="bg-surface rounded-lg border border-surface-border p-3 space-y-1">
-                <div className="text-[11px] font-semibold text-slate-300">Comisioane + Swap</div>
-                <div className="text-slate-400">
-                  Comisioanele și swap-ul, cu total dezagregat (<em>com: X $ · swap: Y $</em>) plus un rând <b>Azi / Ieri</b>.
-                  Respectă comutatorul de sursă <Badge color="bg-surface-border text-slate-300" label="Bot" /> /
-                  <Badge color="bg-surface-border text-slate-300" label="MT5 direct" />:
-                </div>
-                <div className="mt-1 space-y-1 text-xs">
-                  <KV k="Sursă Bot" v="Doar botul pe reguli (din outcomes.csv)" />
-                  <KV k="Sursă MT5 direct" v="Tot contul (history_deals_get) — include și Motorul AI, și trade-urile manuale" />
-                </div>
-              </div>
-            </div>
-            <Note>
-              <b>Comisioanele Motorului AI</b> nu au un card separat — sunt incluse automat în totalul pe sursa
-              <Badge color="bg-surface-border text-slate-300" label="MT5 direct" /> (care numără tot contul: bot + AI + manual).
-              Acolo distincția nu contează; totalul reflectă costul real al contului.
-            </Note>
-            <Note>
-              Sesiunile de observație (<Badge color="bg-surface-border text-slate-500" label="OBS" />) sunt excluse din toate agregările. Excepție: dacă o sesiune a avut tranzacții reale MT5 (<code className="text-blue-300">pnl_usd ≠ 0</code>) și ulterior a fost oprită din execuție, tranzacțiile istorice rămân vizibile în statistici. MT5 este sursa de adevăr — dacă există <code className="text-blue-300">pnl_usd</code> real, trade-ul a fost executat indiferent de setarea curentă a profilului.
-            </Note>
-            <Note>
-              <b>Comutarea LIVE ⇄ OBS se aplică de la bara următoare, fără restart de bot</b> (ca butonul de pauză). Dacă dezactivezi execuția unei piețe din Profil și salvezi, botul oprește imediat ordinele noi pe acea piață (pozițiile deschise rămân monitorizate până la SL/TP) și trimite o notificare Telegram. Sursa de adevăr pentru execuție e <code className="text-blue-300">execute_trades</code> din profilul activ, nu valoarea hardcodată din scriptul sesiunii.
-            </Note>
-          </SubSection>
-
-          <SubSection title="Statistici Totale (TradingStatsPanel)">
-            <p>Carduri care afișează agregatul tuturor sesiunilor:</p>
-            <div className="grid grid-cols-2 gap-3 text-xs">
-              <KV k="Total Semnale" v="Toate setup-urile detectate" />
-              <KV k="Total Trades" v="Tranzacții cu outcome final" />
-              <KV k="Câștiguri" v="Numărul TP-urilor + ▲/▼ azi vs ieri" vColor="text-profit" />
-              <KV k="Pierderi" v="Numărul SL-urilor + ▲/▼ azi vs ieri" vColor="text-loss" />
-              <KV k="P&L USD" v="Suma P&L real azi + ieri (din MT5)" vColor="text-profit" />
-            </div>
-            <p className="text-xs text-slate-400 mt-2">
-              Fiecare card numeric afișează și <em>X azi</em> față de <em>ieri</em> cu indicator trend ▲/▼.
-              Câștigurile și Pierderile au acum trend separat (câștiguri azi vs ieri, pierderi azi vs ieri)
-              — câmpurile <code className="text-blue-300">wins_today</code>, <code className="text-blue-300">wins_yesterday</code>, <code className="text-blue-300">losses_today</code>, <code className="text-blue-300">losses_yesterday</code> din <code className="text-blue-300">SessionStatus</code>.
-              Cardul P&L USD apare doar când există date reale MT5 (execute_trades=True + ordine închise).
-              Click pe "Total Semnale" sau "Total Trades" expandează breakdownul per sesiune.
-            </p>
-          </SubSection>
-
-          <SubSection title="Carduri frecvență estimată + -DD%">
-            <p>Deasupra grilei de sesiuni, 3 carduri rezumă performanța estimată:</p>
-            <div className="space-y-1.5 text-xs">
-              <KV k="Estimat / săptămână" v="Trades/săpt din backtestele active ale sesiunilor LIVE" />
-              <KV k="Estimat / lună" v="Trades/lună (× 30.44 / 7 din estimatul săptămânal)" />
-              <KV k="-DD% mediu estimat" v="Media max_dd din backtestele sesiunilor active" vColor="text-loss" />
-            </div>
-            <div className="mt-2 space-y-1 text-xs text-slate-400">
-              <p>Sesiunile excluse din calcul: pe pauză + execute_trades=False (observație).</p>
-              <p>Badge portocaliu → backtest lipsă pentru unele sesiuni. Click → lansează automat backtestele lipsă (5 ani).</p>
-            </div>
-            <Note>
-              -DD% mediu estimat reflectă scăderea maximă procentuală din backteste, nu din trading-ul live.
-              Poate fi diferit de experiența reală dacă condițiile de piață s-au schimbat față de perioada testată.
-            </Note>
-          </SubSection>
-
-          <SubSection title="P&L USD pe cardurile sesiunilor" defaultOpen={false}>
-            <p>
-              Fiecare card de sesiune din grila Dashboard afișează (când există date reale MT5):
-            </p>
+          <SubSection title="Antet — cont MT5">
             <div className="space-y-1 text-xs">
-              <KV k="+150.25 USD azi" vColor="text-profit" v="Suma profit/pierdere azi (ordine MT5 închise)" />
-              <KV k="-50.00 ieri" vColor="text-loss" v="Suma profit/pierdere ieri" />
+              <KV k="Cont / server" v="Contul MT5 conectat la API" />
+              <KV k="Balance" v="Soldul fără pozițiile deschise" />
+              <KV k="Equity" v="Balance ± P&L flotant (verde peste balance, roșu sub)" vColor="text-profit" />
             </div>
-            <Note>
-              Apare doar dacă sesiunea are execute_trades=True și cel puțin un ordin MT5 închis (TP/SL/vineri/știri)
-              cu câmpul pnl_usd populat. Sesiunile de observație (execute=false) nu afișează P&L.
-            </Note>
+            <p className="text-xs text-slate-400">Bannerul galben <b className="text-warn">Algo Trading dezactivat</b> apare când butonul AutoTrading
+              din MT5 e oprit: semnalele se detectează, dar ordinele nu se plasează.</p>
           </SubSection>
 
-          <SubSection title="Widget Top 5 Piețe" defaultOpen={false}>
-            <p>
-              Card în josul panoului Dashboard care afișează cele mai profitabile 5 piețe după R cumulat,
-              cu filtre de perioadă.
-            </p>
-            <div className="grid grid-cols-2 gap-1.5 text-xs">
-              <KV k="Azi" v="Tranzacții închise în ziua curentă" />
-              <KV k="Săpt" v="Tranzacții din săptămâna curentă (luni → azi)" />
-              <KV k="Lună" v="Tranzacții din luna curentă (1 → azi)" />
-              <KV k="Tot" v="Toate tranzacțiile istorice" />
+          <SubSection title="Carduri de engine — status + Start / Stop + Autostart">
+            <p>Un card per engine (verde Custom · mov AI · cyan Daily). Statusul <b>RUNNING / STOPPED</b> vine din PID-ul real al
+              procesului, nu dintr-un fișier de stare — UI-ul nu poate arăta „Running” pentru un engine oprit.</p>
+            <div className="space-y-1 text-xs">
+              <KV k="Start" v="Pornește și VERIFICĂ (max ~12 s) că procesul trăiește; altfel arată eroarea + ultimele linii din jurnal" />
+              <KV k="Stop" v="Oprește și verifică; pozițiile deja deschise rămân în MT5 cu SL/TP" />
+              <KV k="Confirmare" v="Cerută la Start/Stop pentru Custom și AI (pot plasa / lăsa nemonitorizate ordine reale)" />
+              <KV k="Autostart ON/OFF" v="Pornire automată la login Windows (Task Scheduler, prompt UAC; statusul se actualizează în ~30 s)" />
             </div>
-            <p className="text-xs text-slate-400 mt-1">
-              Per piață: simbolul, număr trades, win rate%, R cumulat, P&L USD.
-              Sortat descrescător după Total R. P&L USD apare doar pentru sesiunile cu execute_trades=True.
-              Se actualizează la 30 secunde.
-            </p>
+          </SubSection>
+
+          <SubSection title="Cele 4 carduri de performanță">
+            <p>TOTAL (albastru) + Custom + AI + Daily: <b>Win rate</b>, <b>Profit</b>, <b>Loss</b>, rezultatul și netul după costuri.</p>
+            <div className="space-y-1 text-xs">
+              <KV k="Sursă" v="Istoricul MT5 — aceeași listă ca Tranzacțiile și Statisticile (cifrele se leagă)" />
+              <KV k="Perioadă" v="Ultimele 365 de zile, doar poziții ÎNCHISE (P&L flotant: tabelul Ordine Active)" />
+              <KV k="Win rate" v="Câștiguri / (câștiguri + pierderi); break-even exact nu se numără" />
+              <KV k="Profit / Loss" v="Suma profitului brut al pozițiilor câștigătoare / pierzătoare (MT5)" />
+              <KV k="Net" v="Rezultat + comision + swap" />
+              <KV k="TOTAL" v="Custom + AI + Daily; tranzacțiile manuale sunt excluse (raportate separat în notă)" />
+              <KV k="Daily" v="Banii reali = 0 (shadow); trade-urile virtuale apar separat, în R, niciodată adunate la bani" />
+            </div>
+          </SubSection>
+
+          <SubSection title="Filtrul de sursă al paginii">
+            <p>„Arată tranzacțiile: Toate / Custom Engine / AI Engine / Daily Engine / Manual” (implicit Toate) se aplică pe
+              cardurile de piață, Statistici, Indicele Săptămânal, Top 5, graficul Performanță și lista de tranzacții.
+              P&L Real (equity − capital de start) rămâne mereu la nivelul întregului cont.</p>
+            <Note>Pe „Toate”, un card de piață arată tranzacțiile din toate sursele pe acel simbol (ex: EURUSD = Custom + AI).
+              Tranzacțiile pe piețe fără card de sesiune sunt listate sub grilă, ca totalurile să se lege.</Note>
+          </SubSection>
+
+          <SubSection title="Ritm de tranzacționare (înlocuiește „Frecvența estimată”)">
+            <p>Câte trade-uri închide fiecare engine pe săptămână, din istoricul <b>real</b>:</p>
+            <div className="space-y-1 text-xs">
+              <KV k="Date" v="Trade-uri închise în MT5 (Daily: trade-urile virtuale shadow)" />
+              <KV k="Fereastră" v="Doar săptămâni COMPLETE de după ultima schimbare de configurație care afectează frecvența" />
+              <KV k="Ponderare" v="Exponențială, înjumătățire 3 săptămâni — recentul contează mai mult" />
+              <KV k="Tipic" v="Intervalul P20–P80 al săptămânilor" />
+              <KV k="Încredere" v="Insuficient (< 2 săpt. sau < 5 trade-uri) / scăzută / medie / ridicată (volum + stabilitate)" />
+              <KV k="Reper" v="Custom: backtestul (arată cât supraestimează); Daily: regulile (1/zi/piață × rata din backtest)" />
+              <KV k="Recalculare" v="La 15 minute (cache pe server), zero interogări MT5 în plus" />
+            </div>
+            <Note>Când regimul curent e prea nou, cardul arată „Date insuficiente” și, separat, ritmul de dinainte de schimbare —
+              ca referință, nu ca estimare.</Note>
+          </SubSection>
+
+          <SubSection title="Grila de sesiuni (Custom Engine)">
+            <div className="space-y-1 text-xs">
+              <KV k="Badge LIVE / OBS" v="LIVE = execuție reală; OBS = doar semnale (execute_trades=False)" />
+              <KV k="⏸ / ▶" v="Pauză / reluare sesiune, efect la bara următoare, fără restart" />
+              <KV k="Semnale" v="Din jurnalul Custom Engine (MT5 nu le cunoaște)" />
+              <KV k="Trades / W / L / P&L" v="Din MT5, filtrate după sursa aleasă" />
+              <KV k="Badge M0" v="Verdictul auditului statistic (KEEP / OBSERVE / DEMOTE)" />
+            </div>
+          </SubSection>
+
+          <SubSection title="Tranzacții, Semnale, Ordine Active">
+            <div className="space-y-1 text-xs">
+              <KV k="Tranzacții MT5" v="Poziții închise, „X din total” + Încarcă mai multe; badge CUSTOM / AI / DAILY / MAN" />
+              <KV k="Semnale" v="Ce a detectat Custom Engine și starea (respins AI, expirat, invalidat, executat)" />
+              <KV k="Ordine Active" v="Poziții deschise + pending din MT5, pe sursă, cu marja folosită și P&L flotant" />
+            </div>
+          </SubSection>
+
+          <SubSection title="Statistici, Indice Săptămânal, Top 5, Performanță">
+            <div className="space-y-1 text-xs">
+              <KV k="Statistici" v="Total trades / câștiguri / pierderi (azi vs ieri), P&L Real, comisioane + swap (azi / ieri)" />
+              <KV k="Indice Săptămânal" v="Săptămâna / luna curentă vs precedentă: trades, W/L, win rate, R, P&L, comisioane, DD" />
+              <KV k="Top 5 piețe" v="După rezultat, pe Azi / Săpt / Lună / Tot" />
+              <KV k="Performanță" v="Curba cumulată (USD sau R din SL-ul original)" />
+            </div>
+          </SubSection>
+
+          <SubSection title="Analiza per engine (jos)">
+            <p>Aceeași componentă pentru Custom, AI și Daily, diferențiată prin culoare: trade-uri, W/L, win rate, net, plus
+              două metrici specifice (Custom: medie R + sesiuni active; AI: medie R + decizii/WAIT; Daily: rezultatul shadow).</p>
           </SubSection>
         </Section>
 
         {/* ── 3. PROFILE & SESIUNI ── */}
-        <Section id="profile" title="3. Profile & Sesiuni">
-          <SubSection title="Ce este un Profil?">
-            <p>
-              Un profil grupează configurarea tuturor sesiunilor active. Poți crea multiple profile
-              (ex: "Conservator", "Agresiv") și activa unul la pornirea botului.
-            </p>
+        <Section id="profile" title="3. Custom Engine — piețe, sesiuni, protecții">
+          <SubSection title="Unde se configurează">
             <div className="space-y-1 text-xs">
-              <KV k="standard" v="Profilul implicit — protejat la ștergere" />
-              <KV k="Profil activ" v="Cel selectat la Start Bot — aplicat tuturor sesiunilor" />
-              <KV k="Salvare" v="Butonul Salvează apare atât sus cât și jos în listă" />
+              <KV k="Tab Custom Engine" v="Pornire/oprire bot + configurația celor 22 de sesiuni (profilul unic „standard”)" />
+              <KV k="Tab Settings" v="MT5, Trading LIVE, Setări Globale, Telegram / punte / Matrix, fus orar" />
+              <KV k="Profil" v="Un singur profil, mereu „standard” — selectorul și Profil nou / Șterge au fost eliminate" />
+              <KV k="Salvare" v="Butonul Salvează apare sus și jos în listă" />
             </div>
             <Note>
-              Modificările unui profil nu se aplică botului în timp real dacă acesta rulează deja.
-              Trebuie să oprești și repornești botul cu noul profil.
+              Pauza, execuția (Observație ⇄ Live) și Setările Globale se aplică de la bara următoare, fără restart.
+              Parametrii de strategie ai unei sesiuni (ore, R:R, criterii) se aplică la repornirea botului.
             </Note>
           </SubSection>
 
-          <SubSection title="Configurarea unei Sesiuni">
-            <p>Fiecare sesiune în profil are secțiunile:</p>
-            <div className="space-y-3">
-              <div>
-                <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1.5">Parametri de bază</div>
-                <div className="grid grid-cols-2 gap-1.5 text-xs">
-                  <KV k="Piețe" v="Ex: EURUSD, GBPUSD (multi-select)" />
-                  <KV k="Entry TF" v="M15 sau H1 (timeframe intrare)" />
-                  <KV k="Trend TF" v="M30 sau D1 (timeframe trend)" />
-                  <KV k="Direcție" v="LONG / BOTH (LONG+SHORT)" />
-                  <KV k="Pullback window" v="Câte bare caută structura (6–8)" />
-                  <KV k="Expire bars" v="Bare max fără trigger (4 = 1h pe M15)" />
-                </div>
-              </div>
-
-              <div>
-                <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1.5">Ore sesiune</div>
-                <div className="grid grid-cols-2 gap-1.5 text-xs">
-                  <KV k="Non-stop" v="Session start=0, end=24 (fără restricție)" />
-                  <KV k="Skip ore" v="Ex: [15, 16] = sari orele de volatilitate" />
-                  <KV k="Skip zile" v="Ex: [0] = sari Lunea (0=Luni, 6=Duminică)" />
-                </div>
-              </div>
-
-              <div>
-                <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1.5">Capital & Risc</div>
-                <div className="grid grid-cols-2 gap-1.5 text-xs">
-                  <KV k="Account fraction" v="0.125 = 12.5% din equity MT5 alocat sesiunii" />
-                  <KV k="Risk % per tier" v="Procent din capital riscat per trade (ex: 1%)" />
-                  <KV k="Lot fix" v="Volum FIX per ordin (opțional, oprit implicit)" />
-                </div>
-                <Tip>
-                  Breakdown live sub câmpul account_fraction: <em>$capital sesiune · $X/piață + risc/trade ~$Y</em>
-                </Tip>
-                <Note>
-                  <b>Lot fix (înlocuiește fracția)</b> — un toggle opțional sub „Fracție cont", <b>oprit implicit</b>.
-                  Cât timp e oprit, sizing-ul rămâne exact ca înainte (calcul din <code className="text-blue-300">capital × risc%</code>).
-                  Când îl activezi și pui un volum (ex: 0.10 loturi), sesiunea plasează <b>exact acel volum</b> pe fiecare ordin —
-                  aliniat la pasul/minimul/maximul brokerului (identic cu MT5) — iar <b>fracția de cont și risc% sunt ignorate</b>.
-                  Sub câmp apare estimarea live din MT5 (marja necesară per piață). <b>Protecție:</b> dacă marja pentru acel volum
-                  ar depăși ~80% din capitalul liber, lotul e <b>redus automat</b> la cât încape și primești o notificare Telegram
-                  (nu poți deschide un ordin mai mare decât suportă contul). Util când același cont rulează și Motorul AI / trade-uri manuale.
-                </Note>
-              </div>
-            </div>
-          </SubSection>
-
-          <SubSection title="Criterii opționale și R-Ladder">
-            <RLadderDiagram />
-            <div className="mt-3 space-y-2 text-xs">
-              <p>
-                Criteriile opționale cresc R/R-ul tranzacției. Cu cât mai multe criterii sunt îndeplinite,
-                cu atât R-ul țintit este mai mare.
-              </p>
-              <div className="grid grid-cols-2 gap-1.5">
-                <KV k="RSI" v="RSI în range specificat (ex: 40–65 LONG)" />
-                <KV k="EMA Alignment" v="EMA8 > EMA20 > EMA50 (LONG) sau invers" />
-                <KV k="Body Strength" v="Corp lumânare > factor × ATR (dezactivat implicit)" />
-              </div>
-            </div>
-          </SubSection>
-
-          <SubSection title="Break-Even (BE)" defaultOpen={false}>
-            <p>Mecanism opțional care mută SL-ul pe profit parțial:</p>
-            <div className="space-y-1.5 text-xs">
-              <KV k="BE Trigger %" v="La câte % din distanța SL→TP se activează Faza 1" />
-              <KV k="BE Lock 1 %" v="SL se mută la X% din SL original (ex: 30% = SL la entry -30%)" />
-              <KV k="Faza 2" v="Opțional — trailing SL când prețul intră în zona TP" />
-              <KV k="BE Lock 2 %" v="SL la X% din distanța originală (ex: 50%)" />
-            </div>
-            <Warn>Break-Even este dezactivat implicit. Activarea schimbă baselines — rulează backtest înainte.</Warn>
-          </SubSection>
-
-          <SubSection title="Protecție știri (News Guard)" defaultOpen={false}>
-            <p>
-              Când activat, sesiunea intră automat pe pauză în jurul evenimentelor economice importante.
-              Pozițiile deschise sunt închise, ordinele pending sunt anulate.
-            </p>
-            <div className="grid grid-cols-2 gap-1.5 text-xs">
-              <KV k="Impact level" v="1 = Scăzut, 2 = Mediu, 3 = Mare (High)" />
-              <KV k="Pre minutes" v="Minute înainte de eveniment pentru pauză" />
-              <KV k="Post minutes" v="Minute după eveniment pentru reluare" />
+          <SubSection title="Parametrii unei sesiuni">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5 text-xs">
+              <KV k="Piață" v="O piață per sesiune" />
+              <KV k="Timeframe" v="M15 intrare + M30 trend, sau H1 intrare + D1 trend" />
+              <KV k="Direcție" v="LONG sau BOTH (LONG + SHORT)" />
+              <KV k="Pullback window" v="Câte bare caută structura (6–8)" />
+              <KV k="Ore / zile" v="Non-stop sau interval; ore și zile sărite" />
+              <KV k="Nivel R:R" v="Scurt 2R / Standard 3R / Extins 4R — același TP pentru toate strategiile pieței" />
+              <KV k="Risc" v="1% pe trade la toate nivelurile (inclusiv 4R)" />
+              <KV k="Risc / trade (% cont)" v="Cât din equity-ul REAL riscă un trade (= fracția × 1%; ex. 0,20%) — sau lot FIX; vezi cardul „Dimensionarea poziției”" />
+              <KV k="Expirare ordin" v="4 bare pe toate sesiunile (fix, nu mai e câmp în UI)" />
+              <KV k="Execuție" v="Live = ordine reale; Observație = doar semnale" />
             </div>
             <Note>
-              News Guard polleaza ForexFactory la fiecare 5 minute. Nu necesită API key.
+              <b>Nivelurile R:R</b> au fost alese per piață pe backtestul fără lookahead, cu criteriul robust max(min(train, test)):
+              2R = S1, S5, S7, S11, S12, S14, S15, S18 · 3R = S8, S17, S19 · 4R = S9, S16, S22. Sesiunile de observație
+              păstrează scara veche pe criterii (marcate în UI). <b>Badge-ul M0</b> din antetul sesiunii arată verdictul auditului
+              statistic; roșu „⚠ live” = o sesiune DEMOTE care execută ordine reale.
+            </Note>
+            <Note>
+              <b>Lot fix</b> (oprit implicit): volum fix pe ordin, aliniat la pasul/minimul brokerului; fracția și riscul sunt
+              ignorate. Dacă marja ar depăși ~80% din marja liberă, lotul e redus automat și primești notificare.
+            </Note>
+            <Note>
+              <b>Dimensionarea poziției — aceeași pe Custom, AI și Daily.</b> Lot = equity MT5 × fracție × risc% ÷ (distanța SL ×
+              valoarea punctului din MT5), aliniat la lotul minim / pasul / maximul brokerului. Cardul din fiecare sesiune separă
+              ce vine automat din MT5 (equity, marjă, specificații) de ce configurezi tu și arată calculul pe un SL tipic real.
+              <b> Pe un cont mic, lotul minim domină:</b> dacă ținta e sub lotul minim, se plasează lotul minim (risc real mai mare)
+              și fracția nu mai schimbă nimic — cardul arată de la ce equity ar începe să conteze. Fracția influențează doar lotul,
+              nu SL/TP sau protecțiile. Dacă equity-ul MT5 nu se poate citi, ordinul NU se plasează.
             </Note>
           </SubSection>
 
-          <SubSection title="Mod Inteligent (Smart News Protection)" defaultOpen={false}>
-            <p>
-              Extensie a protecției la știri — <strong>funcționează DOAR când „Pauză automată la știri"
-              este activat</strong> pe sesiune (fără protecție, Modul Inteligent e forțat oprit în cod,
-              indiferent de toggle). În loc să închidă orb toate pozițiile, botul citește sentimentul
-              știrii (surpriza actual vs forecast) și decide direcția.
-            </p>
-            <div className="space-y-2 text-xs">
-              <div>
-                <p className="font-medium text-white mb-1">Logică sentiment:</p>
-                <div className="grid grid-cols-2 gap-1 text-slate-300">
-                  <span>actual &gt; forecast</span><span className="text-profit">→ bullish pentru valuta raportoare</span>
-                  <span>actual &lt; forecast</span><span className="text-loss">→ bearish pentru valuta raportoare</span>
-                  <span>actual = null</span><span className="text-slate-500">→ eveniment nelansat, skip</span>
-                  <span>indicatori inversați</span><span className="text-cyan-300">→ semn răsturnat (vezi mai jos)</span>
-                </div>
-              </div>
-              <div>
-                <p className="font-medium text-white mb-1">La tranziția în fereastra de știri (o singură dată):</p>
-                <div className="grid grid-cols-1 gap-0.5">
-                  <KV k="Poziție ALINIATĂ cu știrea" v="Menținută (ex: LONG EURUSD la USD slab)" vColor="text-profit" />
-                  <KV k="Poziție CONTRA știrii" v="Închisă imediat (status news_close)" vColor="text-loss" />
-                  <KV k="Pending neactivat" v="Anulat (status news_cancel)" />
-                  <KV k="Nicio poziție + direcție clară" v="Plasează ordin stop în direcția știrii (risc 1.5× base)" />
-                </div>
-              </div>
-              <div>
-                <p className="font-medium text-white mb-1">Ordinul de știre trece prin 3 porți, în ordine:</p>
-                <div className="grid grid-cols-1 gap-0.5">
-                  <KV k="1. Piață deschisă?" v="FX/indici/metale = închise sâmbăta/duminica → NU se plasează. Cripto (BTC/XRP…) = 24/7." vColor="text-cyan-300" />
-                  <KV k="2. Filtru AI (dacă activ)" v="Aceeași validare ca semnalele normale; respins → nu se plasează." vColor="text-indigo-300" />
-                  <KV k="3. Sizing + ordin MT5" v="BUY_STOP/SELL_STOP marcat SN, urmărit separat." />
-                </div>
-              </div>
-              <div>
-                <p className="font-medium text-white mb-1">Trailing SL pentru ordinele din știri:</p>
-                <div className="grid grid-cols-2 gap-1">
-                  <KV k="La 3R profit" v="SL → 1R față de TP (blochează profit)" />
-                  <KV k="La 4R profit" v="SL → 2R față de TP (mai mult room)" />
-                </div>
-              </div>
+          <SubSection title="Strategii și criterii">
+            <div className="space-y-1 text-xs">
+              <KV k="Pullback-in-trend" v="Principala: 2 HH + HL după ultimul HH, intrare la prima bară peste maximul pullback-ului" />
+              <KV k="Inside Bar / Flag" v="Pattern-uri opționale per sesiune (ID-uri IB / FLG)" />
+              <KV k="RSI / EMA" v="Filtre opționale (RSI în interval, EMA8 > EMA20 > EMA50); NU mai schimbă TP-ul" />
+              <KV k="Trend TF" v="EMA200 pe timeframe-ul mare, calculat ca în live (fără lookahead în backtest)" />
             </div>
-            <Note>
-              <b>Guard piață închisă:</b> brokerul ACCEPTĂ un pending stop și cu piața închisă (așteaptă
-              redeschiderea) → ai primi o notificare „Ordin Știre" deși piața e închisă. De aceea ordinul
-              de știre e blocat în weekend pentru FX/indici/metale (cripto rulează 24/7).<br />
-              <b>Indicatori inversați:</b> pentru șomaj / jobless claims / stocuri de țiței, o valoare mai
-              mare = valută mai SLABĂ — sentimentul e răsturnat automat (lista <code>_INVERTED_INDICATORS</code>).<br />
-              Ordinele de știri sunt marcate „SN" și urmărite separat față de semnalele pullback normale.
-              Testează întotdeauna pe cont DEMO înainte de live.
-            </Note>
+          </SubSection>
+
+          <SubSection title="Protecții per sesiune" defaultOpen={false}>
+            <div className="space-y-1 text-xs">
+              <KV k="Știri" v="Pauză + închidere/anulare la evenimente (impact 1/2/3, minute înainte/după); activare la secundă" />
+              <KV k="Vineri" v="Închide toate ordinele sesiunii la ora setată (cripto exceptat)" />
+              <KV k="Circuit breaker" v="N pierderi consecutive azi → sesiunea nu mai deschide nimic până mâine (aplicat și în live)" />
+              <KV k="Break-Even" v="Mută SL-ul în 3 faze (oprit implicit — schimbă rezultatele, testează în backtest)" />
+            </div>
           </SubSection>
 
           <SubSection title="Filtru AI Pre-Trade" defaultOpen={false}>
             <p>
-              Validarea <strong>finală</strong> a fiecărui semnal, înainte ca ordinul să fie trimis în MT5.
-              Consiliul AI — aceleași 4 roluri ca motorul AI Engine (Analist Tehnic → Analist Macro →
-              Risk Manager → Head Trader), cu aceleași surse AI configurate în tab-ul AI Engine —
-              analizează trade-ul propus de bot și emite un scor de încredere 0–100.
+              Validarea finală a fiecărui semnal înainte de ordin, oprită implicit. Un singur consiliu AI de 4 roluri
+              (Analist Tehnic → Analist Macro → Risk Manager → Head Trader), pe aceleași surse ca AI Engine.
             </p>
-            <div className="grid grid-cols-2 gap-1.5 text-xs">
-              <KV k="Implicit" v="Dezactivat — botul funcționează identic ca înainte" />
-              <KV k="Permisiv" v="≥50% — blochează doar setup-urile clar slabe" />
-              <KV k="Echilibrat" v="≥70% — recomandat" />
-              <KV k="Strict" v="≥85% — doar setup-uri cu convingere reală (puține trec)" />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5 text-xs">
+              <KV k="Permisiv / Echilibrat / Strict" v="Prag de încredere 50 / 70 / 85" />
+              <KV k="Respins" v="Status ai_reject + notificare cu motivul (veto / „consiliul a decis NU” / sub prag)" />
+              <KV k="AI indisponibil" v="FAIL-OPEN: trade-ul trece, notat (excepție: modul Strict = blocat)" />
+              <KV k="Sursă" v="Sursa aleasă → celelalte surse sănătoase → Ollama (failover)" />
             </div>
-            <div className="space-y-1 text-xs mt-2">
-              <p className="font-medium text-white">Fluxul ordinului cu filtrul activat:</p>
-              <p className="text-slate-300">
-                1. Botul detectează semnalul (pullback/flag/inside bar) → 2. Consiliul AI evaluează
-                (10–60s) → 3. Încredere ≥ prag → ordinul merge în MT5 (badge <span className="text-indigo-300 font-semibold">BOT·AI</span> în
-                Ordine Active, „AI✓" în Rapoarte) · Încredere &lt; prag sau veto de risc → ordinul e
-                <span className="text-purple-400 font-semibold"> respins</span> (status <code>ai_reject</code>,
-                notificare cu motivul și scorul, vizibil în Semnale și Rapoarte/Tranzacții).
-              </p>
-            </div>
-            <Note>
-              Configurația AI e moștenită automat din tab-ul AI Engine — surse, chei API, role assignments.
-              Nicio setare duplicată; schimbările de acolo se aplică imediat. FAIL-OPEN: dacă AI-ul e
-              indisponibil (Ollama oprit, toate sursele picate), trade-ul este PERMIS și notificat ca atare —
-              filtrul nu poate bloca niciodată botul (excepție: modul <b>Strict</b> per sesiune = fail-closed,
-              blochează ordinul când AI-ul e indisponibil). Verdictele complete (cu transcriptul dezbaterii) se
-              salvează în data/live_signals/&lt;sesiune&gt;/ai_filter.jsonl.<br />
-              <b>Se aplică și ordinelor din Modul Inteligent (știri):</b> un ordin de știre trece prin exact
-              același consiliu AI înainte de plasare, cu aceeași decizie (respins → nu se plasează, aprobat →
-              verdict atașat + sufix „Filtru AI" pe notificare).
-            </Note>
-
-            <div className="space-y-1 text-xs mt-3">
-              <p className="font-medium text-white">Consiliu multiplu (consens) — opțional</p>
-              <p className="text-slate-300">
-                Poți cere până la <strong>3 consilii independente</strong>, fiecare pe o
-                <strong> sursă AI diferită</strong> (ex: Ollama + Claude + Gemini), care analizează același
-                semnal. Increderile lor se combină prin <strong>medie</strong>: dacă media ≥ pragul ales,
-                ordinul e permis; un consiliu care respinge contribuie cu 0 (trage media în jos). Orice
-                <strong> veto valid</strong> de la un consiliu respinge oricum trade-ul. Scopul: o a doua/a
-                treia opinie cu adevărat independentă — de aceea fiecare consiliu <em>trebuie</em> să
-                folosească altă sursă (cu o singură sursă activă, consiliile 2/3 nu apar).
-              </p>
-              <p className="text-slate-400">
-                Toleranță la erori: dacă un consiliu opțional pică, restul decid; se blochează doar dacă
-                niciun consiliu nu e disponibil (fail-open). Notificarea „Ordin plasat" arată câte consilii
-                au participat și pe ce surse; Rapoarte/Tranzacții arată numărul de consilii și încrederea de
-                consens.
-              </p>
-            </div>
-
-            <div className="space-y-1 text-xs mt-2">
-              <p className="font-medium text-white">Roluri AI suplimentare — opționale</p>
-              <p className="text-slate-300">
-                Pe lângă cele 4 roluri, poți activa (per sesiune, implicit oprite):
-              </p>
-              <div className="grid grid-cols-1 gap-1 mt-1">
-                <KV k="🧮 Analist Cantitativ" v="Verifică dacă R/R e justificat de o probabilitate de câștig realistă, dacă SL e sensibil vs ATR și dacă EV e pozitiv." />
-                <KV k="😈 Avocatul Diavolului" v="Construiește argumentul CONTRA + pre-mortem (ce l-a omorât?) ca să contracareze biasul de confirmare." />
-              </div>
-              <p className="text-slate-400 mt-1">
-                Se aplică tuturor consiliilor și îmbunătățesc calitatea deciziei fără să dubleze rolurile
-                existente. Costă câte un apel LLM în plus per consiliu.
-              </p>
-            </div>
+            <Note>Jurnal complet: data/live_signals/&lt;sesiune&gt;/ai_filter.jsonl. Consiliile multiple și rolurile
+              Quant / Avocatul Diavolului au fost eliminate (pe 617 verdicte reale au scăzut aprobarea fără un câștig dovedit).</Note>
           </SubSection>
 
-          <SubSection title="Protecție Capital (la nivel de profil)" defaultOpen={false}>
-            <p>
-              Funcție de protecție automată a contului, configurată la nivel de profil (nu per sesiune).
-              Watchdog-ul API o verifică la fiecare 30 secunde cât botul rulează.
-            </p>
-            <div className="grid grid-cols-2 gap-1.5 text-xs">
-              <KV k="Implicit" v="Dezactivat — nu afectează funcționarea normală" />
-              <KV k="Prag implicit" v="70% din capitalul de start al profilului" />
-              <KV k="Interval verificare" v="La fiecare 30 secunde (watchdog API)" />
-              <KV k="Acțiune" v="Pauză automată toate sesiunile cu execute_trades=True" />
-            </div>
-            <p className="text-xs mt-1">
-              Când equity MT5 scade sub prag → watchdog pune pe pauză toate sesiunile live active
-              (cele cu execute_trades activat, care nu erau deja pe pauză). Sesiunile de observație
-              și cele deja pe pauză nu sunt afectate.
-            </p>
-            <Note>
-              Trimite notificare Telegram + UI la activare. Se dezactivează automat (flag resetat)
-              dacă equity revine peste prag. Salvare individuală prin butonul „Salvează protecție"
-              din secțiunea dedicată de deasupra listei de sesiuni.
-            </Note>
-          </SubSection>
-
-          <SubSection title="Backtest Panel (în Profile)" defaultOpen={false}>
-            <p>
-              Fiecare sesiune din Profile are un panou de backtest cu:
-            </p>
-            <div className="space-y-1.5 text-xs">
-              <KV k="Range date" v="1An / 3Ani / Tot / Custom" />
-              <KV k="Capital inițial" v="Simulat în USD per sesiune" />
-              <KV k="Capital per piață" v="Alocat automat (capital / n_piete)" />
-              <KV k="Minim capital" v="Fiecare piață are un minim (ex: EURUSD min 150 USD)" />
-            </div>
-            <p className="text-xs text-slate-400 mt-1">
-              Dacă datele CSV lipsesc, backtestul oferă descărcare automată din MT5.
-              Jobul apare în tab-ul Audit cu status și rezultate.
-            </p>
+          <SubSection title="Backtest din sesiune" defaultOpen={false}>
+            <p className="text-xs">Fiecare sesiune are un panou de backtest (1 an / 3 ani / tot / custom). Dacă lipsesc datele CSV,
+              se oferă descărcarea din MT5; jobul și rezultatul (cu verdictul M0) apar în tab-ul Audit.</p>
           </SubSection>
         </Section>
 
@@ -1158,7 +693,7 @@ export function GuidePage() {
             </p>
             <Tip>
               Adaugă zilele/orele cu expectancy negativ în câmpurile <code className="text-blue-300">skip_weekdays</code> /
-              <code className="text-blue-300 ml-1">skip_hours</code> din Profile → sesiune, apoi rulează un backtest nou
+              <code className="text-blue-300 ml-1">skip_hours</code> din Custom Engine → sesiune, apoi rulează un backtest nou
               pentru a verifica îmbunătățirea.
             </Tip>
           </SubSection>
@@ -1186,7 +721,7 @@ export function GuidePage() {
             <div className="space-y-1.5 text-xs">
               <div className="text-[10px] text-slate-500 uppercase tracking-wider">Secțiuni afișate la expandare</div>
               <KV k="Strategie" v="Pullback window, Expire bare, Interval ore, Skip zile/ore" />
-              <KV k="R-Ladder" v="R base/mid/top/max cu riscul % și pragurile de criterii" />
+              <KV k="R:R" v="r_base…r_max (la nivelurile fixe 2R/3R/4R toate egale) + riscul %" />
               <KV k="Criterii opționale" v="RSI (range buy/sell), EMA alignment, Body strength" />
               <KV k="Break-Even" v="Trigger%, Lock1%, Lock2%, Faza2 zona%, toggle Faza2" />
               <KV k="Protecție" v="Închidere Vineri (ora), Protecție Știri (impact + fereastră)" />
@@ -1455,143 +990,102 @@ export function GuidePage() {
         </Section>
 
         {/* ── 6. GESTIONARE RISC ── */}
-        <Section id="risk" title="6. Gestionare risc">
-          <SubSection title="Calculul poziției">
-            <div className="space-y-2 text-xs">
-              <p>Formula pentru dimensiunea poziției:</p>
-              <div className="bg-surface rounded-lg border border-surface-border p-3 font-mono text-xs space-y-1 text-slate-300">
-                <div>risk_usd = equity_mt5 × account_fraction × risk_pct</div>
-                <div>lots = risk_usd / (risk_dist_pips × pip_value_usd)</div>
-              </div>
-              <div className="space-y-1 mt-2">
-                <KV k="equity_mt5" v="Equity real citit din MT5 la fiecare trade" />
-                <KV k="account_fraction" v="Ex: 0.125 = 12.5% din equity alocat sesiunii" />
-                <KV k="risk_pct" v="Ex: 0.01 = 1% din capital sesiunii riscat" />
-                <KV k="lot minim" v="0.01 — tranzacțiile sub acest lot sunt respinse" />
-              </div>
+        <Section id="risk" title="6. Gestionare risc și Setări Globale">
+          <SubSection title="Calculul poziției (Custom Engine)">
+            <div className="bg-surface rounded-lg border border-surface-border p-3 font-mono text-xs space-y-1 text-slate-300">
+              <div>capital = equity MT5 (sau capital fix alocat botului) × account_fraction</div>
+              <div>lots = capital × 1% / (distanța SL × valoarea tick-ului din MT5)</div>
             </div>
-            <Warn>
-              Dacă equity × account_fraction × risk_pct nu acoperă 0.01 lot, trade-ul este sarit
-              (apare ca <em>skipped_margin</em> în rezultatele backtest).
-            </Warn>
-          </SubSection>
-
-          <SubSection title="Circuit Breaker" defaultOpen={false}>
-            <p>
-              Dacă o sesiune înregistrează <strong className="text-white">N pierderi consecutive</strong>
-              într-o zi (default N=3), nu mai deschide poziții noi în acea zi.
-            </p>
-            <Tip>
-              Circuit breaker resetat automat la miezul nopții (ziua nouă). Configurabil per sesiune din Profile.
-            </Tip>
-          </SubSection>
-
-          <SubSection title="Corelare perechi" defaultOpen={false}>
-            <p>
-              Motor-ul de portofoliu previne deschiderea simultană a EURUSD și GBPUSD în aceeași direcție,
-              deoarece sunt corelate pozitiv. Dacă EURUSD e deja deschis LONG, GBPUSD LONG este sarit.
-            </p>
-          </SubSection>
-
-          <SubSection title="Vineri Close" defaultOpen={false}>
-            <p>
-              Vineri la ora configurată (<code className="text-blue-300">friday_close_hour</code>, default 20:00),
-              sesiunea închide <strong>TOATE ordinele</strong> înainte de weekend — nu doar pozițiile active:
-            </p>
-            <div className="grid grid-cols-1 gap-1 text-xs mt-1">
-              <KV k="Ordine pending (placed)" v="Anulate din MT5 (TRADE_ACTION_REMOVE) → status vineri_cancel" />
-              <KV k="Poziții triggerate (active)" v="Închise la piață (TRADE_ACTION_DEAL) → status vineri_close" />
-              <KV k="Sweep MT5" v="Scanează direct piața sesiunii și curăță orice ordin al botului rămas fără corespondent în state (după crash/desync)" />
+            <div className="space-y-1 text-xs mt-2">
+              <KV k="Valoarea tick-ului" v="Citită din MT5 la fiecare ordin (corectă pentru orice simbol)" />
+              <KV k="Lot minim broker" v="Sub minim → ordinul nu se plasează (la cont mic, lotul minim domină riscul)" />
+              <KV k="Lot fix" v="Alternativă per sesiune; redus automat dacă marja > 80% din marja liberă" />
             </div>
-            <Note>
-              Sweep-ul nu atinge ordinele Motorului AI (magic 770015) sau cele manuale — doar ordinele
-              botului pe reguli. Sesiunea BTC (BTCUSD) are vineri_close dezactivat — piața e deschisă în weekend.
-            </Note>
+            <Note>AI Engine are propriile limite (rails): risc ≤ 1%, SL ≤ 5×ATR, RR ≥ 1, stop zilnic −3R, max poziții +
+              ordine pending, fără pyramiding, marjă ≤ 40% din marja liberă. Daily Engine nu riscă bani (shadow).</Note>
+          </SubSection>
+
+          <SubSection title="Setări Globale (Settings → Setări Globale)">
+            <p>Un singur punct de control peste Custom Engine și AI Engine. Regula: <b>cea mai strictă câștigă</b> — globalul e
+              un minim de siguranță, o sesiune/piață poate fi mai strictă, niciodată mai permisivă. Toate secțiunile sunt
+              <b> oprite implicit</b>; se aplică de la bara următoare, fără restart.</p>
+            <div className="space-y-1 text-xs">
+              <KV k="Protecție capital" v="Equity sub X% din capitalul de start → niciun ordin nou (Bot + AI); watchdog-ul pune și sesiunile pe pauză" />
+              <KV k="Circuit breaker global" v="N pierderi consecutive azi pe tot contul sau pierdere zilnică ≥ X% → stop ordine noi" />
+              <KV k="Închidere vineri" v="Ora = cea mai devreme dintre global și sesiune; cripto exceptat implicit" />
+              <KV k="Protecție știri" v="Impact = minimul, minute înainte/după = maximul dintre global și sesiune" />
+              <KV k="Max poziții / piață" v="Poziții + pending pe un simbol, pe tot contul, toate engine-urile" />
+              <KV k="Risc maxim pe trade" v="ACTIV la 2% din equity (Custom + AI + Daily): volumul peste limită e redus; dacă nici lotul minim nu încape, ordinul nu se plasează" />
+              <KV k="Filtru AI" v="Doar Custom Engine: nivelul cel mai strict, Strict = SAU" />
+            </div>
+            <Note>Fișier: data/global_settings.json (sincronizat prin git, fără date). Eroare la citirea MT5 → ordinul e permis
+              (fail-open) ca o problemă de conexiune să nu blocheze tot.</Note>
+          </SubSection>
+
+          <SubSection title="Circuit breaker per sesiune" defaultOpen={false}>
+            <p className="text-xs">N pierderi consecutive azi ale sesiunii (doar trade-urile ei) → nu mai deschide nimic până a doua
+              zi. Aplicat în backtest și, din 2026-10-31, și în live (din istoricul MT5).</p>
+          </SubSection>
+
+          <SubSection title="Închidere vineri" defaultOpen={false}>
+            <div className="space-y-1 text-xs">
+              <KV k="Pending" v="Anulate → status vineri_cancel" />
+              <KV k="Poziții" v="Închise la piață → status vineri_close (cu prețul real de execuție)" />
+              <KV k="Sweep MT5" v="Prinde orice ordin al sesiunii scăpat din stare (nu atinge AI / manual)" />
+              <KV k="AI Engine" v="Vineri de la 22:00 + weekend: închide și nu deschide nimic pe FX / indici" />
+            </div>
           </SubSection>
         </Section>
 
         {/* ── 7. CONFIGURARE AVANSATĂ ── */}
-        <Section id="config" title="7. Configurare avansată">
-          <SubSection title="Start/Stop Bot din UI">
-            <p>
-              Butonul <strong className="text-white">Start Bot</strong> din header pornește
-              <code className="text-blue-300 mx-1">run_all.py</code> care lansează toate sesiunile S1–S20
-              ca subprocese independente.
-            </p>
+        <Section id="config" title="7. Pornire, oprire, autostart, configurare">
+          <SubSection title="Start / Stop pentru fiecare engine">
             <div className="space-y-1 text-xs">
-              <KV k="La start" v="Se aplică profilul selectat; notificare Telegram trimisă" />
-              <KV k="La stop" v="taskkill /F /T ucide toate subprocesele; notificare Telegram" />
-              <KV k="Restart" v="Stop urmat de Start — sesiunile preiau starea din state.pkl" />
+              <KV k="De unde" v="Cardurile de engine din Dashboard (toate trei) sau tab-ul fiecărui engine" />
+              <KV k="Verificare" v="Start reușește doar dacă procesul trăiește după pornire; altfel vezi eroarea + jurnalul" />
+              <KV k="Custom Engine" v="run_all.py pornește cele 22 de sesiuni; Stop = taskkill pe arbore + curățare lock-uri" />
+              <KV k="AI Engine" v="Motor + watchdog propriu (repornește la crash); Stop oprește întâi watchdog-ul" />
+              <KV k="Daily Engine" v="Watchdog-ul API îl repornește dacă moare fără Stop (max 3/oră, apoi alertă)" />
             </div>
-            <Note>
-              Dacă botul se oprește neașteptat (crash), watchdog-ul API detectează în 30s și trimite
-              notificare Telegram <em>"Bot Trading oprit neașteptat!"</em> și curăță fișierele de stare.
-            </Note>
+            <Note>Custom Engine căzut fără Stop → watchdog-ul API trimite „Bot Trading oprit neașteptat!” (fără repornire automată
+              — pozițiile reale cer o decizie). Toate pornirile/opririle trimit Telegram.</Note>
           </SubSection>
 
-          <SubSection title="Configurare Telegram" defaultOpen={false}>
-            <p>
-              Telegram trimite notificări pentru: semnal nou, ordin activat, TP, SL, vineri_close,
-              news_close, start/stop bot, sesiune pauza/reluare, auto-pauza știri.
-            </p>
+          <SubSection title="Autostart Windows (toate engine-urile)" defaultOpen={false}>
+            <p>Toggle-ul „Autostart” din fiecare card de engine creează/șterge un task în Task Scheduler (prompt UAC):</p>
             <div className="space-y-1 text-xs">
-              <KV k="Token bot" v="De la @BotFather pe Telegram (format: 1234567890:ABCdef...)" />
-              <KV k="Chat ID" v="ID-ul tău personal sau al unui grup (ex: -100123456789)" />
-              <KV k="Test" v="Butonul 'Trimite mesaj de test' din Settings verifică conexiunea" />
+              <KV k="TradingBot-MT5" v="MT5 la login — PARTAJAT; șters doar când niciun engine nu mai are autostart" />
+              <KV k="TradingBot-RunAll" v="Custom Engine, la login + 90 s" />
+              <KV k="TradingBot-AIEngine" v="Ollama + AI Engine + watchdog, la login + ~120 s" />
+              <KV k="TradingBot-DailyEngine" v="Daily Engine, la login + 150 s (scripts/setup_autostart_engine.ps1 -Engine daily)" />
             </div>
-            <Note>
-              Configurarea Telegram se face din Profile → secțiunea Settings (accordion jos).
-              Credentials sunt stocate în <code className="text-blue-300">data/telegram_config.json</code>.
-            </Note>
+            <Warn>Task-urile rulează NEELEVAT (RunLevel Limited) — altfel UI-ul nu le-ar putea opri. Nu le schimba pe „Highest”.
+              Autostart-ul Custom Engine folosește ultimul profil activ (active_profile_runtime.json nu se mai șterge la stop).</Warn>
           </SubSection>
 
-          <SubSection title="Autostart Windows" defaultOpen={false}>
-            <p>
-              Toggle-ul din NavBar activează/dezactivează pornirea automată a botului la login Windows.
-              Creează două task-uri în Task Scheduler:
-            </p>
+          <SubSection title="Telegram și notificări" defaultOpen={false}>
             <div className="space-y-1 text-xs">
-              <KV k="TradingBot-MT5" v="Pornește MT5 la login" />
-              <KV k="TradingBot-RunAll" v="Pornește run_all.py după 45s delay" />
+              <KV k="Unde" v="Settings → Telegram (token de la @BotFather + chat ID); buton de test" />
+              <KV k="Fișier" v="data/telegram_config.json" />
+              <KV k="Doar importante" v="Opțional: pe Telegram doar trading + conexiune + pornire/oprire; tab-ul Notificări păstrează tot" />
             </div>
-            <Warn>Necesită aprobare UAC (Administrator) la activare/dezactivare.</Warn>
           </SubSection>
 
           <SubSection title="Descărcare date istorice" defaultOpen={false}>
-            <p>
-              Datele CSV OHLC sunt descărcate din MT5 via Profile → sesiune → Rulează Backtest → Descarcă date.
-              Procesul rulează async și apare în tab-ul Audit → Descărcări Date.
-            </p>
-            <Tip>
-              Dacă descărcarea returnează puține bare: deschide graficul simbolului în MT5 pe timeframe-ul
-              dorit și <strong>derulează complet spre stânga</strong> pentru a forța cache-ul istoricului,
-              apoi reîncearcă.
-            </Tip>
+            <p className="text-xs">Din panoul de backtest al sesiunii (descarcă din MT5, job în Audit → Descărcări). Alias-urile de
+              broker sunt rezolvate automat (ex: GER40 → DE40). Cont real: descărcarea doar citește, nu tranzacționează.</p>
           </SubSection>
 
-          <SubSection title="Fus Orar (România / Germania)" defaultOpen={false}>
-            <p>
-              Botul poate rula în fusul orar al României (default) sau al Germaniei. Setarea se face
-              din Profile → secțiunea <strong>Fus Orar</strong> (sub configurarea Telegram).
-            </p>
+          <SubSection title="Fus orar (România / Germania)" defaultOpen={false}>
             <div className="space-y-1 text-xs">
-              <KV k="România (default)" v="Europe/Bucharest — UTC+2 iarnă / UTC+3 vară" />
-              <KV k="Germania" v="Europe/Berlin — UTC+1 iarnă / UTC+2 vară" />
-              <KV k="Diferență" v="Mereu exact 1 oră (DST simultan în ambele țări)" />
+              <KV k="Unde" v="Settings → Fus orar" />
+              <KV k="România (implicit)" v="Europe/Bucharest — orele sesiunilor sunt calibrate pe ora României" />
+              <KV k="Germania" v="Europe/Berlin — cu o oră în urma României" />
+              <KV k="Ora serverului MT5" v="Re-detectată la 30 min (ICMarkets urmează DST-ul SUA)" />
             </div>
-            <p>
-              Schimbarea afectează <strong>exclusiv sesiunile live</strong>: ora barelor MT5, filtrele
-              session_start/session_end, friday_close_hour și ora curentă în log-uri.
-              Backtestul pe CSV nu este afectat (datele sunt deja în ora României).
-            </p>
-            <Warn>
-              Schimbarea fusului orar necesită confirmare în UI. Efectul intră la bara următoare
-              (max 15 min pentru M15 / 1 oră pentru H1) — fără restart bot.
-            </Warn>
-            <Tip>
-              Dacă rulezi botul pe o mașină configurată în Germania, setează fusul orar pe Germania
-              astfel încât session_start=10 să însemne 10:00 ora Germaniei (nu 10:00 ora României).
-            </Tip>
+            <Warn>Pe Germania, orele de sesiune se aplică pe ora locală, deci ferestrele sunt decalate cu 1 h față de backtest
+              (calibrat pe ora României). Trade-urile nu se opresc, dar pot cădea în alte ore. Diagnostic:
+              <code> python scripts/diagnose_no_trades.py</code>.</Warn>
           </SubSection>
         </Section>
 
@@ -1753,30 +1247,16 @@ export function GuidePage() {
 
           <SubSection title="Tranzacții">
             <p>
-              Tabel paginat (50/pagină) cu <strong className="text-white">toate outcomes</strong> agregate din toate
-              sesiunile, sortate descrescător după <code className="text-blue-300">exit_time</code>.
+              Tabel paginat (50/pagină) cu tranzacțiile <strong className="text-white">închise din istoricul MT5</strong>,
+              cele mai noi primele — aceeași sursă ca Dashboard-ul.
             </p>
-            <div className="space-y-1.5 text-xs mt-2">
-              <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Filtre disponibile</div>
-              <div className="flex flex-wrap gap-1.5">
-                {["TP", "SL", "Deschis", "Expirat", "Vineri", "Știri", "Toate"].map(s => (
-                  <Badge key={s} color="bg-surface-border text-slate-400" label={s} />
-                ))}
-              </div>
-              <div className="flex flex-wrap gap-1.5 mt-1">
-                {["LONG", "SHORT", "Ambele"].map(d => (
-                  <Badge key={d} color="bg-surface-border text-slate-400" label={d} />
-                ))}
-              </div>
+            <div className="mt-2 grid grid-cols-1 md:grid-cols-2 gap-1.5 text-xs">
+              <KV k="Filtru sursă" v="Toate / Custom / AI / Daily / Manual (din magic + comment, fără ghicire)" />
+              <KV k="Alte filtre" v="Rezultat (TP / SL / …), direcție, interval de date" />
+              <KV k="Coloane" v="Sursă, sesiune + strategie (Custom), simbol, direcție, entry / exit, R, P&L, comision + swap" />
+              <KV k="AI✓" v="Ordin Custom validat de Filtrul AI Pre-Trade (cu încrederea)" />
             </div>
-            <div className="mt-3 grid grid-cols-2 gap-1.5 text-xs">
-              <KV k="Sesiune" v="ID-ul sesiunii (ex: session7)" />
-              <KV k="Simbol" v="Piața tranzacționată" />
-              <KV k="Direcție" v="LONG / SHORT" vColor="text-profit" />
-              <KV k="Entry / Exit" v="Prețurile de intrare și ieșire" />
-              <KV k="Result R" v="R realizat (ex: +3.5 sau -1.0)" />
-              <KV k="P&L USD" v="Profit real din MT5 (NaN = expirat/obs)" />
-            </div>
+            <Note>Daily Engine rulează în shadow → nu are tranzacții MT5; trade-urile lui virtuale sunt în tab-ul Daily Engine.</Note>
           </SubSection>
 
           <SubSection title="Piețe" defaultOpen={false}>
@@ -1869,245 +1349,188 @@ export function GuidePage() {
 
         {/* ── 11. AI ENGINE ── */}
         <Section id="ai-engine" title="11. AI Engine (motor autonom AI)">
-          <SubSection title="Ce este și prin ce diferă de bot">
+          <SubSection title="Ce este">
             <p>
-              <strong className="text-white">AI Engine</strong> este un motor de trading complet separat de botul pe reguli:
-              nu folosește strategia pullback, ci un <strong className="text-white">consiliu de 4 agenți AI</strong> care
-              rulează local pe placa video (Ollama, gratuit, nelimitat) și dezbat fiecare decizie:
-              Analist Tehnic → Analist Macro/Știri → Risk Manager (cu drept de veto absolut) → Head Trader.
+              Motor separat de botul pe reguli: la fiecare bară M15 calculează o percepție numerică (trend, ATR, regim
+              trend/chop, știri), iar pe anumite <b>trigger-e</b> convoacă un <b>consiliu de 4 roluri AI</b> care propune
+              un trade JSON; regulile hard din cod (rails) îl validează sau îl resping.
             </p>
-            <div className="space-y-2">
-              <KV k="Izolare" v="Magic 770015 + comment 'AI-' — nu vede și nu atinge pozițiile botului" />
-              <KV k="Siguranță" v="Refuză orice cont non-DEMO; risc max 1%/trade; max 3 poziții; stop zilnic -3R" />
-              <KV k="Cost" v="0 $ — modelul AI (qwen3:8b) rulează local pe GPU" />
-              <KV k="Piețe" v="EURUSD, USDJPY, GBPUSD, AUDUSD, USDCAD — dimensionate pentru cont ~$1000" />
+            <div className="space-y-1 text-xs">
+              <KV k="Piețe" v="CHFJPY, GBPUSD (cele mai puțin slabe pe ledger-ul real; niciuna cu edge dovedit)" />
+              <KV k="Trigger-e active" v="regime_flip, news_window, position_review (breakout_tension, heartbeat, vol_spike oprite)" />
+              <KV k="Limite" v="Max 2 poziții + pending, fără pyramiding, risc ≤ 1%, stop zilnic −3R, marjă ≤ 40%" />
+              <KV k="Izolare" v="Magic 770015 + comment „AI-”: nu vede și nu atinge pozițiile Custom Engine" />
+              <KV k="Weekend" v="Vineri de la 22:00 și sâmbătă/duminică: închide și nu deschide pe FX/indici (cripto 24/7)" />
+              <KV k="Instanță unică" v="Mutex + PID; plus detecție cross-mașină (alt PC pe același cont → nu mai convoacă)" />
             </div>
-          </SubSection>
-          <SubSection title="Tab-ul AI Engine">
-            <p>
-              Din tab-ul <strong className="text-white">AI Engine</strong> poți: porni/opri motorul (buton On/Off),
-              vedea scorecard-ul (decizii, WAIT-uri, trades, R total, expectancy), edita piețele urmărite
-              (validate automat contra MT5), citi fiecare decizie cu <strong className="text-white">motivația completă
-              și transcriptul dezbaterii</strong> (click pe decizie), vedea rezultatele și log-ul motorului.
-            </p>
-            <p>
-              Cardul <strong className="text-white">Surse AI</strong> permite distribuirea rolurilor consiliului pe
-              surse diferite: Ollama (local, gratuit, implicit), Claude, Gemini (are free tier) sau orice API
-              compatibil OpenAI. Fiecare sursă are buton <strong className="text-white">Testează</strong> (verifică
-              cheia + răspunsul) și stare live. Dacă o sursă rămâne fără tokens/quota, rolurile ei trec
-              <strong className="text-white"> automat</strong> pe următoarea sursă sănătoasă (apoi pe Ollama) și revin
-              singure când sursa își revine. Schimbările se aplică la următorul consiliu, fără restart.
-            </p>
-            <p>
-              Cardul <strong className="text-white">Consiliu multiplu + roluri (consens)</strong> adaugă, opțional,
-              confirmarea prin consens: consiliul <strong>primar</strong> propune trade-ul, iar 1–2 consilii pe
-              <strong> alte surse</strong> îl <strong>revizuiesc</strong>. Media încrederilor ≥ pragul ales (implicit
-              70%) → se execută; un veto valid de la orice consiliu blochează; dacă revizorii pică, decide singur
-              primarul (nu blochează). Tot de aici activezi rolurile <strong>🧮 Analist Cantitativ</strong> și
-              <strong> 😈 Avocatul Diavolului</strong> (implicit oprite). Transcriptul deciziei arată blocul de
-              consens și opinia fiecărui consiliu.
-            </p>
-            <Note>
-              Consiliul AI se convoacă doar pe evenimente (schimbare de regim, tensiune de breakout, spike de
-              volatilitate, știri High-impact, review poziție, heartbeat zilnic) — nu la fiecare bară. Multe
-              decizii vor fi WAIT: asta e disciplină, nu inactivitate. Fără surse secundare/terțiare configurate,
-              motorul rulează un singur consiliu, exact ca înainte.
-            </Note>
-            <Warn>
-              Rezultatele AI sunt separate de rapoartele botului (ledger propriu — data/ai/ledger.db), dar
-              P&L-ul contului MT5 din Dashboard include TOT (bot + AI + manual), fiind citit direct din equity.
-            </Warn>
-          </SubSection>
-          <SubSection title="Consiliul AI — ce face fiecare rol">
-            <p>Fiecare decizie trece printr-o „masă de tranzacționare" de agenți AI, în această ordine:</p>
-            <div className="space-y-2 text-xs mt-1">
-              <div className="bg-surface rounded-lg border border-surface-border p-3 space-y-0.5">
-                <div className="text-[11px] font-semibold text-slate-200">1. 📈 Analist Tehnic</div>
-                <div className="text-slate-400">Citește structura pe 15 minute (trend, EMA, breakout, pullback). <b>Deține direcția.</b> Raportează <code className="text-blue-300">bias</code> (long/short/neutral) + <code className="text-blue-300">confidence</code> 0–100.</div>
-              </div>
-              <div className="bg-surface rounded-lg border border-surface-border p-3 space-y-0.5">
-                <div className="text-[11px] font-semibold text-slate-200">2. 🌍 Analist Macro / Știri</div>
-                <div className="text-slate-400">Evaluează contextul zilei: evenimente economice apropiate, sesiune, risc de știri. Raportează bias + confidence + <code className="text-blue-300">event_risk</code>.</div>
-              </div>
-              <div className="bg-surface rounded-lg border border-surface-border p-3 space-y-0.5">
-                <div className="text-[11px] font-semibold text-slate-200">3. 🛡️ Risk Manager <span className="text-loss">(VETO absolut)</span></div>
-                <div className="text-slate-400">Gestionează <b>expunerea</b>, NU reface analiza tehnică. Poate <b>bloca</b> trade-ul — dar veto-ul e onorat DOAR cu un cod de risc valid, aplicat în cod: <code className="text-blue-300">NEWS_IMMINENT / DAILY_STOP / MAX_POSITIONS / EXTREME_VOL / WEEKEND_GAP / BAD_GEOMETRY</code>. Un veto necalificat → prudență (risc redus), nu blocaj. Nu raportează încredere/direcție.</div>
-              </div>
-              <div className="bg-surface rounded-lg border border-surface-border p-3 space-y-0.5">
-                <div className="text-[11px] font-semibold text-slate-200">4. 🧮 Analist Cantitativ <span className="text-slate-500">(opțional)</span></div>
-                <div className="text-slate-400">NU dă direcția — presează <b>numerele</b>: valoare așteptată (EV), probabilitate de câștig, SL vs ATR. Raportează <code className="text-blue-300">assessment</code> (favorable/marginal/unfavorable) + confidence.</div>
-              </div>
-              <div className="bg-surface rounded-lg border border-surface-border p-3 space-y-0.5">
-                <div className="text-[11px] font-semibold text-slate-200">5. 😈 Avocatul Diavolului <span className="text-slate-500">(opțional)</span></div>
-                <div className="text-slate-400">Singurul lui rol e să argumenteze <b>ÎMPOTRIVA</b> trade-ului (pre-mortem, contra-teză) — expune riscurile pe care restul mesei le-ar putea rata. Nu raportează încredere.</div>
-              </div>
-              <div className="bg-surface rounded-lg border border-surface-border p-3 space-y-0.5">
-                <div className="text-[11px] font-semibold text-slate-200">6. 🎯 Head Trader</div>
-                <div className="text-slate-400">Ia decizia finală după ce ascultă masa. Deschide în direcția Analistului Tehnic când încrederea lui e ≥ 55. Produce <code className="text-blue-300">approve</code> + <code className="text-blue-300">risk_pct</code> + confidence — dar rails-urile hard din cod pot ajusta/respinge geometria.</div>
-              </div>
-            </div>
-            <Note>
-              Rolurile se distribuie pe surse AI (tab-ul <b>AI Engine → Surse AI</b>). Ordinea e mereu aceeași;
-              rolurile 4–5 rulează doar dacă le activezi. Vezi transcriptul complet cu click pe orice decizie.
-            </Note>
           </SubSection>
 
-          <SubSection title="Cum funcționează Încrederea (confidence)">
-            <p>
-              Încrederea afișată/stocată a unei decizii = <b>media încrederilor membrilor care raportează una</b>
-              (Analist Tehnic + Macro + [Cantitativ] + Head Trader). Risk Manager și Avocatul Diavolului
-              <b> nu</b> raportează încredere. Se folosește <b>media</b>, nu doar părerea Head Trader-ului, fiindcă
-              Head-ul e sistematic mai optimist decât media analiză+macro — media e mai onestă.
-            </p>
-            <div className="space-y-1.5 text-xs mt-1">
-              <KV k="Prag (bara din UI)" v="consensus_threshold, implicit 70 — media sub prag → WAIT" />
-              <KV k="Încredere BUNĂ" v="Roluri de acord (tehnic + macro + head toate ridicate) → media ≥ prag → execută" vColor="text-profit" />
-              <KV k="Încredere SLABĂ" v="Analiștii se contrazic, event_risk mare, setup marginal → media < prag → WAIT" vColor="text-loss" />
+          <SubSection title="Surse AI: Ollama + Gemini">
+            <div className="space-y-1 text-xs">
+              <KV k="Ollama (local)" v="Analist Tehnic, Analist Macro, Risk Manager — model qwen3:8b, gratuit, safety-net (nu se șterge)" />
+              <KV k="Gemini" v="Head Trader (free tier)" />
+              <KV k="Failover" v="Sursă căzută / fără quota → rolul trece automat pe altă sursă sănătoasă, apoi Ollama" />
+              <KV k="Buget de timp" v="240 s per consiliu, respectat și LA APEL (timeout = timpul rămas); depășit → WAIT" />
+              <KV k="Ollama instabil" v="Reîncercare la conexiune închisă, pauză 30 s dacă e oprit, recuperare singur fără restart" />
             </div>
-            <Note>
-              La o <b>respingere prin approve=false</b>, „confidence" = cât de sigur e consiliul că trade-ul e SLAB
-              (o convingere de NU), <b>nu</b> o încredere de aprobare — de aceea poate fi 90% și totuși RESPINS.
-              Sursa de adevăr a gate-ului e încrederea de consens (0 când nu s-a aprobat nimic).
-            </Note>
-            <Note>
-              În modul <b>consens multi-consiliu</b>, încrederile se combină prin media efectivă + veto absolut
-              (efectiv = încrederea dacă aprobă, altfel 0; orice veto valid → respins; altfel aprobat ⟺ media ≥ prag).
-              Filtrul AI Pre-Trade al botului folosește praguri fixe pe încrederea Head Trader-ului: <b>50</b> permisiv,
-              <b> 70</b> echilibrat, <b>85</b> strict.
-            </Note>
+            <Note>Celelalte surse (Claude, ChatGPT, Groq, Mistral etc.) au fost scoase; cheile lor sunt păstrate local în
+              data/ai/providers.removed-2026-10-31.json. O sursă nouă se poate adăuga oricând din cardul Surse AI.
+              Butonul 🩺 testează toate sursele în paralel; <code>python -m ai_engine.doctor</code> verifică inferența reală Ollama.</Note>
           </SubSection>
 
-          <SubSection title="Instalare pe alt dispozitiv (laptop)">
-            <p>
-              Rulează <code className="text-slate-300">setup_ai_engine.bat</code> — instalează automat Python,
-              Ollama și modelul AI, apoi rulează verificările. Pe laptop fără GPU dedicat folosește un model mai mic
-              (<code className="text-slate-300">qwen3:4b</code> în ai_engine/config.json). Motorul se rulează pe un
-              singur dispozitiv odată (același cont demo).
-            </p>
+          <SubSection title="Consiliul — 4 roluri">
+            <div className="space-y-1 text-xs">
+              <KV k="📈 Analist Tehnic" v="Direcția (bias) + încredere" />
+              <KV k="🌍 Analist Macro" v="Contextul zilei, risc de știri + încredere" />
+              <KV k="🛡️ Risk Manager" v="Veto doar cu cod valid (NEWS_IMMINENT, DAILY_STOP, MAX_POSITIONS, EXTREME_VOL, WEEKEND_GAP, BAD_GEOMETRY)" />
+              <KV k="🎯 Head Trader" v="Decizia finală (approve, SL, TP, risc) + încredere" />
+            </div>
+            <Note><b>Încrederea</b> deciziei = media membrilor care raportează una (Tehnic, Macro, Head). Media sub prag
+              (implicit 70) → WAIT. La o respingere, „încredere 90%” înseamnă cât de sigur e consiliul că trade-ul e SLAB.
+              Multe decizii WAIT = disciplină, nu inactivitate.</Note>
+          </SubSection>
+
+          <SubSection title="Piețe: mod Activ / Observație + limite per piață">
+            <div className="space-y-1 text-xs">
+              <KV k="Activ" v="Analizează și poate plasa ordine" />
+              <KV k="Observație" v="Analizează, decizia e salvată „shadow”, ZERO ordine noi; exclusă din scorecard" />
+              <KV k="Limite per piață" v="Fracție capital, risc, R:R max, stop zilnic, max ordine/zi, lot fix" />
+              <KV k="Stare live" v="Pe fiecare rând: ordine azi X/Y, R azi vs stop, dacă poate deschide + motiv" />
+              <KV k="Adăugare piață" v="„+ Add Market” cu căutare în simbolurile reale din MT5" />
+            </div>
+            <Note>Vechiul „Izolat” doar scotea piața din scorecard, dar ea tranzacționa în continuare — a fost înlocuit de
+              Observație (setările vechi sunt convertite automat).</Note>
+          </SubSection>
+
+          <SubSection title="Date și curățare" defaultOpen={false}>
+            <p className="text-xs">Ledger SQLite <code>data/ai/ledger.db</code>: percepții, transcripturi, decizii, rezultate.
+              Luni de la 12:00, pentru analizele FĂRĂ trade mai vechi de 28 de zile se golește doar textul greu (transcript +
+              snapshot); trade-urile plasate rămân integral, niciun rând nu se șterge.</p>
           </SubSection>
         </Section>
 
-        {/* ── 12. CONT LIVE ── */}
-        <Section id="live" title="12. Lansare cont live">
-          <SubSection title="Demo vs Live — ce se schimbă">
-            <p>
-              Botul nu distinge între demo și live — folosește același API MT5. Singura diferință este contul activ logat în MT5.
-              Atâta timp cât MT5 este deschis și logat pe contul live, ordinele sunt plasate cu bani reali.
-            </p>
-            <div className="grid grid-cols-1 gap-2 text-xs mt-3">
-              {[
-                { label: "Funcționează identic", items: ["Detectare semnale (strategie neschimbată)", "Calculul loturilor din equity real MT5", "Filling modes (FOK/IOC/RETURN cu retry)", "Reconciliere la restart (recovery din history MT5)", "Notificări Telegram", "Toate protecțiile (BE, news guard, vineri close)"] },
-                { label: "Necesită atenție la tranziție", items: ["Capital Inițial — setează ÎNAINTE de prima pornire", "Simboluri broker — live poate folosi alias-uri diferite față de demo", "AutoTrading activat în MT5 (butonul verde)", "Stop level mai mare pe live = mai puține semnale acceptate"], color: "text-amber-400" },
-              ].map(({ label, items, color }) => (
-                <div key={label} className="bg-surface rounded-lg border border-surface-border p-3 space-y-1.5">
-                  <div className={`text-[11px] font-semibold ${color ?? "text-slate-300"}`}>{label}</div>
-                  <ul className="space-y-0.5">
-                    {items.map(i => <li key={i} className="text-[10px] text-slate-400 flex gap-1.5"><span className="text-slate-600 mt-0.5">·</span>{i}</li>)}
-                  </ul>
-                </div>
-              ))}
+        {/* ── 12. DAILY ENGINE ── */}
+        <Section id="daily-engine" title="12. Daily Engine (intraday — Shadow sau Execuție)">
+          <SubSection title="Ce face">
+            <p>Tranzacționare în aceeași zi la deschiderea burselor, când intră volumul mare. Un trade pe zi pe piață,
+              închis obligatoriu în aceeași zi (niciodată peste noapte). Fără RSI/EMA — doar preț și oră.</p>
+            <div className="space-y-1 text-xs">
+              <KV k="☀️ GBPUSD 10:00 → 16:30 RO" v="Deschiderea Londrei: interval 5 min, ordine stop pe ambele margini (rol: observație)" />
+              <KV k="🌆 US500 16:30 → 23:00 RO" v="Deschiderea New York: interval 30 min, intrare la 17:00 pe direcția intervalului (principal)" />
+              <KV k="Stop loss" v="Marginea opusă a intervalului; fără TP fix — ieșire la final de fereastră" />
+              <KV k="Zi sărită" v="Interval fără direcție, ambele margini în aceeași bară, risc < 2× cost, piață închisă" />
+              <KV k="Fus orar" v="Pe ora bursei: în săptămânile cu decalaj SUA/RO fereastra NY se mută singură la 15:30" />
             </div>
           </SubSection>
 
-          <SubSection title="Lista de verificare înainte de prima pornire live">
-            <div className="space-y-2 mt-1">
-              {[
-                { step: "1", title: "Setează Capital Inițial", desc: "Profile → câmpul \"Capital Inițial\" → introdu suma de start a contului live. Alternativ, folosește butonul \"↓ Import din MT5\" pentru a prelua equity curentă automat. Salvează profilul." },
-                { step: "2", title: "Verifică simbolurile", desc: "Markets → conectează MT5 pe contul live → verifică că toate simbolurile sesiunilor active sunt disponibile. Unii brokeri folosesc alias-uri (ex: GER40 → DE40). Dacă lipsesc, actualizează SYMBOL_ALIASES în settings sau contactează brokerul." },
-                { step: "3", title: "AutoTrading activ în MT5", desc: "Butonul \"AutoTrading\" din bara de instrumente MT5 trebuie să fie verde. Dacă este gri/roșu, click pentru activare. Dashboard-ul afișează banner galben de avertizare când este dezactivat." },
-                { step: "4", title: "Verifică account_fraction și risc/trade", desc: "În Profile → SessionEditor, verifică că breakdown-ul live (capital sesiune × fracție / piețe) și risc/trade în USD corespund toleranței tale la risc pentru suma reală." },
-                { step: "5", title: "Pornește botul din UI", desc: "Click Start Bot → selectează profilul → confirmă. La prima bară nouă, botul va detecta semnale și va plasa ordine reale în MT5. Urmărește tab-ul Notificări și log-urile pentru primele ore." },
-                { step: "6", title: "Verifică primele ordine", desc: "La primul semnal: verifică că ordinul apare în MT5 cu prețul corect (BUY_STOP/SELL_STOP). Compară entry/SL/TP din Dashboard cu ordinul MT5. Dacă există discrepanțe, folosește butonul Sync MT5 din NavBar." },
-              ].map(({ step, title, desc }) => (
-                <div key={step} className="flex gap-3 bg-surface rounded-lg border border-surface-border p-3">
-                  <div className="w-6 h-6 rounded-full bg-blue-600/20 border border-blue-500/40 flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <span className="text-[11px] font-bold text-blue-400">{step}</span>
-                  </div>
-                  <div className="space-y-0.5">
-                    <div className="text-xs font-semibold text-slate-200">{title}</div>
-                    <div className="text-[11px] text-slate-400 leading-relaxed">{desc}</div>
-                  </div>
-                </div>
-              ))}
+          <SubSection title="Shadow → Execuție (ordine reale)">
+            <div className="space-y-1 text-xs">
+              <KV k="Unde" v="Tab Daily Engine → comutatorul „Mod” (două confirmări; revenirea la Shadow cere o confirmare)" />
+              <KV k="Cont DEMO" v="Execuția merge direct" />
+              <KV k="Cont REAL" v="În plus: Settings → Trading LIVE → „Daily Engine” deblocat (per mașină). Altfel: „Execuție blocată” + motivul" />
+              <KV k="De când" v="De la următoarea fereastră — ziua trebuie activată înainte de formarea intervalului (comutat mai târziu → ziua rămâne shadow)" />
+              <KV k="GBPUSD" v="BUY_STOP + SELL_STOP pe marginile intervalului; la umplerea uneia cealaltă se anulează" />
+              <KV k="US500" v="Ordin la piață la 17:00 RO pe direcția intervalului" />
+              <KV k="Mereu" v="SL atașat, lot din dimensionarea comună, Setări Globale + știri respectate, închidere la finalul ferestrei, nimic peste noapte" />
+              <KV k="În Dashboard" v="Tranzacțiile reale apar ca „DAILY” (magic 880001) în Tranzacții, carduri și rapoarte" />
+            </div>
+            <Warn>Recomandarea rămâne: 2–3 luni de shadow înainte de execuție pe cont real — edge-ul din backtest e mic.</Warn>
+          </SubSection>
+
+          <SubSection title="Mod SHADOW — de ce și ce înseamnă">
+            <p>Nu plasează niciun ordin: citește doar prețurile reale din MT5 și înregistrează trade-uri <b>virtuale</b> cu exact
+              regulile din backtest. Edge-ul din cercetare e mic (+0,06…0,08R/trade) și nedovedit statistic după corecția de
+              căutare multiplă — trebuie confirmat pe date noi înainte de bani reali.</p>
+            <div className="space-y-1 text-xs">
+              <KV k="Trade-uri virtuale" v="data/daily_engine/trades.jsonl (local mașinii pe care rulează)" />
+              <KV k="Notificări" v="„🧪 Daily SHADOW” la intrare și la închidere, o singură dată pe zi / piață" />
+              <KV k="În Dashboard" v="Card Daily: banii reali = 0; trade-urile virtuale separat, în R" />
+              <KV k="Supraveghere" v="Watchdog-ul API îl repornește dacă moare fără Stop (max 3/oră)" />
+            </div>
+            <Note>Cercetarea completă (studii oficiale, ore de vârf, 216 variante testate, constrângerea contului de ~$200):
+              docs/DAILY_ENGINE_PLAN.md. Trecerea la ordine reale = etapă separată, cu aprobare.</Note>
+          </SubSection>
+        </Section>
+
+        {/* ── 13. DEMO / LIVE ── */}
+        <Section id="live" title="13. Demo / Live">
+          <SubSection title="Cum se deblochează contul real">
+            <p>Implicit totul e DEMO-only: Custom Engine și AI Engine refuză un cont real. Deblocarea e explicită, per componentă
+              și per mașină: <b>Settings → Trading LIVE</b> (două confirmări). Daily Engine în shadow e doar citire, deci rulează pe
+              orice cont fără risc. Pentru modul Execuție pe cont real există un switch separat „Daily Engine” în Trading LIVE.</p>
+            <div className="space-y-1 text-xs">
+              <KV k="Fișier" v="data/live_trading.json (nu se sincronizează prin git)" />
+              <KV k="La prima conectare reală" v="Telegram „⚠️🔴 CONT LIVE” o dată per proces" />
+              <KV k="Eroare la citire" v="BLOCAT (fail-safe)" />
+              <KV k="Aplicare" v="La următoarea conectare (repornește engine-ul dacă rulează)" />
             </div>
           </SubSection>
 
-          <SubSection title="Comportament la restart și crash" defaultOpen={false}>
-            <p>
-              Botul este proiectat să fie robust la reporniri neașteptate:
-            </p>
-            <div className="space-y-1.5 text-xs mt-2">
-              <div className="bg-surface rounded-lg border border-surface-border p-3 space-y-1.5">
-                <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">La fiecare restart</div>
-                <KV k="_reconcile_mt5_tickets" v="Sincronizează ordinele pending cu biletele MT5 active" />
-                <KV k="_recover_lost_outcomes" v="Găsește în history MT5 tranzacțiile închise în lipsa botului" />
-                <KV k="_scan_mt5_history" v="Scanare completă 10 zile — prinde orice outcome neînregistrat" />
-              </div>
-              <Note>
-                Ordinele pending în MT5 sunt <strong className="text-white">independente de bot</strong> — rămân active chiar dacă botul se oprește.
-                La restart, botul le regăsește și continuă monitorizarea. Niciun ordin nu se pierde la crash.
-              </Note>
+          <SubSection title="Listă de verificare înainte de live">
+            <div className="space-y-1 text-xs">
+              <KV k="1. Capital de start" v="Tab Custom Engine → Capital Inițial (sau Import din MT5) — baza pentru P&L Real" />
+              <KV k="2. AutoTrading" v="Butonul din MT5 verde (altfel bannerul galben și nimic nu se plasează)" />
+              <KV k="3. Execuție" v="Doar sesiunile dorite pe Live; DEMOTE (badge roșu ⚠ live) → de preferat Observație" />
+              <KV k="4. Risc / marjă" v="Fracție cont, lot minim al brokerului, lot fix — verifică breakdown-ul în USD" />
+              <KV k="5. Setări Globale" v="Protecție capital + circuit breaker recomandate pe cont real" />
+              <KV k="6. Pornire" v="Cardul engine-ului → Start (confirmare); urmărește Notificările primele ore" />
+              <KV k="7. Primul ordin" v="Verifică în MT5 entry / SL / TP față de notificare" />
             </div>
           </SubSection>
 
           <SubSection title="Rapoarte automate (Telegram)" defaultOpen={false}>
-            <p>
-              Botul trimite automat rapoarte periodice via Telegram:
-            </p>
-            <div className="space-y-2 text-xs mt-2">
-              <KV k="Zilnic — 23:30" v="Trades din ziua respectivă: Total R, P&L USD, top simboluri, per sesiune" />
-              <KV k="Săptămânal — Vineri 23:30" v="Rezumat săptămâna curentă (Luni–Vineri): același format ca zilnicul" />
+            <div className="space-y-1 text-xs">
+              <KV k="Zilnic" v="În fiecare zi la ora setată (23:30): tranzacțiile zilei din MT5" />
+              <KV k="Săptămânal" v="DOAR vineri la ora setată (23:30), de la raportul de vinerea trecută (include weekendul)" />
+              <KV k="Lunar" v="Pe 1 ale lunii la 09:00, luna calendaristică completă precedentă; recuperat la prima ocazie" />
+              <KV k="Conținut" v="Performanța Custom / AI / Daily + TOTAL, comparație (profit, risc, drawdown, consistență), condiții de piață, evenimente, weekend, probleme, analiză AI consultativă" />
+              <KV k="Lipsuri" v="O sursă indisponibilă (MT5, calendar, AI) e marcată explicit — raportul se trimite oricum" />
+              <KV k="Unde se setează" v="Settings → Rapoarte programate (ore, AI, mașina care trimite, trimitere manuală)" />
             </div>
-            <Tip>
-              Rapoartele automate folosesc doar sesiunile cu <code className="text-blue-300">execute_trades: true</code> — sesiunile de observație sunt excluse.
-              Formatul include: 📊 Trades (W/L — WR%), 📈 Total R, 💵 P&L USD, 🏆 Top 3 simboluri.
-            </Tip>
-          </SubSection>
-
-          <SubSection title="Monitorizare continuă" defaultOpen={false}>
-            <p>Indicatori cheie de urmărit în primele zile pe live:</p>
-            <div className="space-y-1.5 text-xs mt-2">
-              <KV k="Banner galben AutoTrading" v="Dacă apare, click AutoTrading în MT5 — ordinele NU se plasează când este dezactivat" />
-              <KV k="P&L Real MT5 vs așteptat" v="Compară zilnic cu suma raportată de MT5 — diferențe mari pot indica duplicate" />
-              <KV k="Notificări [RECOVER]" v="Apar când botul a recuperat tranzacții închise în lipsa lui — normale după restart" />
-              <KV k="min stops distance" v="Log warning = SL prea aproape de preț curent — ordinul nu s-a plasat, se reîncearcă la bara următoare" />
-              <KV k="Sync MT5" v="Butonul din NavBar forțează resincronizarea outcomes cu history MT5 — folosește dacă P&L pare incorect" />
-              <KV k="Notificări [DEDUP]" v="Apar când botul a detectat un ordin MT5 deja existent pentru același semnal și l-a adoptat în loc să plaseze un duplicat — pot apărea după un crash/restart" />
-            </div>
-          </SubSection>
-
-          <SubSection title="Sync MT5 — Reconciliere manuală" defaultOpen={false}>
-            <p>
-              Butonul <strong className="text-white">Sync MT5</strong> din NavBar reconciliază <code className="text-blue-300">outcomes.csv</code> cu
-              istoricul real din MT5. Principiu: <strong className="text-yellow-400">MT5 este sursa de adevăr</strong> — dacă o tranzacție
-              există în MT5, ea trebuie să fie reflectată în dashboard.
-            </p>
-            <div className="grid grid-cols-2 gap-3 text-xs mt-3">
-              <div className="bg-surface rounded-lg border border-surface-border p-3 space-y-1">
-                <div className="text-[11px] font-semibold text-slate-300">Detectează</div>
-                <div className="text-slate-400">Scanează history MT5 (10 zile) și raportează discrepanțele fără să modifice nimic. Arată ticket, simbol, R și P&L pentru fiecare poziție MT5 care lipsește din outcomes.csv.</div>
-              </div>
-              <div className="bg-surface rounded-lg border border-surface-border p-3 space-y-1">
-                <div className="text-[11px] font-semibold text-slate-300">Corectează</div>
-                <div className="text-slate-400">Scrie în outcomes.csv rândurile lipsă cu datele reale MT5. Sigur de rulat și cu botul activ — nu modifică state.pkl.</div>
-              </div>
-            </div>
-            <div className="mt-3 space-y-1.5 text-xs">
-              <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Ce detectează</div>
-              <KV k="Pozitii MT5 lipsă din outcomes" v="Ordine executate în MT5 care nu au rând corespondent în outcomes.csv (ex: bot oprit înainte să scrie rezultatul)" />
-              <KV k="Semnale triggered fără poziție deschisă" v="State.pkl are semnal ca triggered, dar poziția MT5 nu mai există — potențial trade neînregistrat" />
-            </div>
-            <Note>
-              Sincronizarea filtrează automat semnalele altor sesiuni care tranzacționează același simbol (ex: S2-NZDJPY găsit în sesiunea care tranzacționează și ea NZDJPY). Prefixul comentariului MT5 (<code>S18-</code>, <code>S2-</code> etc.) identifică sesiunea de origine.
-            </Note>
-            <Tip>
-              Dacă după sync mai apar discrepanțe persistente, verifică în MT5 că ordinul comentariul include prefix-ul corect al sesiunii. ICMarketsEU trunchiază comentariile la 16 caractere — semnalele cu ID lung (ex: <code>S18-NZDJPY-H1-IB0010</code>) sunt stocate trunchiat în MT5.
-            </Tip>
+            <Note>Lasă „Trimite de pe această mașină” activ doar pe mașina care rulează engine-urile — altfel primești rapoarte duble.
+              Fusul orar al rapoartelor = cel din Settings → Fus orar.</Note>
           </SubSection>
         </Section>
 
-        {/* ── 13. PUNTE TELEGRAM ── */}
-        <Section id="telegram-bridge" title="13. Punte Telegram (control de pe telefon)">
+        {/* ── 14. DATE, STOCARE, RECOVERY ── */}
+        <Section id="data-recovery" title="14. Date, stocare și recovery">
+          <SubSection title="Ce date există și unde">
+            <div className="space-y-1 text-xs">
+              <KV k="Istoric MT5" v="Sursa de adevăr pentru toate rezultatele (nu se copiază local)" />
+              <KV k="Custom Engine" v="data/live_signals/session*/ — state.pkl, signals.csv, outcomes.csv, ai_filter.jsonl, generator.log" />
+              <KV k="AI Engine" v="data/ai/ — ledger.db, status.json, engine.log, config surse" />
+              <KV k="Daily Engine" v="data/daily_engine/ — trades.jsonl, state.json, status.json, engine/stdout/crash.log" />
+              <KV k="API / UI" v="data/notifications.json, backtest_jobs.json, session_changes_log.json, bot_uptime_log.json" />
+              <KV k="Config (în git)" v="data/profiles/standard.json, data/global_settings.json, ai_engine/config.json, daily_engine/config.json" />
+              <KV k="Date de cercetare" v="data/*.csv, data/research_daily/ (OHLC, gitignored)" />
+            </div>
+            <Note>Branch-ul main = cod + fix-uri + configurație; datele operaționale nu intră în commit-uri (se sincronizează separat).</Note>
+          </SubSection>
+
+          <SubSection title="Ce se curăță automat">
+            <div className="space-y-1 text-xs">
+              <KV k="AI (luni 12:00)" v="Transcript + snapshot din analizele FĂRĂ trade > 28 zile; restul rămâne" />
+              <KV k="Notificări" v="Maxim 500 (cele mai vechi ies)" />
+              <KV k="Backteste / descărcări" v="Maxim 150 / 50 joburi; istoric backtest maxim 200" />
+              <KV k="Jurnale" v="Rotație la 2 MB (Daily), fișiere per sesiune" />
+            </div>
+            <Note>signals.csv / outcomes.csv nu se curăță (deduplicare, contor ID-uri, recuperare).</Note>
+          </SubSection>
+
+          <SubSection title="Recovery după restart sau crash" defaultOpen={false}>
+            <div className="space-y-1 text-xs">
+              <KV k="Custom Engine" v="La pornire: reconciliază biletele MT5, recuperează rezultatele închise în lipsa lui ([RECOVER]), scanează 10 zile; MT5 are mereu prioritate" />
+              <KV k="AI Engine" v="Watchdog propriu repornește motorul; rezultatele se recalculează din MT5" />
+              <KV k="Daily Engine" v="Starea zilei se reconstruiește din bare la fiecare iterație — fără dubluri, fără notificări repetate" />
+              <KV k="Ordinele" v="Pending-urile și pozițiile din MT5 rămân active cu SL/TP chiar dacă engine-ul e oprit" />
+            </div>
+            <Warn>state.pkl corupt (oprire forțată în timpul scrierii): oprește sesiunea, curăță cheile invalide, repornește.
+              Sesiunea pornește oricum cu stare goală la corupție totală.</Warn>
+          </SubSection>
+        </Section>
+
+        {/* ── 15. PUNTE TELEGRAM ── */}
+        <Section id="telegram-bridge" title="15. Punte Telegram (control de pe telefon)">
           <SubSection title="Ce este și cum pornește">
             <p>
               Un daemon <strong>separat</strong> care îți permite să comanzi botul de pe telefon, prin
@@ -2181,7 +1604,7 @@ export function GuidePage() {
             <div className="space-y-1 text-xs mt-1">
               <KV k="1. Claude Code CLI" v="cu tools de repo — primar" />
               <KV k="2. Claude API direct" v="degradat: doar din context injectat, fără tools de repo" />
-              <KV k="3. Surse AI existente" v="cerebras / mistral / ollama…" />
+              <KV k="3. Surse AI existente" v="gemini / ollama (sursele din tab-ul AI Engine)" />
               <KV k="4. Mesaj onest" v="doar comenzile locale disponibile acum" />
             </div>
           </SubSection>
@@ -2205,9 +1628,9 @@ export function GuidePage() {
             <p>Aproape nimic — tot ce e necesar e deja configurat. Pornești cu dublu-click pe .bat.</p>
             <div className="space-y-1 text-xs mt-1">
               <KV k="Telegram + whitelist" v="data/telegram_config.json — deja setat, reutilizat" vColor="text-emerald-300" />
-              <KV k="ai … + fallback" v="data/ai/providers.json (cerebras/groq/gemini…) — deja setat" vColor="text-emerald-300" />
+              <KV k="ai … + fallback" v="data/ai/providers.json (ollama + gemini) — deja setat" vColor="text-emerald-300" />
               <KV k="claude … (agent)" v="login Claude Code pe acest PC — deja logat" vColor="text-emerald-300" />
-              <KV k="Fallback Claude API" v="opțional: activează sursa „claude” în tab-ul AI Engine" />
+              <KV k="Fallback Claude API" v="opțional: adaugă o sursă de tip „anthropic” în tab-ul AI Engine (nu e configurată acum)" />
               <KV k="Editări (claude!)" v="opțional: allow_writes: true în data/telegram_bridge.json" />
               <KV k="copilot …" v="opțional: instalează copilot / gh copilot + copilot_enabled: true" />
             </div>
@@ -2250,7 +1673,7 @@ export function GuidePage() {
               Whitelist-ul te-a filtrat deja (doar chat-ul tău), deci doar tu poți da <code>/edit</code>.
               Scrierea rămâne în 2 pași: <code>claude! …</code> → plan + cod → <code>CONFIRM &lt;cod&gt;</code>.
               <br /><b>Editor de rezervă gratuit:</b> dacă Claude CLI e indisponibil, <code>claude!</code>
-              folosește automat <b>Aider</b> (gratuit: <code>pip install aider-chat</code>, cu cheia ta groq).
+              folosește automat <b>Aider</b> (gratuit: <code>pip install aider-chat</code>; model <code>gemini/gemini-2.5-flash</code>, cu cheia Gemini din providers.json).
               Vezi cu <code>/editors</code>.
               <br /><b>Notificări MT5/piețe:</b> deja active — botul trimite alertă la conexiune MT5 pierdută,
               broker deconectat, AutoTrading oprit; motorul AI la pierderea conexiunii MT5.
@@ -2286,6 +1709,32 @@ export function GuidePage() {
               Pași complet detaliați în <code>docs/TELEGRAM_BRIDGE.md</code>. La pornire îți trimite
               „🤖 Punte Matrix pornită" în cameră; apoi <code>/ajutor</code> merge la fel ca pe Telegram.
             </Tip>
+          </SubSection>
+        </Section>
+
+        {/* ── 16. ELIMINAT / DEPRECATED ── */}
+        <Section id="removed" title="16. Ce a fost eliminat sau e dormant">
+          <SubSection title="Eliminat (nu mai există în UI / cod activ)">
+            <div className="space-y-1 text-xs">
+              <KV k="Sync MT5 + sursa „Bot”" v="A doua evidență a rezultatelor (diverga de MT5) — acum totul vine din MT5" />
+              <KV k="Selector de profil" v="Un singur profil „standard”; Profil nou / Șterge scoase (fișierele vechi rămân pe disc)" />
+              <KV k="Frecvența estimată + -DD% estimat" v="Înlocuite de Ritmul de tranzacționare (real, pe engine)" />
+              <KV k="BotStatusBar / AiStatusBar / toggle-uri autostart din NavBar" v="Înlocuite de cardurile de engine (status + Start/Stop + autostart)" />
+              <KV k="Câmpul Expire bars" v="Fix 4 bare pe toate sesiunile" />
+              <KV k="ADX D1 (criteriu)" v="Scos din UI" />
+              <KV k="Scara R pe criterii (sesiuni live)" v="Înlocuită de nivelurile fixe 2R / 3R / 4R" />
+              <KV k="Roluri Quant / Avocatul Diavolului" v="Scoase din cod (prompturi, apeluri, config, UI)" />
+              <KV k="Surse AI în afară de Ollama + Gemini" v="Scoase din config (cheile păstrate local)" />
+              <KV k="„Izolat” la piețele AI" v="Înlocuit de modul Observație" />
+              <KV k="Protecția capitalului din profil" v="Mutată în Setări Globale (valorile copiate exact)" />
+            </div>
+          </SubSection>
+          <SubSection title="Dormant (cod păstrat, forțat oprit)" defaultOpen={false}>
+            <div className="space-y-1 text-xs">
+              <KV k="Mod Inteligent la știri" v="Forțat OFF (n-a plasat niciun ordin; fără date „actual” se comporta ca protecția standard). Testat în test_news_protection" />
+              <KV k="Consilii multiple (consens)" v="Forțat OFF în AI Engine și în filtrul AI; codul consensus / orchestrator rămâne testat" />
+              <KV k="Body Strength" v="Funcțional în backend pentru profile vechi, oprit implicit" />
+            </div>
           </SubSection>
         </Section>
 

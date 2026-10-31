@@ -17,6 +17,8 @@ from datetime import datetime
 
 import MetaTrader5 as mt5
 
+import position_sizing as ps
+
 log = logging.getLogger("ai_engine.executor")
 
 _FILLINGS = []   # populat la connect() — IOC/FOK/RETURN in ordinea suportata
@@ -71,11 +73,7 @@ def capital_base(cfg: dict) -> float:
         cont de 700$ nu umfla riscul). Cu MT5 indisponibil (equity 0) se
         foloseste capitalul fix ca atare.
     """
-    if cfg.get("capital_sync_mt5", True):
-        return equity()
-    cap = float(cfg.get("capital_usd") or 0.0)
-    eq = equity()
-    return min(cap, eq) if eq > 0 else cap
+    return ps.capital_base(cfg.get("capital_sync_mt5", True), cfg.get("capital_usd"), equity())
 
 
 # ── Stare pozitii/ordine AI (filtrate pe magic) ──────────────────────────────
@@ -216,45 +214,34 @@ def validate_decision(d: dict, snapshot: dict, cfg: dict,
 
 def calc_lots(symbol: str, entry: float, sl: float,
               capital: float, risk_pct: float) -> tuple[float, float | None]:
-    info = mt5.symbol_info(symbol)
-    if info is None:
-        return 0.0, None
-    dist = abs(entry - sl)
-    if dist <= 0 or info.trade_tick_size <= 0:
-        return 0.0, None
-    val_per_price_unit = info.trade_tick_value / info.trade_tick_size
-    risk_usd_target = capital * risk_pct
-    raw  = risk_usd_target / (dist * val_per_price_unit)
-    step = info.volume_step if info.volume_step > 0 else 0.01
-    lot  = max(info.volume_min, (raw // step) * step)
-    lot  = round(lot, 2)
-    risk_usd = round(lot * dist * val_per_price_unit, 2)
-    return lot, risk_usd
+    """Lot pe risc — componenta COMUNA cu Custom/Daily (position_sizing.size_by_risk)."""
+    r = ps.size_by_risk(mt5.symbol_info(symbol), entry, sl, capital, risk_pct)
+    risk = r["risk_money"]
+    return r["lots"], (round(risk, 2) if risk is not None and r["lots"] > 0 else None)
+
+
+def _risk_cap(symbol: str, lots: float, entry: float, sl: float) -> tuple[float, str | None]:
+    """Limita globala de risc pe trade (Setari Globale → risk_cap) — aceeasi ca la Custom / Daily."""
+    try:
+        from live.global_guard import risk_cap_pct
+        cap = risk_cap_pct()
+        if not cap:
+            return lots, None
+        new, why = ps.apply_risk_cap(mt5.symbol_info(symbol), lots, entry, sl, equity(), cap)
+        if why:
+            log.warning(f"[RISK-CAP] {symbol}: {why}")
+        return new, why
+    except Exception:
+        return lots, None          # limita nu poate fi evaluata → nemodificat (ca in Custom)
 
 
 def snap_fixed_lots(symbol: str, fixed_lots: float,
                     entry: float, sl: float) -> tuple[float, float | None]:
-    """
-    Volum FIX per ordin (market_overrides.fixed_lots), aliniat la specificatiile
-    brokerului: clamp la [volume_min, volume_max] si rotunjit in JOS la volume_step
-    (nu crestem niciodata expunerea peste ce a configurat utilizatorul, cu exceptia
-    lotului minim — sub el ordinul nu exista). Returneaza (lot, risc_usd_la_SL).
-    """
-    info = mt5.symbol_info(symbol)
-    if info is None:
-        return 0.0, None
-    step = info.volume_step if info.volume_step > 0 else 0.01
-    # floor la step cu epsilon: fara el, 0.5 // 0.01 = 49 (float) → 0.49 in loc de 0.50
-    lot = int(float(fixed_lots) / step + 1e-9) * step
-    lot = max(info.volume_min, lot)
-    if info.volume_max and info.volume_max > 0:
-        lot = min(lot, info.volume_max)
-    lot = round(lot, 2)
-    dist = abs(entry - sl)
-    risk_usd = None
-    if dist > 0 and info.trade_tick_size > 0:
-        risk_usd = round(lot * dist * (info.trade_tick_value / info.trade_tick_size), 2)
-    return lot, risk_usd
+    """Volum FIX per ordin (market_overrides.fixed_lots) aliniat la broker — componenta
+    comuna (position_sizing.size_fixed). Returneaza (lot, risc_la_SL)."""
+    r = ps.size_fixed(mt5.symbol_info(symbol), fixed_lots, entry, sl)
+    risk = r["risk_money"]
+    return r["lots"], (round(risk, 2) if risk is not None else None)
 
 
 # ── Sanitizare pret ordin STOP (pur, testabil fara MT5) ─────────────────────
@@ -371,6 +358,12 @@ def place(d: dict, snapshot: dict, cfg: dict, decision_id: int,
         else:
             lots, risk_usd = calc_lots(symbol, entry, d["sl"],
                                        capital_base(cfg) * capital_fraction, d["risk_pct"])
+        _lots0 = lots
+        lots, _cap_why = _risk_cap(symbol, lots, entry, d["sl"])
+        if not lots and _cap_why:
+            return "rejected", f"limita de risc pe trade: {_cap_why}", None
+        if _cap_why and risk_usd and _lots0:
+            risk_usd = round(risk_usd * lots / _lots0, 2)
         if lots <= 0:
             return "rejected", "lot calculat 0 (capital insuficient?)", None
         m_err = _margin_ok(lots, entry)
@@ -411,6 +404,12 @@ def place(d: dict, snapshot: dict, cfg: dict, decision_id: int,
         else:
             lots, risk_usd = calc_lots(symbol, d["entry"], d["sl"],
                                        capital_base(cfg) * capital_fraction, d["risk_pct"])
+        _lots0 = lots
+        lots, _cap_why = _risk_cap(symbol, lots, d["entry"], d["sl"])
+        if not lots and _cap_why:
+            return "rejected", f"limita de risc pe trade: {_cap_why}", None
+        if _cap_why and risk_usd and _lots0:
+            risk_usd = round(risk_usd * lots / _lots0, 2)
         if lots <= 0:
             return "rejected", "lot calculat 0 (capital insuficient?)", None
         m_err = _margin_ok(lots, d["entry"])

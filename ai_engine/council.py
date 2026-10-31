@@ -166,51 +166,6 @@ _HEAD_USER = (
 # ── Roluri OPTIONALE (dezactivate by default) ────────────────────────────────
 # Se insereaza inaintea Head Trader-ului, care le vede in prompt. Cand ambele
 # sunt oprite, secventa e EXACT cea de dinainte (4 roluri) si prompt-ul Head
-# Trader e neschimbat (_format_extra intoarce "").
-
-_QUANT_SYS = _PREAMBLE + (
-    "\nROLE: Quantitative / Volatility Analyst. You do NOT call direction — the "
-    "technical desk owns that. You pressure-test the NUMBERS behind the setup: is "
-    "the reward/risk justified by a realistic win probability, is the stop distance "
-    "sane relative to ATR and its percentile, is the expected value positive? A 3R "
-    "target means little if the win probability is 20%. Flag setups whose geometry "
-    "only works on optimistic assumptions.\n"
-    "GUIDANCE: estimate an HONEST win probability from structure quality and "
-    "volatility state; expected value is roughly win_prob*R - (1-win_prob). Favor "
-    "positive-EV setups with stops that are neither absurdly tight (noise-stopped) "
-    "nor absurdly wide (>4-5x ATR)."
-)
-_QUANT_USER = (
-    "{briefing}\n\n"
-    "TECHNICAL ANALYST: {tech_view}\n"
-    "MACRO ANALYST: {macro_view}\n\n"
-    "Assess the quantitative quality of a trade in the technical direction. "
-    "Respond ONLY with JSON:\n"
-    '{{"assessment": "favorable"|"marginal"|"unfavorable", "confidence": 0-100, '
-    '"est_win_prob": 0-100|null, "reasoning": "2-4 sentences"}}'
-)
-
-_DEVIL_SYS = _PREAMBLE + (
-    "\nROLE: Devil's Advocate. Your ONLY job is to argue AGAINST the trade the desk "
-    "is leaning toward — build the strongest bear case (if they lean long) or bull "
-    "case (if they lean short), and run a PRE-MORTEM: assume the trade has already "
-    "hit its stop, then explain what most likely killed it. You are not negative for "
-    "its own sake; you exist to surface the blind spot the desk ignores because of "
-    "confirmation bias. If, after genuinely trying, you find no serious objection, "
-    "say so plainly (severity 'low')."
-)
-_DEVIL_USER = (
-    "{briefing}\n\n"
-    "TECHNICAL ANALYST: {tech_view}\n"
-    "MACRO ANALYST: {macro_view}\n\n"
-    "Argue against the desk's leaning direction and run the pre-mortem. "
-    "Respond ONLY with JSON:\n"
-    '{{"strongest_objection": "1-2 sentences", "failure_mode": "what most likely '
-    'stops the trade out", "severity": "low"|"medium"|"high", '
-    '"reasoning": "2-4 sentences"}}'
-)
-
-
 def _format_extra(views: dict) -> str:
     """
     Blocul optional cu rolurile suplimentare, pentru prompt-ul Head Trader. Gol
@@ -253,10 +208,13 @@ class DebateRunner:
         if time.time() > self.deadline:
             raise ProviderError(
                 f"buget de timp consiliu depasit (la rolul {role})", kind="network")
+        # Termenul limita ajunge pana la cererea HTTP (timeout = timpul ramas).
         if self.source is not None:
-            view, meta = self.registry.call_role_pinned(self.source, system, user, required)
+            view, meta = self.registry.call_role_pinned(self.source, system, user, required,
+                                                        deadline=self.deadline)
         else:
-            view, meta = self.registry.call_role(role, self.assignments, system, user, required)
+            view, meta = self.registry.call_role(role, self.assignments, system, user, required,
+                                                 deadline=self.deadline)
         # metadata de audit in transcript (prefix _ → nu intra in prompturi)
         view["_provider"]  = meta["provider"]
         view["_latency_s"] = meta["latency_s"]
@@ -280,8 +238,6 @@ def convene(registry, briefing: str, desk_state: dict, cfg: dict,
     `source="nume"`: TOATE rolurile ruleaza pinned pe acea sursa, fara failover —
     folosit de consensul multi-council ca sa fie o opinie independenta.
 
-    Rolurile Quant / Devil's Advocate ruleaza doar daca cfg["role_quant_enabled"] /
-    cfg["role_devils_advocate_enabled"] sunt True (ambele False by default).
 
     Orice ProviderError (sursa picata / buget depasit) → decizie WAIT (fail-safe).
     """
@@ -307,19 +263,10 @@ def convene(registry, briefing: str, desk_state: dict, cfg: dict,
                               max_daily_loss=cfg["max_daily_loss_R"]),
                           ["veto", "max_risk_pct", "notes"])
 
+        # Rolurile Quant / Avocatul Diavolului au fost ELIMINATE (2026-10-31): pe 356
+        # verdicte reale au scazut aprobarea de la 12% la 4-6% fara dovada ca trade-urile
+        # respinse in plus erau mai proaste, + latenta. Prompt Head Trader neschimbat.
         extra_views: dict = {}
-        if cfg.get("role_quant_enabled"):
-            extra_views["quant"] = runner.ask(
-                "quant", _QUANT_SYS,
-                _QUANT_USER.format(briefing=briefing, tech_view=_short(tech),
-                                   macro_view=_short(macro)),
-                ["assessment", "confidence", "reasoning"])
-        if cfg.get("role_devils_advocate_enabled"):
-            extra_views["devils_advocate"] = runner.ask(
-                "devils_advocate", _DEVIL_SYS,
-                _DEVIL_USER.format(briefing=briefing, tech_view=_short(tech),
-                                   macro_view=_short(macro)),
-                ["strongest_objection", "severity", "reasoning"])
 
         head = runner.ask("head_trader", _HEAD_SYS.format(min_rr=cfg["min_rr"]),
                           _HEAD_USER.format(

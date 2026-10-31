@@ -1,24 +1,20 @@
 import { useState, useEffect } from "react";
-import { RefreshCw, TrendingUp, TrendingDown, Minus, Play } from "lucide-react";
+import { RefreshCw, TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { apiFetch } from "../api/client";
-import { useSessions, useBotStatus, useMt5Status, useWeeklyStats, useMt5WeeklyStats, useFrequencyEstimate, useMt5SessionStats } from "../api/hooks";
-import { useStatsSource, type StatsSource } from "../hooks/useStatsSource";
-import type { PeriodStats, Mt5PeriodStats, SessionStatus, Mt5SessionStat } from "../api/types";
-import { BotStatusBar } from "../components/BotStatusBar";
-import { AiStatusBar } from "../components/AiStatusBar";
+import { useSessions, useBotStatus, useMt5Status, useMt5WeeklyStats, useMt5SessionStats } from "../api/hooks";
+import type { Mt5PeriodStats, SourceFilter } from "../api/types";
 import { SessionCard } from "../components/SessionCard";
-import { SignalFeed } from "../components/SignalFeed";
+import { SignalFeed, type FeedView } from "../components/SignalFeed";
 import { EquityChart } from "../components/EquityChart";
 import { TradingStatsPanel } from "../components/TradingStatsPanel";
 import { TopMarketsWidget } from "../components/TopMarketsWidget";
-import { AiActivityCard } from "../components/AiActivityCard";
-import { SourceToggle } from "../components/SourceToggle";
+import { EnginePerformanceCards, EnginePerformanceSection } from "../components/EnginePerformance";
+import { EngineControlCards } from "../components/EngineControlCards";
+import { TradingPace } from "../components/TradingPace";
 import { ActiveOrdersTable } from "../components/ActiveOrdersTable";
 
-// Vedere unificata pentru randare — R pentru sursa MT5 e recalculat din SL-ul
-// original al ordinelor (vezi api/routers/mt5status.py::_fetch_closed_trades),
-// null doar daca nicio pozitie din perioada nu are SL rezolvabil.
+// Vedere pentru randare — R e recalculat din SL-ul original al ordinelor
+// (vezi api/mt5_pool.py), null doar daca nicio pozitie din perioada nu are SL rezolvabil.
 interface ViewPeriod {
   start: string; end: string;
   trades: number; wins: number; losses: number; win_rate: number;
@@ -29,11 +25,6 @@ interface ViewPeriod {
 }
 const _costs = (comm?: number, swap?: number): number | null =>
   comm == null && swap == null ? null : Math.round(((comm ?? 0) + (swap ?? 0)) * 100) / 100;
-const toView = (p: PeriodStats): ViewPeriod => ({
-  start: p.start, end: p.end, trades: p.trades, wins: p.wins, losses: p.losses,
-  win_rate: p.win_rate, pnl_usd: p.pnl_usd, ddValue: p.max_dd_r, ddUnit: "R", totalR: p.total_r,
-  costs: _costs(p.commission_usd, p.swap_usd),
-});
 const toViewMt5 = (p: Mt5PeriodStats): ViewPeriod => ({
   start: p.start, end: p.end, trades: p.trades, wins: p.wins, losses: p.losses,
   win_rate: p.win_rate, pnl_usd: p.pnl_usd,
@@ -43,35 +34,9 @@ const toViewMt5 = (p: Mt5PeriodStats): ViewPeriod => ({
   costs: _costs(p.commission_usd, p.swap_usd),
 });
 
-// Suprapune statisticile MT5-directe pe cardul de sesiune, pastrand SessionCard
-// neschimbat — cardul citeste mereu signals_today/signals_total/outcomes_total/wins,
-// doar sursa numerelor se schimba. Starea de proces (running/paused/execute) ramane
-// mereu din Bot, indiferent de sursa — MT5 nu are conceptul de sesiune pe pauza.
-function mergeSessionWithMt5(s: SessionStatus, m: Mt5SessionStat | undefined): SessionStatus {
-  if (!m) {
-    return {
-      ...s,
-      signals_today: 0, signals_total: 0, outcomes_total: 0,
-      wins: 0, losses: 0, pnl_usd_today: 0, pnl_usd_yesterday: 0,
-      last_signal_time: null,
-    };
-  }
-  return {
-    ...s,
-    signals_today: m.trades_today, signals_total: m.trades_total, outcomes_total: m.trades_total,
-    wins: m.wins, losses: m.losses,
-    pnl_usd_today: m.pnl_usd_today, pnl_usd_yesterday: m.pnl_usd_yesterday,
-    last_signal_time: m.last_trade_time,
-  };
-}
-
-function WeeklyStatsPanel({ source, onSourceChange }: { source: StatsSource; onSourceChange: (s: StatsSource) => void }) {
-  const { data: botData, isLoading: botLoading } = useWeeklyStats();
-  const { data: mt5Data, isLoading: mt5Loading } = useMt5WeeklyStats();
+function WeeklyStatsPanel({ source }: { source: string }) {
+  const { data: mt5Data, isLoading } = useMt5WeeklyStats(source);
   const [period, setPeriod] = useState<"week" | "month">("week");
-
-  const usingMt5 = source === "mt5";
-  const isLoading = usingMt5 ? mt5Loading : botLoading;
 
   function Trend({ curr, pre }: { curr: number; pre: number }) {
     if (pre === 0 && curr === 0) return <Minus size={11} className="text-slate-600" />;
@@ -91,32 +56,22 @@ function WeeklyStatsPanel({ source, onSourceChange }: { source: StatsSource; onS
     return <div className="h-24 rounded-xl bg-surface-card animate-pulse" />;
   }
 
-  if (usingMt5 && !mt5Data?.connected) {
+  if (!mt5Data?.connected) {
     return (
-      <div className="space-y-2">
-        <SourceToggle source={source} onChange={onSourceChange} />
-        <div className="text-[11px] text-warn/80 bg-warn/10 border border-warn/30 rounded-lg px-3 py-2">
-          MT5 neconectat — {mt5Data?.error ?? "indicele direct nu este disponibil"}. Comută pe „Bot" pentru date din outcomes.csv.
-        </div>
+      <div className="text-[11px] text-warn/80 bg-warn/10 border border-warn/30 rounded-lg px-3 py-2">
+        MT5 neconectat — {mt5Data?.error ?? "indicele nu este disponibil"}.
       </div>
     );
   }
-  if (!usingMt5 && !botData) return null;
 
-  const cur: ViewPeriod  = usingMt5
-    ? toViewMt5(period === "week" ? mt5Data!.current_week  : mt5Data!.current_month)
-    : toView(period === "week" ? botData!.current_week  : botData!.current_month);
-  const prev: ViewPeriod = usingMt5
-    ? toViewMt5(period === "week" ? mt5Data!.previous_week : mt5Data!.previous_month)
-    : toView(period === "week" ? botData!.previous_week : botData!.previous_month);
+  const cur: ViewPeriod  = toViewMt5(period === "week" ? mt5Data.current_week  : mt5Data.current_month);
+  const prev: ViewPeriod = toViewMt5(period === "week" ? mt5Data.previous_week : mt5Data.previous_month);
 
   const curLabel  = period === "week" ? "Săpt. curentă"   : "Luna curentă";
   const prevLabel = period === "week" ? "Săpt. anterioară" : "Luna anterioară";
 
   return (
     <div className="space-y-2">
-      <SourceToggle source={source} onChange={onSourceChange} />
-
       {/* Tab switcher */}
       <div className="flex gap-1 mb-1">
         {(["week", "month"] as const).map(p => (
@@ -180,7 +135,7 @@ function WeeklyStatsPanel({ source, onSourceChange }: { source: StatsSource; onS
         <div className="text-center text-[11px] text-slate-500">{prev.win_rate.toFixed(1)}%</div>
       </div>
 
-      {/* Total R (doar sursa Bot — MT5 nu are conceptul de R) */}
+      {/* Total R (null cand nicio pozitie nu are SL rezolvabil) */}
       {cur.totalR != null && (
         <div className="grid grid-cols-3 items-center border-t border-surface-border/40 pt-2">
           <div className="text-[11px] text-slate-400">Total R</div>
@@ -220,9 +175,7 @@ function WeeklyStatsPanel({ source, onSourceChange }: { source: StatsSource; onS
             Comisioane
             <span
               className="text-[10px] text-slate-600 cursor-help"
-              title={usingMt5
-                ? "Comisioane + swap ale perioadei, din MT5 (cont-wide — include și Motorul AI)."
-                : "Comisioane + swap ale perioadei, din outcomes.csv (botul pe reguli)."}
+              title="Comisioane + swap ale perioadei, din MT5 (cont-wide — include și Motorul AI)."
             >ⓘ</span>
           </div>
           <div className="text-center">
@@ -236,7 +189,7 @@ function WeeklyStatsPanel({ source, onSourceChange }: { source: StatsSource; onS
         </div>
       )}
 
-      {/* -DD max (R pentru Bot, USD pentru MT5) */}
+      {/* -DD max (R cand e rezolvabil, altfel USD) */}
       <div className="grid grid-cols-3 items-center">
         <div className="text-[11px] text-slate-400">-DD max</div>
         <div className="text-center flex items-center justify-center gap-1">
@@ -261,18 +214,14 @@ export function Dashboard() {
   const { data: sessions, isLoading, dataUpdatedAt } = useSessions();
   const { data: botStatus } = useBotStatus();
   const { data: mt5 } = useMt5Status();
-  const { data: freqData } = useFrequencyEstimate(botStatus?.active_profile_id ?? undefined);
-  const { data: mt5SessionsData } = useMt5SessionStats();
+  // Filtrul de SURSA la nivel de pagina (default Toate): cardurile, statisticile,
+  // indicele saptamanal, Top 5, graficul si lista de tranzactii folosesc aceeasi sursa.
+  const [source, setSource] = useState<SourceFilter>("all");
+  const { data: mt5SessionsData } = useMt5SessionStats(source);
   const [selectedSession, setSelectedSession] = useState<string>("all");
   const [now, setNow] = useState(Date.now());
-  const [runningMissing, setRunningMissing] = useState(false);
-  const [runningAll, setRunningAll] = useState(false);
-  const [statsSource, setStatsSource] = useStatsSource();
+  const [feedView, setFeedView] = useState<FeedView>("trades");
   const qc = useQueryClient();
-
-  const estimatedFreq = (freqData?.per_week != null)
-    ? { perWeek: freqData.per_week, perMonth: freqData.per_month ?? 0 }
-    : null;
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 5_000);
@@ -287,53 +236,12 @@ export function Dashboard() {
 
   const selected = sessions?.find(s => s.id === selectedSession);
 
-  const usingMt5Sessions = statsSource === "mt5";
-  const mt5SessionMap = new Map((mt5SessionsData?.items ?? []).map(m => [m.session_id, m]));
-  const cardSessions = usingMt5Sessions
-    ? sessions?.map(s => mergeSessionWithMt5(s, mt5SessionMap.get(s.id)))
-    : sessions;
+  const mt5SessionMap = new Map(
+    (mt5SessionsData?.connected ? mt5SessionsData.items : []).map(m => [m.session_id, m]),
+  );
 
   function refresh() {
     qc.invalidateQueries();
-  }
-
-  async function runAllBacktests() {
-    if (runningAll || runningMissing) return;
-    setRunningAll(true);
-    try {
-      const profileId = botStatus?.active_profile_id ?? "standard";
-      await apiFetch(`/backtest/run-missing`, {
-        method: "POST",
-        body: { profile_id: profileId, force: true },
-      });
-      qc.invalidateQueries({ queryKey: ["frequency-estimate"] });
-      qc.invalidateQueries({ queryKey: ["backtest-jobs"] });
-      qc.invalidateQueries({ queryKey: ["download-jobs"] });
-    } catch (e) {
-      console.error("run-all failed", e);
-    } finally {
-      setRunningAll(false);
-    }
-  }
-
-  async function runMissingBacktests(onDone?: () => void) {
-    if (runningMissing) return;
-    setRunningMissing(true);
-    try {
-      const profileId = botStatus?.active_profile_id ?? "standard";
-      await apiFetch(`/backtest/run-missing`, {
-        method: "POST",
-        body: { profile_id: profileId },
-      });
-      qc.invalidateQueries({ queryKey: ["frequency-estimate"] });
-      qc.invalidateQueries({ queryKey: ["backtest-jobs"] });
-      qc.invalidateQueries({ queryKey: ["download-jobs"] });
-      if (onDone) onDone();
-    } catch (e) {
-      console.error("run-missing failed", e);
-    } finally {
-      setRunningMissing(false);
-    }
   }
 
   const profileLabel = botStatus?.active_profile_name ?? "Standard";
@@ -374,8 +282,6 @@ export function Dashboard() {
 
         {/* Dreapta: bot status + timer + refresh */}
         <div className="flex items-center gap-3 flex-shrink-0">
-          <BotStatusBar />
-          <AiStatusBar />
           {updateLabel && (
             <span className="text-[10px] text-slate-600 tabular-nums">
               actualizat {updateLabel}
@@ -389,6 +295,30 @@ export function Dashboard() {
             <RefreshCw size={14} />
           </button>
         </div>
+      </div>
+
+      {/* Engine-uri: stare reala + Start/Stop + autostart (Engine Lifecycle comun) */}
+      <EngineControlCards />
+
+      {/* Performanta: TOTAL + cate un card per engine (aceeasi sursa MT5 ca Tranzactiile) */}
+      <EnginePerformanceCards />
+
+      {/* Filtru de SURSA pentru toata pagina (carduri, statistici, grafic, tranzactii) */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-[11px] text-slate-500">Arată tranzacțiile:</span>
+        {([["all", "Toate"], ["bot", "Custom Engine"], ["ai", "AI Engine"], ["daily", "Daily Engine"], ["manual", "Manual"]] as const).map(([v, label]) => (
+          <button key={v} onClick={() => setSource(v)}
+            className={`text-[11px] px-2.5 py-1 rounded-lg border transition-colors ${
+              source === v ? "border-blue-500 bg-blue-500/15 text-white font-semibold"
+                           : "border-surface-border text-slate-400 hover:text-white"}`}>
+            {label}
+          </button>
+        ))}
+        {source !== "all" && (
+          <span className="text-[10px] text-amber-400/80">
+            filtru activ — cifrele de pe pagină includ doar {source === "bot" ? "Custom Engine" : source === "ai" ? "AI Engine" : source === "daily" ? "Daily Engine (ordine reale MT5; shadow = 0)" : "tranzacțiile manuale"}
+          </span>
+        )}
       </div>
 
       {/* Banner AutoTrading dezactivat */}
@@ -405,99 +335,26 @@ export function Dashboard() {
         </div>
       )}
 
-      {/* Frecventa estimata trades */}
-      {(() => {
-        const missing = freqData?.missing ?? [];
-        const missingTooltip = missing.length > 0
-          ? missing.map(m => `${m.id}: ${m.markets.join(", ")}`).join("\n")
-          : "";
-        const avgDD = freqData?.avg_max_dd ?? null;
-        return (
-          <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] text-slate-600 uppercase tracking-wider">Frecvență estimată</span>
-            <button
-              onClick={runAllBacktests}
-              disabled={runningAll || runningMissing}
-              title="Rerulează backtestele pentru toate sesiunile active (actualizează estimările)"
-              className="flex items-center gap-1.5 text-[10px] text-slate-500 hover:text-blue-400 disabled:opacity-40 transition-colors"
-            >
-              <RefreshCw size={11} className={runningAll ? "animate-spin text-blue-400" : ""} />
-              {runningAll ? "Se recalculează..." : "Recalculează toate"}
-            </button>
-          </div>
-          <div className="grid grid-cols-3 gap-3">
-            {/* Card săptămână */}
-            <div className="bg-surface-card rounded-xl border border-surface-border px-5 py-3 flex items-center justify-between gap-4">
-              <div>
-                <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Estimat / săptămână</p>
-                {estimatedFreq
-                  ? <p className="text-2xl font-bold font-mono text-white">~{estimatedFreq.perWeek.toFixed(1)} <span className="text-sm font-normal text-slate-400">trades</span></p>
-                  : <p className="text-2xl font-bold font-mono text-slate-600">—</p>
-                }
-              </div>
-              {missing.length > 0 && (
-                <button
-                  onClick={() => runMissingBacktests()}
-                  disabled={runningMissing}
-                  title={`${missing.length} sesiuni fără backtest:\n${missingTooltip}\n\nClick pentru a rula backtestele automat`}
-                  className="flex-shrink-0 flex items-center gap-1.5 bg-warn/10 border border-warn/30 rounded-lg px-2.5 py-1.5 hover:bg-warn/20 transition-colors disabled:opacity-50"
-                >
-                  {runningMissing
-                    ? <span className="text-warn text-[10px]">Se calculează...</span>
-                    : <>
-                        <Play size={10} className="text-warn fill-warn" />
-                        <span className="text-warn text-xs font-bold">{missing.length}</span>
-                        <span className="text-warn/70 text-[10px]">fără date</span>
-                      </>
-                  }
-                </button>
-              )}
-            </div>
-            {/* Card lună */}
-            <div className="bg-surface-card rounded-xl border border-surface-border px-5 py-3 flex items-center justify-between gap-4">
-              <div>
-                <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Estimat / lună</p>
-                {estimatedFreq
-                  ? <p className="text-2xl font-bold font-mono text-white">~{estimatedFreq.perMonth.toFixed(0)} <span className="text-sm font-normal text-slate-400">trades</span></p>
-                  : <p className="text-2xl font-bold font-mono text-slate-600">—</p>
-                }
-              </div>
-              {missing.length > 0 && (
-                <div className="flex-shrink-0 text-[10px] text-slate-600 text-right leading-tight max-w-[120px]">
-                  {missing.map(m => m.markets[0]).join(", ")}
-                </div>
-              )}
-            </div>
-            {/* Card -DD% estimat */}
-            <div className="bg-surface-card rounded-xl border border-surface-border px-5 py-3">
-              <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">-DD% mediu estimat</p>
-              {avgDD != null
-                ? <>
-                    <p className={`text-2xl font-bold font-mono ${avgDD < 0 ? "text-loss" : "text-slate-400"}`}>
-                      {avgDD.toFixed(1)}%
-                    </p>
-                    <p className="text-[10px] text-slate-600 mt-0.5">din backteste active</p>
-                  </>
-                : <p className="text-2xl font-bold font-mono text-slate-600">—</p>
-              }
-            </div>
-          </div>
-          </div>
-        );
-      })()}
+      {/* Ritm de tranzactionare pe engine (inlocuieste Frecventa estimata) */}
+      <TradingPace />
 
       {/* Sessions grid */}
       <div>
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
           <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
             Sesiuni active
+            <span className="ml-2 normal-case font-normal text-slate-600">
+              {source === "all" ? "· tranzacții din toate sursele pe fiecare piață"
+                : source === "bot" ? "· doar tranzacțiile Custom Engine ale sesiunii"
+                : source === "ai" ? "· doar tranzacțiile AI Engine pe piața cardului"
+                : source === "daily" ? "· doar tranzacțiile reale Daily Engine pe piața cardului"
+                : "· doar tranzacțiile manuale pe piața cardului"}
+            </span>
           </h2>
-          <SourceToggle source={statsSource} onChange={setStatsSource} />
         </div>
-        {usingMt5Sessions && mt5SessionsData && !mt5SessionsData.connected && (
+        {mt5SessionsData && !mt5SessionsData.connected && (
           <div className="text-[11px] text-warn/80 bg-warn/10 border border-warn/30 rounded-lg px-3 py-2 mb-3">
-            MT5 neconectat — {mt5SessionsData.error ?? "statisticile directe pe sesiune nu sunt disponibile"}. Comută pe „Bot" pentru date din outcomes.csv.
+            MT5 neconectat — {mt5SessionsData.error ?? "rezultatele pe sesiune nu sunt disponibile"}.
           </div>
         )}
         {isLoading ? (
@@ -508,10 +365,11 @@ export function Dashboard() {
           </div>
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-            {cardSessions?.map(s => (
+            {sessions?.map(s => (
               <SessionCard
                 key={s.id}
                 session={s}
+                mt5={mt5SessionMap.get(s.id)}
                 selected={s.id === selectedSession}
                 onClick={() => setSelectedSession(s.id)}
               />
@@ -519,6 +377,14 @@ export function Dashboard() {
           </div>
         )}
       </div>
+
+      {mt5SessionsData?.unassigned && Object.keys(mt5SessionsData.unassigned).length > 0 && (
+        <div className="text-[11px] text-slate-500 -mt-3">
+          + {Object.values(mt5SessionsData.unassigned).reduce((a, b) => a + b, 0)} tranzacții pe piețe fără card de sesiune:{" "}
+          {Object.entries(mt5SessionsData.unassigned).map(([sym, n]) => `${sym} (${n})`).join(", ")}
+          {" "}— incluse în statistici și în lista de tranzacții.
+        </div>
+      )}
 
       {/* Ordine active — sursa de adevar MT5 (pozitii + pending, Bot/AI/Manual) */}
       <ActiveOrdersTable />
@@ -529,11 +395,28 @@ export function Dashboard() {
         <div className="space-y-4">
         <div className="bg-surface-card rounded-xl border border-surface-border p-4 flex flex-col h-[520px] overflow-hidden">
           <div className="flex items-center justify-between mb-4 flex-shrink-0">
-            <h2 className="text-sm font-semibold text-white">
-              {statsSource === "mt5"
-                ? (selectedSession === "all" ? "Tranzacții MT5 — Toate sesiunile" : `Tranzacții MT5 — ${selected?.label ?? "—"}`)
-                : (selectedSession === "all" ? "Semnale — Toate sesiunile" : `Semnale — ${selected?.label ?? "—"}`)}
-            </h2>
+            <div className="flex items-center gap-3 min-w-0">
+              <h2 className="text-sm font-semibold text-white truncate">
+                {feedView === "trades" ? "Tranzacții MT5" : "Semnale Custom Engine"}
+                {" — "}{selectedSession === "all" ? "Toate" : (selected?.label ?? "—")}
+              </h2>
+              <div className="flex gap-1 flex-shrink-0">
+                {([["trades", "Tranzacții"], ["signals", "Semnale"]] as const).map(([v, label]) => (
+                  <button
+                    key={v}
+                    onClick={() => setFeedView(v)}
+                    title={v === "trades"
+                      ? "Tranzacțiile închise, direct din MT5 (Bot + AI + manual; pe o sesiune: doar Bot)"
+                      : "Semnalele detectate de Custom Engine și starea lor (respins AI, expirat, executat...)"}
+                    className={`text-[10px] px-2 py-0.5 rounded transition-colors font-medium ${
+                      feedView === v ? "bg-blue-500/20 text-blue-400" : "text-slate-500 hover:text-slate-300"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
             <div className="flex gap-1 flex-wrap justify-end">
               <button
                 onClick={() => setSelectedSession("all")}
@@ -561,25 +444,20 @@ export function Dashboard() {
             </div>
           </div>
           <div className="flex-1 min-h-0">
-            <SignalFeed
-              sessionId={selectedSession}
-              balanceUsd={mt5?.connected ? mt5.balance : null}
-              capitalPct={selectedSession === "all" ? undefined : selected?.capital_pct}
-              source={statsSource}
-              symbol={selectedSession === "all" ? undefined : selected?.markets[0]}
-            />
+            <SignalFeed sessionId={selectedSession} view={feedView} source={source}
+              symbol={mt5SessionMap.get(selectedSession)?.symbol} />
           </div>
         </div>
 
           {/* Top 5 piete — mutat sub Tranzacții MT5 */}
-          <TopMarketsWidget source={statsSource} onSourceChange={setStatsSource} />
+          <TopMarketsWidget source={source} />
         </div>
 
         {/* Equity chart + stats */}
         <div className="space-y-4">
           <div className="bg-surface-card rounded-xl border border-surface-border p-4">
             <h2 className="text-sm font-semibold text-white mb-4">Performanță</h2>
-            <EquityChart source={statsSource} onSourceChange={setStatsSource} />
+            <EquityChart source={source} />
           </div>
 
           {/* Trading stats */}
@@ -590,8 +468,7 @@ export function Dashboard() {
                   sessions={sessions}
                   mt5={mt5}
                   botStatus={botStatus}
-                  source={statsSource}
-                  onSourceChange={setStatsSource}
+                  source={source}
                 />
               : <div className="text-xs text-slate-500 text-center py-4">Nicio sesiune activă</div>
             }
@@ -600,12 +477,16 @@ export function Dashboard() {
           {/* Weekly index */}
           <div className="bg-surface-card rounded-xl border border-surface-border p-4">
             <h2 className="text-sm font-semibold text-white mb-3">Indice Săptămânal</h2>
-            <WeeklyStatsPanel source={statsSource} onSourceChange={setStatsSource} />
+            <WeeklyStatsPanel source={source} />
           </div>
-
-          {/* Motor AI — card separat cu activitatea motorului autonom */}
-          <AiActivityCard />
         </div>
+      </div>
+
+      {/* Analiza per engine — aceeasi componenta pentru toate, diferentiata prin culoare */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <EnginePerformanceSection engine="custom" />
+        <EnginePerformanceSection engine="ai" />
+        <EnginePerformanceSection engine="daily" />
       </div>
     </div>
   );

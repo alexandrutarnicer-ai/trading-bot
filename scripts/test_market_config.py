@@ -46,7 +46,7 @@ check("sanitize: simbol normalizat uppercase", "EURUSD" in s and "eurusd" not in
 check("sanitize: valori valide pastrate", s["EURUSD"]["capital_fraction"] == 0.5
       and s["EURUSD"]["max_rr"] == 3.0)
 check("sanitize: risk_pct clamp la risk_pct_max", s["XRPUSD"]["risk_pct"] == 0.02)
-check("sanitize: izolare + limite zilnice", s["XRPUSD"]["isolated"] is True
+check("sanitize: izolare (compat → mode observe) + limite zilnice", s["XRPUSD"].get("mode") == "observe"
       and s["XRPUSD"]["max_daily_loss_R"] == 1.5 and s["XRPUSD"]["max_trades_per_day"] == 2)
 check("sanitize: override corupt ignorat", "BAD" not in s)
 check("sanitize: clamp fraction<=1, max_rr>=1, trades<=20",
@@ -280,9 +280,50 @@ finally:
 
 # ═════════════════════════════════════════════════════════════════════════════
 
+# ═════════════════════════════════════════════════════════════════════════════
+# 9. Mod piata Activ / Observatie (2026-10-31) + starea live a limitelor
+# ═════════════════════════════════════════════════════════════════════════════
+from ai_engine.engine import market_limit_status
+s = C.sanitize_market_overrides({"A": {"mode": "observe"}, "B": {"mode": "active", "max_rr": 3},
+                                 "C": {"isolated": True}, "D": {"mode": "xx"}})
+check("mode: observe salvat; active = default (nu se stocheaza)",
+      s["A"] == {"mode": "observe"} and s["B"] == {"max_rr": 3.0})
+check("mode: vechiul isolated:true → observe", s["C"] == {"mode": "observe"})
+check("mode: valoare invalida → active (ignorat)", "D" not in s)
+m = C.market_cfg({"market_overrides": {"A": {"mode": "observe"}}}, "A")
+check("market_cfg: observe → isolated=True (exclus din scorecard)", m["mode"] == "observe" and m["isolated"])
+check("market_cfg: doar mode → briefing NEschimbat (_has_overrides False)", m["_has_overrides"] is False)
+m = C.market_cfg({"market_overrides": {}}, "Z")
+check("market_cfg: piata noua → active", m["mode"] == "active" and not m["isolated"])
+check("isolated_markets include piata in observatie",
+      C.isolated_markets({"market_overrides": {"A": {"mode": "observe"}}}) == ["A"])
+base = C.market_cfg({"market_overrides": {}}, "Z")
+st = market_limit_status(base, -5.0, 9, {})
+check("status: fara limite pe piata → poate deschide", st["can_open"] and st["blocked_reason"] is None)
+lim = C.market_cfg({"market_overrides": {"X": {"max_daily_loss_R": 2, "max_trades_per_day": 2}}}, "X")
+check("status: -1R din -2R, 1/2 ordine → poate deschide", market_limit_status(lim, -1.0, 1, {})["can_open"])
+st = market_limit_status(lim, -2.0, 1, {})
+check("status: stop zilnic atins → BLOCAT cu motiv", not st["can_open"] and "stop zilnic" in st["blocked_reason"])
+st = market_limit_status(lim, 0.0, 2, {})
+check("status: 2/2 ordine → BLOCAT cu motiv", not st["can_open"] and "ordine/zi" in st["blocked_reason"])
+obs = C.market_cfg({"market_overrides": {"X": {"mode": "observe"}}}, "X")
+check("status: observatie → nu deschide, motiv clar", "OBSERVATIE" in market_limit_status(obs, 0, 0, {})["blocked_reason"])
+# consistenta: statusul UI spune BLOCAT exact cand rail-ul din validate_decision respinge
+from ai_engine import executor as EX
+dec = {"action": "OPEN_LONG", "order_type": "market", "entry": None, "sl": 0.99, "tp": 1.03, "risk_pct": 0.005}
+snap = {"symbol": "X", "price": 1.0, "atr": 0.01}
+cfgv = dict(C.DEFAULTS, max_open_positions=3, max_daily_loss_R=3.0, min_rr=1.0, max_sl_atr_mult=5.0)
+for dr, tt in ((-1.0, 1), (-2.0, 1), (0.0, 2)):
+    ms = {"symbol": "X", "daily_r": dr, "trades_today": tt, "max_daily_loss_R": 2, "max_trades_per_day": 2}
+    rail_blocks = EX.validate_decision(dec, snap, cfgv, 0, 0.0, market_state=ms) is not None
+    ui_blocks = not market_limit_status(lim, dr, tt, {})["can_open"]
+    check(f"UI = backend (daily_r={dr}, ordine={tt}): rail blocheaza={rail_blocks}", rail_blocks == ui_blocks)
+
+
 print("\n" + "═" * 60)
 print(f"REZULTAT: {len(PASS)} PASS / {len(FAIL)} FAIL din {len(PASS) + len(FAIL)}")
 if FAIL:
     print("ESUATE:", FAIL)
     sys.exit(1)
+
 print("TOATE TESTELE AU TRECUT ✓")

@@ -64,6 +64,8 @@ def test_ledger():
 
 
 def test_triggers(cfg):
+    # logica trigger-elor se testeaza cu TOATE active (config-ul real poate dezactiva unele)
+    cfg = dict(cfg, disabled_triggers=[])
     print("[2] triggers")
     s1 = _fake_snapshot()
     _assert(triggers.evaluate(s1, None, None, False, cfg) == "heartbeat",
@@ -383,6 +385,26 @@ def test_ollama_backend_broken():
 
     prov = OllamaProvider("ollama", "qwen3:8b")
     orig = P._http_json
+
+    class _TagsResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def read(self):
+            return b'{"models":[{"name":"qwen3:8b"}]}'
+
+    orig_urlopen = P.urllib.request.urlopen
+    P.urllib.request.urlopen = lambda *a, **k: _TagsResponse()
+    try:
+        _assert(not OllamaProvider("ollama", "qwen3:1.7b").available(),
+                "qwen3:8b NU satisface configuratia qwen3:1.7b")
+        _assert(OllamaProvider("ollama", "qwen3:8b").available(),
+                "tagul Ollama exact configurat este disponibil")
+    finally:
+        P.urllib.request.urlopen = orig_urlopen
 
     # 1. 500 "llama-server binary not found" (venit ca 'network' din _http_json) → server_error
     def _boom(*a, **k):

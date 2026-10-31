@@ -268,14 +268,21 @@ def ai_put_config(body: dict = Body(...)):
                 "capital_sync_mt5", "capital_usd",
                 # Expunere: numar maxim de pozitii AI simultane (pozitii + pending)
                 "max_open_positions",
-                # Roluri optionale de consiliu (Additional AI Roles)
-                "role_quant_enabled", "role_devils_advocate_enabled",
                 # Consiliu multiplu (Multi-Council Consensus)
                 "council_primary_source", "council_secondary_source",
                 "council_tertiary_source", "consensus_threshold",
                 # Config per piata (capital fraction, max RR, stop zilnic, overtrading, izolare)
-                "market_overrides"}
+                "market_overrides",
+                # Trigger-e care NU mai convoaca consiliul ([] = toate active)
+                "disabled_triggers"}
     updates = {k: v for k, v in (body or {}).items() if k in editable}
+    if "disabled_triggers" in updates:
+        _ok = {"regime_flip", "breakout_tension", "vol_spike", "news_window",
+               "position_review", "heartbeat"}
+        dt = updates["disabled_triggers"]
+        if not isinstance(dt, list) or any(str(x) not in _ok for x in dt):
+            raise HTTPException(400, f"disabled_triggers: lista din {sorted(_ok)}")
+        updates["disabled_triggers"] = sorted({str(x) for x in dt})
     if not updates:
         raise HTTPException(400, "Niciun camp editabil in body")
 

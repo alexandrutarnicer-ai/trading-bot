@@ -30,7 +30,7 @@ import threading
 ROOT = os.path.dirname(os.path.abspath(__file__))
 LIVE_FILE = os.path.join(ROOT, "data", "live_trading.json")
 
-COMPONENTS = ("bot", "ai_engine")
+COMPONENTS = ("bot", "ai_engine", "daily_engine")
 
 # Componentele care au notificat deja conectarea live in acest proces.
 _notified: set = set()

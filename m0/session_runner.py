@@ -19,7 +19,7 @@ Contract:
                skipped_markets, skipped_margin.
 
 Validare: run_with_params(...) reproduce exact baseline-urile documentate
-(portfolio_backtest.py -> 284 trade-uri). Vezi m0/validate_runner.py.
+(portfolio_backtest.py -> 280 trade-uri). Vezi m0/validate_runner.py.
 """
 
 import os

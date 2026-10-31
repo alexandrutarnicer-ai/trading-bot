@@ -1,10 +1,11 @@
+import { PositionSizingCard } from "../components/PositionSizingCard";
 import { useState, useEffect } from "react";
 import { Bot, Play, Square, Brain, AlertTriangle, ChevronDown, ChevronRight, RefreshCw, Loader2 } from "lucide-react";
 import {
   useAiStatus, useAiDecisions, useAiOutcomes, useAiCouncil, useAiConfig,
-  useAiLogs, useAiStart, useAiStop, useAiSaveConfig, useAiProviders, useAiLotInfo,
+  useAiLogs, useAiStart, useAiStop, useAiSaveConfig, useAiProviders, useAiLotInfo, useMt5Markets,
 } from "../api/hooks";
-import type { AiDecision, MarketOverride } from "../api/types";
+import type { AiDecision, MarketOverride, AiMarketStatus } from "../api/types";
 import { AiProvidersCard } from "../components/AiProvidersCard";
 import { InfoTooltip } from "../components/InfoTooltip";
 
@@ -94,6 +95,12 @@ function CouncilView({ decisionId }: { decisionId: number }) {
         Convocat de: <span className="text-slate-300">{data.trigger}</span> · durată {data.duration_s}s
       </div>
       {consensus && <ConsensusBlock consensus={consensus} reviewers={reviewers} />}
+      {(data.transcript as Record<string, unknown>)._pruned === true && (
+        <div className="text-[11px] text-slate-500 italic">
+          Transcriptul a fost șters la curățarea săptămânală (analiză fără trade, mai veche de 28 de zile).
+          Decizia și motivul ei rămân în listă.
+        </div>
+      )}
       {Object.entries(data.transcript)
         .filter(([role]) => !role.startsWith("_"))
         .map(([role, view]) => (
@@ -166,68 +173,103 @@ function DecisionRow({ d }: { d: AiDecision }) {
 // ── Config piete ──────────────────────────────────────────────────────────────
 
 function MarketsEditor() {
+  // Piețe urmărite: lista vine DINAMIC din MT5 (contul conectat) — fără input liber,
+  // deci nu se mai pot introduce simboluri inexistente. Backend-ul revalidează la
+  // salvare (symbol_select în MT5), iar motorul la pornire.
   const { data: cfg } = useAiConfig();
+  const { data: mt5 } = useMt5Markets();
   const save = useAiSaveConfig();
-  const [editing, setEditing] = useState(false);
-  const [text, setText] = useState("");
-  const currentMarkets = (cfg?.markets ?? []).join(", ");
-
-  // Populeaza campul ori de cate ori se intra in editare — imun la refetch-uri
-  // sau hot-reload care ar goli state-ul (bug: input gol la Editeaza).
-  useEffect(() => {
-    if (editing && text.trim() === "" && currentMarkets) {
-      setText(currentMarkets);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editing, currentMarkets]);
-
+  const [draft, setDraft] = useState<string[] | null>(null);   // null = nu editez
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
   if (!cfg) return null;
-  const start = () => { setText(currentMarkets); setEditing(true); };
+
+  const current = cfg.markets ?? [];
+  const list = draft ?? current;
+  const dirty = draft !== null && draft.join(",") !== current.join(",");
+  const items = mt5?.items ?? (mt5?.symbols ?? []).map(n => ({ name: n, description: "", path: "", tradable: true }));
+  const known = new Set(items.map(i => i.name));
+  const ql = q.trim().toLowerCase();
+  const matches = items
+    .filter(i => !list.includes(i.name))
+    .filter(i => !ql || i.name.toLowerCase().includes(ql) || i.description.toLowerCase().includes(ql))
+    .slice(0, 60);
+
+  const add = (name: string) => { setDraft([...list, name]); setQ(""); setOpen(false); };
+  const remove = (name: string) => setDraft(list.filter(m => m !== name));
   const submit = () => {
-    const markets = text.split(",").map(s => s.trim().toUpperCase()).filter(Boolean);
-    if (markets.length === 0) return;   // nu trimite lista goala
-    save.mutate({ markets }, { onSuccess: () => setEditing(false) });
+    if (!draft || draft.length === 0) return;
+    save.mutate({ markets: draft }, { onSuccess: () => setDraft(null) });
   };
 
   return (
     <div className="bg-surface rounded-xl border border-surface-border p-4 space-y-2">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-white">Piețe urmărite</h3>
-        {!editing && (
-          <button onClick={start} className="text-[11px] text-blue-400 hover:text-blue-300">Editează</button>
+        {mt5?.account && (
+          <span className={`text-[10px] ${mt5.account.is_demo ? "text-slate-500" : "text-amber-400"}`}>
+            listă din MT5 · {mt5.account.server} · {mt5.account.is_demo ? "DEMO" : "cont REAL"}
+          </span>
         )}
       </div>
-      {editing ? (
-        <div className="space-y-2">
-          <input
-            value={text} onChange={e => setText(e.target.value)}
-            className="w-full bg-surface-card border border-surface-border rounded-lg px-3 py-1.5 text-xs text-white font-mono"
-            placeholder={currentMarkets || "EURUSD, USDJPY, GBPUSD"}
-          />
-          <div className="flex gap-2">
-            <button onClick={submit} disabled={save.isPending}
-              className="text-[11px] px-3 py-1 rounded-lg bg-profit/20 text-profit hover:bg-profit/30">
-              {save.isPending ? "Se validează în MT5..." : "Salvează"}
-            </button>
-            <button onClick={() => setEditing(false)} className="text-[11px] px-3 py-1 rounded-lg bg-surface-border/40 text-slate-300">
-              Anulează
-            </button>
-          </div>
-          {save.isError && <div className="text-[10px] text-loss">{(save.error as Error).message}</div>}
-          {(save.data as { restart_needed?: boolean } | undefined)?.restart_needed && (
-            <div className="text-[10px] text-amber-400">⚠ Motorul rulează — repornește-l ca să preia noile piețe.</div>
+
+      <div className="flex flex-wrap gap-1.5 items-center">
+        {list.map(m => (
+          <span key={m} className={`text-[11px] font-mono pl-2 pr-1 py-0.5 rounded flex items-center gap-1 ${
+            known.size && !known.has(m) ? "bg-loss/20 text-loss" : "bg-surface-border/40 text-slate-200"}`}
+            title={known.size && !known.has(m) ? "Simbolul NU există în contul MT5 conectat" : undefined}>
+            {m}
+            <button onClick={() => remove(m)} disabled={list.length <= 1}
+              title={list.length <= 1 ? "Trebuie să rămână cel puțin o piață" : "Scoate piața"}
+              className="text-slate-500 hover:text-loss disabled:opacity-30 px-0.5">×</button>
+          </span>
+        ))}
+        <div className="relative">
+          <button onClick={() => setOpen(o => !o)}
+            className="text-[11px] px-2 py-0.5 rounded border border-dashed border-surface-border text-blue-400 hover:text-blue-300">
+            + Add Market
+          </button>
+          {open && (
+            <div className="absolute z-30 mt-1 w-72 bg-surface-card border border-surface-border rounded-lg shadow-xl p-2 space-y-1.5">
+              <input autoFocus value={q} onChange={e => setQ(e.target.value)}
+                placeholder="Caută: EURUSD, gold, nasdaq…"
+                className="w-full bg-surface border border-surface-border rounded px-2 py-1 text-xs text-white" />
+              <div className="max-h-64 overflow-y-auto">
+                {mt5?.error && <div className="text-[10px] text-amber-400 px-1">{mt5.error}</div>}
+                {!mt5?.error && matches.length === 0 && <div className="text-[10px] text-slate-500 px-1">Niciun simbol găsit</div>}
+                {matches.map(i => (
+                  <button key={i.name} disabled={!i.tradable} onClick={() => add(i.name)}
+                    title={i.tradable ? i.path : "Dezactivat la broker (doar închidere / indisponibil)"}
+                    className="w-full text-left px-1.5 py-1 rounded hover:bg-surface-border/40 disabled:opacity-40 disabled:cursor-not-allowed">
+                    <span className="text-[11px] font-mono text-white">{i.name}</span>
+                    {i.description && <span className="ml-2 text-[10px] text-slate-500">{i.description}</span>}
+                    {!i.tradable && <span className="ml-1 text-[9px] text-loss">indisponibil</span>}
+                  </button>
+                ))}
+              </div>
+            </div>
           )}
         </div>
-      ) : (
-        <div className="flex flex-wrap gap-1.5">
-          {cfg.markets.map(m => (
-            <span key={m} className="text-[11px] font-mono px-2 py-0.5 rounded bg-surface-border/40 text-slate-200">{m}</span>
-          ))}
+      </div>
+
+      {dirty && (
+        <div className="flex gap-2 items-center">
+          <button onClick={submit} disabled={save.isPending}
+            className="text-[11px] px-3 py-1 rounded-lg bg-profit/20 text-profit hover:bg-profit/30">
+            {save.isPending ? "Se validează în MT5..." : "Salvează"}
+          </button>
+          <button onClick={() => setDraft(null)} className="text-[11px] px-3 py-1 rounded-lg bg-surface-border/40 text-slate-300">
+            Anulează
+          </button>
         </div>
       )}
+      {save.isError && <div className="text-[10px] text-loss">{(save.error as Error).message}</div>}
+      {(save.data as { restart_needed?: boolean } | undefined)?.restart_needed && (
+        <div className="text-[10px] text-amber-400">⚠ Motorul rulează — repornește-l ca să preia noile piețe.</div>
+      )}
       <div className="text-[10px] text-slate-500">
-        Simbolurile se validează contra MT5 la salvare. Alese pentru cont ~$1000:
-        risc lot minim $2–4, marjă $33–45/poziție.
+        Lista vine din contul MT5 conectat (simbolurile diferă între brokeri și între demo/live). Un simbol
+        marcat roșu nu există în contul curent; la salvare toate se revalidează în MT5.
       </div>
     </div>
   );
@@ -327,6 +369,33 @@ function CapitalConfig() {
           limită totală (poziții + ordine pending) pe TOATE piețele, nu per piață
         </span>
       </div>
+      {/* Trigger-e care convoaca consiliul (disabled_triggers) */}
+      <div className="flex items-center gap-2 flex-wrap text-[11px] border-t border-surface-border/40 pt-2">
+        <span className="text-slate-400">Trigger-e active:</span>
+        {([
+          ["regime_flip", "Schimbare trend"], ["breakout_tension", "Breakout"],
+          ["vol_spike", "Spike volatilitate"], ["news_window", "Știre iminentă"],
+          ["position_review", "Review poziție"], ["heartbeat", "Heartbeat 24h"],
+        ] as const).map(([id, label]) => {
+          const off = (cfg.disabled_triggers ?? []).includes(id);
+          return (
+            <button key={id}
+              onClick={() => {
+                const cur = cfg.disabled_triggers ?? [];
+                save.mutate({ disabled_triggers: off ? cur.filter(x => x !== id) : [...cur, id] } as never);
+              }}
+              className={`px-2 py-0.5 rounded border transition-colors ${off
+                ? "border-surface-border text-slate-600 line-through"
+                : "border-purple-500/60 bg-purple-600/20 text-white"}`}>
+              {label}
+            </button>
+          );
+        })}
+      </div>
+      <p className="text-[10px] text-slate-600">
+        Doar trigger-ele active convoacă consiliul. Istoric real (89 trade-uri): Breakout = 76% din consilii și
+        −0.24R/trade; Schimbare trend = singurul pozitiv (+0.40R, n=12). Mai puține consilii = latență și cost mai mici.
+      </p>
       <p className="text-[10px] text-slate-600">
         Câte poziții AI pot fi deschise simultan pe întreg contul. La limită, un semnal pe o piață
         nouă e respins până se închide una existentă. Mai multe poziții = mai multă marjă angajată
@@ -382,29 +451,16 @@ function ConsensusConfig() {
   return (
     <div className="bg-surface rounded-xl border border-surface-border p-4 space-y-3">
       <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-        Consiliu multiplu + roluri (consens)
+        Consiliu AI (sursă + prag de încredere)
         <span className="text-[10px] text-slate-500 font-normal">se aplică la următorul consiliu</span>
       </h3>
 
-      {/* Consiliu multiplu */}
+      {/* Sursa consiliului (consiliile multiple au fost eliminate 2026-10-31) */}
       <div className="space-y-1.5">
-        <div className="text-[11px] font-semibold text-slate-300">Consilii pe surse distincte</div>
-        {!multiAvailable ? (
-          <p className="text-[10px] text-slate-600">
-            Necesită cel puțin 2 surse AI active (cardul Surse AI de mai sus). Active: {enabled.length}.
-          </p>
-        ) : (
-          <>
-            <Slot label="Consiliu 1 (primar)" value={primary} options={optionsFor(primary)}
-              defaultLabel="distribuit pe roluri"
-              onChange={v => put({ council_primary_source: v })} />
-            <Slot label="Consiliu 2" value={secondary} options={optionsFor(secondary)}
-              onChange={v => put({ council_secondary_source: v,
-                ...(v ? {} : { council_tertiary_source: null }) })} />
-            <Slot label="Consiliu 3" value={tertiary} options={optionsFor(tertiary)} disabled={!secondary}
-              onChange={v => put({ council_tertiary_source: v })} />
-          </>
-        )}
+        <Slot label="Sursa preferată" value={primary} options={enabled}
+          defaultLabel="distribuit pe roluri"
+          onChange={v => put({ council_primary_source: v })} />
+        <p className="text-[10px] text-slate-600">Un singur consiliu: sursa aleasă → fallback pe celelalte surse active → Ollama.</p>
       </div>
 
       {/* Pragul de consens */}
@@ -416,27 +472,9 @@ function ConsensusConfig() {
         <span className="text-[11px] font-mono text-white w-10 text-right">{threshold}%</span>
       </div>
       <p className="text-[10px] text-slate-600">
-        {nCouncils > 1
-          ? `Consiliul primar propune trade-ul; ${nCouncils - 1} consiliu/consilii îl revizuiesc. Media încrederilor ≥ prag → execută; un veto valid blochează. Revizori indisponibili → decide primarul.`
-          : "Un singur consiliu (implicit). Adaugă Consiliu 2/3 pentru confirmare prin consens."}
-        {" "}Pragul se aplică pe <b>media încrederilor membrilor consiliului</b> (Tehnic / Macro /
+        Pragul se aplică pe <b>media încrederilor membrilor consiliului</b> (Tehnic / Macro /
         [Quant] / Head) — inclusiv cu un singur consiliu: sub prag, ordinul NU se plasează (WAIT).
       </p>
-
-      {/* Roluri optionale */}
-      <div className="border-t border-surface-border/50 pt-2 space-y-1.5">
-        <div className="text-[11px] font-semibold text-slate-300">Roluri suplimentare (toate consiliile)</div>
-        <label className="flex items-center gap-2 text-[11px] text-slate-300 cursor-pointer">
-          <input type="checkbox" checked={Boolean(cfg.role_quant_enabled)}
-            onChange={e => put({ role_quant_enabled: e.target.checked })} className="accent-purple-500" />
-          🧮 Analist Cantitativ (EV / probabilitate de câștig)
-        </label>
-        <label className="flex items-center gap-2 text-[11px] text-slate-300 cursor-pointer">
-          <input type="checkbox" checked={Boolean(cfg.role_devils_advocate_enabled)}
-            onChange={e => put({ role_devils_advocate_enabled: e.target.checked })} className="accent-purple-500" />
-          😈 Avocatul Diavolului (pre-mortem, contra-teză)
-        </label>
-      </div>
 
       {save.isError && <div className="text-[10px] text-loss">{(save.error as Error).message}</div>}
     </div>
@@ -490,14 +528,12 @@ const LIMIT_TIPS = {
     "(aliniat la lot minim/step-ul brokerului; rail-ul de marjă ≤40% rămâne activ).",
     "Sub câmp apare costul real din MT5: marja necesară + risc $ per unitate de preț.",
   ].join("\n"),
-  isolated: [
-    "«Izolat» = piață în OBSERVAȚIE / test.",
-    "Deciziile și rezultatele ei se salvează normal, dar SEPARAT:",
-    "• NU intră în scorecard-ul principal (Decizii / Total R / Expectancy de sus)",
-    "• rămân vizibile pe rândul piaței (t = trades, R = rezultat) și în status per piață",
-    "Folosește-l când testezi o piață nouă și nu vrei să-ți murdărească statistica",
-    "principală. Scoate bifa când piața «promovează» — de atunci rezultatele ei noi",
-    "și istorice intră înapoi în scorecard-ul principal.",
+  mode: [
+    "Activ = piața tranzacționează normal (în limitele de pe rând).",
+    "Observație = consiliul AI analizează piața și deciziile se salvează,",
+    "dar NU se plasează NICIUN ordin nou (pozițiile deja deschise rămân",
+    "gestionate și pot fi închise). Rezultatele ei nu intră în scorecard-ul",
+    "principal. Folosește-o pentru o piață nouă pe care vrei s-o urmărești fără risc.",
   ].join("\n"),
 };
 
@@ -535,9 +571,14 @@ function LotUsdEstimate({ symbol, lots }: { symbol: string; lots: number | null 
   );
 }
 
-function MarketLimitsRow({ symbol, ov, stats, orphan, effRiskPct, capitalBase, onSave, saving }: {
+// Modul unei piete: „mode" nou sau vechiul „isolated" (compat).
+const modeOf = (ov: MarketOverride): "active" | "observe" =>
+  ov.mode ?? (ov.isolated ? "observe" : "active");
+
+function MarketLimitsRow({ symbol, ov, stats, orphan, effRiskPct, capitalBase, onSave, saving, live }: {
   symbol: string;
   ov: MarketOverride;
+  live?: AiMarketStatus | null;           // starea LIVE din motor (ce s-a consumat azi)
   stats?: { closed_trades: number; total_R: number; wins?: number; losses?: number } | null;
   orphan?: boolean;                       // are config dar nu mai e in lista de piete
   effRiskPct: string;                     // valoarea globala curenta (placeholder)
@@ -557,7 +598,17 @@ function MarketLimitsRow({ symbol, ov, stats, orphan, effRiskPct, capitalBase, o
     <tr className={`border-b border-surface-border/40 ${orphan ? "opacity-60" : ""}`}>
       <td className="px-2 py-1.5">
         <span className="text-xs font-semibold text-white">{symbol}</span>
-        {(draft.isolated ?? false) && <span className="ml-1.5 text-[9px] px-1 py-0.5 rounded bg-amber-500/20 text-amber-300">IZOLAT</span>}
+        {modeOf(draft) === "observe" && <span className="ml-1.5 text-[9px] px-1 py-0.5 rounded bg-amber-500/20 text-amber-300">OBSERVAȚIE</span>}
+        {live && (
+          <div className={`text-[9px] whitespace-nowrap ${live.can_open ? "text-profit/80" : "text-loss"}`}
+            title={live.blocked_reason ?? "Piața poate deschide ordine noi (limitele per piață nu sunt atinse)"}>
+            {live.can_open ? "✅ poate tranzacționa" : `⛔ ${live.blocked_reason}`}
+            <span className="text-slate-500">
+              {" "}· azi {live.trades_today}{live.max_trades_per_day != null ? `/${live.max_trades_per_day}` : ""} ord
+              {" "}· {live.daily_r >= 0 ? "+" : ""}{live.daily_r}R{live.max_daily_loss_R != null ? ` din −${live.max_daily_loss_R}R` : ""}
+            </span>
+          </div>
+        )}
         {orphan && <span className="ml-1.5 text-[9px] px-1 py-0.5 rounded bg-slate-600/40 text-slate-400" title="Piața nu mai e în lista urmărită — config-ul și izolarea ei rămân active până le ștergi">NEURMĂRIT</span>}
         {stats && stats.closed_trades > 0 && (
           <div className={`text-[9px] font-mono ${stats.total_R >= 0 ? "text-profit" : "text-loss"}`}>
@@ -566,6 +617,15 @@ function MarketLimitsRow({ symbol, ov, stats, orphan, effRiskPct, capitalBase, o
             {" "}· {stats.total_R >= 0 ? "+" : ""}{stats.total_R}R
           </div>
         )}
+      </td>
+      <td className="px-1 py-1.5">
+        <select value={modeOf(draft)}
+          onChange={e => upd({ mode: e.target.value as "active" | "observe", isolated: undefined })}
+          className={`bg-surface-card border rounded px-1 py-0.5 text-[11px] ${
+            modeOf(draft) === "observe" ? "border-amber-500/60 text-amber-300" : "border-surface-border text-white"}`}>
+          <option value="active">Activ</option>
+          <option value="observe">Observație</option>
+        </select>
       </td>
       <td className="px-1 py-1.5">
         <input className={inputCls} type="number" min={5} max={100} step={5}
@@ -618,11 +678,7 @@ function MarketLimitsRow({ symbol, ov, stats, orphan, effRiskPct, capitalBase, o
           onChange={e => upd({ fixed_lots: e.target.value === "" ? null : num(e.target.value) })} />
         <LotUsdEstimate symbol={symbol} lots={draft.fixed_lots} />
       </td>
-      <td className="px-1 py-1.5 text-center">
-        <input type="checkbox" className="accent-amber-500"
-          checked={draft.isolated ?? false}
-          onChange={e => upd({ isolated: e.target.checked })} />
-      </td>
+
       <td className="px-1 py-1.5 whitespace-nowrap">
         {dirty && (
           <>
@@ -686,7 +742,7 @@ function MarketLimitsCard() {
       if (ov.max_daily_loss_R != null) clean.max_daily_loss_R = ov.max_daily_loss_R;
       if (ov.max_trades_per_day != null) clean.max_trades_per_day = ov.max_trades_per_day;
       if (ov.fixed_lots != null && ov.fixed_lots > 0) clean.fixed_lots = ov.fixed_lots;
-      if (ov.isolated) clean.isolated = true;
+      if (modeOf(ov) === "observe") clean.mode = "observe";
       if (Object.keys(clean).length) next[symbol] = clean;
       else delete next[symbol];
     }
@@ -711,21 +767,29 @@ function MarketLimitsCard() {
       <h3 className="text-sm font-semibold text-white flex items-center gap-2">
         Limite per piață
         <span className="text-[10px] text-slate-500 font-normal">
-          câmp gol = auto (dinamic, decide consiliul pe baza capitalului AI Engine) · se aplică la următorul consiliu, fără restart
+          câmp gol = fără limită pe piață (se aplică doar limitele globale) · se aplică la următorul consiliu, fără restart
         </span>
       </h3>
+      <div className="text-[11px] text-slate-400 bg-surface-card/60 border border-surface-border/60 rounded-lg px-3 py-1.5">
+        <span className="text-slate-300 font-semibold">Limite GLOBALE AI (pe toate piețele împreună):</span>{" "}
+        max <span className="text-white font-mono">{cfg.max_open_positions}</span> poziții+ordine simultane
+        {" "}· stop zilnic motor <span className="text-white font-mono">−{(cfg.max_daily_loss_R as number) ?? 3}R</span>
+        {st?.global_limits && <> (azi {st.global_limits.daily_r >= 0 ? "+" : ""}{st.global_limits.daily_r}R)</>}
+        {" "}· fără pyramiding (o singură expunere per piață) · plus Setările Globale (tab Settings).
+        <span className="text-slate-500"> Limitele de pe fiecare rând se adaugă PESTE acestea — o piață se oprește la prima limită atinsă.</span>
+      </div>
       <div className="overflow-x-auto">
         <table className="w-full text-left">
           <thead>
             <tr className="text-[9px] text-slate-500 uppercase">
               <th className="px-2 py-1">Piață</th>
+              <Th label="Mod" tip={LIMIT_TIPS.mode} />
               <Th label="Capital %" tip={LIMIT_TIPS.capital} />
-              <Th label="Risc %/trade" tip={LIMIT_TIPS.risk} />
-              <Th label="Max R:R" tip={LIMIT_TIPS.maxRr} />
-              <Th label="Stop zi (R)" tip={LIMIT_TIPS.dailyStop} align="right" />
-              <Th label="Max ord/zi" tip={LIMIT_TIPS.maxTrades} align="right" />
-              <Th label="Loturi" tip={LIMIT_TIPS.lots} align="right" />
-              <Th label="Izolat" tip={LIMIT_TIPS.isolated} align="right" />
+              <Th label="Risc max %/trade" tip={LIMIT_TIPS.risk} />
+              <Th label="Plafon R:R" tip={LIMIT_TIPS.maxRr} />
+              <Th label="Stop pierdere/zi (R)" tip={LIMIT_TIPS.dailyStop} align="right" />
+              <Th label="Max ordine/zi" tip={LIMIT_TIPS.maxTrades} align="right" />
+              <Th label="Lot fix" tip={LIMIT_TIPS.lots} align="right" />
               <th className="px-1 py-1"></th>
             </tr>
           </thead>
@@ -736,6 +800,7 @@ function MarketLimitsCard() {
                 stats={bySym[sym] ? { closed_trades: bySym[sym].closed_trades, total_R: bySym[sym].total_R,
                                       wins: bySym[sym].wins, losses: bySym[sym].losses } : null}
                 effRiskPct={effRiskPct} capitalBase={capitalBase}
+                live={st?.market_status?.[sym] ?? null}
                 onSave={saveRow} saving={save.isPending} />
             ))}
             {orphans.map(sym => (
@@ -744,6 +809,7 @@ function MarketLimitsCard() {
                 stats={bySym[sym] ? { closed_trades: bySym[sym].closed_trades, total_R: bySym[sym].total_R,
                                       wins: bySym[sym].wins, losses: bySym[sym].losses } : null}
                 effRiskPct={effRiskPct} capitalBase={capitalBase}
+                live={st?.market_status?.[sym] ?? null}
                 onSave={saveRow} saving={save.isPending} />
             ))}
           </tbody>
@@ -761,6 +827,33 @@ function MarketLimitsCard() {
 }
 
 // ── Pagina ────────────────────────────────────────────────────────────────────
+
+function AiSizingCard() {
+  const { data: cfg } = useAiConfig();
+  const [sym, setSym] = useState<string | null>(null);
+  if (!cfg) return null;
+  const markets = cfg.markets ?? [];
+  const symbol = sym ?? markets[0];
+  const ov = ((cfg.market_overrides ?? {}) as Record<string, MarketOverride>)[symbol ?? ""] ?? {};
+  // Aceeasi regula ca executor.place: fractia per piata (implicit 100%), riscul ales de consiliu
+  // plafonat la risk_pct (piata) / risk_pct_max (global) — exemplul foloseste plafonul.
+  const frac = ov.capital_fraction ?? 1.0;
+  const risk = Math.min(ov.risk_pct ?? (cfg.risk_pct_max as number) ?? 0.01, (cfg.risk_pct_max as number) ?? 0.01);
+  return (
+    <div className="bg-surface rounded-xl border border-surface-border p-4 space-y-2">
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-sm font-semibold text-white">Dimensionarea poziției</span>
+        <span className="text-[11px] text-slate-500">riscul exact îl alege consiliul pe fiecare decizie (exemplul = plafonul de risc)</span>
+        <select value={symbol ?? ""} onChange={e => setSym(e.target.value)}
+          className="ml-auto bg-surface-card border border-surface-border rounded px-2 py-0.5 text-[11px] text-white">
+          {markets.map(m => <option key={m} value={m}>{m}</option>)}
+        </select>
+      </div>
+      <PositionSizingCard engine="AI Engine" symbol={symbol} fraction={frac} riskPct={risk}
+        fixedLots={ov.fixed_lots ?? null} capitalSync={cfg.capital_sync_mt5 ?? true} capitalUsd={cfg.capital_usd ?? null} />
+    </div>
+  );
+}
 
 export function AiEnginePage() {
   const { data: st } = useAiStatus();
@@ -792,7 +885,7 @@ export function AiEnginePage() {
             </div>
             <div className="text-[11px] text-slate-500">
               {running
-                ? `PID ${st?.pid} · model ${st?.model ?? "?"} · mode ${st?.mode ?? "?"} · ultimul heartbeat ${st?.ts?.slice(11, 19) ?? "?"}`
+                ? `PID ${st?.pid} · model ${st?.model ?? "?"} · ${st?.mode === "shadow" ? "shadow (doar log)" : st?.account_is_demo === false ? "⚠ CONT REAL" : st?.account_is_demo ? "cont demo" : "execuție"} · ultimul heartbeat ${st?.ts?.slice(11, 19) ?? "?"}`
                 : "Motor autonom AI — separat de botul pe reguli, doar cont DEMO"}
             </div>
           </div>
@@ -877,6 +970,8 @@ export function AiEnginePage() {
       <CapitalConfig />
 
       <MarketLimitsCard />
+
+      <AiSizingCard />
 
       <AiProvidersCard />
 

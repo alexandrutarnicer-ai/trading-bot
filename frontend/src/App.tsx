@@ -8,6 +8,8 @@ import { GuidePage } from "./pages/GuidePage";
 import { NotificationsPage } from "./pages/NotificationsPage";
 import { ReportsPage } from "./pages/ReportsPage";
 import { AiEnginePage } from "./pages/AiEnginePage";
+import { SettingsPage } from "./pages/SettingsPage";
+import { DailyEnginePage } from "./pages/DailyEnginePage";
 import { useBacktestJobs } from "./api/hooks";
 
 const qc = new QueryClient({
@@ -21,7 +23,7 @@ const qc = new QueryClient({
   },
 });
 
-type Tab = "dashboard" | "profile" | "ai" | "notifications" | "audit" | "reports" | "guide";
+type Tab = "dashboard" | "profile" | "ai" | "daily" | "settings" | "notifications" | "audit" | "reports" | "guide";
 
 export interface PendingApply {
   sessionId: string;
@@ -76,6 +78,18 @@ function AppInner() {
           <div className="max-w-6xl mx-auto px-4 py-4">
             <AiEnginePage />
           </div>
+        </div>
+      )}
+      {visited.has("daily") && (
+        <div className={tab === "daily" ? undefined : "hidden"}>
+          <div className="max-w-6xl mx-auto px-4 py-4">
+            <DailyEnginePage />
+          </div>
+        </div>
+      )}
+      {visited.has("settings") && (
+        <div className={tab === "settings" ? undefined : "hidden"}>
+          <SettingsPage />
         </div>
       )}
       {visited.has("notifications") && (

@@ -1,11 +1,11 @@
 import { useState, useMemo, useEffect } from "react";
 import { Pause, Play } from "lucide-react";
 import type { ProfileSession, Meta } from "../api/types";
-import { useMt5Markets, useMt5Status, useMarketAtr, useAiProviders, useAiLotInfo } from "../api/hooks";
+import { useMt5Markets, useMt5Status, useMarketAtr, useAiProviders, useAiLotInfo, useM0Verdicts } from "../api/hooks";
 import { BacktestPanel } from "./BacktestPanel";
 import { InfoTooltip } from "./InfoTooltip";
 import { ImageTooltip } from "./ImageTooltip";
-import { MARKET_SPECS, calcOvershoot } from "../marketSpecs";
+import { PositionSizingCard } from "./PositionSizingCard";
 
 interface Props {
   session: ProfileSession;
@@ -84,12 +84,13 @@ const TIPS = {
   circuit_breaker: "Oprește tranzacționarea după N pierderi consecutive în aceeași zi. Repornește la miezul nopții.",
   risk_pct:      "Procentul din equity riscat per tranzacție. Equity-ul este citit din MT5 la fiecare ordin.",
   account_fraction: [
-    "Fracția din equity-ul total MT5 alocat acestei sesiuni.",
+    "Risc pe trade, în % din equity-ul REAL MT5 — cât pierzi dacă trade-ul atinge SL-ul.",
     "",
-    "Ex: 12.5% → la $800 equity → $100 capital sesiune.",
-    "Fiecare trade din sesiune riscă risk% din această sumă.",
+    "Ex: 0,20% × $206 = $0,41 țintă. Lotul se calculează din această țintă la fiecare ordin.",
+    "Intern: fracția de cont × riscul de 1% (același calcul ca înainte, doar exprimat direct).",
     "",
-    "Sesiunea poate tranzacționa simultan pe mai multe piețe — capitalul NU e împărțit per piață, ci fiecare trade folosește aceeași bază de calcul a lot-ului.",
+    "Dacă ținta e sub lotul minim al brokerului, se plasează lotul minim (riscul real crește) —",
+    "plafonat de „Risc maxim pe trade” din Setări Globale. Nu schimbă SL/TP sau protecțiile.",
   ].join("\n"),
   fixed_lots: [
     "Volum FIX pe fiecare ordin (loturi), în loc de calculul dinamic din capital × risc%.",
@@ -370,6 +371,8 @@ function FixedLotEstimate({ symbol, lots }: { symbol: string; lots: number | nul
 // ── SessionEditor ─────────────────────────────────────────────────────────
 
 export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted, onSaveAndNavigate, onDownloadStarted, paused, onPauseToggle, profileStartBalance, forceOpen }: Props) {
+  const { data: m0all } = useM0Verdicts();
+  const m0 = m0all?.[session.id];
   const [open, setOpen]           = useState(false);
 
   useEffect(() => {
@@ -466,6 +469,16 @@ export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted,
             <span className={`text-xs px-2 py-0.5 rounded-full ${session.execute_trades ? "bg-blue-500/20 text-blue-300" : "bg-slate-700 text-slate-400"}`}>
               {session.execute_trades ? "LIVE" : "OBS"}
             </span>
+          )}
+          {m0 && (
+              <span title={`M0: ${m0.verdict} · ${m0.n} trade-uri · exp ${m0.expectancy ?? "—"}R · P(edge>0) ${m0.prob_positive ?? "—"} · audit ${m0.audited_at}`}
+                className={`text-[10px] px-1.5 py-0.5 rounded font-semibold ${
+                  m0.verdict === "KEEP" ? "bg-profit/20 text-profit"
+                  : m0.verdict === "OBSERVE" ? "bg-warn/20 text-warn"
+                  : m0.verdict === "DEMOTE" ? (session.execute_trades ? "bg-loss/30 text-loss" : "bg-loss/10 text-loss/70")
+                  : "bg-slate-700 text-slate-400"}`}>
+                M0 {m0.verdict}{m0.verdict === "DEMOTE" && session.execute_trades ? " ⚠ live" : ""}
+              </span>
           )}
           {session.markets.length > 0
             ? <span className="text-xs text-slate-400 flex-1 truncate">{session.markets.join(" · ")}</span>
@@ -624,8 +637,6 @@ export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted,
 
           {/* Expire + pullback */}
           <div className="grid grid-cols-2 gap-4">
-            <NumField label="Expire bare" value={session.expire_bars} min={1} max={20}
-              tip={TIPS.expire_bars} onChange={(v) => upd({ expire_bars: v })} />
             <NumField label="Pullback window" value={session.pullback_window} min={1} max={20}
               tip={TIPS.pullback_window} onChange={(v) => upd({ pullback_window: v })} />
           </div>
@@ -657,79 +668,62 @@ export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted,
               )}
             </div>
 
-            {/* Counter vizual */}
-            <div className="flex items-center gap-3 mb-3">
-              <div className="flex gap-1">
-                {[0, 1, 2].map((n) => (
-                  <div key={n} className={`h-1.5 w-8 rounded-full transition-colors ${
-                    n < activeCriteria ? "bg-blue-500" : "bg-surface-border"
-                  }`} />
-                ))}
-              </div>
-              <span className="text-xs text-slate-400">
-                {activeCriteria}/3 active →{" "}
-                <span className="font-semibold text-white">{currentR}R</span>
-              </span>
-            </div>
-
-            {/* 4 carduri R/R cu thresholds */}
-            <div className="grid grid-cols-4 gap-2 mb-3">
-              {([
-                { cardIdx: 0, label: "Base",   rField: "r_base" as const, riskField: "risk_base" as const, tField: null,                  tDefault: 0 },
-                { cardIdx: 1, label: "Mid",    rField: "r_mid"  as const, riskField: "risk_mid"  as const, tField: "r_mid_threshold" as const, tDefault: 1 },
-                { cardIdx: 2, label: "Top",    rField: "r_top"  as const, riskField: "risk_top"  as const, tField: "r_top_threshold" as const, tDefault: 2 },
-                { cardIdx: 3, label: "Max",    rField: "r_max"  as const, riskField: "risk_max"  as const, tField: "r_max_threshold" as const, tDefault: 3 },
-              ] as const).map(({ cardIdx, label, rField, riskField, tField, tDefault }) => (
-                <div key={cardIdx} className={`rounded-lg p-2 border transition-colors ${
-                  activeCard === cardIdx
-                    ? "border-blue-500 bg-blue-500/10"
-                    : "border-surface-border bg-surface-border/20"
-                }`}>
-                  <div className="text-[10px] text-slate-500 text-center mb-1.5 font-medium uppercase tracking-wider">{label}</div>
-                  <div className="space-y-1">
-                    <div>
-                      <div className="text-[9px] text-slate-600 text-center">Reward R</div>
-                      <input type="number" step={0.5} min={1}
-                        value={session[rField] ?? (rField === "r_max" ? 5.5 : 2.5)}
-                        onChange={(e) => upd({ [rField]: Number(e.target.value) })}
-                        className="w-full bg-transparent text-center text-sm font-bold text-white focus:outline-none" />
+            {/* ── Nivel R:R al pietei (2026-10-31) — independent de criterii ──
+                Un singur TP (2R/3R/4R) pentru TOATE strategiile pietei (pullback, IB, Flag)
+                si acelasi risc. Scrie valorile in campurile existente (r_* / *_r_ratio /
+                risk_*) → backtest, M0 si live le folosesc identic, fara cod nou. */}
+            {(() => {
+              const LEVELS = [
+                { id: "short",    label: "Scurt",    r: 2 },
+                { id: "standard", label: "Standard", r: 3 },
+                { id: "extended", label: "Extins",   r: 4 },
+              ] as const;
+              const risk = session.risk_base ?? session.risk_pct ?? 0.01;
+              const setLevel = (r: number, id: "short" | "standard" | "extended", rk: number) => upd({
+                rr_level: id,
+                r_base: r, r_mid: r, r_top: r, r_max: r,
+                inside_bar_r_ratio: r, flag_r_ratio: r,
+                risk_pct: rk, risk_base: rk, risk_mid: rk, risk_top: rk, risk_max: rk,
+                inside_bar_risk_pct: rk, flag_risk_pct: rk,
+              });
+              const cur = LEVELS.find((l) => l.id === session.rr_level);
+              return (
+                <div className="mb-3 space-y-2">
+                  <div className="text-[10px] text-slate-500 uppercase tracking-wider">Nivel R:R (toate strategiile pieței)</div>
+                  <div className="flex gap-2 flex-wrap items-center">
+                    {LEVELS.map((l) => (
+                      <button key={l.id} onClick={() => setLevel(l.r, l.id, risk)}
+                        className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition-colors ${
+                          cur?.id === l.id ? "border-blue-500 bg-blue-500/15 text-white"
+                                           : "border-surface-border text-slate-400 hover:text-white"}`}>
+                        {l.label} · {l.r}R
+                      </button>
+                    ))}
+                    <div className="flex items-center gap-1 ml-2">
+                      <span className="text-[10px] text-slate-500">Risc/trade</span>
+                      <input type="number" step={0.1} min={0.1} max={5}
+                        value={+(risk * 100).toFixed(2)}
+                        onChange={(e) => {
+                          const rk = Number(e.target.value) / 100;
+                          if (cur) setLevel(cur.r, cur.id, rk);
+                          else upd({ risk_pct: rk, risk_base: rk, risk_mid: rk, risk_top: rk, risk_max: rk,
+                                     inside_bar_risk_pct: rk, flag_risk_pct: rk });
+                        }}
+                        className="w-14 bg-surface border border-surface-border rounded px-1.5 py-0.5 text-xs text-white text-right" />
+                      <span className="text-[10px] text-slate-500">%</span>
                     </div>
-                    <div className="border-t border-surface-border/50 pt-1">
-                      <div className="text-[9px] text-slate-600 text-center">Risk %</div>
-                      <input type="number" step={0.1} min={0.1} max={10}
-                        value={+((session[riskField] ?? session.risk_pct ?? 0.01) * 100).toFixed(2)}
-                        onChange={(e) => upd({ [riskField]: Number(e.target.value) / 100 })}
-                        className="w-full bg-transparent text-center text-xs font-semibold text-slate-300 focus:outline-none" />
+                  </div>
+                  {!cur && (
+                    <div className="text-[10px] text-warn">
+                      Piața folosește încă vechiul ladder pe criterii ({session.r_base}/{session.r_mid}/{session.r_top}/{session.r_max}R) — alege un nivel.
                     </div>
-                    {tField && (
-                      <div className="border-t border-surface-border/50 pt-1">
-                        <div className="text-[9px] text-slate-600 text-center">La ≥ cr.</div>
-                        <input type="number" step={1} min={0} max={3}
-                          value={session[tField] ?? tDefault}
-                          onChange={(e) => upd({ [tField]: Number(e.target.value) })}
-                          className="w-full bg-transparent text-center text-[11px] text-slate-400 focus:outline-none" />
-                      </div>
-                    )}
+                  )}
+                  <div className="text-[10px] text-slate-600">
+                    Criteriile RSI/EMA rămân filtre de calitate ale semnalului; nu mai schimbă TP-ul.
                   </div>
                 </div>
-              ))}
-            </div>
-
-            {/* Buton + diagrama R:R */}
-            <div className="mb-1">
-              <button
-                onClick={() => setShowRRChart((v) => !v)}
-                className="flex items-center gap-1.5 text-[10px] text-slate-600 hover:text-slate-400 transition-colors"
-              >
-                <span className="text-[8px]">{showRRChart ? "▲" : "▼"}</span>
-                Vizualizare R:R proporțional
-              </button>
-              {showRRChart && (
-                <div className="mt-2 border border-surface-border/30 rounded-lg bg-surface-border/5 p-3">
-                  <RRDiagram session={session} mt5Connected={!!mt5Status?.equity} />
-                </div>
-              )}
-            </div>
+              );
+            })()}
 
             {/* Criteriu 1 — RSI */}
             <div className="border border-surface-border rounded-lg p-3 space-y-2">
@@ -761,14 +755,6 @@ export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted,
               </div>
             </div>
 
-            {/* Criteriu 3 — Trend puternic D1 (ADX) — inlocuieste Corp Lumânare */}
-            <div className="border border-surface-border rounded-lg p-3">
-              <div className="flex items-center gap-2">
-                <Toggle label="3. Trend puternic D1 (ADX > 25)" value={session.adx_d1_enabled ?? false}
-                  onChange={(v) => upd({ adx_d1_enabled: v })} />
-                <InfoTooltip text={TIPS.adx_d1} />
-              </div>
-            </div>
           </Section>
 
           {/* Setări generale */}
@@ -789,122 +775,20 @@ export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted,
                   <div className={`flex items-center gap-3 ${fixedLotsActive ? "opacity-40" : ""}`}>
                     <div className="max-w-[110px]">
                       <NumField
-                        label="Fracție cont"
-                        value={+(frac * 100).toFixed(1)}
-                        min={0} max={100} step={0.5}
+                        label="Risc / trade (% cont)"
+                        value={+(frac * rBase * 100).toFixed(3)}
+                        min={0} max={2} step={0.01}
                         tip={TIPS.account_fraction}
-                        onChange={(v) => upd({ account_fraction: +(v / 100).toFixed(4) })}
+                        onChange={(v) => upd({ account_fraction: rBase > 0 ? +Math.min(1, v / 100 / rBase).toFixed(4) : 0 })}
                       />
                     </div>
                     <div className="flex-1 text-xs text-slate-500 leading-relaxed pt-3">
-                      {equity != null && capital != null && riskBaseUsd != null && riskMaxUsd != null ? (
-                        <>
-                          <span className="text-slate-300 font-medium">${fmt(capital)}</span>
-                          {" "}capital sesiune
-                          {session.markets.length > 1 && (
-                            <> · <span className="text-slate-400">${fmt(capital / session.markets.length)}</span>/piață</>
-                          )}
-                          <br />
-                          risc/trade:{" "}
-                          <span className="text-loss font-medium">~${fmt(riskBaseUsd)}</span>
-                          {riskBaseUsd !== riskMaxUsd && (
-                            <> → <span className="text-warn font-medium">~${fmt(riskMaxUsd)}</span></>
-                          )}
-                          <span className="text-slate-600"> (Base→Max)</span>
-                          {session.markets.length > 0 && (
-                            <span className="text-slate-600"> × max {session.markets.length} piețe simultan</span>
-                          )}
-                          {/* Lot minim per piată */}
-                          {session.markets.length > 0 && (() => {
-                            const capitalPerMarket = capital / session.markets.length;
-                            const rows = session.markets.map(m => {
-                              const spec = MARKET_SPECS[m.toUpperCase()];
-                              if (!spec) return null;
-                              const over = calcOvershoot(capitalPerMarket, rBase, spec);
-                              return { m, spec, over };
-                            }).filter(Boolean) as { m: string; spec: typeof MARKET_SPECS[string]; over: ReturnType<typeof calcOvershoot> }[];
-                            if (rows.length === 0) return null;
-                            return (
-                              <div className="mt-2 pt-2 border-t border-surface-border/30">
-                                <div className="flex items-center gap-1 text-[10px] text-slate-600 uppercase tracking-wider mb-1">
-                                  Lot minim broker (estimat live)
-                                  <InfoTooltip
-                                    position="above"
-                                    align="right"
-                                    wide
-                                    text={
-                                      "Brokerul impune un volum minim per ordin (ex: 0.1 loturi pentru indici).\n\n" +
-                                      "Dacă lotajul calculat din (capital × risc%) e sub acest minim, botul plasează automat lotajul minim — " +
-                                      "riscând mai mult decât intenționat.\n\n" +
-                                      "Valorile sunt estimații bazate pe un SL tipic pentru această strategie și cursuri valutare aproximative."
-                                    }
-                                  />
-                                </div>
-                                <div className="space-y-0.5">
-                                  {rows.map(({ m, spec, over }) => (
-                                    <div key={m} className="flex items-center gap-2 text-[11px]">
-                                      <span className="font-mono text-slate-400 w-16 flex-shrink-0">{m}</span>
-                                      <span className="text-slate-600">
-                                        min {spec.volMin} lot
-                                        <InfoTooltip
-                                          position="above"
-                                          text={`Volumul minim acceptat de broker pentru ${m}. Sub această valoare, ordinul este respins.`}
-                                        />
-                                      </span>
-                                      {over ? (
-                                        <>
-                                          <span className="text-slate-600">→</span>
-                                          <span className={over.factor >= 8 ? "text-loss" : "text-warn"}>
-                                            ~${over.actualRisk.toFixed(0)} real
-                                            <InfoTooltip
-                                              position="above"
-                                              wide
-                                              text={
-                                                `Riscul real estimat la lotajul minim de ${spec.volMin} loturi.\n\n` +
-                                                `Intenționat: $${over.intendedRisk.toFixed(2)} (capital/piață × risc%)\n` +
-                                                `Real (lot min): ~$${over.actualRisk.toFixed(0)}\n\n` +
-                                                "Estimat pe SL tipic al strategiei — variază per semnal."
-                                              }
-                                            />
-                                          </span>
-                                          <span className={`font-mono text-[10px] ${over.factor >= 8 ? "text-loss/70" : "text-warn/70"}`}>
-                                            ({over.factor.toFixed(0)}× int.
-                                            <InfoTooltip
-                                              position="above"
-                                              wide
-                                              text={
-                                                `De câte ori riscul real depășește cel intenționat din cauza lotajului minim.\n\n` +
-                                                `${over.factor.toFixed(0)}× = riscul real este de ~${over.factor.toFixed(0)} ori mai mare decât cel configurat.\n\n` +
-                                                "Portocaliu = 2–8×, Roșu = peste 8×. Problema dispare când contul crește suficient pentru a genera natural lotajul minim."
-                                              }
-                                            />
-                                            )
-                                          </span>
-                                        </>
-                                      ) : (
-                                        <span className="text-profit text-[10px]">
-                                          ✓ lot calc. ok
-                                          <InfoTooltip
-                                            position="above"
-                                            text="Lotajul calculat din risc% × capital depășește minimul brokerului — riscul real este aproape de cel intenționat."
-                                          />
-                                        </span>
-                                      )}
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            );
-                          })()}
-                        </>
-                      ) : (
-                        <span className="text-slate-600">
-                          {frac > 0
-                            ? `${(frac * 100).toFixed(1)}% din equity MT5`
-                            : "0% — sesiunea nu alocă capital"}
-                          {equity == null ? " (MT5 deconectat)" : ""}
-                        </span>
-                      )}
+                      {frac > 0
+                        ? <>Cât din equity-ul REAL MT5 riscă un trade al acestei piețe (= fracție {(frac * 100).toFixed(1)}% × risc {(rBase * 100).toFixed(2)}%)
+                            {equity != null && capital != null && riskBaseUsd != null
+                              ? <> → țintă ~${fmt(riskBaseUsd)} din ${fmt(capital)}{riskMaxUsd != null && riskMaxUsd !== riskBaseUsd ? ` (max ~$${fmt(riskMaxUsd)})` : ""}</>
+                              : " (MT5 deconectat)"}</>
+                        : "0% — sesiunea nu alocă capital: ordinele NU se plasează (doar cu lot fix)"}
                     </div>
                   </div>
 
@@ -948,6 +832,13 @@ export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted,
                       </div>
                     )}
                   </div>
+                  <PositionSizingCard
+                    engine="Custom Engine"
+                    symbol={session.markets[0]?.toUpperCase()}
+                    fraction={frac}
+                    riskPct={rBase}
+                    fixedLots={fixedLotsActive ? (session.fixed_lots ?? 0.01) : null}
+                  />
                 </div>
               );
             })()}
@@ -1069,30 +960,8 @@ export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted,
                       />
                     </div>
                   </div>
-                  <div className="border-t border-surface-border/40 pt-3 space-y-1.5">
-                    <Toggle
-                      label="Mod Inteligent"
-                      value={session.smart_news_enabled ?? false}
-                      onChange={(v) => upd({ smart_news_enabled: v })}
-                    />
-                    {(session.smart_news_enabled ?? false) && (
-                      <p className="text-[10px] text-amber-400/70 leading-relaxed">
-                        Analizează sentimentul știrii (actual vs forecast) și menține pozițiile aliniate cu direcția știrii.
-                        Plasează un ordin STOP în direcția știrii dacă nu există poziție deschisă. SL trailing la 3R și 4R.
-                        <InfoTooltip text={
-                          "Mod Inteligent: în loc să închidă toate pozițiile, bot-ul determină sentimentul știrii " +
-                          "(actual > forecast = bullish pentru valuta raportoare). " +
-                          "Pozițiile CONTRA sentimentului sunt închise; pozițiile CU sentimentul sunt menținute. " +
-                          "Dacă nu există poziție: plasează ordin STOP în direcția știrii cu risc 1.5× base. " +
-                          "SL trailing: la 3R → SL mutat la 1R față de TP; la 4R → SL la 2R față de TP. " +
-                          "AVERTISMENT: parsarea sentimentului este simplificată (actual > forecast = bullish). " +
-                          "Nu se aplică corect la indicatori inversați (ex: șomaj, inflație). Testează pe DEMO."
-                        } />
-                      </p>
-                    )}
-                  </div>
                   <p className="text-[10px] text-slate-600">
-                    Sursa principală: ForexFactory (fără cheie API). Backup: MT5 calendar built-in. Verificare la fiecare 5 min.
+                    Sursa: ForexFactory (fără cheie API), cu ultima listă bună păstrată la erori. Verificare la fiecare 5 min; activarea e evaluată la secundă.
                   </p>
                 </div>
               )}
@@ -1160,25 +1029,6 @@ export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted,
                     enabledSources={aiEnabledSources}
                   />
 
-                  {/* Roluri AI suplimentare (Additional AI Roles) */}
-                  <div className="space-y-1.5 border-t border-surface-border/40 pt-2">
-                    <div className="text-xs text-slate-500">
-                      Roluri AI suplimentare <InfoTooltip text={TIPS.ai_roles} />
-                    </div>
-                    <Toggle
-                      label="Analist Cantitativ (EV / probabilitate de câștig)"
-                      value={session.ai_role_quant_enabled ?? false}
-                      onChange={(v) => upd({ ai_role_quant_enabled: v })}
-                    />
-                    <Toggle
-                      label="Avocatul Diavolului (pre-mortem, contra-teză)"
-                      value={session.ai_role_devils_advocate_enabled ?? false}
-                      onChange={(v) => upd({ ai_role_devils_advocate_enabled: v })}
-                    />
-                    <p className="text-[10px] text-slate-600">
-                      Fiecare rol activ = un apel LLM în plus per consiliu. Se aplică tuturor consiliilor.
-                    </p>
-                  </div>
                 </div>
               )}
             </div>
@@ -1304,13 +1154,9 @@ export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted,
               </div>
               {session.flag_enabled && (
                 <div className="grid grid-cols-2 gap-3 pl-2 border-l-2 border-surface-border">
-                  <NumField
-                    label="R/R Reward"
-                    value={session.flag_r_ratio ?? 2.0}
-                    min={1.0} max={10.0} step={0.5}
-                    tip="Raportul reward/risk pentru semnalele flag. Independent de reward-ladder-ul pullback."
-                    onChange={(v) => upd({ flag_r_ratio: v })}
-                  />
+                  <div className="text-[11px] text-slate-500 pt-4">
+                    R/R: nivelul pieței ({session.rr_level ? `${session.r_base}R` : "nesetat"})
+                  </div>
                   <NumField
                     label="Risk % per trade"
                     value={(session.flag_risk_pct ?? 0.01) * 100}
@@ -1341,13 +1187,9 @@ export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted,
               </div>
               {session.inside_bar_enabled && (
                 <div className="grid grid-cols-2 gap-3 pl-2 border-l-2 border-surface-border">
-                  <NumField
-                    label="R/R Reward"
-                    value={session.inside_bar_r_ratio ?? 2.0}
-                    min={1.0} max={10.0} step={0.5}
-                    tip="Raportul reward/risk pentru semnalele inside bar."
-                    onChange={(v) => upd({ inside_bar_r_ratio: v })}
-                  />
+                  <div className="text-[11px] text-slate-500 pt-4">
+                    R/R: nivelul pieței ({session.rr_level ? `${session.r_base}R` : "nesetat"})
+                  </div>
                   <NumField
                     label="Risk % per trade"
                     value={(session.inside_bar_risk_pct ?? 0.01) * 100}
@@ -1403,63 +1245,19 @@ function MultiCouncilConfig({ session, upd, enabledSources }: {
   upd: (patch: Partial<ProfileSession>) => void;
   enabledSources: string[];
 }) {
-  const primary   = session.ai_filter_primary_source ?? null;
-  const secondary = session.ai_filter_secondary_source ?? null;
-  const tertiary  = session.ai_filter_tertiary_source ?? null;
-  const multiAvailable = enabledSources.length >= 2;
-  const chosen = [primary, secondary, tertiary].filter(Boolean) as string[];
-  const nCouncils = 1 + (secondary ? 1 : 0) + (tertiary ? 1 : 0);
-
-  // Optiunile unui slot: sursele active, mai putin cele deja alese in ALTE sloturi.
-  const optionsFor = (current: string | null) =>
-    enabledSources.filter((s) => s === current || !chosen.includes(s));
-
+  // Consiliile multiple au fost eliminate (2026-10-31): un singur consiliu,
+  // sursa primara aleasa → failover pe celelalte surse sanatoase → Ollama.
+  const primary = session.ai_filter_primary_source ?? null;
   return (
-    <div className="space-y-2 border-t border-surface-border/40 pt-2">
-      <div className="text-xs text-slate-500">
-        Consiliu multiplu (consens) <InfoTooltip text={TIPS.ai_councils} />
-      </div>
-      {!multiAvailable ? (
-        <p className="text-[10px] text-slate-600">
-          Necesită cel puțin 2 surse AI active (tab-ul <span className="text-slate-400">AI Engine → Surse AI</span>).
-          Momentan active: {enabledSources.length || 0}. Cu o singură sursă rulează un singur consiliu (ca până acum).
-        </p>
-      ) : (
-        <div className="space-y-1.5">
-          <CouncilSlot
-            label="Consiliu 1 (primar)" value={primary}
-            options={optionsFor(primary)} defaultLabel="distribuit pe roluri"
-            onChange={(v) => upd({ ai_filter_primary_source: v })}
-          />
-          <CouncilSlot
-            label="Consiliu 2" value={secondary}
-            options={optionsFor(secondary)}
-            onChange={(v) => upd({
-              ai_filter_secondary_source: v,
-              ...(v ? {} : { ai_filter_tertiary_source: null }),
-            })}
-          />
-          <CouncilSlot
-            label="Consiliu 3" value={tertiary} disabled={!secondary}
-            options={optionsFor(tertiary)}
-            onChange={(v) => upd({ ai_filter_tertiary_source: v })}
-          />
-          {nCouncils > 1 ? (
-            <p className="text-[10px] text-purple-300/70">
-              {nCouncils} consilii pe surse distincte — media încrederilor decide (pragul de mai sus);
-              un veto valid respinge oricum. Dacă un consiliu opțional pică, restul decid.
-              {primary === null && (
-                <span className="text-amber-300/80"> Consiliul primar e distribuit pe roluri — alege o sursă
-                explicită dacă vrei o a doua opinie complet independentă.</span>
-              )}
-            </p>
-          ) : (
-            <p className="text-[10px] text-slate-600">
-              Un singur consiliu (implicit). Adaugă Consiliu 2/3 pe alte surse pentru consens.
-            </p>
-          )}
-        </div>
-      )}
+    <div className="space-y-1.5 border-t border-surface-border/40 pt-2">
+      <CouncilSlot
+        label="Sursa AI preferată" value={primary}
+        options={enabledSources} defaultLabel="distribuit pe roluri"
+        onChange={(v) => upd({ ai_filter_primary_source: v })}
+      />
+      <p className="text-[10px] text-slate-600">
+        Un singur consiliu: sursa aleasă → celelalte surse active (fallback) → Ollama.
+      </p>
     </div>
   );
 }

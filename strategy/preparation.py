@@ -10,7 +10,8 @@ def prepare_symbol_tf(source, symbol: str, cfg: dict,
     """Like prepare_symbol but with configurable entry/trend timeframes."""
     entry_df = source.load_bars(symbol, entry_tf)
     trend_df = source.load_bars(symbol, trend_tf)
-    return _enrich(entry_df, trend_df, cfg)
+    return _enrich(entry_df, trend_df, cfg,
+                   trend_live_equivalent=getattr(source, "historical", False))
 
 
 def prepare_symbol(source, symbol: str, cfg: dict) -> pd.DataFrame:
@@ -24,10 +25,23 @@ def prepare_symbol(source, symbol: str, cfg: dict) -> pd.DataFrame:
     """
     m15 = source.load_bars(symbol, "M15")
     m30 = source.load_bars(symbol, "M30")
-    return _enrich(m15, m30, cfg)
+    return _enrich(m15, m30, cfg,
+                   trend_live_equivalent=getattr(source, "historical", False))
 
 
-def _enrich(m15: pd.DataFrame, m30: pd.DataFrame, cfg: dict) -> pd.DataFrame:
+def _enrich(m15: pd.DataFrame, m30: pd.DataFrame, cfg: dict,
+            trend_live_equivalent: bool = False) -> pd.DataFrame:
+    """
+    trend_live_equivalent (doar date istorice — CsvDataSource):
+      In live, bara TF mare curenta e IN FORMARE: close-ul ei = pretul curent,
+      deci trendul nu vede viitorul. In CSV aceeasi bara are close-ul FINAL
+      (pana la o zi in viitor pe H1/D1) → lookahead. Echivalentul exact al
+      live-ului la inchiderea barei de intrare j:
+        ema_partial = a*close_j + (1-a)*ema_prev  →
+        sign(close_j - ema_partial) == sign(close_j - ema_prev)
+      unde ema_prev = EMA-ul ultimei bare TF INCHISE. Live (Mt5DataSource)
+      ramane pe calea veche, byte-identica.
+    """
     # Normalizeaza precizia timestamp-urilor (MT5 poate returna <M8[s] sau <M8[us])
     m15["time"] = pd.to_datetime(m15["time"]).astype("datetime64[s]")
     m30["time"] = pd.to_datetime(m30["time"]).astype("datetime64[s]")
@@ -46,10 +60,21 @@ def _enrich(m15: pd.DataFrame, m30: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     m15["atr"]      = atr(m15, 14)
     m15 = mark_swings(m15, cfg["structure"]["swing_lookback_N"])
 
-    # aliniaza trendul M30 la fiecare bara M15 (ultimul M30 inchis)
-    m15 = pd.merge_asof(m15.sort_values("time"),
-                        m30[["time", "trend"]].sort_values("time"),
-                        on="time", direction="backward")
+    if trend_live_equivalent:
+        # bara TF care contine bara de intrare, dar cu EMA-ul barei TF anterioare (inchise)
+        tf = m30[["time"]].copy()
+        tf["_ema_prev"] = m30["ema_trend"].shift(1)
+        m15 = pd.merge_asof(m15.sort_values("time"), tf.sort_values("time"),
+                            on="time", direction="backward")
+        m15["trend"] = np.where(m15["_ema_prev"].isna(), 0,
+                        np.where(m15["close"] > m15["_ema_prev"], 1,
+                        np.where(m15["close"] < m15["_ema_prev"], -1, 0)))
+        m15 = m15.drop(columns=["_ema_prev"])
+    else:
+        # live: bara TF curenta e in formare (close = pretul curent)
+        m15 = pd.merge_asof(m15.sort_values("time"),
+                            m30[["time", "trend"]].sort_values("time"),
+                            on="time", direction="backward")
 
     # === Filtre de regim (calcul pe D1 si W1, fara look-ahead) ===
     # Toate semnalele sunt avansate cu 1 bara (zi/saptamana) pentru a evita look-ahead.

@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -37,6 +38,25 @@ _COOLDOWNS = {
     # (nu 'disabled') ca sa se auto-repare in ≤5 min dupa ce utilizatorul repara Ollama.
     "server_error": 300,
 }
+# Ollama e LOCAL (safety-net): o conexiune refuzata/inchisa inseamna de obicei ca
+# porneste / isi incarca modelul / a fost repornit — revine in secunde, nu minute.
+_OLLAMA_NETWORK_COOLDOWN = 30
+
+# Termenul limita (deadline, epoch) al consiliului in curs — per THREAD. Setat de
+# ProviderRegistry.call_role(deadline=...). Fiecare cerere HTTP primeste ca timeout
+# MIN(timeout-ul sursei, timpul ramas) → bugetul consiliului e respectat LA APEL,
+# nu doar intre roluri (inainte: un apel Ollama de 300s × 3 retry-uri JSON putea
+# tine bucla blocata mult peste bugetul de 240s).
+_ctx = threading.local()
+
+
+def _remaining() -> float | None:
+    dl = getattr(_ctx, "deadline", None)
+    return None if dl is None else dl - time.time()
+
+
+def _budget_error(where: str) -> "ProviderError":
+    return ProviderError(f"{where}: buget de timp consiliu epuizat", kind="budget")
 
 # Semnaturi de backend Ollama defect: serverul raspunde la /api/tags (200) dar da
 # 500 la /api/chat pentru ca runner-ul 'llama-server' lipseste / nu porneste. NU e
@@ -84,6 +104,16 @@ def _extract_json(text: str) -> dict:
 class BaseProvider:
     name = "?"
     needs_key = False
+    timeout = 120
+
+    def _timeout(self) -> float:
+        """Timeout efectiv: al sursei, plafonat la timpul ramas din bugetul consiliului."""
+        rem = _remaining()
+        if rem is None:
+            return self.timeout
+        if rem <= 1:
+            raise _budget_error(self.name)
+        return max(1.0, min(float(self.timeout), rem))
 
     def chat(self, system: str, user: str, json_mode: bool = False) -> str:
         raise NotImplementedError
@@ -98,6 +128,10 @@ class BaseProvider:
         """Chat cu output JSON validat pe chei obligatorii, retry cu feedback."""
         last_err = ""
         for _ in range(retries + 1):
+            if last_err:
+                rem = _remaining()
+                if rem is not None and rem <= 5:
+                    raise _budget_error(self.name)
             prompt = user if not last_err else (
                 user + f"\n\nATENTIE: raspunsul anterior a fost invalid ({last_err}). "
                        "Raspunde DOAR cu obiectul JSON cerut, nimic altceva.")
@@ -187,11 +221,32 @@ def _http_json(url: str, payload: dict | None, headers: dict, timeout: int,
 
 # ── Adaptori ─────────────────────────────────────────────────────────────────
 
+# Erori de conexiune tranzitorii la Ollama (serverul porneste / se reporneste /
+# isi incarca modelul) — o reincercare scurta le rezolva de obicei.
+# (Conexiunea REFUZATA nu e aici: Ollama e oprit de tot, o reincercare la 2s nu
+#  ajuta — pauza de 30s + recovery-ul lazy il prind cand revine.)
+_OLLAMA_TRANSIENT = ("RemoteDisconnected", "ConnectionResetError", "ConnectionAbortedError",
+                     "forcibly closed", "10054")
+
+
+def _ollama_cause(msg: str, timeout_s: float, took_s: float) -> str:
+    """Mesaj de log cu CAUZA probabila, nu doar exceptia bruta."""
+    if "RemoteDisconnected" in msg or "forcibly closed" in msg or "10054" in msg             or "ConnectionReset" in msg:
+        return ("Ollama a inchis conexiunea fara raspuns (porneste, isi incarca modelul "
+                f"sau procesul s-a repornit) — {msg[-120:]}")
+    if "refused" in msg or "10061" in msg:
+        return f"Ollama nu ruleaza (conexiune refuzata) — {msg[-100:]}"
+    if "timed out" in msg.lower():
+        return (f"Ollama n-a raspuns in {timeout_s:.0f}s (model prea lent pe CPU / ocupat "
+                f"cu alta cerere) — {msg[-80:]}")
+    return msg[-200:]
+
+
 class OllamaProvider(BaseProvider):
     needs_key = False
 
     def __init__(self, name: str, model: str, url: str = "http://localhost:11434",
-                 opts: dict | None = None, timeout: int = 300, **_):
+                 opts: dict | None = None, timeout: int = 180, **_):
         self.name, self.model = name, model
         self.url = url.rstrip("/")
         self.opts = opts or {"temperature": 0.3, "num_ctx": 8192}
@@ -209,7 +264,7 @@ class OllamaProvider(BaseProvider):
             with urllib.request.urlopen(req, timeout=5) as r:
                 tags = json.loads(r.read())
             names = [m.get("name", "") for m in tags.get("models", [])]
-            return any(n.startswith(self.model.split(":")[0]) for n in names)
+            return self.model in names
         except Exception:
             return False
 
@@ -227,19 +282,38 @@ class OllamaProvider(BaseProvider):
             "model": self.model, "stream": False,
             # fara chain-of-thought vizibil (qwen3 etc.) — 10-15x mai rapid
             "think": False, "options": self.opts,
+            # modelul ramane in RAM 30 min (default Ollama: 5 min) — pe CPU fiecare
+            # reincarcare costa secunde-zeci de secunde si manca bugetul consiliului
+            "keep_alive": "30m",
             "messages": [{"role": "system", "content": system},
                          {"role": "user", "content": user}],
         }
         if json_mode:
             payload["format"] = "json"
-        try:
-            out = _http_json(f"{self.url}/api/chat", payload, {}, self.timeout, self.name)
-        except ProviderError as e:
-            # 500 "llama-server binary not found" ajunge aici clasificat drept
-            # 'network'; il reclasificam ca 'server_error' cu mesaj actionabil.
-            if is_ollama_backend_broken(str(e)):
-                raise self._broken_backend_error(e) from e
-            raise
+        out = None
+        for attempt in (1, 2):
+            t_limit = self._timeout()
+            t0 = time.time()
+            try:
+                out = _http_json(f"{self.url}/api/chat", payload, {}, t_limit, self.name)
+                break
+            except ProviderError as e:
+                # 500 "llama-server binary not found" ajunge aici clasificat drept
+                # 'network'; il reclasificam ca 'server_error' cu mesaj actionabil.
+                if is_ollama_backend_broken(str(e)):
+                    raise self._broken_backend_error(e) from e
+                msg = str(e)
+                # Timeout atins pentru ca s-a terminat BUGETUL consiliului (nu Ollama
+                # e defect) → 'budget': fara pauza pe sursa, fara failover.
+                rem = _remaining()
+                if "timed out" in msg.lower() and rem is not None and rem <= 2:
+                    raise _budget_error(self.name) from e
+                transient = any(k in msg for k in _OLLAMA_TRANSIENT)
+                if attempt == 1 and transient and (rem is None or rem > 15):
+                    time.sleep(2)          # reconectare: Ollama a inchis conexiunea
+                    continue
+                raise ProviderError(f"{self.name}: {_ollama_cause(msg, t_limit, time.time() - t0)}",
+                                    kind=e.kind, retry_after_s=e.retry_after_s) from e
         # Unele versiuni Ollama raporteaza esecul runner-ului ca 200 + {"error": ...}
         # in loc de 500 — il prindem si aici (altfel ar aparea drept "raspuns gol").
         if isinstance(out, dict) and out.get("error"):
@@ -363,7 +437,7 @@ class GeminiProvider(BaseProvider):
         if json_mode:
             payload["generationConfig"]["responseMimeType"] = "application/json"
         out = _http_json(url, payload, {"x-goog-api-key": self.api_key},
-                         self.timeout, self.name)
+                         self._timeout(), self.name)
         try:
             parts = out["candidates"][0]["content"]["parts"]
             text = "".join(p.get("text", "") for p in parts).strip()
@@ -408,7 +482,7 @@ class OpenAICompatProvider(BaseProvider):
             payload["response_format"] = {"type": "json_object"}
         out = _http_json(f"{self.base_url}/chat/completions", payload,
                          {"Authorization": f"Bearer {self.api_key}"},
-                         self.timeout, self.name)
+                         self._timeout(), self.name)
         try:
             text = (out["choices"][0]["message"]["content"] or "").strip()
         except (KeyError, IndexError):
@@ -498,7 +572,8 @@ class ProviderRegistry:
         h = self.health.get(name)
         if h:
             recovered = h["status"] != "healthy"
-            h.update({"status": "healthy", "reason": "", "retry_at": 0.0, "fails": 0})
+            h.update({"status": "healthy", "reason": "", "retry_at": 0.0, "fails": 0,
+                      "last_ok": time.time()})
             if recovered:
                 self._notify(f"✅ Sursa AI «{name}» si-a revenit — rutare normala.")
 
@@ -506,6 +581,8 @@ class ProviderRegistry:
         h = self.health.get(name)
         if not h:
             return
+        if err.kind == "budget":
+            return   # bugetul CONSILIULUI s-a terminat — nu e vina sursei, fara pauza
         h["fails"] = h.get("fails", 0) + 1
         if err.kind == "auth":
             h.update({"status": "disabled_auth", "reason": str(err)[:200],
@@ -514,6 +591,8 @@ class ProviderRegistry:
                          "Repar-o din tab-ul AI Engine si apasa Testeaza.")
         else:
             wait = err.retry_after_s or _COOLDOWNS.get(err.kind, 120)
+            if name == self.DEFAULT and err.kind == "network":
+                wait = _OLLAMA_NETWORK_COOLDOWN   # local: revine in secunde
             first_pause = h["status"] == "healthy"
             h.update({"status": "paused", "reason": str(err)[:200],
                       "retry_at": time.time() + wait})
@@ -557,7 +636,7 @@ class ProviderRegistry:
         return chain
 
     def call_role(self, role: str, assignments: dict, system: str, user: str,
-                  required_keys: list[str]) -> tuple[dict, dict]:
+                  required_keys: list[str], deadline: float | None = None) -> tuple[dict, dict]:
         """
         Executa un rol de consiliu cu failover. Returneaza (raspuns, meta):
         meta = {"provider", "latency_s", "fallback_from"?}.
@@ -568,13 +647,20 @@ class ProviderRegistry:
         for name in self.chain_for(assigned):
             if not self._usable(name):
                 continue
+            if deadline is not None and deadline - time.time() <= 1:
+                raise _budget_error(f"rol {role}")
             t0 = time.time()
+            _ctx.deadline = deadline
             try:
                 obj = self._instances[name].chat_json(system, user, required_keys)
             except ProviderError as e:
                 self.report_failure(name, e)
+                if e.kind == "budget":
+                    raise            # timpul s-a terminat — nu mai incercam alte surse
                 last_err = e
                 continue
+            finally:
+                _ctx.deadline = None
             self.report_success(name)
             meta = {"provider": name, "latency_s": round(time.time() - t0, 1)}
             if name != assigned:
@@ -583,7 +669,7 @@ class ProviderRegistry:
         raise last_err or ProviderError("nicio sursa AI disponibila", kind="network")
 
     def call_role_pinned(self, source: str, system: str, user: str,
-                         required_keys: list[str]) -> tuple[dict, dict]:
+                         required_keys: list[str], deadline: float | None = None) -> tuple[dict, dict]:
         """
         Executa un rol pe EXACT sursa `source`, FARA failover. Ridica ProviderError
         daca sursa e necunoscuta/indisponibila/esueaza.
@@ -600,11 +686,14 @@ class ProviderRegistry:
             raise ProviderError(f"sursa '{source}' indisponibila ({h.get('status', '?')})",
                                 kind="network")
         t0 = time.time()
+        _ctx.deadline = deadline
         try:
             obj = self._instances[source].chat_json(system, user, required_keys)
         except ProviderError as e:
             self.report_failure(source, e)
             raise
+        finally:
+            _ctx.deadline = None
         self.report_success(source)
         return obj, {"provider": source, "latency_s": round(time.time() - t0, 1),
                      "pinned": True}
@@ -639,7 +728,10 @@ class ProviderRegistry:
         inst = self._instances.get(self.DEFAULT)
         if not (inst and isinstance(inst, OllamaProvider)):
             return False, "sursa default (ollama) nu e configurata in registru"
-        return inst.probe()
+        ok, detail = inst.probe()
+        if ok:
+            self.report_success(self.DEFAULT)   # last_ok → curata erorile vechi din UI
+        return ok, detail
 
 
 # ── Compatibilitate (selftest / cod vechi) ───────────────────────────────────

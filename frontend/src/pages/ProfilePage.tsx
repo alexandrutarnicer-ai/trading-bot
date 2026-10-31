@@ -11,6 +11,7 @@ import { TelegramSettings } from "../components/TelegramSettings";
 import { TelegramBridgeCard } from "../components/TelegramBridgeCard";
 import { MatrixSettings } from "../components/MatrixSettings";
 import { LiveTradingCard } from "../components/LiveTradingCard";
+import { GlobalSettingsCard } from "../components/GlobalSettingsCard";
 import { Mt5Status } from "../components/Mt5Status";
 import type { Profile, ProfileSession } from "../api/types";
 import type { PendingApply } from "../App";
@@ -82,8 +83,6 @@ const DEFAULT_SESSION = (id: string): ProfileSession => ({
   ai_filter_primary_source:   null,
   ai_filter_secondary_source: null,
   ai_filter_tertiary_source:  null,
-  ai_role_quant_enabled:          false,
-  ai_role_devils_advocate_enabled: false,
 });
 
 const PROFILE_TIP =
@@ -95,7 +94,7 @@ const PROFILE_TIP =
 // Timezone Selector
 // ---------------------------------------------------------------------------
 
-function TimezoneSelector() {
+export function TimezoneSelector() {
   const { data: tzData } = useTimezone();
   const setTz = useSetTimezone();
   const [pending, setPending] = useState<string | null>(null); // TZ care asteapta confirmare
@@ -402,101 +401,19 @@ export function ProfilePage({
         </div>
       )}
 
-      {/* MT5 + Bot control + Telegram */}
-      <Mt5Status />
+      {/* Custom Engine: bot + piete. Setarile globale (MT5, Telegram, Live, Setari
+          Globale, fus orar) stau in tab-ul Settings (SettingsPage). */}
       <BotControl profileId={activeId} profileName={draft?.name} />
-      <TelegramSettings />
-      <TelegramBridgeCard />
-      <MatrixSettings />
 
-      <LiveTradingCard />
-      <TimezoneSelector />
-
-      {/* Profile selector */}
+      {/* Configuratie unica (selectorul de profil eliminat 2026-10-31 — fisierele raman pe disc) */}
       <div className="flex items-center gap-3 flex-wrap">
-        <div className="flex items-center gap-2">
-          {/* Custom dropdown cu indicator ON */}
-          <div
-            className="relative"
-            ref={profileDropRef}
-          >
-            <button
-              onClick={() => setProfileDropOpen((v) => !v)}
-              className={`flex items-center gap-2 bg-surface-card border text-white text-sm rounded-lg px-3 py-1.5 focus:outline-none hover:border-slate-400 transition-colors ${
-                runningProfileId && activeId === runningProfileId
-                  ? "border-profit/60"
-                  : "border-surface-border"
-              }`}
-            >
-              {runningProfileId && activeId === runningProfileId && (
-                <span className="w-2 h-2 rounded-full bg-profit animate-pulse flex-shrink-0" />
-              )}
-              <span>{profiles?.find((p) => p.id === activeId)?.name ?? activeId}</span>
-              {runningProfileId && activeId === runningProfileId && (
-                <span className="text-[10px] px-1.5 py-0.5 rounded bg-profit/20 text-profit font-bold ml-1">ON</span>
-              )}
-              <span className="text-slate-500 text-xs ml-1">{profileDropOpen ? "▲" : "▼"}</span>
-            </button>
-
-            {profileDropOpen && (
-              <div className="absolute top-full left-0 mt-1 bg-surface-card border border-surface-border rounded-xl shadow-xl z-20 min-w-[200px] py-1 overflow-hidden">
-                {profiles?.map((p) => {
-                  const isRunning  = p.id === runningProfileId;
-                  const isSelected = p.id === activeId;
-                  return (
-                    <button
-                      key={p.id}
-                      onClick={() => { setActiveId(p.id); setProfileDropOpen(false); }}
-                      className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm text-left transition-colors hover:bg-surface-border/40 ${
-                        isSelected ? "text-white bg-surface-border/20" : "text-slate-300"
-                      }`}
-                    >
-                      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                        isRunning ? "bg-profit animate-pulse" : "bg-transparent"
-                      }`} />
-                      <span className="flex-1">{p.name}</span>
-                      {isRunning && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-profit/20 text-profit font-bold">ON</span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-          <InfoTooltip text={PROFILE_TIP} />
+        <div className="flex items-center gap-2 text-sm text-white">
+          {runningProfileId === activeId && <span className="w-2 h-2 rounded-full bg-profit animate-pulse" />}
+          <span className="font-semibold">Piețe & strategii</span>
+          {runningProfileId === activeId && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-profit/20 text-profit font-bold">ON</span>
+          )}
         </div>
-
-        <button
-          onClick={() => setShowNew((v) => !v)}
-          className="text-xs px-3 py-1.5 rounded-lg border border-surface-border text-slate-400 hover:text-white hover:border-slate-400 transition-colors"
-        >
-          + Profil nou
-        </button>
-
-        {/* Stergere profil — ascuns pentru standard */}
-        {activeId !== "standard" && (
-          confirmDelete ? (
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-loss">Stergi profilul „{draft?.name}"?</span>
-              <button onClick={handleDelete} disabled={del.isPending}
-                className="text-xs px-2.5 py-1 rounded bg-loss/80 hover:bg-loss text-white transition-colors disabled:opacity-50">
-                {del.isPending ? "..." : "Da, sterge"}
-              </button>
-              <button onClick={() => setConfirmDelete(false)}
-                className="text-xs px-2.5 py-1 rounded border border-surface-border text-slate-400 hover:text-white transition-colors">
-                Anulează
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={() => setConfirmDelete(true)}
-              className="text-xs px-3 py-1.5 rounded-lg border border-loss/40 text-loss/70 hover:border-loss hover:text-loss transition-colors"
-            >
-              Șterge profil
-            </button>
-          )
-        )}
 
         {dirty && (
           <div className="flex items-center gap-2 ml-auto">
@@ -512,38 +429,6 @@ export function ProfilePage({
           </div>
         )}
       </div>
-
-      {/* New profile form */}
-      {showNew && (
-        <div className="bg-surface-card border border-surface-border rounded-xl p-4 flex gap-3 items-end flex-wrap">
-          <div className="space-y-1">
-            <label className="text-xs text-slate-500">ID (slug)</label>
-            <input value={newId}
-              onChange={(e) => setNewId(e.target.value.toLowerCase().replace(/\s/g, "_"))}
-              placeholder="ex: agresiv"
-              className="bg-surface border border-surface-border rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-blue-500 w-36"
-            />
-          </div>
-          <div className="space-y-1">
-            <label className="text-xs text-slate-500">Nume afișare</label>
-            <input value={newName} onChange={(e) => setNewName(e.target.value)}
-              placeholder="ex: Agresiv"
-              className="bg-surface border border-surface-border rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-blue-500 w-40"
-            />
-          </div>
-          <button onClick={handleCreate} disabled={!newId.trim() || create.isPending}
-            className="text-xs px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 transition-colors">
-            Creează
-          </button>
-          <button onClick={() => setShowNew(false)}
-            className="text-xs px-3 py-1.5 rounded-lg border border-surface-border text-slate-400 hover:text-white transition-colors">
-            Anulează
-          </button>
-          <p className="w-full text-xs text-slate-500 mt-1">
-            Profilul nou va fi gol — vei adăuga sesiunile manual.
-          </p>
-        </div>
-      )}
 
       {/* Profile info + capital */}
       {draft && (
@@ -635,81 +520,10 @@ export function ProfilePage({
       )}
 
       {/* Capital Protection */}
-      {draft && (
-        <div className="bg-surface-card border border-surface-border rounded-xl p-4 space-y-3">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold text-white">Protecție Capital</span>
-            <InfoTooltip text={
-              "Când activat, watchdog-ul API verifică equity-ul MT5 la fiecare 30s. " +
-              "Dacă equity scade sub pragul configurat, toate sesiunile cu tranzacționare live activată " +
-              "sunt puse automat pe pauză. Trimite notificare Telegram + UI. " +
-              "Dezactivează protecția sau ridică pragul după ce ai evaluat situația și vrei să reiei tranzacționarea."
-            } />
-          </div>
-
-          <div className="flex items-center gap-3 flex-wrap">
-            {/* Toggle ON/OFF */}
-            <button
-              onClick={() => {
-                setDraft({ ...draft, capital_protection_enabled: !draft.capital_protection_enabled });
-                setDirty(true);
-              }}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
-                draft.capital_protection_enabled
-                  ? "bg-amber-500/15 border-amber-500/50 text-amber-400 hover:bg-amber-500/20"
-                  : "bg-surface border-surface-border text-slate-400 hover:border-slate-500 hover:text-slate-300"
-              }`}
-            >
-              <span className={`w-2 h-2 rounded-full ${draft.capital_protection_enabled ? "bg-amber-400" : "bg-slate-600"}`} />
-              {draft.capital_protection_enabled ? "Activ" : "Inactiv"}
-            </button>
-
-            {/* Threshold input */}
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-slate-500">Prag:</span>
-              <div className="flex items-center gap-1">
-                <input
-                  type="number"
-                  min={10}
-                  max={99}
-                  step={1}
-                  value={draft.capital_protection_threshold_pct ?? 70}
-                  onChange={(e) => {
-                    const v = Math.min(99, Math.max(10, Number(e.target.value)));
-                    setDraft({ ...draft, capital_protection_threshold_pct: v });
-                    setDirty(true);
-                  }}
-                  className="w-16 bg-surface border border-surface-border rounded px-2 py-1 text-sm text-white text-right focus:outline-none focus:border-blue-500"
-                />
-                <span className="text-xs text-slate-400">%</span>
-              </div>
-              <span className="text-xs text-slate-500">
-                = {((draft.capital_protection_threshold_pct ?? 70) / 100 * draft.start_balance).toFixed(0)} $
-                din {draft.start_balance} $
-              </span>
-            </div>
-          </div>
-
-          {draft.capital_protection_enabled && (
-            <p className="text-[11px] text-amber-400/70 leading-relaxed">
-              Daca equity MT5 scade sub <strong>{((draft.capital_protection_threshold_pct ?? 70) / 100 * draft.start_balance).toFixed(2)} $</strong>,
-              toate sesiunile live active vor fi puse automat pe pauza.
-            </p>
-          )}
-
-          {dirty && (
-            <div className="flex justify-end pt-1">
-              <button
-                onClick={handleSave}
-                disabled={save.isPending}
-                className="text-xs px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 disabled:opacity-50 transition-colors font-medium"
-              >
-                {save.isPending ? "Se salvează..." : "Salvează protecție"}
-              </button>
-            </div>
-          )}
-        </div>
-      )}
+      <div className="text-[11px] text-slate-500 bg-surface-card border border-surface-border rounded-xl px-4 py-2">
+        Protecția Capitalului s-a mutat în <span className="text-slate-300 font-medium">Settings → Setări Globale</span> —
+        se aplică acum în ambele engine-uri (Bot + AI), inclusiv când botul rulează fără UI.
+      </div>
 
       {/* Sessions */}
       {loadingProfile ? (

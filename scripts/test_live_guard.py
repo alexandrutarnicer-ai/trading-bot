@@ -42,25 +42,25 @@ live_guard.LIVE_FILE = os.path.join(_td, "live_trading.json")
 # ═════════════════════════════════════════════════════════════════════════════
 
 check("default: fara fisier → totul blocat",
-      live_guard.live_flags() == {"bot": False, "ai_engine": False}
+      live_guard.live_flags() == {"bot": False, "ai_engine": False, "daily_engine": False}
       and not live_guard.live_allowed("bot") and not live_guard.live_allowed("ai_engine"))
 
 with open(live_guard.LIVE_FILE, "w") as f:
     f.write("{corupt")
 check("fisier corupt → totul blocat (fail-safe)",
-      live_guard.live_flags() == {"bot": False, "ai_engine": False})
+      live_guard.live_flags() == {"bot": False, "ai_engine": False, "daily_engine": False})
 
 flags = live_guard.set_live("bot", True)
 check("set_live bot=True → doar bot deblocat",
-      flags == {"bot": True, "ai_engine": False}
+      flags == {"bot": True, "ai_engine": False, "daily_engine": False}
       and live_guard.live_allowed("bot") and not live_guard.live_allowed("ai_engine"))
 
 flags = live_guard.set_live("ai_engine", True)
-check("set_live ai_engine=True → ambele deblocate", flags == {"bot": True, "ai_engine": True})
+check("set_live ai_engine=True → ambele deblocate", flags == {"bot": True, "ai_engine": True, "daily_engine": False})
 
 flags = live_guard.set_live("bot", False)
 check("set_live bot=False → revine blocat, ai_engine ramane",
-      flags == {"bot": False, "ai_engine": True})
+      flags == {"bot": False, "ai_engine": True, "daily_engine": False})
 
 try:
     live_guard.set_live("hacker", True)

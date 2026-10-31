@@ -1,0 +1,35 @@
+{
+  "mode": "shadow",
+  "poll_seconds": 15,
+  "notify_telegram": true,
+  "markets": [
+    {
+      "symbol": "GBPUSD",
+      "enabled": true,
+      "label": "Dimineata — deschiderea Londrei",
+      "tz": "Europe/London",
+      "open": "08:00",
+      "last_bar": "14:25",
+      "or_minutes": 5,
+      "entry": "breakout",
+      "rr": null,
+      "slip": 2e-05,
+      "comm": 7e-05,
+      "role": "observatie"
+    },
+    {
+      "symbol": "US500",
+      "enabled": true,
+      "label": "Dupa-amiaza — deschiderea New York",
+      "tz": "America/New_York",
+      "open": "09:30",
+      "last_bar": "15:55",
+      "or_minutes": 30,
+      "entry": "direction",
+      "rr": null,
+      "slip": 0.1,
+      "comm": 0.0,
+      "role": "principal"
+    }
+  ]
+}

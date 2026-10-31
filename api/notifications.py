@@ -74,6 +74,7 @@ _IMPORTANT_CATEGORIES = {"order", "trade", "signal", "news", "bot"}
 # Deciziile filtrului AI pe trade-uri sunt trading => importante. NU si sanatatea
 # surselor AI, care are tot categoria "ai" dar nu contine aceste cuvinte-cheie.
 _AI_TRADE_KEYWORDS = ("filtru ai", "ai filter")
+_REPORT_KEYWORDS = ("raport zilnic", "raport săptămânal", "raport saptamanal", "raport lunar")
 
 # Cuvinte-cheie de conexiune — mereu importante, indiferent de categorie
 # (mesajele MT5 pierdut/reconectat cad altfel in "system" si s-ar suprima).
@@ -93,6 +94,10 @@ def is_important_notification(text: str) -> bool:
     if _categorize(text) in _IMPORTANT_CATEGORIES:
         return True
     t = (text or "").lower()
+    # Rapoartele programate (zilnic / saptamanal / lunar) sunt cerute explicit — se trimit si in
+    # modul liniste (inainte erau „system” si se suprimau).
+    if any(k in t for k in _REPORT_KEYWORDS):
+        return True
     if any(k in t for k in _CONNECTION_KEYWORDS):
         return True
     # Deciziile filtrului AI pe trade-uri (respins/aprobat) sunt trading => importante.
