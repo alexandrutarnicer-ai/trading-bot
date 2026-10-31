@@ -36,7 +36,7 @@ if ($PyLauncher) {
 }
 if (-not $PythonExe) {
     Write-Host "[EROARE] Python nu a fost gasit." -ForegroundColor Red
-    Write-Host "Ruleaza setup.bat pentru a instala Python." -ForegroundColor Red
+    Write-Host "Ruleaza setupFirst.bat pentru a instala Python." -ForegroundColor Red
     Read-Host "Apasa Enter pentru iesire"
     exit 1
 }
@@ -115,7 +115,7 @@ if ($mt5Exe) {
 }
 
 # Task 2: run_all.py la login (via start_bot.bat, cu 45s delay intern)
-# ATENTIE: RunLevel Limited (NU Highest) — cu Highest, sesiunile pornite de task
+# ATENTIE: RunLevel Limited (NU Highest) - cu Highest, sesiunile pornite de task
 # rulau ELEVATED si nici UI-ul (API neelevat), nici run_all pornit din UI nu le
 # putea opri sau inlocui (Access Denied, CommandLine invizibil). Observat live
 # 12-13 iul 2026: 20 sesiuni orfane elevate au supravietuit la 3 restarturi.

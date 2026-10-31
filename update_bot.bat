@@ -146,5 +146,11 @@ if "%STASHED%"=="1" echo  Modificarile tale locale au fost pastrate ^(reaplicate
 echo.
 echo  Porneste dashboard-ul cu start_ui.bat
 echo.
+echo  IMPORTANT: codul Python nou se incarca DOAR dupa repornire:
+echo    - API / dashboard: inchide si redeschide start_ui.bat
+if exist "%ROOT%data\ai\ai_engine.pid" echo    - AI Engine: Stop + Start din cardul lui din Dashboard
+if exist "%ROOT%data\daily_engine\daily_engine.pid" echo    - Daily Engine: Stop + Start din cardul lui din Dashboard
+echo    - Custom Engine: Start din Dashboard ^(era oprit pentru update^)
+echo.
 pause
 endlocal

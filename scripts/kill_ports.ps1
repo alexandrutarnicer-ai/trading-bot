@@ -1,5 +1,5 @@
 # Opreste procesele care asculta pe porturile date. Apelat din start_ui.bat.
-# ATENTIE: invocat cu `powershell -File ... -Ports 8000,5173` — cu -File argumentele
+# ATENTIE: invocat cu `powershell -File ... -Ports 8000,5173` - cu -File argumentele
 # sosesc ca STRING (nu array!), asa ca acceptam string si il despartim manual.
 # (Cu param([int[]]) vechiul apel producea "80005173" -> overflow UInt16 -> scriptul
 # nu omora NIMIC, silentios. Bug istoric, reparat 2026-07-13.)
