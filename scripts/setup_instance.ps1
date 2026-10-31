@@ -130,7 +130,7 @@ Write-Host "     .\start_app.ps1" -ForegroundColor Gray
 Write-Host "     Acces: http://localhost:5173" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  3. Din interfata web:" -ForegroundColor White
-Write-Host "     - Profile → Telegram Settings: configureaza token + chat ID" -ForegroundColor Gray
+Write-Host "     - Profile -> Telegram Settings: configureaza token + chat ID" -ForegroundColor Gray
 Write-Host "     - Dashboard: apasa Start pentru a porni botul" -ForegroundColor Gray
 Write-Host ""
 Write-Host "  4. (Optional) Autostart la pornire Windows (necesita Administrator):" -ForegroundColor White

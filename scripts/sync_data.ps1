@@ -2,7 +2,7 @@
 .SYNOPSIS
     Sincronizeaza DOAR datele (semnale + tranzactii) intre dispozitive (PC <-> laptop).
     Comita si trimite pe branch-ul curent DOAR daca exista date noi. NU ruleaza pe 'main'
-    (acolo datele sunt ignorate — cod curat, un singur dispozitiv).
+    (acolo datele sunt ignorate - cod curat, un singur dispozitiv).
 
 .DESCRIPTION
     Transfera intre dispozitive:
@@ -28,7 +28,7 @@ Set-Location $Root
 
 function Fail($msg) { Write-Host "[EROARE] $msg" -ForegroundColor Red; exit 1 }
 
-# Branch curent — refuza 'main' (datele nu se comit acolo)
+# Branch curent - refuza 'main' (datele nu se comit acolo)
 $branch = (& git rev-parse --abbrev-ref HEAD 2>$null)
 if (-not $branch) { Fail "Nu sunt intr-un repo git." }
 $branch = $branch.Trim()
@@ -38,10 +38,10 @@ Write-Host "  Sync date  -  branch: $branch  -  $(if ($Pull) {'PULL'} else {'PUS
 Write-Host "==================================================" -ForegroundColor Cyan
 
 if ($branch -eq "main") {
-    Fail "Esti pe 'main' — datele sunt IGNORATE aici. Comuta pe branch-ul live (ex: git checkout alex-live)."
+    Fail "Esti pe 'main' - datele sunt IGNORATE aici. Comuta pe branch-ul live (ex: git checkout alex-live)."
 }
 
-# ── Mod PULL: adu datele de pe celalalt dispozitiv (cand ajungi) ──
+# -- Mod PULL: adu datele de pe celalalt dispozitiv (cand ajungi) --
 if ($Pull) {
     Write-Host "[PULL] Aduc datele de pe origin/$branch ..." -ForegroundColor Yellow
     & git pull --no-edit origin $branch
@@ -50,7 +50,7 @@ if ($Pull) {
     exit 0
 }
 
-# ── Mod PUSH (implicit): comit + trimit datele acestui dispozitiv ──
+# -- Mod PUSH (implicit): comit + trimit datele acestui dispozitiv --
 # Aduna DOAR fisierele de date dorite (nu state.pkl / generator.log)
 $data = @()
 if (Test-Path "data/live_signals") {
