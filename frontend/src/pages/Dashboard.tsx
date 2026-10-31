@@ -1,16 +1,16 @@
 import { useState, useEffect } from "react";
-import { RefreshCw, TrendingUp, TrendingDown, Minus, Play } from "lucide-react";
+import { RefreshCw, TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { apiFetch } from "../api/client";
-import { useSessions, useBotStatus, useMt5Status, useMt5WeeklyStats, useFrequencyEstimate, useMt5SessionStats } from "../api/hooks";
+import { useSessions, useBotStatus, useMt5Status, useMt5WeeklyStats, useMt5SessionStats } from "../api/hooks";
 import type { Mt5PeriodStats, SourceFilter } from "../api/types";
 import { SessionCard } from "../components/SessionCard";
 import { SignalFeed, type FeedView } from "../components/SignalFeed";
 import { EquityChart } from "../components/EquityChart";
 import { TradingStatsPanel } from "../components/TradingStatsPanel";
 import { TopMarketsWidget } from "../components/TopMarketsWidget";
-import { AiActivityCard } from "../components/AiActivityCard";
+import { EnginePerformanceCards, EnginePerformanceSection } from "../components/EnginePerformance";
 import { EngineControlCards } from "../components/EngineControlCards";
+import { TradingPace } from "../components/TradingPace";
 import { ActiveOrdersTable } from "../components/ActiveOrdersTable";
 
 // Vedere pentru randare — R e recalculat din SL-ul original al ordinelor
@@ -214,21 +214,14 @@ export function Dashboard() {
   const { data: sessions, isLoading, dataUpdatedAt } = useSessions();
   const { data: botStatus } = useBotStatus();
   const { data: mt5 } = useMt5Status();
-  const { data: freqData } = useFrequencyEstimate(botStatus?.active_profile_id ?? undefined);
   // Filtrul de SURSA la nivel de pagina (default Toate): cardurile, statisticile,
   // indicele saptamanal, Top 5, graficul si lista de tranzactii folosesc aceeasi sursa.
   const [source, setSource] = useState<SourceFilter>("all");
   const { data: mt5SessionsData } = useMt5SessionStats(source);
   const [selectedSession, setSelectedSession] = useState<string>("all");
   const [now, setNow] = useState(Date.now());
-  const [runningMissing, setRunningMissing] = useState(false);
-  const [runningAll, setRunningAll] = useState(false);
   const [feedView, setFeedView] = useState<FeedView>("trades");
   const qc = useQueryClient();
-
-  const estimatedFreq = (freqData?.per_week != null)
-    ? { perWeek: freqData.per_week, perMonth: freqData.per_month ?? 0 }
-    : null;
 
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 5_000);
@@ -249,45 +242,6 @@ export function Dashboard() {
 
   function refresh() {
     qc.invalidateQueries();
-  }
-
-  async function runAllBacktests() {
-    if (runningAll || runningMissing) return;
-    setRunningAll(true);
-    try {
-      const profileId = botStatus?.active_profile_id ?? "standard";
-      await apiFetch(`/backtest/run-missing`, {
-        method: "POST",
-        body: { profile_id: profileId, force: true },
-      });
-      qc.invalidateQueries({ queryKey: ["frequency-estimate"] });
-      qc.invalidateQueries({ queryKey: ["backtest-jobs"] });
-      qc.invalidateQueries({ queryKey: ["download-jobs"] });
-    } catch (e) {
-      console.error("run-all failed", e);
-    } finally {
-      setRunningAll(false);
-    }
-  }
-
-  async function runMissingBacktests(onDone?: () => void) {
-    if (runningMissing) return;
-    setRunningMissing(true);
-    try {
-      const profileId = botStatus?.active_profile_id ?? "standard";
-      await apiFetch(`/backtest/run-missing`, {
-        method: "POST",
-        body: { profile_id: profileId },
-      });
-      qc.invalidateQueries({ queryKey: ["frequency-estimate"] });
-      qc.invalidateQueries({ queryKey: ["backtest-jobs"] });
-      qc.invalidateQueries({ queryKey: ["download-jobs"] });
-      if (onDone) onDone();
-    } catch (e) {
-      console.error("run-missing failed", e);
-    } finally {
-      setRunningMissing(false);
-    }
   }
 
   const profileLabel = botStatus?.active_profile_name ?? "Standard";
@@ -346,6 +300,9 @@ export function Dashboard() {
       {/* Engine-uri: stare reala + Start/Stop + autostart (Engine Lifecycle comun) */}
       <EngineControlCards />
 
+      {/* Performanta: TOTAL + cate un card per engine (aceeasi sursa MT5 ca Tranzactiile) */}
+      <EnginePerformanceCards />
+
       {/* Filtru de SURSA pentru toata pagina (carduri, statistici, grafic, tranzactii) */}
       <div className="flex items-center gap-2 flex-wrap">
         <span className="text-[11px] text-slate-500">Arată tranzacțiile:</span>
@@ -378,87 +335,8 @@ export function Dashboard() {
         </div>
       )}
 
-      {/* Frecventa estimata trades */}
-      {(() => {
-        const missing = freqData?.missing ?? [];
-        const missingTooltip = missing.length > 0
-          ? missing.map(m => `${m.id}: ${m.markets.join(", ")}`).join("\n")
-          : "";
-        const avgDD = freqData?.avg_max_dd ?? null;
-        return (
-          <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] text-slate-600 uppercase tracking-wider">Frecvență estimată</span>
-            <button
-              onClick={runAllBacktests}
-              disabled={runningAll || runningMissing}
-              title="Rerulează backtestele pentru toate sesiunile active (actualizează estimările)"
-              className="flex items-center gap-1.5 text-[10px] text-slate-500 hover:text-blue-400 disabled:opacity-40 transition-colors"
-            >
-              <RefreshCw size={11} className={runningAll ? "animate-spin text-blue-400" : ""} />
-              {runningAll ? "Se recalculează..." : "Recalculează toate"}
-            </button>
-          </div>
-          <div className="grid grid-cols-3 gap-3">
-            {/* Card săptămână */}
-            <div className="bg-surface-card rounded-xl border border-surface-border px-5 py-3 flex items-center justify-between gap-4">
-              <div>
-                <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Estimat / săptămână</p>
-                {estimatedFreq
-                  ? <p className="text-2xl font-bold font-mono text-white">~{estimatedFreq.perWeek.toFixed(1)} <span className="text-sm font-normal text-slate-400">trades</span></p>
-                  : <p className="text-2xl font-bold font-mono text-slate-600">—</p>
-                }
-              </div>
-              {missing.length > 0 && (
-                <button
-                  onClick={() => runMissingBacktests()}
-                  disabled={runningMissing}
-                  title={`${missing.length} sesiuni fără backtest:\n${missingTooltip}\n\nClick pentru a rula backtestele automat`}
-                  className="flex-shrink-0 flex items-center gap-1.5 bg-warn/10 border border-warn/30 rounded-lg px-2.5 py-1.5 hover:bg-warn/20 transition-colors disabled:opacity-50"
-                >
-                  {runningMissing
-                    ? <span className="text-warn text-[10px]">Se calculează...</span>
-                    : <>
-                        <Play size={10} className="text-warn fill-warn" />
-                        <span className="text-warn text-xs font-bold">{missing.length}</span>
-                        <span className="text-warn/70 text-[10px]">fără date</span>
-                      </>
-                  }
-                </button>
-              )}
-            </div>
-            {/* Card lună */}
-            <div className="bg-surface-card rounded-xl border border-surface-border px-5 py-3 flex items-center justify-between gap-4">
-              <div>
-                <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Estimat / lună</p>
-                {estimatedFreq
-                  ? <p className="text-2xl font-bold font-mono text-white">~{estimatedFreq.perMonth.toFixed(0)} <span className="text-sm font-normal text-slate-400">trades</span></p>
-                  : <p className="text-2xl font-bold font-mono text-slate-600">—</p>
-                }
-              </div>
-              {missing.length > 0 && (
-                <div className="flex-shrink-0 text-[10px] text-slate-600 text-right leading-tight max-w-[120px]">
-                  {missing.map(m => m.markets[0]).join(", ")}
-                </div>
-              )}
-            </div>
-            {/* Card -DD% estimat */}
-            <div className="bg-surface-card rounded-xl border border-surface-border px-5 py-3">
-              <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">-DD% mediu estimat</p>
-              {avgDD != null
-                ? <>
-                    <p className={`text-2xl font-bold font-mono ${avgDD < 0 ? "text-loss" : "text-slate-400"}`}>
-                      {avgDD.toFixed(1)}%
-                    </p>
-                    <p className="text-[10px] text-slate-600 mt-0.5">din backteste active</p>
-                  </>
-                : <p className="text-2xl font-bold font-mono text-slate-600">—</p>
-              }
-            </div>
-          </div>
-          </div>
-        );
-      })()}
+      {/* Ritm de tranzactionare pe engine (inlocuieste Frecventa estimata) */}
+      <TradingPace />
 
       {/* Sessions grid */}
       <div>
@@ -601,10 +479,14 @@ export function Dashboard() {
             <h2 className="text-sm font-semibold text-white mb-3">Indice Săptămânal</h2>
             <WeeklyStatsPanel source={source} />
           </div>
-
-          {/* Motor AI — card separat cu activitatea motorului autonom */}
-          <AiActivityCard />
         </div>
+      </div>
+
+      {/* Analiza per engine — aceeasi componenta pentru toate, diferentiata prin culoare */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <EnginePerformanceSection engine="custom" />
+        <EnginePerformanceSection engine="ai" />
+        <EnginePerformanceSection engine="daily" />
       </div>
     </div>
   );

@@ -907,3 +907,63 @@ export interface EngineState {
   autostart: boolean | null;
   error: string | null;
 }
+
+// ── Performanta pe engine (/mt5/engine-performance) ──────────────────────────
+export interface EnginePerf {
+  trades: number;
+  wins: number;
+  losses: number;
+  win_rate: number | null;   // % = wins / (wins + losses)
+  profit: number;            // suma castigurilor (brut, din deal-urile de iesire)
+  loss: number;              // suma pierderilor (negativ)
+  pnl: number;               // profit + loss
+  costs: number;             // comision + swap (negativ)
+  net: number;               // pnl + costs
+  avg_r: number | null;
+  symbols: { symbol: string; pnl: number }[];
+  first: string | null;
+  last: string | null;
+}
+
+export interface EnginePerformanceResponse {
+  connected: boolean;
+  error: string | null;
+  days?: number;
+  currency?: string | null;
+  is_demo?: boolean | null;
+  total?: EnginePerf;
+  custom?: EnginePerf;
+  ai?: EnginePerf;
+  daily?: EnginePerf;
+  manual?: EnginePerf;
+  account?: EnginePerf;
+}
+
+// ── Ritm de tranzactionare pe engine (/dashboard/trading-pace) ───────────────
+export type PaceConfidence = "insufficient" | "low" | "medium" | "high";
+
+export interface EnginePace {
+  per_week: number | null;
+  low: number | null;
+  high: number | null;
+  confidence: PaceConfidence;
+  weeks: number;
+  trades_in_window: number;
+  current_week: number;
+  weekly?: number[];
+  regime_since?: string | null;
+  regime_reason?: string | null;
+  reference?: number | null;
+  reference_kind?: string | null;
+  virtual?: boolean;
+  previous?: { per_week: number; low: number; high: number; weeks: number; trades_in_window: number; confidence: PaceConfidence };
+}
+
+export interface TradingPaceResponse {
+  computed_at: string;
+  connected: boolean;
+  half_life_weeks: number;
+  custom: EnginePace;
+  ai: EnginePace;
+  daily: EnginePace;
+}

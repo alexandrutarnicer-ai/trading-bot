@@ -39,21 +39,6 @@ export const useMt5WeeklyStats = (source: string = "all") =>
     refetchIntervalInBackground: false,
   });
 
-export interface FrequencyEstimate {
-  per_week:    number | null;
-  per_month:   number | null;
-  avg_max_dd:  number | null;
-  missing:     Array<{ id: string; markets: string[] }>;
-}
-
-export const useFrequencyEstimate = (profileId?: string) =>
-  useQuery<FrequencyEstimate>({
-    queryKey: ["frequency-estimate", profileId ?? ""],
-    queryFn:  () => apiFetch(`/sessions/frequency-estimate${profileId ? `?profile_id=${profileId}` : ""}`),
-    refetchInterval: 60_000,
-    refetchIntervalInBackground: false,
-  });
-
 export const useSignals = (sessionId: string) =>
   useQuery<Signal[]>({
     queryKey: ["signals", sessionId],
@@ -916,3 +901,26 @@ export const useEngineAction = () => {
     },
   });
 };
+
+// ── Performanta pe engine (cele 4 carduri + sectiunile per engine) ───────────
+import type { EnginePerformanceResponse } from "./types";
+
+export const useEnginePerformance = () =>
+  useQuery<EnginePerformanceResponse>({
+    queryKey: ["engine-performance"],
+    queryFn:  () => apiFetch("/mt5/engine-performance?days=365"),
+    refetchInterval: 60_000,                 // aceeasi lista cache-uita ca /mt5/stats
+    refetchIntervalInBackground: false,
+  });
+
+// ── Ritm de tranzactionare (inlocuieste "Frecventa estimata") — recalculat la 15 min ──
+import type { TradingPaceResponse } from "./types";
+
+export const useTradingPace = () =>
+  useQuery<TradingPaceResponse>({
+    queryKey: ["trading-pace"],
+    queryFn:  () => apiFetch("/dashboard/trading-pace"),
+    refetchInterval: 15 * 60_000,            // = cache-ul serverului; ritmul saptamanal nu se schimba mai des
+    refetchIntervalInBackground: false,
+    staleTime: 5 * 60_000,
+  });
