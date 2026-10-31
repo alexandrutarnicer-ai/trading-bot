@@ -475,7 +475,7 @@ export function GuidePage() {
               <KV k="Ore / zile" v="Non-stop sau interval; ore și zile sărite" />
               <KV k="Nivel R:R" v="Scurt 2R / Standard 3R / Extins 4R — același TP pentru toate strategiile pieței" />
               <KV k="Risc" v="1% pe trade la toate nivelurile (inclusiv 4R)" />
-              <KV k="Fracție cont" v="Partea din equity alocată sesiunii (sau lot FIX, opțional)" />
+              <KV k="Fracție cont" v="Partea din equity-ul MT5 folosită la calculul lotului (sau lot FIX) — vezi cardul „Dimensionarea poziției”" />
               <KV k="Expirare ordin" v="4 bare pe toate sesiunile (fix, nu mai e câmp în UI)" />
               <KV k="Execuție" v="Live = ordine reale; Observație = doar semnale" />
             </div>
@@ -488,6 +488,14 @@ export function GuidePage() {
             <Note>
               <b>Lot fix</b> (oprit implicit): volum fix pe ordin, aliniat la pasul/minimul brokerului; fracția și riscul sunt
               ignorate. Dacă marja ar depăși ~80% din marja liberă, lotul e redus automat și primești notificare.
+            </Note>
+            <Note>
+              <b>Dimensionarea poziției — aceeași pe Custom, AI și Daily.</b> Lot = equity MT5 × fracție × risc% ÷ (distanța SL ×
+              valoarea punctului din MT5), aliniat la lotul minim / pasul / maximul brokerului. Cardul din fiecare sesiune separă
+              ce vine automat din MT5 (equity, marjă, specificații) de ce configurezi tu și arată calculul pe un SL tipic real.
+              <b> Pe un cont mic, lotul minim domină:</b> dacă ținta e sub lotul minim, se plasează lotul minim (risc real mai mare)
+              și fracția nu mai schimbă nimic — cardul arată de la ce equity ar începe să conteze. Fracția influențează doar lotul,
+              nu SL/TP sau protecțiile. Dacă equity-ul MT5 nu se poate citi, ordinul NU se plasează.
             </Note>
           </SubSection>
 
@@ -1457,9 +1465,15 @@ export function GuidePage() {
 
           <SubSection title="Rapoarte automate (Telegram)" defaultOpen={false}>
             <div className="space-y-1 text-xs">
-              <KV k="Zilnic 23:30 · Săptămânal vineri 23:30" v="Din istoricul MT5: total cont + Custom (pe sesiune și strategie) + AI (pe simbol) + Daily + manual" />
-              <KV k="MT5 indisponibil" v="Mesaj explicit, nu raport gol" />
+              <KV k="Zilnic" v="În fiecare zi la ora setată (23:30): tranzacțiile zilei din MT5" />
+              <KV k="Săptămânal" v="DOAR vineri la ora setată (23:30), de la raportul de vinerea trecută (include weekendul)" />
+              <KV k="Lunar" v="Pe 1 ale lunii la 09:00, luna calendaristică completă precedentă; recuperat la prima ocazie" />
+              <KV k="Conținut" v="Performanța Custom / AI / Daily + TOTAL, comparație (profit, risc, drawdown, consistență), condiții de piață, evenimente, weekend, probleme, analiză AI consultativă" />
+              <KV k="Lipsuri" v="O sursă indisponibilă (MT5, calendar, AI) e marcată explicit — raportul se trimite oricum" />
+              <KV k="Unde se setează" v="Settings → Rapoarte programate (ore, AI, mașina care trimite, trimitere manuală)" />
             </div>
+            <Note>Lasă „Trimite de pe această mașină” activ doar pe mașina care rulează engine-urile — altfel primești rapoarte duble.
+              Fusul orar al rapoartelor = cel din Settings → Fus orar.</Note>
           </SubSection>
         </Section>
 

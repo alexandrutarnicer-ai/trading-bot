@@ -72,6 +72,8 @@ python -m daily_engine                 # manual (sau butonul din tab-ul Daily En
 python -m daily_engine.selftest        # 31 teste: strategie + ECHIVALENTA cu backtestul pe tot istoricul M5 + DST + motor simulat
 python scripts/test_engine_lifecycle.py   # 13 teste: /engines start/stop verificat + watchdog Daily (offline)
 python scripts/test_trading_pace.py       # 13 teste: ritmul de tranzactionare pe engine (offline)
+python scripts/test_position_sizing.py    # 38 teste: dimensionare comuna, Custom = AI = Daily (offline)
+python scripts/test_reports.py            # 28 teste: rapoarte saptamanal/lunar, program + failure handling (offline)
 python scripts/research_daily/orb_compare.py   # cercetarea: 4 piete x 3 ferestre x 18 variante (M5, costuri reale, M0)
 
 # Punte Telegram — comanda botul de pe telefon (proces STANDALONE, aditiv, optional)
@@ -280,6 +282,20 @@ Un singur contract pentru UI peste cele 3 engine-uri: `GET /engines` (status rea
 - **Supraveghere Daily:** engine-ul scrie `data/daily_engine/desired_running.json` la pornire (orice cale); DOAR Stop-ul din UI il sterge (INAINTE de kill). `api/watchdog.py::_check_daily_engine` (la 30s): stare dorita + PID mort → Telegram + repornire, max 3/ora apoi alerta si renunta. Custom Engine ramane doar cu alerta (fara repornire automata — pozitii reale). AI are watchdog propriu.
 - **Incident 2026-10-31 (lamurit):** prima instanta Daily s-a oprit la inchiderea terminalului de catre user — NU crash. De aceea: stdout/stderr → `data/daily_engine/stdout.log`, `faulthandler` → `crash.log`, log la iesire neasteptata. ATENTIE: cu watchdog-ul activ, inchiderea terminalului / taskkill extern = cadere → repornire automata; oprirea corecta e DOAR Stop-ul din UI (sterge `desired_running.json` inainte de kill).
 
+### `position_sizing.py` — dimensionare COMUNA Custom / AI / Daily (2026-10-31)
+
+O singura implementare PURA (primeste `symbol_info`, nu atinge MT5): `capital_base(sync, capital_fix, equity)` (sync = equity MT5; fix = plafonat la equity) → `× clamp_fraction(fractie)` (0..1) → `size_by_risk(info, entry, sl, capital, risk%)` (lot brut = risc tinta / (dist SL × tick_value/tick_size) → `snap_volume`: floor la volume_step cu epsilon, clamp volume_min/volume_max) → risc real. `size_fixed` (lot fix), `fit_to_margin` (reducere la cap × marja libera). Folosita de `signal_generator._calc_lots/_snap_lots_to_broker/_bot_capital_base/_session_capital`, `ai_engine/executor.calc_lots/snap_fixed_lots/capital_base` si `daily_engine.DailyEngine.virtual_size` (lot ipotetic + `risk_money` + `pnl_money_est` pe trade-urile shadow; config `sizing`).
+- **Analiza Fraction Account (date reale):** 54/55 trade-uri bot la LOTUL MINIM — la ~$206 tinta din fractie ($0,3–0,6) e sub riscul lotului minim ($1–4), deci fractia nu schimba lotul; suma fractiilor live = 334% (nu e o impartire a contului, ci plafoane separate). `/sizing/preview` arata si `equity_for_target` (equity-ul la care fractia ar incepe sa conteze, ex. GBPUSD 20% → ~$785).
+- **Erori reparate:** Custom calcula pe un capital fix de $1000 cand `account_info()` era None sau fractia lipsea (risc ~5x) → acum capital 0 → `_place_order` NU trimite (volum 0 → `None`, reincercare la bara urmatoare); `(raw // step) * step` fara epsilon (0.5 → 0.49); lipsa plafonului `volume_max` in modul dinamic.
+- **Ramas diferit intentionat:** AI are rail de marja 40% (si in dinamic), Custom doar la lot fix (80%); riscul AI il alege consiliul (plafonat). Decizia (pastram fractia / o inlocuim cu risc% direct / limita la lot minim) e la user — NU s-a schimbat logica de risc.
+- API `GET /sizing/preview` (`api/routers/sizing.py`): valori sincronizate MT5 (balance/equity/marja/levier/tip cont/lot min-max-pas/tick/marja per lot) separat de cele configurate + lantul de calcul pe SL tipic (mediana SL-urilor reale MT5 pe simbol, altfel ATR M15 × 1.5). UI `PositionSizingCard` in SessionEditor, AI Engine (`AiSizingCard`) si Daily Engine. Teste: `python scripts/test_position_sizing.py` (38; Custom = AI = Daily pe 8 configuratii).
+
+### Rapoarte programate — `api/scheduled_reports.py` + `api/reports_builder.py` (2026-10-31)
+
+Ore in FUSUL APLICATIEI (`now_local`), config `data/reports_config.json` (`GET/PUT /reports/config`, UI Settings → Rapoarte programate): zilnic `daily_time`; **saptamanal DOAR vineri** `weekly_time` (23:30), fereastra CONTINUA vineri→vineri (`weekly_window`, include weekendul), recuperare doar in aceeasi vineri; **lunar** ziua `monthly_day` (1) la `monthly_time` (09:00), luna calendaristica COMPLETA (`monthly_window`), recuperare la prima ocazie; marcaje `data/reports_state.json` (scrise INAINTE de trimitere — fara dubluri). `enabled_on_this_machine` = pune False pe masina fara engine-uri (altfel rapoarte duble, fiecare cu datele ei locale). Manual: `POST /reports/send-weekly|send-monthly`.
+- `build_period_report` — sectiuni IZOLATE (fiecare in try; lipsa → marcata + lista „Componente indisponibile”): performanta per engine + TOTAL (`engine_stats` = `_perf` + max_dd + profit factor + % zile pozitive; manualele separat; Daily shadow separat), comparatie (≥2 engine-uri cu ≥5 trade-uri; scor net/|DD| + consistenta), conditii de piata (barele MT5: range D1 vs 60 zile, volum tick H1, efficiency ratio → trend/range/mixt + verdict), evenimente High ForexFactory (doar sapt. curenta + urmatoare → lunar = Insufficient data), weekend (gap redeschidere / ATR D1), probleme (`_ISSUE_RULES` pe notificari + statusuri outcomes.csv + exec_status ledger; nota de acoperire — notificarile pastreaza max 500), analiza AI consultativa (faptele EXACTE din raport + context shadow, thread cu timeout 150s; Ollama a inventat cifre cand primea dict-uri brute). Mesaje < 3800 caractere.
+- Fix: `is_important_notification` trateaza rapoartele ca importante (se suprimau in modul liniste); raportul zilnic se loga de doua ori. Teste: `python scripts/test_reports.py` (28).
+
 ### Metrici Dashboard (2026-10-31)
 
 - **`GET /mt5/engine-performance`** (`mt5status.py::_perf`): TOTAL (Custom+AI+Daily) + per engine — trades, W/L, `win_rate = wins/(wins+losses)` (aceeasi definitie ca TradingStatsPanel), profit (suma castigurilor brute MT5), loss, pnl, costs (comision+swap), net, avg_r, top piete. Aceeasi lista ca `/mt5/stats` (cache pool) — verificat: 55+94=149, pnl = pnl_total. Manualele EXCLUSE din TOTAL (raportate separat). Doar pozitii INCHISE, 365 zile.
@@ -443,12 +459,7 @@ Ambele routere `bot.py` si `sessions.py` folosesc `GetExitCodeProcess(STILL_ACTI
 **`api/config.py` — `get_profile_execute_map()`:**
 Citeste `execute_trades` per sesiune din profilul activ la runtime (nu din `SESSIONS` static). Folosit de `sessions.py`, `reports.py`, `scheduled_reports.py` pentru a filtra sesiunile OBS (execute_trades=False) din toate agregarile. `session4` (GER40) si `session6` (US30) au `execute=False` in config; `session20` (XAUUSD) are `execute=True`. Fallback pe valorile statice din `SESSIONS` daca profilul nu e accesibil.
 
-**`api/scheduled_reports.py` — rapoarte periodice automate:**
-Pornit ca daemon thread la startup API. Trimite via Telegram + Notificari:
-- **Zilnic la 23:30** — tranzactii din ziua respectiva (R, P&L, comisioane, top simboluri, per sesiune)
-- **Vineri la 23:30** — rezumat saptamanal (Luni-Vineri)
-Foloseste `get_profile_execute_map()` pentru a exclude OBS. Triggerable manual via `POST /reports/daily` si `POST /reports/weekly`.
-- **Sursa = exclusiv MT5 (2026-10-30):** raportul e construit din `mt5_pool.get_closed_trades` (nu din outcomes.csv): total cont + sectiunea Bot Engine (pe sesiune + pe strategie) + AI Engine (pe simbol) + manual, atribuite prin `classify_trade`. Prinde si tranzactiile plasate de alta masina pe acelasi cont. MT5 indisponibil → mesaj explicit „MT5 indisponibil", nu raport gol. Necesita restart API dupa modificari.
+**`api/scheduled_reports.py` — rapoarte periodice automate:** vezi sectiunea „Rapoarte programate” (zilnic / saptamanal vineri / lunar, fusul aplicatiei, sectiuni izolate). Sursa rezultatelor = exclusiv MT5 (`mt5_pool.get_closed_trades`, atribuire `classify_trade`); MT5 indisponibil → sectiunea marcata, nu raport gol. Necesita restart API dupa modificari.
 
 **`api/watchdog.py` — daemon watchdog oprire neasteptata:**
 Pornit automat la startup API (`@app.on_event("startup")`). Ruleaza ca thread daemon, polleaza la fiecare 30s: daca exista profil activ (`data/active_profile.json`) dar PID-ul botului (`data/run_all.pid`) nu mai e viu → trimite notificare Telegram ("Bot Trading oprit neasteptat!") si curata fisierele de stare (profil activ, pid). Acopera scenariile de crash sau oprire fortata fara Ctrl+C.
