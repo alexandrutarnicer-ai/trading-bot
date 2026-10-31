@@ -119,7 +119,7 @@ DEFAULTS: dict = {
     # din data/ai/providers.json dupa prefixul modelului. Detectat automat (aider/copilot).
     "editor_fallback_enabled": True,
     "aider_binary":     "",          # "" = auto-detect ('aider' din PATH)
-    "aider_model":      "groq/llama-3.3-70b-versatile",   # gratuit prin cheia 'groq'
+    "aider_model":      "gemini/gemini-2.5-flash",   # prin cheia 'gemini' (singura sursa cloud pastrata)
 
     # ── Matrix / Element (al doilea canal, EU, gratuit — OPTIONAL, off by default) ──
     # Acelasi Router (comenzi identice cu Telegram). Ruleaza intr-un thread separat

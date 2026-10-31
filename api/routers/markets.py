@@ -9,7 +9,7 @@ from fastapi import APIRouter, Query
 
 router = APIRouter(prefix="/markets", tags=["markets"])
 
-_cache: dict = {"symbols": None, "cached_at": None}
+_cache: dict = {"symbols": None, "items": None, "account": None, "cached_at": None}
 _lock = threading.Lock()
 
 try:
@@ -28,7 +28,8 @@ def get_mt5_symbols():
     if _cache["symbols"] is not None and _cache["cached_at"]:
         age = (datetime.now() - _cache["cached_at"]).total_seconds()
         if age < 300:
-            return {"symbols": _cache["symbols"], "error": None}
+            return {"symbols": _cache["symbols"], "items": _cache["items"],
+                    "account": _cache["account"], "error": None}
 
     if not _HAS_MT5:
         return {"symbols": [], "error": "MetaTrader5 nu este instalat"}
@@ -44,8 +45,22 @@ def get_mt5_symbols():
             if syms is None:
                 return {"symbols": [], "error": "symbols_get() nu a returnat date"}
             names = sorted(s.name for s in syms)
-            _cache = {"symbols": names, "cached_at": datetime.now()}
-            return {"symbols": names, "error": None}
+            # Detalii pentru selectorul de piete din UI (AI Engine → Piețe urmărite):
+            # lista vine DINAMIC din contul MT5 conectat (difera intre brokeri si
+            # intre demo/live), fara hardcodare. tradable=False = simbol dezactivat /
+            # doar inchidere la broker → afisat, dar nu poate fi adaugat.
+            items = sorted(({"name": s.name,
+                             "description": getattr(s, "description", "") or "",
+                             "path": getattr(s, "path", "") or "",
+                             "tradable": int(getattr(s, "trade_mode", 4)) == 4}
+                            for s in syms), key=lambda x: x["name"])
+            acc = _mt5.account_info()
+            account = None if acc is None else {
+                "login": acc.login, "server": acc.server,
+                "is_demo": acc.trade_mode == _mt5.ACCOUNT_TRADE_MODE_DEMO}
+            _cache = {"symbols": names, "items": items, "account": account,
+                      "cached_at": datetime.now()}
+            return {"symbols": names, "items": items, "account": account, "error": None}
         except Exception as e:
             return {"symbols": [], "error": str(e)}
         finally:

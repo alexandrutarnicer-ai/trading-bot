@@ -33,30 +33,24 @@ DEFAULTS: dict = {
     "providers": {
         "ollama": {"enabled": True,  "type": "ollama",
                    "model": "qwen3:1.7b", "url": "http://localhost:11434"},
-        "claude": {"enabled": False, "type": "anthropic",
-                   "model": "claude-haiku-4-5"},
+        # Sursele suportate (2026-10-31): DOAR ollama (local) + gemini (cloud).
+        # Celelalte (claude/chatgpt/groq/mistral/...) au fost eliminate: indisponibile,
+        # rate-limit cronic (mistral 429) sau neplatite. Tipurile de adaptor raman in
+        # providers.py (o sursa noua se poate adauga din UI), dar nu exista sabloane.
         "gemini": {"enabled": False, "type": "gemini",
                    "model": "gemini-2.5-flash"},
-        "chatgpt": {"enabled": False, "type": "openai_compatible",
-                    "model": "gpt-4o-mini",
-                    "base_url": "https://api.openai.com/v1"},
     },
     # Ce sursa joaca fiecare rol din consiliu. Se pot imparti oricum;
     # schimbarile din UI se aplica la urmatorul consiliu (fara restart).
-    # quant / devils_advocate = roluri OPTIONALE (folosite doar cand sunt activate).
     "role_assignments": {
         "technical":       "ollama",
         "macro":           "ollama",
         "risk":            "ollama",
-        "quant":           "ollama",
-        "devils_advocate": "ollama",
         "head_trader":     "ollama",
     },
 
     # ── Roluri suplimentare de consiliu (Feature: Additional AI Roles) ──
     # Dezactivate by default → consiliul e EXACT cel de dinainte (4 roluri).
-    "role_quant_enabled":            False,  # Analist Cantitativ / Volatilitate (EV, win-prob)
-    "role_devils_advocate_enabled":  False,  # Avocatul Diavolului (pre-mortem, contra-teza)
 
     # ── Semnal de regim trend/chop in briefing (Feature: Regime Awareness) ──
     # True → briefing-ul include eficienta de trend (Kaufman ER) + eticheta CHOPPY/
@@ -78,6 +72,11 @@ DEFAULTS: dict = {
     "heartbeat_hours":        24,   # minim un consiliu per piata pe zi
     "council_cooldown_min":   120,  # minim intre doua consilii pe aceeasi piata
     "position_review_hours":  4,    # review pozitie deschisa
+    # Trigger-e DEZACTIVATE (nu mai convoaca consiliul). [] = toate active (ca inainte).
+    # Valori: regime_flip, breakout_tension, vol_spike, news_window, position_review,
+    # heartbeat. Motivatie (2026-10-31, ledger real 89 trade-uri): breakout_tension =
+    # 76% din consilii si -0.24R/trade; regime_flip singurul pozitiv (+0.40R, n=12).
+    "disabled_triggers":      [],
 
     # Executie. mode: "demo" = ordine reale pe cont DEMO; "shadow" = doar log.
     "mode":            "demo",
@@ -130,7 +129,11 @@ MARKET_OVERRIDE_DEFAULTS = {
     "max_daily_loss_R":   None,   # None = doar stopul global de zi
     "max_trades_per_day": None,   # None = fara limita per piata
     "fixed_lots":         None,   # None = sizing dinamic pe risc (ca pana acum)
-    "isolated":           False,  # in scorecard-ul principal
+    # Mod piata (2026-10-31, inlocuieste „isolated" care DOAR excludea din scorecard,
+    # dar piata continua sa tranzactioneze — confuz): "active" = tranzactioneaza;
+    # "observe" = consiliul analizeaza, deciziile se salveaza ca SHADOW, ZERO ordine
+    # noi (inchiderea pozitiilor existente ramane permisa), excluse din scorecard.
+    "mode":               "active",
 }
 
 
@@ -154,8 +157,10 @@ def sanitize_market_overrides(raw: dict | None, risk_pct_max: float = 0.02) -> d
                 clean["max_trades_per_day"] = max(1, min(20, int(ov["max_trades_per_day"])))
             if ov.get("fixed_lots") is not None:
                 clean["fixed_lots"] = round(max(0.01, min(100.0, float(ov["fixed_lots"]))), 2)
-            if ov.get("isolated"):
-                clean["isolated"] = True
+            # compat: vechiul isolated:true → mode observe (intentia „piata in observatie")
+            mode = str(ov.get("mode") or ("observe" if ov.get("isolated") else "active")).lower()
+            if mode == "observe":
+                clean["mode"] = "observe"
         except (TypeError, ValueError):
             continue   # override corupt → ignorat (fail-safe: comportament default)
         if clean:
@@ -170,7 +175,11 @@ def market_cfg(cfg: dict, symbol: str) -> dict:
     ov = (cfg.get("market_overrides") or {}).get(symbol) or {}
     m = dict(MARKET_OVERRIDE_DEFAULTS)
     m.update(ov)
-    m["_has_overrides"] = bool(ov)
+    if m.get("isolated") and "mode" not in ov:      # config vechi nesanitizat
+        m["mode"] = "observe"
+    m["isolated"] = m["mode"] == "observe"
+    # doar LIMITELE conteaza pentru briefing (modul nu se comunica consiliului)
+    m["_has_overrides"] = bool(set(ov) - {"mode", "isolated"})
     return m
 
 
@@ -182,7 +191,7 @@ def isolated_markets(cfg: dict) -> list[str]:
     ei ramane salvat si e re-aplicat automat daca piata e re-adaugata.)
     """
     return sorted(s for s, ov in (cfg.get("market_overrides") or {}).items()
-                  if isinstance(ov, dict) and ov.get("isolated"))
+                  if isinstance(ov, dict) and (ov.get("mode") == "observe" or ov.get("isolated")))
 
 
 def load_config() -> dict:
@@ -209,6 +218,10 @@ def load_config() -> dict:
         cfg["consensus_threshold"] = max(50, min(90, int(cfg.get("consensus_threshold", 70))))
     except (TypeError, ValueError):
         cfg["consensus_threshold"] = 70
+    _TRIG = {"regime_flip", "breakout_tension", "vol_spike", "news_window",
+             "position_review", "heartbeat"}
+    dt = cfg.get("disabled_triggers")
+    cfg["disabled_triggers"] = sorted({str(x) for x in dt if str(x) in _TRIG})         if isinstance(dt, (list, tuple)) else []
     # Override-uri per piata: curatate + clamp-uite (corupt → ignorat, default-uri raman)
     cfg["market_overrides"] = sanitize_market_overrides(
         cfg.get("market_overrides"), cfg["risk_pct_max"])
@@ -226,10 +239,15 @@ def load_config() -> dict:
 
     # asignari de rol: doar surse existente; fallback pe ollama
     ra = dict(cfg.get("role_assignments") or {})
-    for role in ("technical", "macro", "risk", "quant", "devils_advocate", "head_trader"):
+    for role in ("technical", "macro", "risk", "head_trader"):
         if ra.get(role) not in provs:
             ra[role] = "ollama"
     cfg["role_assignments"] = ra
+
+    # Consilii multiple ELIMINATE (2026-10-31; rolurile Quant/Devil la fel): un singur
+    # consiliu (sursa primara → failover → Ollama). Fortat indiferent de config.json.
+    cfg["council_secondary_source"] = None
+    cfg["council_tertiary_source"] = None
 
     # surse de consiliu multiplu: doar surse existente si enabled (altfel None)
     for key in ("council_primary_source", "council_secondary_source",

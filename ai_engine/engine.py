@@ -25,12 +25,44 @@ from ai_engine.config import (load_config, save_default_config, load_keys,
 from ai_engine.providers import ProviderRegistry
 from ai_engine.ledger import Ledger
 from ai_engine import perception, triggers, council, executor, orchestrator
+from live import global_guard
 from tz_helper import now_local
 
 log = logging.getLogger("ai_engine")
 
 STATUS_PATH = os.path.join(AI_DATA, "status.json")
 _last_errors: list[dict] = []   # ring buffer pentru UI (max 20)
+
+
+def _clear_recovered_errors(registry) -> None:
+    """Scoate din „Erori recente" erorile Ollama de dinaintea ultimului apel reusit —
+    altfel un RemoteDisconnected de la pornire ramanea afisat zile intregi desi
+    Ollama functiona (parea o problema activa)."""
+    last_ok = (registry.health.get("ollama") or {}).get("last_ok")
+    if not last_ok:
+        return
+    cutoff = datetime.fromtimestamp(last_ok).isoformat(timespec="seconds")
+    _last_errors[:] = [e for e in _last_errors
+                       if not (e["where"] == "ollama_probe" and e["ts"] <= cutoff)]
+
+
+def _probe_ollama_with_wait(registry, waits=(5, 10, 15, 20, 30, 40)) -> tuple[bool, str]:
+    """
+    Verificarea de inferenta Ollama la pornire, cu ASTEPTARE. La boot, autostart-ul
+    lanseaza Ollama „fara asteptare" iar motorul porneste la 6-20s dupa: Ollama inca
+    isi porneste serverul / incarca modelul de pe disc (CPU) si inchide conexiunea →
+    RemoteDisconnected (6 cazuri in log, TOATE la pornire). Reincercam cu backoff
+    (~2 min total) inainte de a declara safety-net-ul DEFECT; un backend corupt
+    (server_error) e raportat imediat (nu se repara asteptand).
+    """
+    ok, detail = registry.default_probe()
+    for w in waits:
+        if ok or "DEFECT" in detail or "llama-server" in detail:
+            break
+        log.info("Ollama inca nu raspunde la pornire (%s) — reincerc in %ss", detail[:90], w)
+        time.sleep(w)
+        ok, detail = registry.default_probe()
+    return ok, detail
 
 
 def _record_error(where: str, err: str) -> None:
@@ -138,6 +170,14 @@ def _write_status(running: bool, cfg: dict | None = None,
             "providers":  providers_health or {},
             "role_assignments": (cfg or {}).get("role_assignments"),
         }
+        # Tipul REAL al contului (cfg["mode"]="demo" inseamna doar „ordine reale",
+        # nu „cont demo" — pe contul live eticheta era inselatoare).
+        try:
+            acc = executor.mt5.account_info() if running else None
+            if acc is not None:
+                st["account_is_demo"] = acc.trade_mode == executor.mt5.ACCOUNT_TRADE_MODE_DEMO
+        except Exception:
+            pass
         if extra:
             st.update(extra)   # scorecard_by_symbol, isolated_markets etc.
         with open(STATUS_PATH, "w", encoding="utf-8") as f:
@@ -252,10 +292,12 @@ def _weekend_guard(symbol: str, cfg: dict) -> bool:
     Outcome-urile inchiderii/anularii sunt inregistrate de _update_outcomes la
     urmatoarea iteratie (pattern-ul standard order->position->deals).
     """
-    if not cfg.get("weekend_close_enabled", True):
+    # Setari Globale: inchiderea de vineri globala („cea mai stricta castiga").
+    on, hour = global_guard.effective_ai_weekend(cfg, symbol)
+    if not on:
         return False
     now_ro = now_local()
-    if not executor.is_market_weekend_closed(symbol, now_ro, cfg.get("weekend_close_hour", 22)):
+    if not executor.is_market_weekend_closed(symbol, now_ro, hour):
         return False
 
     # Piata inchisa pentru weekend -> curata expunerea AI pe acest simbol.
@@ -273,6 +315,103 @@ def _weekend_guard(symbol: str, cfg: dict) -> bool:
             log.info("WEEKEND %s: ordin pending #%s anulat inainte de weekend", symbol, o.ticket)
             _send_telegram(f"🤖📅 AI Engine — {symbol} #{o.ticket}: ordin pending anulat pentru weekend.")
     return True
+
+
+# ── Guard CROSS-MASINA (PC + laptop pe acelasi cont) ─────────────────────────
+# Mutex-ul local + PID nu vad o instanta pornita pe ALTA masina pe acelasi cont.
+# Semnatura ei: ordine/pozitii pe magic-ul AI pe care ACEST proces nu le-a plasat
+# (nu sunt in ledger-ul local) si care au aparut DUPA pornire (cele preexistente
+# formeaza baseline-ul — mostenite de la o rulare anterioara). La detectie motorul
+# nu mai deschide nimic (fail-safe; daca ruleaza doua, se blocheaza reciproc) si
+# PAGINEAZA operatorul. Pozitiile existente raman gestionate de SL/TP.
+_baseline_tickets: set | None = None
+_foreign_block = False
+
+
+def _ai_tickets(cfg: dict) -> set:
+    return ({int(o.ticket) for o in executor.ai_pending_orders(cfg["magic"])}
+            | {int(p.ticket) for p in executor.ai_positions(cfg["magic"])})
+
+
+def _check_foreign_instance(ledger: Ledger, cfg: dict) -> bool:
+    """True = alta instanta AI detectata pe cont → nu deschide nimic."""
+    global _baseline_tickets, _foreign_block
+    if _foreign_block:
+        return True
+    try:
+        cur = _ai_tickets(cfg)
+        known = {int(r[0]) for r in ledger.con.execute(
+            "select ticket from decisions where ticket is not null")}
+    except Exception:
+        return False
+    if _baseline_tickets is None:
+        _baseline_tickets = cur
+        return False
+    foreign = cur - known - _baseline_tickets
+    if foreign:
+        _foreign_block = True
+        log.error("ALTA INSTANTA AI pe cont: tichete necunoscute %s — ordine noi BLOCATE", sorted(foreign))
+        _send_telegram(f"🛑🤖 AI Engine: detectată ALTĂ instanță pe același cont (ordine AI "
+                       f"neplasate de această mașină: {', '.join(map(str, sorted(foreign)))}).\n"
+                       f"Această instanță NU mai deschide poziții. Oprește instanța duplicată "
+                       f"(PC sau laptop) și repornește motorul pe o singură mașină.")
+    return _foreign_block
+
+
+_GLOBAL_NOTIFIED: dict = {}
+
+
+def _notify_global_once(symbol: str, reason: str, text: str) -> None:
+    """Telegram o data pe zi per (piata, tip de blocaj global)."""
+    key = (symbol, reason.split(":")[0], datetime.now().date())
+    if key not in _GLOBAL_NOTIFIED:
+        _GLOBAL_NOTIFIED[key] = True
+        _send_telegram(text)
+
+
+def _global_news_guard(symbol: str, cfg: dict) -> bool:
+    """
+    Protectia la stiri GLOBALA (Setari Globale, oprita implicit) pentru AI Engine:
+    in fereastra unui eveniment relevant, anuleaza pending-urile AI pe simbol,
+    inchide pozitia AI si SARE consiliul (ca protectia la stiri a botului).
+    Oprita → False, zero interogari (comportament identic).
+    """
+    if not global_guard.load_settings()["news_protection"]["enabled"]:
+        return False
+    active = global_guard.news_window_active(symbol, perception._calendar())
+    if not active:
+        return False
+    top = active[0]
+    for o in executor.ai_pending_orders(cfg["magic"]):
+        if o.symbol == symbol and executor.cancel_order(o.ticket, cfg):
+            log.info("STIRI GLOBAL %s: ordin pending #%s anulat (%s)", symbol, o.ticket, top["title"])
+    if executor.open_position_for(symbol, cfg["magic"]) is not None:
+        status, detail = executor.close_position(symbol, cfg)
+        log.info("STIRI GLOBAL %s: inchidere pozitie -> %s (%s)", symbol, status, detail)
+    _notify_global_once(symbol, "STIRI", f"📰🛡 AI Engine — {symbol}: protecție știri GLOBALĂ "
+                        f"activă ({top['title']}, {top['currency']}). Expunerea AI pe simbol "
+                        f"e închisă/anulată, consiliul e suspendat până trece fereastra.")
+    return True
+
+
+def market_limit_status(mcfg: dict, daily_r: float, trades_today: int, cfg: dict) -> dict:
+    """
+    Starea LIVE a limitelor unei piete (pura — afisata in UI si testata):
+    ce s-a consumat azi, plafoanele, si DACA piata mai poate deschide un ordin
+    (cu motivul exact). Limitele GLOBALE (max pozitii, stop zilnic motor) sunt
+    raportate separat in status.json.
+    """
+    mdl, mtd = mcfg.get("max_daily_loss_R"), mcfg.get("max_trades_per_day")
+    reason = None
+    if mcfg.get("mode") == "observe":
+        reason = "mod OBSERVATIE — analizeaza, nu plaseaza ordine"
+    elif mdl is not None and daily_r <= -float(mdl):
+        reason = f"stop zilnic pe piata atins ({daily_r:+.2f}R / -{float(mdl):g}R)"
+    elif mtd is not None and trades_today >= int(mtd):
+        reason = f"limita de ordine/zi atinsa ({trades_today}/{int(mtd)})"
+    return {"mode": mcfg.get("mode", "active"), "daily_r": round(daily_r, 2),
+            "trades_today": trades_today, "max_daily_loss_R": mdl, "max_trades_per_day": mtd,
+            "can_open": reason is None, "blocked_reason": reason}
 
 
 def _market_limits_text(symbol: str, m: dict, cfg: dict,
@@ -318,6 +457,15 @@ def _process_market(symbol: str, src: Mt5DataSource, registry: ProviderRegistry,
     trig = triggers.evaluate(snap, prev, ledger.last_council_ts(symbol),
                              pos is not None, cfg)
     if trig is None:
+        return
+
+    # Setari Globale (protectie capital / circuit breaker / pozitii simultane pe
+    # cont): blocaj + nicio pozitie de gestionat → nu convocam consiliul degeaba.
+    g_ok, g_reason = global_guard.check_open(executor.mt5, "ai", symbol)
+    if not g_ok and pos is None:
+        log.info("GLOBAL %s: consiliu sarit — %s", symbol, g_reason)
+        _notify_global_once(symbol, g_reason, f"🛡 AI Engine — {symbol}: ordine noi BLOCATE de "
+                            f"Setările Globale.\n{g_reason}")
         return
 
     log.info("CONSILIU pe %s — trigger: %s", symbol, trig)
@@ -410,9 +558,22 @@ def _process_market(symbol: str, src: Mt5DataSource, registry: ProviderRegistry,
                                         symbol_committed=symbol_committed,
                                         market_state=market_state,
                                         committed_symbols=committed_symbols)
+    if not reason:
+        # re-verificat la executie (consiliul poate dura minute)
+        g_ok, g_reason = global_guard.check_open(executor.mt5, "ai", symbol)
+        if not g_ok:
+            reason = f"Setari Globale: {g_reason}"
     if reason:
         ledger.add_decision(symbol, council_id, decision, "rejected", reason)
         log.info("RESPINS %s: %s", symbol, reason)
+        return
+
+    # Piata in OBSERVATIE: decizia e analizata si jurnalizata (shadow), fara ordin.
+    if mcfg.get("mode") == "observe":
+        ledger.add_decision(symbol, council_id, decision, "shadow",
+                            "piata in OBSERVATIE — decizie analizata, niciun ordin plasat")
+        log.info("OBSERVATIE %s: %s ar fi fost plasat — fara ordin (mod observatie)",
+                 symbol, decision["action"])
         return
 
     dec_id = ledger.add_decision(symbol, council_id, decision, "pending")
@@ -476,16 +637,20 @@ def run() -> None:
     # default_available() nu-l prinde. Nu oprim motorul (ramane sus, degradeaza
     # gratios pe surse cloud si se auto-repara dupa ce Ollama e reparat), dar
     # paginam operatorul CLAR, o singura data, la pornire.
-    ok, detail = registry.default_probe()
+    ok, detail = _probe_ollama_with_wait(registry)
     if not ok:
-        log.error("SAFETY-NET Ollama DEFECT la pornire: %s", detail)
+        broken = "DEFECT" in detail or "llama-server" in detail
+        log.error("SAFETY-NET Ollama %s la pornire: %s",
+                  "DEFECT" if broken else "INDISPONIBIL dupa ~2 min de asteptare", detail)
         _record_error("ollama_probe", detail)
         _send_telegram(
-            "🛑 AI Engine — safety-net Ollama DEFECT la pornire.\n"
-            f"{detail}\n"
-            "Motorul ruleaza DEGRADAT (failover pe surse cloud daca sunt configurate + "
-            "sanatoase; altfel toate deciziile devin WAIT). Repara Ollama: reinstaleaza "
-            "de pe ollama.com/download. Diagnostic: python -m ai_engine.doctor")
+            ("🛑 AI Engine — safety-net Ollama DEFECT la pornire.\n" if broken else
+             "⚠ AI Engine — Ollama nu raspunde la pornire (am asteptat ~2 min).\n")
+            + f"{detail}\n"
+            "Motorul RULEAZA mai departe: failover pe sursa cloud (Gemini) daca e "
+            "sanatoasa, altfel deciziile devin WAIT (fara ordine). Se reconecteaza singur "
+            "cand Ollama revine (verificare la 30s), fara restart. Diagnostic: "
+            "python -m ai_engine.doctor")
     else:
         log.info("Ollama inferenta verificata OK (safety-net functional).")
 
@@ -520,6 +685,7 @@ def run() -> None:
             # Fara nicio sursa, toate deciziile devin WAIT (fail-safe) → operatorul
             # trebuie instiintat. O singura notificare per tranzitie (jos/revenit).
             _monitor_sources_health(registry)
+            _clear_recovered_errors(registry)
 
             try:
                 _update_outcomes(ledger, cfg)
@@ -537,10 +703,13 @@ def run() -> None:
 
             failures = 0
             processed = 0
+            foreign = _check_foreign_instance(ledger, cfg)
             for symbol in cfg["markets"]:
                 try:
                     # Weekend: FX inchis -> curata expunerea + sare consiliul (cripto ruleaza).
-                    if _weekend_guard(symbol, cfg):
+                    if _weekend_guard(symbol, cfg) or _global_news_guard(symbol, cfg):
+                        continue
+                    if foreign:     # alta instanta pe cont → protectiile raman, consiliul nu
                         continue
                     processed += 1
                     _process_market(symbol, src, registry, ledger, cfg, prev_snapshots)
@@ -575,10 +744,23 @@ def run() -> None:
             iso = isolated_markets(cfg)
             sc = ledger.scorecard(exclude_symbols=iso)
             log.info("scorecard: %s%s", sc, f" (izolate: {','.join(iso)})" if iso else "")
+            _today = datetime.now().date().isoformat()
+            _ms = {}
+            for _sym in cfg["markets"]:
+                try:
+                    _ms[_sym] = market_limit_status(market_cfg(cfg, _sym),
+                                                    ledger.daily_loss_R(_today, _sym),
+                                                    ledger.placed_count(_today, _sym), cfg)
+                except Exception:
+                    pass
+            _gl = {"max_open_positions": cfg["max_open_positions"],
+                   "max_daily_loss_R": cfg["max_daily_loss_R"],
+                   "daily_r": round(ledger.daily_loss_R(_today), 2)}
             _write_status(True, cfg, sc, executor.equity() or None,
                           providers_health=registry.snapshot(),
                           extra={"scorecard_by_symbol": ledger.scorecard_by_symbol(),
-                                 "isolated_markets": iso})
+                                 "isolated_markets": iso,
+                                 "market_status": _ms, "global_limits": _gl})
             _sleep_to_next_bar(cfg["bar_minutes"])
     except KeyboardInterrupt:
         log.info("Oprire ceruta (Ctrl+C).")

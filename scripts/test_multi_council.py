@@ -224,10 +224,10 @@ class MultiFakeRegistry:
     def __init__(self, sources):        # {name: {conf, approve, veto, veto_code, action, fail}}
         self.sources = sources
         self.calls = []
-    def call_role(self, role, assignments, system, user, required):
+    def call_role(self, role, assignments, system, user, required, deadline=None):
         src = (assignments or {}).get("head_trader") or self.DEFAULT
         return self._answer(src, required)
-    def call_role_pinned(self, source, system, user, required):
+    def call_role_pinned(self, source, system, user, required, deadline=None):
         return self._answer(source, required)
     def _answer(self, source, required):
         cfg = self.sources.get(source)
@@ -329,7 +329,7 @@ v = f.evaluate(SIG, BRIEF, "balanced", scfg, _Log())
 check("veto: un consiliu veta WEEKEND_GAP → RESPINS", not v["approved"] and v["veto_code"] == "WEEKEND_GAP")
 
 # ═════════════════════════════════════════════════════════════════════════════
-# 7. Roluri optionale (Quant + Devil) — activate doar la cerere
+# 7. Roluri Quant + Devil — ELIMINATE (2026-10-31), ignorate chiar daca profilul le cere
 # ═════════════════════════════════════════════════════════════════════════════
 
 reg = MultiFakeRegistry({"ollama": {"conf": 80, "approve": True}})
@@ -340,8 +340,8 @@ check("roluri: default → doar 4 roluri in transcript", len(v["transcript"]) ==
 f = _make_filter(reg)
 v = f.evaluate(SIG, BRIEF, "balanced",
                {"ai_role_quant_enabled": True, "ai_role_devils_advocate_enabled": True}, _Log())
-check("roluri: activate → 6 roluri (quant + devils_advocate adaugate)",
-      len(v["transcript"]) == 6 and "quant" in v["transcript"] and "devils_advocate" in v["transcript"])
+check("roluri ELIMINATE: chiar cerute de un profil vechi → tot 4 roluri (fara quant/devil)",
+      len(v["transcript"]) == 4 and "quant" not in v["transcript"] and "devils_advocate" not in v["transcript"])
 
 # ═════════════════════════════════════════════════════════════════════════════
 # 8. Orchestratorul motorului autonom (primar + revizori)

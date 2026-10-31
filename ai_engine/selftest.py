@@ -64,6 +64,8 @@ def test_ledger():
 
 
 def test_triggers(cfg):
+    # logica trigger-elor se testeaza cu TOATE active (config-ul real poate dezactiva unele)
+    cfg = dict(cfg, disabled_triggers=[])
     print("[2] triggers")
     s1 = _fake_snapshot()
     _assert(triggers.evaluate(s1, None, None, False, cfg) == "heartbeat",

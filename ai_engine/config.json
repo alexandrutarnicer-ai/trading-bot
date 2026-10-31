@@ -1,9 +1,6 @@
 {
   "markets": [
-    "EURUSD",
-    "NZDJPY",
     "CHFJPY",
-    "SOFI.NAS",
     "GBPUSD"
   ],
   "provider": "ollama",
@@ -22,7 +19,7 @@
   "comment_prefix": "AI",
   "risk_pct_default": 0.005,
   "risk_pct_max": 0.01,
-  "max_open_positions": 5,
+  "max_open_positions": 2,
   "max_daily_loss_R": 3.0,
   "min_rr": 1.0,
   "max_sl_atr_mult": 5.0,
@@ -34,82 +31,26 @@
       "model": "qwen3:1.7b",
       "url": "http://localhost:11434"
     },
-    "claude": {
-      "enabled": false,
-      "type": "anthropic",
-      "model": "claude-haiku-4-5"
-    },
     "gemini": {
       "enabled": true,
       "type": "gemini",
       "model": "gemini-2.5-flash"
-    },
-    "chatgpt": {
-      "type": "openai_compatible",
-      "model": "gpt-4o-mini",
-      "enabled": false,
-      "base_url": "https://api.openai.com/v1"
-    },
-    "groq": {
-      "enabled": true,
-      "type": "openai_compatible",
-      "model": "groq/compound",
-      "base_url": "https://api.groq.com/openai/v1"
-    },
-    "cerebras": {
-      "type": "openai_compatible",
-      "model": "gemma-4-31b",
-      "enabled": false,
-      "base_url": "https://api.cerebras.ai/v1"
-    },
-    "openroute": {
-      "type": "openai_compatible",
-      "model": "openai/gpt-4o",
-      "enabled": true,
-      "base_url": "https://openrouter.ai/api/v1"
-    },
-    "hug1": {
-      "type": "openai_compatible",
-      "model": "zai-org/GLM-5.2:novita",
-      "enabled": false,
-      "base_url": "https://router.huggingface.co/v1"
-    },
-    "hug2quen3": {
-      "type": "openai_compatible",
-      "model": "Qwen/Qwen3.6-27B:featherless-ai",
-      "enabled": false,
-      "base_url": "https://router.huggingface.co/v1"
-    },
-    "mistral": {
-      "type": "openai_compatible",
-      "model": "mistral-small-latest",
-      "enabled": true,
-      "base_url": "https://api.mistral.ai/v1"
-    },
-    "nvidia": {
-      "type": "openai_compatible",
-      "model": "z-ai/glm-5.2",
-      "enabled": false,
-      "base_url": "https://integrate.api.nvidia.com/v1"
     }
   },
   "role_assignments": {
+    "technical": "ollama",
     "macro": "ollama",
     "risk": "ollama",
-    "technical": "ollama",
-    "head_trader": "gemini",
-    "devils_advocate": "gemini",
-    "quant": "gemini"
+    "head_trader": "gemini"
   },
-  "role_quant_enabled": false,
   "consensus_threshold": 75,
-  "role_devils_advocate_enabled": false,
-  "market_overrides": {
-    "SOFI.NAS": {
-      "isolated": true
-    }
-  },
+  "market_overrides": {},
   "capital_sync_mt5": true,
-  "capital_usd": 200.0,
-  "council_primary_source": null
+  "capital_usd": 197.14,
+  "council_primary_source": null,
+  "disabled_triggers": [
+    "breakout_tension",
+    "heartbeat",
+    "vol_spike"
+  ]
 }

@@ -148,47 +148,6 @@ _HEAD_USER = (
     '"reason": "2-3 sentences summarizing the desk consensus"}}'
 )
 
-# ── Roluri OPTIONALE de revizie (dezactivate by default) ─────────────────────
-# Gate-uite prin cfg["role_quant_enabled"] / cfg["role_devils_advocate_enabled"]
-# (mapate din session_cfg ai_role_*). Cand ambele sunt oprite, consiliul de
-# revizie e EXACT cel de dinainte (4 roluri).
-
-_QUANT_SYS = _PREAMBLE + (
-    "\nROLE: Quantitative / Volatility Analyst reviewing a SYSTEMATIC trade signal "
-    "with FIXED entry, stop and take-profit. You do NOT redesign it. You judge the "
-    "NUMBERS: is the fixed reward/risk justified by a realistic win probability, is "
-    "the stop sane vs ATR and its percentile, is expected value positive? EV is "
-    "roughly win_prob*RR - (1-win_prob). Flag signals whose geometry only pays off "
-    "on optimistic assumptions; endorse those with a positive, robust edge."
-)
-_QUANT_USER = (
-    "{briefing}\n\n"
-    "PROPOSED TRADE:\n{trade}\n\n"
-    "TECHNICAL ANALYST: {tech_view}\n"
-    "MACRO ANALYST: {macro_view}\n\n"
-    "Assess the quantitative quality of taking this fixed trade. Respond ONLY with JSON:\n"
-    '{{"assessment": "favorable"|"marginal"|"unfavorable", "confidence": 0-100, '
-    '"est_win_prob": 0-100|null, "reasoning": "2-4 sentences"}}'
-)
-
-_DEVIL_SYS = _PREAMBLE + (
-    "\nROLE: Devil's Advocate reviewing a SYSTEMATIC trade signal. Your ONLY job is "
-    "to argue AGAINST taking this specific trade now and run a PRE-MORTEM: assume it "
-    "already hit its stop, then explain what most likely killed it. The rule engine "
-    "has a real edge, so do not reject on principle — but surface the blind spot the "
-    "desk may be ignoring. If you find no serious objection, say so (severity 'low')."
-)
-_DEVIL_USER = (
-    "{briefing}\n\n"
-    "PROPOSED TRADE:\n{trade}\n\n"
-    "TECHNICAL ANALYST: {tech_view}\n"
-    "MACRO ANALYST: {macro_view}\n\n"
-    "Argue against taking this trade and run the pre-mortem. Respond ONLY with JSON:\n"
-    '{{"strongest_objection": "1-2 sentences", "failure_mode": "what most likely '
-    'stops it out", "severity": "low"|"medium"|"high", "reasoning": "2-4 sentences"}}'
-)
-
-
 # ── Helpers de veto / consiliu de revizie reutilizabile ──────────────────────
 
 def _flag(v) -> bool:
@@ -235,19 +194,7 @@ def run_review_council(registry, briefing: str, trade_desc: str, cfg: dict,
                           _RISK_USER.format(briefing=briefing, trade=trade_desc,
                                             tech_view=_short(tech), macro_view=_short(macro)),
                           ["veto", "notes"])
-        extra_views: dict = {}
-        if cfg.get("role_quant_enabled"):
-            extra_views["quant"] = runner.ask(
-                "quant", _QUANT_SYS,
-                _QUANT_USER.format(briefing=briefing, trade=trade_desc,
-                                   tech_view=_short(tech), macro_view=_short(macro)),
-                ["assessment", "confidence", "reasoning"])
-        if cfg.get("role_devils_advocate_enabled"):
-            extra_views["devils_advocate"] = runner.ask(
-                "devils_advocate", _DEVIL_SYS,
-                _DEVIL_USER.format(briefing=briefing, trade=trade_desc,
-                                   tech_view=_short(tech), macro_view=_short(macro)),
-                ["strongest_objection", "severity", "reasoning"])
+        extra_views: dict = {}   # roluri suplimentare eliminate (2026-10-31)
         head = runner.ask("head_trader", _HEAD_SYS,
                           _HEAD_USER.format(briefing=briefing, trade=trade_desc,
                                             tech_view=_short(tech), macro_view=_short(macro),
@@ -392,11 +339,6 @@ class TradeFilter:
             self._refresh()
             registry = self._registry
             cfg = dict(self._cfg)
-            # Rolurile optionale se activeaza per sesiune (mostenesc global daca lipsesc).
-            cfg["role_quant_enabled"] = bool((session_cfg or {}).get(
-                "ai_role_quant_enabled", cfg.get("role_quant_enabled", False)))
-            cfg["role_devils_advocate_enabled"] = bool((session_cfg or {}).get(
-                "ai_role_devils_advocate_enabled", cfg.get("role_devils_advocate_enabled", False)))
             assignments = cfg.get("role_assignments", {})
             trade_desc = describe_trade(sig, session_cfg)
 
@@ -410,8 +352,7 @@ class TradeFilter:
                 # nu are voie sa scoata filtrul din joc — cerinta: filtrul
                 # consuma toate sursele AI si abia apoi cade pe fail-open.)
                 pref = {role: council_sources[0] for role in
-                        ("technical", "macro", "risk", "quant",
-                         "devils_advocate", "head_trader")}
+                        ("technical", "macro", "risk", "head_trader")}
                 opinions = [run_review_council(
                     registry, briefing, trade_desc, cfg, source=None,
                     assignments=pref, deadline=t0 + TIME_BUDGET_S, log=log)]
