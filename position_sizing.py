@@ -146,3 +146,29 @@ def fit_to_margin(info, lots: float, margin_need: float | None, free_margin: flo
     per_lot = margin_need / lots
     fitted = snap_volume(info, cap / per_lot)
     return (fitted, True) if fitted < lots else (lots, False)
+
+
+def apply_risk_cap(info, lots: float, entry: float, sl: float, equity: float | None,
+                   max_risk_pct: float | None) -> tuple[float, str | None]:
+    """Limita de risc pe trade (Setari Globale → risk_cap), ACEEASI pe toate engine-urile:
+    daca riscul real al volumului depaseste max_risk_pct % din equity, volumul e redus pana
+    incape; daca nici lotul minim nu incape → 0 (ordinul NU se plaseaza). Intoarce (lots, motiv).
+    Fara limita / fara equity / fara date de tick → nemodificat (limita nu poate fi evaluata)."""
+    if not max_risk_pct or max_risk_pct <= 0 or not equity or equity <= 0 or not lots or lots <= 0:
+        return lots, None
+    vpu = value_per_price_unit(info)
+    dist = abs(float(entry) - float(sl))
+    if vpu is None or dist <= 0:
+        return lots, None
+    cap_money = float(equity) * float(max_risk_pct) / 100.0
+    risk = lots * dist * vpu
+    if risk <= cap_money + EPS:
+        return lots, None
+    step = _step(info)
+    fit = math.floor(cap_money / (dist * vpu) / step + EPS) * step
+    vmin = float(getattr(info, "volume_min", 0) or 0)
+    if fit < vmin - EPS:
+        return 0.0, (f"risc {risk:.2f} = {100 * risk / equity:.2f}% din equity > limita {max_risk_pct:g}% "
+                     f"(chiar si la lotul minim {vmin:g})")
+    fit = round(fit, _decimals(step))
+    return fit, f"volum redus {lots:g} → {fit:g} (riscul depasea {max_risk_pct:g}% din equity)"

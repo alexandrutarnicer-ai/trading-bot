@@ -806,6 +806,7 @@ export interface GlobalSettings {
   news_protection: { enabled: boolean; impact_level: number; pre_minutes: number; post_minutes: number };
   max_concurrent_per_market: { enabled: boolean; max: number };
   ai_filter: { enabled: boolean; level: "permissive" | "balanced" | "strict"; strict: boolean };
+  risk_cap: { enabled: boolean; max_risk_pct: number };
 }
 
 export const useGlobalSettings = () =>

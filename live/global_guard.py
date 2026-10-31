@@ -52,6 +52,9 @@ DEFAULTS: dict = {
     "news_protection": {"enabled": False, "impact_level": 3, "pre_minutes": 15, "post_minutes": 15},
     "max_concurrent_per_market": {"enabled": False, "max": 1},
     "ai_filter": {"enabled": False, "level": "balanced", "strict": False},
+    # Risc maxim pe trade (% din equity) — Custom + AI + Daily. Peste limita volumul e redus; daca
+    # nici lotul minim nu incape, ordinul NU se plaseaza (cont mic + lot minim mare = risc ascuns).
+    "risk_cap": {"enabled": False, "max_risk_pct": 2.0},
 }
 
 _CRYPTO_PREFIXES = ("BTC", "ETH", "XRP", "LTC", "SOL", "ADA", "DOGE", "DOT", "BNB", "AVAX",
@@ -98,7 +101,17 @@ def sanitize(raw: dict | None) -> dict:
     if af["level"] not in FILTER_RANK:
         af["level"] = "balanced"
     af["strict"] = bool(af["strict"])
+    out["risk_cap"]["max_risk_pct"] = _num(out["risk_cap"]["max_risk_pct"], 0.1, 20.0, 2.0)
     return out
+
+
+def risk_cap_pct(settings: dict | None = None) -> float | None:
+    """Limita de risc pe trade activa (% din equity) sau None (oprita)."""
+    try:
+        rc = (settings if settings is not None else load_settings())["risk_cap"]
+        return float(rc["max_risk_pct"]) if rc["enabled"] else None
+    except Exception:
+        return None
 
 
 def load_settings(path: str | None = None) -> dict:

@@ -475,7 +475,7 @@ export function GuidePage() {
               <KV k="Ore / zile" v="Non-stop sau interval; ore și zile sărite" />
               <KV k="Nivel R:R" v="Scurt 2R / Standard 3R / Extins 4R — același TP pentru toate strategiile pieței" />
               <KV k="Risc" v="1% pe trade la toate nivelurile (inclusiv 4R)" />
-              <KV k="Fracție cont" v="Partea din equity-ul MT5 folosită la calculul lotului (sau lot FIX) — vezi cardul „Dimensionarea poziției”" />
+              <KV k="Risc / trade (% cont)" v="Cât din equity-ul REAL riscă un trade (= fracția × 1%; ex. 0,20%) — sau lot FIX; vezi cardul „Dimensionarea poziției”" />
               <KV k="Expirare ordin" v="4 bare pe toate sesiunile (fix, nu mai e câmp în UI)" />
               <KV k="Execuție" v="Live = ordine reale; Observație = doar semnale" />
             </div>
@@ -1015,6 +1015,7 @@ export function GuidePage() {
               <KV k="Închidere vineri" v="Ora = cea mai devreme dintre global și sesiune; cripto exceptat implicit" />
               <KV k="Protecție știri" v="Impact = minimul, minute înainte/după = maximul dintre global și sesiune" />
               <KV k="Max poziții / piață" v="Poziții + pending pe un simbol, pe tot contul, toate engine-urile" />
+              <KV k="Risc maxim pe trade" v="ACTIV la 2% din equity (Custom + AI + Daily): volumul peste limită e redus; dacă nici lotul minim nu încape, ordinul nu se plasează" />
               <KV k="Filtru AI" v="Doar Custom Engine: nivelul cel mai strict, Strict = SAU" />
             </div>
             <Note>Fișier: data/global_settings.json (sincronizat prin git, fără date). Eroare la citirea MT5 → ordinul e permis

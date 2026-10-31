@@ -993,5 +993,6 @@ export interface SizingPreview {
   result?: { capital_base: number; fraction: number; capital: number; mode: "risk" | "fixed";
              lots?: number; raw_lots?: number | null; risk_money?: number | null; target_money?: number | null;
              at_min_lot?: boolean; capped_max?: boolean; ratio?: number | null; reason?: string | null;
-             margin_need?: number; margin_pct_free?: number; risk_pct_equity?: number; equity_for_target?: number };
+             margin_need?: number; margin_pct_free?: number; risk_pct_equity?: number; equity_for_target?: number;
+             risk_cap_pct?: number | null; risk_cap_note?: string };
 }

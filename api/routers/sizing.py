@@ -94,8 +94,21 @@ def sizing_preview(symbol: str, fraction: float = 1.0, risk_pct: float = 0.01,
             result["margin_need"] = round(margin_1 * r["lots"], 2)
             if acc and acc.margin_free:
                 result["margin_pct_free"] = round(100 * margin_1 * r["lots"] / acc.margin_free, 1)
-        if equity and r.get("risk_money"):
-            result["risk_pct_equity"] = round(100 * r["risk_money"] / equity, 2)
+        try:
+            from live.global_guard import risk_cap_pct
+            cap = risk_cap_pct()
+        except Exception:
+            cap = None
+        result["risk_cap_pct"] = cap
+        if cap and r.get("lots"):
+            lots2, why = ps.apply_risk_cap(si, r["lots"], entry, sl, equity, cap)
+            if why:
+                vpu2 = ps.value_per_price_unit(si)
+                result.update(lots=lots2, risk_cap_note=why,
+                              risk_money=(lots2 * sl_d * vpu2) if (lots2 and vpu2) else None,
+                              reason=why if not lots2 else result.get("reason"))
+        if equity and result.get("risk_money"):
+            result["risk_pct_equity"] = round(100 * result["risk_money"] / equity, 2)
         # lotul minim: cat ar trebui sa fie contul ca tinta sa ajunga la lotul minim
         if vpu and risk_pct > 0 and frac > 0:
             result["equity_for_target"] = round(si.volume_min * sl_d * vpu / (risk_pct * frac), 0)

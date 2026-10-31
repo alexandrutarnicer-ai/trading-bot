@@ -20,6 +20,8 @@ import sys
 from types import SimpleNamespace
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import live.global_guard as _GG_iso  # izolare: limita globala de risc reala nu influenteaza testul
+_GG_iso.risk_cap_pct = lambda settings=None: None
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 from ai_engine import config as C

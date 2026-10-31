@@ -454,10 +454,22 @@ def _resolve_order_lots(symbol: str, entry: float, sl: float, direction: int,
     Returneaza (lots, risk_usd, reduction). reduction=None in modul dinamic.
     """
     if _fixed_lots_active(session_cfg):
-        return _fixed_lot_size(symbol, entry, sl, direction,
-                               float(session_cfg["fixed_lots"]), log)
-    lots, risk_usd = _calc_lots(symbol, entry, sl, capital, risk_pct)
-    return lots, risk_usd, None
+        lots, risk_usd, red = _fixed_lot_size(symbol, entry, sl, direction,
+                                              float(session_cfg["fixed_lots"]), log)
+    else:
+        (lots, risk_usd), red = _calc_lots(symbol, entry, sl, capital, risk_pct), None
+    # Limita globala de risc pe trade (Setari Globale → risk_cap) — comuna cu AI / Daily
+    cap = global_guard.risk_cap_pct()
+    if cap and lots and _mt5_exec is not None:
+        acc = _mt5_exec.account_info()
+        info = _mt5_exec.symbol_info(symbol)
+        new, why = ps.apply_risk_cap(info, lots, entry, sl, getattr(acc, "equity", None) if acc else None, cap)
+        if why:
+            log.warning(f"  [RISK-CAP] {symbol}: {why}")
+            if new != lots and risk_usd is not None and lots:
+                risk_usd = round(risk_usd * new / lots, 4)     # riscul scaleaza liniar cu volumul
+            lots = new
+    return lots, risk_usd, red
 
 
 def _lot_reduction_note(reduction: dict | None) -> str:

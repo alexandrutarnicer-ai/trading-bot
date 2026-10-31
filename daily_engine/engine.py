@@ -338,7 +338,7 @@ class DailyEngine:
                 return
             side = 1 if c_last > o0 else -1
             entry, sl = (tick.ask, lo) if side == 1 else (tick.bid, hi)
-            r = ps.size_by_risk(info, entry, sl, cap, sz.get("risk_pct", 0.01))
+            r = self._capped(ps.size_by_risk(info, entry, sl, cap, sz.get("risk_pct", 0.01)), info, entry, sl, acc)
             if not r["lots"]:
                 ev[f"{key}|placed"] = "skip"
                 self._exec_note(sym, f"nu plasez: {r['reason']}")
@@ -347,8 +347,10 @@ class DailyEngine:
             results.append((("LONG" if side == 1 else "SHORT") + " piață", r, ok_o, res))
         else:
             for side, lvl, sl in ((1, hi, lo), (-1, lo, hi)):
-                r = ps.size_by_risk(info, lvl, sl, cap, sz.get("risk_pct", 0.01))
+                r = self._capped(ps.size_by_risk(info, lvl, sl, cap, sz.get("risk_pct", 0.01)), info, lvl, sl, acc)
                 if not r["lots"]:
+                    if r.get("reason"):
+                        self._exec_note(sym, f"{'BUY' if side == 1 else 'SELL'}_STOP nu se plasează: {r['reason']}")
                     continue
                 beyond = (side == 1 and tick.ask >= lvl) or (side == -1 and tick.bid <= lvl)
                 if beyond:      # pretul a trecut deja de margine -> ca in backtest: umplere la piata
@@ -363,6 +365,20 @@ class DailyEngine:
                  + ("" if ok_o else f" — retcode {getattr(res, 'retcode', res)}") for what, r, ok_o, res in results]
         self._exec_note(sym, "ORDINE REALE (" + why + ")\n" + "\n".join(lines), important=True)
         _write_json(STATE_FILE, self.state)
+
+    @staticmethod
+    def _capped(r: dict, info, entry: float, sl: float, acc) -> dict:
+        """Limita globala de risc pe trade (Setari Globale → risk_cap) — comuna cu Custom / AI."""
+        from live.global_guard import risk_cap_pct
+        cap = risk_cap_pct()
+        if not cap or not r.get("lots"):
+            return r
+        lots, why = ps.apply_risk_cap(info, r["lots"], entry, sl, getattr(acc, "equity", None) if acc else None, cap)
+        if why:
+            rm = r.get("risk_money")
+            r = {**r, "lots": lots, "reason": why if not lots else r.get("reason"), "risk_cap": why,
+                 "risk_money": (rm * lots / r["lots"]) if (rm is not None and r["lots"]) else rm}
+        return r
 
     def _exec_note(self, sym: str, text: str, important: bool = False) -> None:
         msg = f"🟢 <b>Daily EXECUȚIE — {sym}</b>\n{text}"
@@ -439,7 +455,8 @@ class DailyEngine:
             eq = float(getattr(acc, "equity", 0) or 0) if acc else 0.0
             base = ps.capital_base(sz.get("capital_sync_mt5", True), sz.get("capital_usd"), eq)
             cap = base * ps.clamp_fraction(sz.get("fraction", 1.0))
-            r = ps.size_by_risk(self.mt5.symbol_info(sym), st["entry"], st["sl"], cap, sz.get("risk_pct", 0.01))
+            si = self.mt5.symbol_info(sym)
+            r = self._capped(ps.size_by_risk(si, st["entry"], st["sl"], cap, sz.get("risk_pct", 0.01)), si, st["entry"], st["sl"], acc)
             return {**r, "currency": getattr(acc, "currency", "USD") if acc else "USD", "capital": round(cap, 2)}
         except Exception as e:                 # estimarea nu are voie sa opreasca shadow-ul
             return {"lots": 0.0, "risk_money": None, "reason": str(e), "currency": "USD"}

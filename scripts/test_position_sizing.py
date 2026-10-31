@@ -82,6 +82,8 @@ check(red and lots == 0.41, "marja: lot redus sa incapa sub 80% din marja libera
 check(ps.fit_to_margin(FX, 1.0, None, 206, 0.8) == (1.0, False), "marja necunoscuta -> nemodificat")
 
 print("2. Aceeasi configuratie -> acelasi rezultat pe toate 3 engine-urile")
+import live.global_guard as GG  # noqa: E402
+GG.risk_cap_pct = lambda settings=None: None     # limita globala testata separat (sectiunea 4)
 
 
 class FakeMt5:
@@ -161,6 +163,32 @@ lg = _L()
 sg._mt5_exec = FakeMt5(FX, 206.09)
 check(sg._place_order({"signal_id": "S1-T", "symbol": "EURUSD", "direction": 1, "entry": 1.1, "sl": 1.09},
                       0.0, 4, 15, lg) is None, "Custom: volum 0 -> ordinul NU se trimite (reincercare la bara urmatoare)")
+
+print("4. Limita de risc pe trade (Setari Globale → risk_cap) — aceeasi pe toate engine-urile")
+# EURUSD: SL 100 puncte (0.00100) -> $1 / 0.01 lot; equity $206, limita 2% = $4.12
+check(ps.apply_risk_cap(FX, 0.01, 1.101, 1.100, 206, 2.0) == (0.01, None), "risc $1 (0,49%) sub limita -> neschimbat")
+lots, why = ps.apply_risk_cap(FX, 0.10, 1.101, 1.100, 206, 2.0)
+check(lots == 0.04 and "redus" in why, "lot fix 0.10 ($10) peste 2% -> redus la 0.04 ($4)", (lots, why))
+lots, why = ps.apply_risk_cap(IDX, 0.1, 6100, 6000, 206, 2.0)            # 0.1 lot × 100 pct = $10 = 4,9%
+check(lots == 0 and "lotul minim" in why, "lot minim peste limita -> 0 (ordinul NU se plaseaza)", (lots, why))
+check(ps.apply_risk_cap(IDX, 0.1, 6100, 6000, 206, None) == (0.1, None), "limita oprita -> neschimbat")
+check(ps.apply_risk_cap(IDX, 0.1, 6100, 6000, None, 2.0) == (0.1, None), "equity necunoscut -> neschimbat (nu se poate evalua)")
+
+import live.global_guard as GG  # noqa: E402
+GG.risk_cap_pct = lambda settings=None: 2.0
+sg._mt5_exec = FakeMt5(IDX, 206.09)
+lots_c, risk_c, _ = sg._resolve_order_lots("US500", 6100, 6000, 1, 206.09, 0.01, {"account_fraction": 1.0}, Log())
+ex.mt5 = FakeMt5(IDX, 206.09)
+ex.equity = lambda: 206.09
+lots_a, why_a = ex._risk_cap("US500", 0.1, 6100, 6000)
+d = de.DailyEngine(mt5_module=FakeMt5(IDX, 206.09))
+d.cfg = {"sizing": {"capital_sync_mt5": True, "capital_usd": None, "fraction": 1.0, "risk_pct": 0.01}}
+dz = d.virtual_size("US500", {"entry": 6100, "sl": 6000})
+check(lots_c == 0 and lots_a == 0 and dz["lots"] == 0,
+      "SL de 100 puncte pe US500 (4,9% la lot minim): Custom = AI = Daily -> 0, ordin neplasat", (lots_c, lots_a, dz))
+sg._mt5_exec = FakeMt5(FX, 206.09)
+lots_c, _, _ = sg._resolve_order_lots("EURUSD", 1.10, 1.098, 1, 206.09 * 0.2, 0.01, {"account_fraction": 0.2}, Log())
+check(lots_c == 0.01, "risc normal (lot minim, ~1%) -> neafectat de limita", lots_c)
 
 print(f"\nREZULTAT: {PASS} PASS / {FAIL} FAIL")
 sys.exit(1 if FAIL else 0)

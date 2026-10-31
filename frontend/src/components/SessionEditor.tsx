@@ -84,13 +84,13 @@ const TIPS = {
   circuit_breaker: "Oprește tranzacționarea după N pierderi consecutive în aceeași zi. Repornește la miezul nopții.",
   risk_pct:      "Procentul din equity riscat per tranzacție. Equity-ul este citit din MT5 la fiecare ordin.",
   account_fraction: [
-    "Ce parte din equity-ul REAL MT5 se folosește pentru calculul lotului acestei piețe.",
+    "Risc pe trade, în % din equity-ul REAL MT5 — cât pierzi dacă trade-ul atinge SL-ul.",
     "",
-    "Lot = equity × fracție × risc% ÷ (distanța SL × valoarea punctului) — calculat la fiecare ordin.",
-    "Ex: $206 × 20% × 1% = $0,41 țintă de risc pe trade.",
+    "Ex: 0,20% × $206 = $0,41 țintă. Lotul se calculează din această țintă la fiecare ordin.",
+    "Intern: fracția de cont × riscul de 1% (același calcul ca înainte, doar exprimat direct).",
     "",
-    "Influențează DOAR mărimea lotului — nu SL/TP, nu protecțiile. Suma fracțiilor nu trebuie să fie 100%.",
-    "Dacă ținta e sub lotul minim al brokerului, se plasează lotul minim (vezi cardul de mai jos).",
+    "Dacă ținta e sub lotul minim al brokerului, se plasează lotul minim (riscul real crește) —",
+    "plafonat de „Risc maxim pe trade” din Setări Globale. Nu schimbă SL/TP sau protecțiile.",
   ].join("\n"),
   fixed_lots: [
     "Volum FIX pe fiecare ordin (loturi), în loc de calculul dinamic din capital × risc%.",
@@ -775,16 +775,16 @@ export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted,
                   <div className={`flex items-center gap-3 ${fixedLotsActive ? "opacity-40" : ""}`}>
                     <div className="max-w-[110px]">
                       <NumField
-                        label="Fracție cont"
-                        value={+(frac * 100).toFixed(1)}
-                        min={0} max={100} step={0.5}
+                        label="Risc / trade (% cont)"
+                        value={+(frac * rBase * 100).toFixed(3)}
+                        min={0} max={2} step={0.01}
                         tip={TIPS.account_fraction}
-                        onChange={(v) => upd({ account_fraction: +(v / 100).toFixed(4) })}
+                        onChange={(v) => upd({ account_fraction: rBase > 0 ? +Math.min(1, v / 100 / rBase).toFixed(4) : 0 })}
                       />
                     </div>
                     <div className="flex-1 text-xs text-slate-500 leading-relaxed pt-3">
                       {frac > 0
-                        ? <>Partea din equity-ul MT5 folosită pentru calculul lotului acestei piețe · risc <b className="text-slate-300">{(rBase * 100).toFixed(2)}%</b> pe trade
+                        ? <>Cât din equity-ul REAL MT5 riscă un trade al acestei piețe (= fracție {(frac * 100).toFixed(1)}% × risc {(rBase * 100).toFixed(2)}%)
                             {equity != null && capital != null && riskBaseUsd != null
                               ? <> → țintă ~${fmt(riskBaseUsd)} din ${fmt(capital)}{riskMaxUsd != null && riskMaxUsd !== riskBaseUsd ? ` (max ~$${fmt(riskMaxUsd)})` : ""}</>
                               : " (MT5 deconectat)"}</>

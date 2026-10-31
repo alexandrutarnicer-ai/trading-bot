@@ -24,6 +24,8 @@ except Exception:
     pass
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import live.global_guard as _GG_iso  # izolare: limita globala de risc reala nu influenteaza testul
+_GG_iso.risk_cap_pct = lambda settings=None: None
 
 import live.signal_generator as sg
 from live.signal_generator import (

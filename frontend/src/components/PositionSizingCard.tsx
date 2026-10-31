@@ -56,8 +56,8 @@ export function PositionSizingCard({ symbol, fraction, riskPct, fixedLots, capit
           {fixedLots ? (
             <div className="text-slate-300">Lot FIX <b>{fixedLots}</b> pe ordin — fracția și riscul sunt ignorate</div>
           ) : (<>
-            <div className="text-slate-300">Fracție <b>{(fraction * 100).toFixed(1)}%</b> din {capitalSync ? "equity-ul MT5" : `capitalul fix (${money(capitalUsd ?? 0, cur)}, plafonat la equity)`}</div>
-            <div className="text-slate-300">Risc <b>{(riskPct * 100).toFixed(2)}%</b> din capitalul alocat, pe trade</div>
+            <div className="text-slate-300">Risc pe trade <b>{(fraction * riskPct * 100).toFixed(2)}%</b> din {capitalSync ? "equity-ul MT5" : `capitalul fix (${money(capitalUsd ?? 0, cur)}, plafonat la equity)`}</div>
+            <div className="text-slate-500">= fracție {(fraction * 100).toFixed(1)}% × risc {(riskPct * 100).toFixed(2)}%</div>
           </>)}
           <div className="text-slate-500">SL-ul vine din strategie (nu din fracție); exemplul folosește {data?.sl?.source ?? "—"}.</div>
         </div>
@@ -78,6 +78,13 @@ export function PositionSizingCard({ symbol, fraction, riskPct, fixedLots, capit
           ) : (
             <div className="font-mono text-slate-300">lot fix {r.lots} → risc la SL <b>{money(r.risk_money, cur)}</b>
               {r.risk_pct_equity != null && <span className="text-slate-500"> ({r.risk_pct_equity}% din equity)</span>}</div>
+          )}
+          {r.risk_cap_pct ? (
+            <div className={r.risk_cap_note ? "text-warn" : "text-slate-500"}>
+              Limita globală: max {r.risk_cap_pct}% din equity pe trade{r.risk_cap_note ? ` — ${r.risk_cap_note}` : " — respectată"}.
+            </div>
+          ) : (
+            <div className="text-slate-600">Limita globală de risc pe trade e oprită (Settings → Setări Globale).</div>
           )}
           {r.margin_need != null && (
             <div className="text-slate-500">Marjă necesară {money(r.margin_need, cur)}{r.margin_pct_free != null ? ` (${r.margin_pct_free}% din marja liberă)` : ""}</div>

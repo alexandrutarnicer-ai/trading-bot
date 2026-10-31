@@ -220,6 +220,21 @@ def calc_lots(symbol: str, entry: float, sl: float,
     return r["lots"], (round(risk, 2) if risk is not None and r["lots"] > 0 else None)
 
 
+def _risk_cap(symbol: str, lots: float, entry: float, sl: float) -> tuple[float, str | None]:
+    """Limita globala de risc pe trade (Setari Globale → risk_cap) — aceeasi ca la Custom / Daily."""
+    try:
+        from live.global_guard import risk_cap_pct
+        cap = risk_cap_pct()
+        if not cap:
+            return lots, None
+        new, why = ps.apply_risk_cap(mt5.symbol_info(symbol), lots, entry, sl, equity(), cap)
+        if why:
+            log.warning(f"[RISK-CAP] {symbol}: {why}")
+        return new, why
+    except Exception:
+        return lots, None          # limita nu poate fi evaluata → nemodificat (ca in Custom)
+
+
 def snap_fixed_lots(symbol: str, fixed_lots: float,
                     entry: float, sl: float) -> tuple[float, float | None]:
     """Volum FIX per ordin (market_overrides.fixed_lots) aliniat la broker — componenta
@@ -343,6 +358,12 @@ def place(d: dict, snapshot: dict, cfg: dict, decision_id: int,
         else:
             lots, risk_usd = calc_lots(symbol, entry, d["sl"],
                                        capital_base(cfg) * capital_fraction, d["risk_pct"])
+        _lots0 = lots
+        lots, _cap_why = _risk_cap(symbol, lots, entry, d["sl"])
+        if not lots and _cap_why:
+            return "rejected", f"limita de risc pe trade: {_cap_why}", None
+        if _cap_why and risk_usd and _lots0:
+            risk_usd = round(risk_usd * lots / _lots0, 2)
         if lots <= 0:
             return "rejected", "lot calculat 0 (capital insuficient?)", None
         m_err = _margin_ok(lots, entry)
@@ -383,6 +404,12 @@ def place(d: dict, snapshot: dict, cfg: dict, decision_id: int,
         else:
             lots, risk_usd = calc_lots(symbol, d["entry"], d["sl"],
                                        capital_base(cfg) * capital_fraction, d["risk_pct"])
+        _lots0 = lots
+        lots, _cap_why = _risk_cap(symbol, lots, d["entry"], d["sl"])
+        if not lots and _cap_why:
+            return "rejected", f"limita de risc pe trade: {_cap_why}", None
+        if _cap_why and risk_usd and _lots0:
+            risk_usd = round(risk_usd * lots / _lots0, 2)
         if lots <= 0:
             return "rejected", "lot calculat 0 (capital insuficient?)", None
         m_err = _margin_ok(lots, d["entry"])

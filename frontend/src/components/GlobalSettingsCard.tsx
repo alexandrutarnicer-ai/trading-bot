@@ -97,6 +97,12 @@ export function GlobalSettingsCard() {
         {num(draft.news_protection.post_minutes, v => set("news_protection", { post_minutes: v }), 0, 720)}min
       </>)}
 
+      {row("risk_cap", "Risc maxim pe trade", "Custom + AI + Daily", <>
+        niciun trade nu riscă peste
+        {num(draft.risk_cap.max_risk_pct, v => set("risk_cap", { max_risk_pct: v }), 0.1, 20, 0.1)}% din equity
+        <span className="text-slate-600">(volumul se reduce; dacă nici lotul minim nu încape, ordinul nu se plasează)</span>
+      </>)}
+
       {row("max_concurrent_per_market", "Poziții simultane / piață", "Bot + AI · tot contul", <>
         max
         {num(draft.max_concurrent_per_market.max, v => set("max_concurrent_per_market", { max: v }), 1, 20)}
