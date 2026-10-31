@@ -55,6 +55,8 @@ check(S.monthly_window(datetime(2027, 1, 1, 9, 5)) == (datetime(2026, 12, 1), da
 check(not S.monthly_due(datetime(2026, 11, 1, 8, 59), CFG, {}), "1 nov 08:59 -> inca nu")
 check(S.monthly_due(datetime(2026, 11, 1, 9, 0), CFG, {}), "1 nov 09:00 -> da")
 check(S.monthly_due(datetime(2026, 11, 3, 14, 0), CFG, {"monthly_sent": "2026-09"}), "API oprit pe 1 -> recuperare la prima ocazie")
+check(not S.monthly_due(datetime(2026, 10, 31, 17, 10), CFG, {}), "prima pornire pe 31 -> NU trimite luna trecuta cu o luna intarziere")
+check(not S.monthly_due(datetime(2026, 11, 8, 9, 0), CFG, {}), "dupa 7 zile -> nu mai recupereaza")
 check(not S.monthly_due(datetime(2026, 11, 3, 14, 0), CFG, {"monthly_sent": "2026-10"}), "deja trimis pentru octombrie -> nu")
 check(S.monthly_window(datetime(2026, 11, 1))[1] - S.monthly_window(datetime(2026, 11, 1))[0] == timedelta(days=31),
       "octombrie = 31 de zile (inclusiv weekendurile)")
