@@ -34,6 +34,17 @@ _SYMBOL_TO_SESSION: dict[str, str] = {
     m: s["id"] for s in SESSIONS for m in s["markets"]
 }
 
+_SOURCES = ("bot", "ai", "manual")
+
+
+def _by_source(trades: list, source: str) -> list:
+    """Filtrul de sursa al Dashboard-ului (2026-10-31): ""/"all" = tot contul;
+    bot/ai/manual = doar tranzactiile acelui engine (atribuire classify_trade)."""
+    s = (source or "").lower()
+    if s in ("", "all"):
+        return trades
+    return [t for t in trades if t.get("source") == s]
+
 
 @router.get("/status")
 def mt5_status():
@@ -53,7 +64,7 @@ _EMPTY_TRADE_STATS = {
 
 
 @router.get("/stats")
-def mt5_trade_stats(days: int = 365):
+def mt5_trade_stats(days: int = 365, source: str = "all"):
     """
     Statistici de tranzactionare calculate direct din MT5 history_deals_get —
     sursa de adevar independenta de outcomes.csv.
@@ -62,6 +73,9 @@ def mt5_trade_stats(days: int = 365):
         trades = mt5_pool.get_closed_trades(days)
     except mt5_pool.Mt5Unavailable as e:
         return {"connected": False, "error": str(e), **_EMPTY_TRADE_STATS}
+    # impartirea pe surse se calculeaza pe TOT contul (contextul filtrului)
+    by_source_all = {s: sum(1 for t in trades if t.get("source") == s) for s in _SOURCES}
+    trades = _by_source(trades, source)
 
     today = _date.today()
     yesterday = today - timedelta(days=1)
@@ -72,6 +86,9 @@ def mt5_trade_stats(days: int = 365):
     return {
         "connected": True,
         "total_trades": len(trades),
+        # Impartire pe engine (atribuire mt5_pool.classify_trade) — cardurile de
+        # sesiune numara doar Bot Engine, deci UI-ul arata explicit restul.
+        "by_source": by_source_all,
         "wins": sum(1 for t in trades if t["profit"] > 0),
         "losses": sum(1 for t in trades if t["profit"] < 0),
         "trades_today": len(today_trades),
@@ -96,7 +113,7 @@ def mt5_trade_stats(days: int = 365):
 
 
 @router.get("/equity-curve")
-def mt5_equity_curve(days: int = 365, metric: str = "usd"):
+def mt5_equity_curve(days: int = 365, metric: str = "usd", source: str = "all"):
     """
     Curba cumulata calculata direct din MT5, sortata cronologic dupa ora de
     inchidere. metric=usd -> P&L cumulat in $. metric=r -> R cumulat (din SL-ul
@@ -106,6 +123,7 @@ def mt5_equity_curve(days: int = 365, metric: str = "usd"):
         trades = mt5_pool.get_closed_trades(days)
     except mt5_pool.Mt5Unavailable as e:
         return {"connected": False, "error": str(e), "points": []}
+    trades = _by_source(trades, source)
 
     use_r = metric == "r"
     if use_r:
@@ -137,12 +155,13 @@ _EMPTY_WEEKLY = {
 
 
 @router.get("/weekly-stats")
-def mt5_weekly_stats():
+def mt5_weekly_stats(source: str = "all"):
     """Saptamana/luna curenta vs precedenta, calculate din tranzactiile inchise MT5."""
     try:
         trades = mt5_pool.get_closed_trades(70)  # luna curenta + luna precedenta completa
     except mt5_pool.Mt5Unavailable as e:
         return {"connected": False, "error": str(e), **_EMPTY_WEEKLY}
+    trades = _by_source(trades, source)
 
     now = datetime.now()
     week_start = (now - timedelta(days=now.weekday())).replace(
@@ -221,12 +240,13 @@ def mt5_weekly_stats():
 
 
 @router.get("/top-markets")
-def mt5_top_markets(period: str = "week", limit: int = 5):
+def mt5_top_markets(period: str = "week", limit: int = 5, source: str = "all"):
     """Top piete dupa R cumulat, calculate direct din tranzactiile inchise MT5."""
     try:
         trades = mt5_pool.get_closed_trades(400)  # acopera si perioada "all"
     except mt5_pool.Mt5Unavailable as e:
         return {"connected": False, "error": str(e), "items": []}
+    trades = _by_source(trades, source)
 
     today = _date.today()
     if period == "day":
@@ -285,10 +305,16 @@ def mt5_transactions(
     status: str = "",
     direction: str = "",
     symbol: str = "",
+    source: str = "",
+    session_id: str = "",
+    date_from: str = "",
+    date_to: str = "",
     limit: int = 200,
     offset: int = 0,
 ):
-    """Lista tranzactiilor inchise, calculate direct din MT5 history_deals_get."""
+    """Lista tranzactiilor inchise, calculate direct din MT5 history_deals_get.
+    `source` = bot|ai|manual, `session_id` = sessionN (atribuire din comment/magic),
+    `date_from`/`date_to` = YYYY-MM-DD inclusiv, pe ora de inchidere."""
     try:
         trades = mt5_pool.get_closed_trades(400)
     except mt5_pool.Mt5Unavailable as e:
@@ -301,13 +327,30 @@ def mt5_transactions(
         trades = [t for t in trades if t["direction"] == want]
     if status:
         trades = [t for t in trades if _trade_status(t) == status]
+    if source:
+        trades = [t for t in trades if t.get("source") == source]
+    if session_id:
+        trades = [t for t in trades if t.get("session_id") == session_id]
+    if date_from or date_to:
+        d_from = _date.fromisoformat(date_from) if date_from else _date.min
+        d_to   = _date.fromisoformat(date_to) if date_to else _date.max
+        trades = [t for t in trades if t["close_time"] and d_from <= t["close_time"].date() <= d_to]
 
     trades = sorted(trades, key=lambda t: t["close_time"], reverse=True)
     total = len(trades)
     page = trades[offset: offset + limit]
 
+    # Verdictul Filtrului AI Pre-Trade pe tranzactiile botului — join pe comment-ul
+    # ordinului de intrare (sig_id trunchiat la 16) → ai_filter.jsonl.
+    try:
+        from api.ai_filter_log import get_verdicts
+        _, ai_by_16 = get_verdicts()
+    except Exception:
+        ai_by_16 = {}
+
     items = []
     for t in page:
+        v = ai_by_16.get((t.get("comment") or "")[:16]) if t.get("source") == "bot" else None
         items.append({
             "ticket":      t["position_id"],
             "symbol":      t["symbol"],
@@ -325,6 +368,11 @@ def mt5_transactions(
             "pnl_usd":     round(t["profit"], 2),
             "commission_usd": round(t["commission"], 2),
             "swap_usd":    round(t["swap"], 2),
+            "source":      t.get("source"),
+            "session_id":  t.get("session_id"),
+            "strategy":    t.get("strategy"),
+            "ai_approved": bool(v.get("approved")) if v else None,
+            "ai_confidence": v.get("confidence") if v else None,
         })
 
     return {"connected": True, "items": items, "total": total, "error": None}
@@ -334,7 +382,7 @@ def mt5_transactions(
 _MT5_CSV_COLS = [
     "symbol", "dir_str", "status", "entry", "sl", "tp", "r_ratio",
     "entry_time", "exit_price", "exit_time", "result_r", "pnl_usd",
-    "commission_usd", "swap_usd", "ticket",
+    "commission_usd", "swap_usd", "source", "session_id", "strategy", "ticket",
 ]
 
 
@@ -343,12 +391,13 @@ def mt5_transactions_csv(
     status: str = "",
     direction: str = "",
     symbol: str = "",
+    source: str = "",
     date_from: str = "",
     date_to: str = "",
 ):
     """
     Export CSV cu TOATE tranzactiile inchise din MT5 (cont-wide: bot + AI + manual),
-    fara paginare — pendant al `/reports/transactions.csv` (sursa Bot). Aceleasi filtre
+    fara paginare, cu atribuirea pe engine/sesiune/strategie. Aceleasi filtre
     (status/directie/simbol + interval de date pe ora de inchidere). Streamat ca
     text/csv cu attachment. Fail-safe: MT5 indisponibil → CSV cu doar antet.
     """
@@ -364,6 +413,8 @@ def mt5_transactions_csv(
         trades = [t for t in trades if t["direction"] == want]
     if status:
         trades = [t for t in trades if _trade_status(t) == status]
+    if source:
+        trades = [t for t in trades if t.get("source") == source]
     if date_from or date_to:
         df = _date.fromisoformat(date_from) if date_from else _date.min
         dt = _date.fromisoformat(date_to) if date_to else _date.max
@@ -391,6 +442,9 @@ def mt5_transactions_csv(
             "pnl_usd":        round(t["profit"], 2),
             "commission_usd": round(t["commission"], 2),
             "swap_usd":       round(t["swap"], 2),
+            "source":         t.get("source") or "",
+            "session_id":     t.get("session_id") or "",
+            "strategy":       t.get("strategy") or "",
             "ticket":         t["position_id"],
         })
 
@@ -489,11 +543,15 @@ def mt5_costs_daily():
 
 
 @router.get("/sessions")
-def mt5_session_stats():
+def mt5_session_stats(source: str = "bot"):
     """
-    Statistici MT5-directe per sesiune, mapate prin simbol -> session_id
-    (_SYMBOL_TO_SESSION, biunivoc). Trade-urile pe simboluri nemapate sunt ignorate.
+    Statistici MT5-directe per card de piata (o sesiune = o piata).
+    source="bot" (implicit, compat) = doar tranzactiile Bot Engine ale sesiunii
+    (atribuire din comment). source="all" = + tranzactiile AI Engine / manuale
+    pe ACELASI simbol (filtrul Dashboard „Toate"). source="ai"/"manual" = doar
+    acelea, pe simbolul cardului.
     """
+    src = (source or "bot").lower()
     try:
         trades = mt5_pool.get_closed_trades(400)
     except mt5_pool.Mt5Unavailable as e:
@@ -503,9 +561,19 @@ def mt5_session_stats():
     yesterday = today - timedelta(days=1)
 
     by_session: dict[str, dict] = {}
+    unassigned: dict[str, int] = {}   # tranzactii pe piete fara card (ex: AI pe AUDUSD)
     for t in trades:
-        session_id = _SYMBOL_TO_SESSION.get(t["symbol"])
+        # Doar tranzactiile Bot Engine — AI Engine tranzactioneaza aceleasi simboluri
+        # (ex: USDCAD) si nu trebuie atribuit sesiunii botului. Sesiunea vine din
+        # comment-ul ordinului ("S11-..."); simbolul e doar fallback (ex: ordine SN).
+        ts = t.get("source")
+        if src not in ("", "all") and ts != src:
+            continue
+        # bot: sesiunea din comment (simbolul = fallback, ex: ordine SN);
+        # AI / manual: pe simbolul cardului
+        session_id = (t.get("session_id") if ts == "bot" else None) or _SYMBOL_TO_SESSION.get(t["symbol"])
         if session_id is None:
+            unassigned[t["symbol"]] = unassigned.get(t["symbol"], 0) + 1
             continue
         st = by_session.setdefault(session_id, {
             "trades_today": 0, "trades_total": 0, "wins": 0, "losses": 0,
@@ -547,7 +615,8 @@ def mt5_session_stats():
             "last_trade_time": st["last_trade_time"].strftime("%H:%M") if st["last_trade_time"] else None,
         })
 
-    return {"connected": True, "items": items, "error": None}
+    return {"connected": True, "items": items, "error": None,
+            "unassigned": dict(sorted(unassigned.items(), key=lambda kv: -kv[1]))}
 
 
 @router.get("/orders")

@@ -6,14 +6,11 @@ import {
   Send, Calendar, Download,
 } from "lucide-react";
 import {
-  useTransactions, useMarketStats, useBotUptime, useSessionChanges,
-  useSystemLogs, useLogSessions, useCosts, useCostsDaily,
+  useBotUptime, useSessionChanges, useSystemLogs, useLogSessions,
   useMt5Transactions, useMt5MarketStats, useMt5Costs, useMt5CostsDaily,
 } from "../api/hooks";
 import { apiFetch } from "../api/client";
-import type { Transaction, MarketStat, UptimeEntry, SessionChangeEntry, SystemLogEntry, CostStat, CostsDayEntry, Mt5Transaction } from "../api/types";
-import { useStatsSource, type StatsSource } from "../hooks/useStatsSource";
-import { SourceToggle } from "../components/SourceToggle";
+import type { MarketStat, UptimeEntry, SessionChangeEntry, SystemLogEntry, CostStat, CostsDayEntry, Mt5Transaction } from "../api/types";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -53,117 +50,78 @@ function rColor(v: number) {
   return v > 0 ? "text-profit" : v < 0 ? "text-loss" : "text-slate-400";
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  TP:           "TP",
-  SL:           "SL",
-  open:         "Deschis",
-  expirat:      "Expirat",
-  invalidat:    "Invalidat",
-  vineri_close: "Vineri",
-  news_close:   "Știri",
-  ai_reject:    "Respins AI",
-};
-
 // ── Transactions table ────────────────────────────────────────────────────────
+// Sursa unica: istoricul MT5 (cont-wide), atribuit pe engine / sesiune / strategie
+// din magic + comment-ul ordinului (api/mt5_pool.py::classify_trade).
 
-const STATUS_FILTERS_BOT = ["Toate", "TP", "SL", "Deschis", "Expirat", "Vineri", "Știri", "Respins AI"];
-const STATUS_FILTERS_MT5 = ["Toate", "TP", "SL"];
-const STATUS_MAP: Record<string, string> = {
-  "Toate":      "",
-  "TP":         "TP",
-  "SL":         "SL",
-  "Deschis":    "open",
-  "Expirat":    "expirat",
-  "Vineri":     "vineri_close",
-  "Știri":      "news_close",
-  "Respins AI": "ai_reject",
+const STATUS_FILTERS = ["Toate", "TP", "SL"];
+const SOURCE_FILTERS: Array<{ id: "" | Mt5Transaction["source"]; label: string }> = [
+  { id: "",       label: "Toate" },
+  { id: "bot",    label: "Bot" },
+  { id: "ai",     label: "AI" },
+  { id: "manual", label: "Manual" },
+];
+const SOURCE_BADGE: Record<Mt5Transaction["source"], { label: string; cls: string }> = {
+  bot:    { label: "BOT", cls: "bg-blue-500/15 text-blue-300" },
+  ai:     { label: "AI",  cls: "bg-purple-500/15 text-purple-300" },
+  manual: { label: "MAN", cls: "bg-slate-500/20 text-slate-300" },
+};
+const STRATEGY_LABEL: Record<string, string> = {
+  pullback: "Pullback", inside_bar: "Inside Bar", flag: "Flag", smart_news: "Știre",
 };
 
-// Vedere unificata pentru randare — Bot are sesiune/timp-check, MT5 are doar ticket.
-interface ViewTxn {
-  key: string;
-  symbol: string;
-  sessionLabel: string | null;
-  direction: number;
-  dirStr: string;
-  status: string;
-  entry: number;
-  rRatio: number | null;
-  resultR: number;
-  pnlUsd: number | null;
-  time: string | null;
-  aiApproved: boolean | null;
-  aiConfidence: number | null;
-}
-const toViewTxn = (t: Transaction, i: number): ViewTxn => ({
-  key: `${t.signal_id}-${i}`, symbol: t.symbol, sessionLabel: t.session_label.replace(/^S\d+ — /, ""),
-  direction: t.direction, dirStr: t.dir_str, status: t.status, entry: t.entry,
-  rRatio: t.r_ratio, resultR: t.result_r, pnlUsd: t.pnl_usd,
-  time: t.exit_time ?? t.time_check ?? null,
-  aiApproved: t.ai_approved ?? null, aiConfidence: t.ai_confidence ?? null,
-});
-const toViewMt5Txn = (t: Mt5Transaction): ViewTxn => ({
-  key: String(t.ticket), symbol: t.symbol, sessionLabel: null,
-  direction: t.direction, dirStr: t.dir_str, status: t.status, entry: t.entry,
-  rRatio: t.r_ratio, resultR: t.result_r ?? 0, pnlUsd: t.pnl_usd,
-  time: t.exit_time ?? t.entry_time,
-  aiApproved: null, aiConfidence: null,
-});
-
-function TransactionsTab({ source }: { source: StatsSource }) {
-  const usingMt5 = source === "mt5";
+function TransactionsTab() {
   const [statusFilter, setStatusFilter] = useState("Toate");
+  const [sourceFilter, setSourceFilter] = useState<"" | Mt5Transaction["source"]>("");
   const [dirFilter,    setDirFilter]    = useState<"" | "LONG" | "SHORT">("");
   const [dateFrom,     setDateFrom]     = useState("");
   const [dateTo,       setDateTo]       = useState("");
   const [page,         setPage]         = useState(0);
   const PER_PAGE = 50;
 
-  const botQuery = useTransactions({
-    status:    !usingMt5 ? (STATUS_MAP[statusFilter] || undefined) : undefined,
-    direction: !usingMt5 ? (dirFilter || undefined) : undefined,
+  const status = statusFilter === "Toate" ? undefined : statusFilter;
+  const query = useMt5Transactions({
+    status,
+    source:    sourceFilter || undefined,
+    direction: dirFilter || undefined,
     date_from: dateFrom || undefined,
     date_to:   dateTo   || undefined,
     limit:     PER_PAGE,
     offset:    page * PER_PAGE,
   });
 
-  // Descarcare CSV — sursa curenta (Bot = outcomes.csv / MT5 = cont-wide), fara paginare.
+  // Descarcare CSV cu filtrele curente, fara paginare.
   function downloadCsv() {
     const qs = new URLSearchParams();
-    const st = STATUS_MAP[statusFilter];
-    if (st)        qs.set("status", st);
-    if (dirFilter) qs.set("direction", dirFilter);
-    if (dateFrom)  qs.set("date_from", dateFrom);
-    if (dateTo)    qs.set("date_to", dateTo);
-    const path = usingMt5 ? "/mt5/transactions.csv" : "/reports/transactions.csv";
-    window.open(`http://localhost:8000/api${path}?${qs.toString()}`, "_blank");
+    if (status)       qs.set("status", status);
+    if (sourceFilter) qs.set("source", sourceFilter);
+    if (dirFilter)    qs.set("direction", dirFilter);
+    if (dateFrom)     qs.set("date_from", dateFrom);
+    if (dateTo)       qs.set("date_to", dateTo);
+    window.open(`http://localhost:8000/api/mt5/transactions.csv?${qs.toString()}`, "_blank");
   }
-  const mt5Query = useMt5Transactions({
-    status:    usingMt5 ? (STATUS_MAP[statusFilter] || undefined) : undefined,
-    direction: usingMt5 ? (dirFilter || undefined) : undefined,
-    limit:     PER_PAGE,
-    offset:    page * PER_PAGE,
-  });
 
-  const isLoading = usingMt5 ? mt5Query.isLoading : botQuery.isLoading;
-  const total = usingMt5 ? (mt5Query.data?.total ?? 0) : (botQuery.data?.total ?? 0);
-  const items: ViewTxn[] = usingMt5
-    ? (mt5Query.data?.items ?? []).map(toViewMt5Txn)
-    : (botQuery.data?.items ?? []).map(toViewTxn);
+  const total = query.data?.total ?? 0;
+  const items = query.data?.items ?? [];
   const pages = Math.ceil(total / PER_PAGE);
-  const statusFilters = usingMt5 ? STATUS_FILTERS_MT5 : STATUS_FILTERS_BOT;
 
   function fmt(entry: number) {
     const decimals = entry > 100 ? 2 : 5;
     return entry.toFixed(decimals);
   }
 
+  const chip = (active: boolean) =>
+    `text-[10px] px-2.5 py-1 rounded-lg transition-colors ${
+      active
+        ? "bg-blue-500/20 text-blue-400 border border-blue-500/30 font-medium"
+        : "text-slate-500 hover:text-slate-300 border border-transparent"
+    }`;
+
   return (
     <div className="space-y-4">
-      {usingMt5 && mt5Query.data && !mt5Query.data.connected && (
+      {query.data && !query.data.connected && (
         <div className="text-[11px] text-warn/80 bg-warn/10 border border-warn/30 rounded-lg px-3 py-2">
-          MT5 neconectat — {mt5Query.data.error ?? "tranzacțiile directe nu sunt disponibile"}. Comută pe „Bot" pentru date din outcomes.csv.
+          MT5 neconectat — {query.data.error ?? "tranzacțiile nu sunt disponibile"}.
         </div>
       )}
 
@@ -171,16 +129,16 @@ function TransactionsTab({ source }: { source: StatsSource }) {
       <div className="flex items-center gap-3 flex-wrap">
         <Filter size={13} className="text-slate-500 flex-shrink-0" />
         <div className="flex gap-1 flex-wrap">
-          {statusFilters.map(f => (
-            <button
-              key={f}
-              onClick={() => { setStatusFilter(f); setPage(0); }}
-              className={`text-[10px] px-2.5 py-1 rounded-lg transition-colors ${
-                statusFilter === f
-                  ? "bg-blue-500/20 text-blue-400 border border-blue-500/30 font-medium"
-                  : "text-slate-500 hover:text-slate-300 border border-transparent"
-              }`}
-            >
+          {SOURCE_FILTERS.map(f => (
+            <button key={f.id || "all"} onClick={() => { setSourceFilter(f.id); setPage(0); }}
+              className={chip(sourceFilter === f.id)}>
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-1 flex-wrap ml-2">
+          {STATUS_FILTERS.map(f => (
+            <button key={f} onClick={() => { setStatusFilter(f); setPage(0); }} className={chip(statusFilter === f)}>
               {f}
             </button>
           ))}
@@ -219,17 +177,15 @@ function TransactionsTab({ source }: { source: StatsSource }) {
           )}
         </div>
         <button onClick={downloadCsv}
-          title={usingMt5
-            ? "Exportă tranzacțiile MT5 (cont-wide: bot + AI + manual) cu filtrele curente"
-            : "Exportă tranzacțiile botului (outcomes.csv) cu filtrele curente"}
+          title="Exportă tranzacțiile MT5 cu filtrele curente (include sursa, sesiunea și strategia)"
           className="flex items-center gap-1 text-[10px] px-2.5 py-1 rounded-lg border border-surface-border text-slate-300 hover:border-blue-500/40 hover:text-blue-400 transition-colors">
-          <Download size={12} /> CSV{usingMt5 ? " (MT5)" : ""}
+          <Download size={12} /> CSV
         </button>
         <span className="text-[10px] text-slate-500">{total} tranzacții</span>
       </div>
 
       {/* Table */}
-      {isLoading ? (
+      {query.isLoading ? (
         <div className="space-y-1">
           {[...Array(8)].map((_, i) => (
             <div key={i} className="h-10 rounded-lg bg-surface-card animate-pulse" />
@@ -246,7 +202,7 @@ function TransactionsTab({ source }: { source: StatsSource }) {
             <thead>
               <tr className="border-b border-surface-border bg-surface-card">
                 <th className="text-left px-3 py-2 text-slate-500 font-medium">Simbol</th>
-                {!usingMt5 && <th className="text-left px-3 py-2 text-slate-500 font-medium">Sesiune</th>}
+                <th className="text-left px-3 py-2 text-slate-500 font-medium">Sursă</th>
                 <th className="text-center px-3 py-2 text-slate-500 font-medium">Dir</th>
                 <th className="text-right px-3 py-2 text-slate-500 font-medium">Entry</th>
                 <th className="text-center px-3 py-2 text-slate-500 font-medium">Status</th>
@@ -257,57 +213,59 @@ function TransactionsTab({ source }: { source: StatsSource }) {
               </tr>
             </thead>
             <tbody className="divide-y divide-surface-border/40">
-              {items.map((t) => (
-                <tr
-                  key={t.key}
-                  className={`transition-colors hover:bg-surface-border/10 ${
-                    t.status === "TP" ? "bg-profit/4" : t.status === "SL" ? "bg-loss/4" : ""
-                  }`}
-                >
-                  <td className="px-3 py-2 font-semibold text-white">
-                    {t.symbol}
-                    {t.aiApproved && (
-                      <span
-                        className="ml-1.5 text-[8px] px-1 py-0.5 rounded font-bold bg-purple-500/20 text-purple-300 align-middle"
-                        title={`Validat de Filtrul AI Pre-Trade${t.aiConfidence != null ? ` — încredere ${t.aiConfidence}%` : ""}`}
-                      >
-                        AI✓
+              {items.map((t) => {
+                const src = SOURCE_BADGE[t.source] ?? SOURCE_BADGE.manual;
+                return (
+                  <tr
+                    key={t.ticket}
+                    className={`transition-colors hover:bg-surface-border/10 ${
+                      t.status === "TP" ? "bg-profit/4" : t.status === "SL" ? "bg-loss/4" : ""
+                    }`}
+                  >
+                    <td className="px-3 py-2 font-semibold text-white">
+                      {t.symbol}
+                      {t.ai_approved && (
+                        <span
+                          className="ml-1.5 text-[8px] px-1 py-0.5 rounded font-bold bg-purple-500/20 text-purple-300 align-middle"
+                          title={`Validat de Filtrul AI Pre-Trade${t.ai_confidence != null ? ` — încredere ${t.ai_confidence}%` : ""}`}
+                        >
+                          AI✓
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-slate-400 whitespace-nowrap">
+                      <span className={`text-[9px] font-bold px-1 rounded ${src.cls}`}>{src.label}</span>
+                      {t.session_id && <span className="ml-1.5">{t.session_id.replace("session", "S")}</span>}
+                      {t.strategy && <span className="ml-1.5 text-slate-500">{STRATEGY_LABEL[t.strategy] ?? t.strategy}</span>}
+                    </td>
+                    <td className="px-3 py-2 text-center">
+                      <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                        t.direction === 1 ? "bg-profit/20 text-profit" : "bg-loss/20 text-loss"
+                      }`}>
+                        {t.dir_str}
                       </span>
-                    )}
-                  </td>
-                  {!usingMt5 && <td className="px-3 py-2 text-slate-400 truncate max-w-[100px]">{t.sessionLabel}</td>}
-                  <td className="px-3 py-2 text-center">
-                    <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
-                      t.direction === 1
-                        ? "bg-profit/20 text-profit"
-                        : "bg-loss/20 text-loss"
-                    }`}>
-                      {t.dirStr}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2 text-right font-mono text-slate-300">{fmt(t.entry)}</td>
-                  <td className="px-3 py-2 text-center">
-                    <span className={`text-[9px] font-medium ${
-                      t.status === "TP" ? "text-profit"
-                      : t.status === "SL" ? "text-loss"
-                      : t.status === "ai_reject" ? "text-purple-400"
-                      : "text-slate-500"
-                    }`}>
-                      {STATUS_LABELS[t.status] ?? t.status}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2 text-right text-slate-500 font-mono">{t.rRatio != null ? `${t.rRatio}R` : "—"}</td>
-                  <td className={`px-3 py-2 text-right font-mono font-semibold ${rColor(t.resultR)}`}>
-                    {fmtR(t.resultR)}
-                  </td>
-                  <td className={`px-3 py-2 text-right font-mono ${t.pnlUsd != null ? rColor(t.pnlUsd) : "text-slate-600"}`}>
-                    {fmtUsd(t.pnlUsd)}
-                  </td>
-                  <td className="px-3 py-2 text-right text-slate-500">
-                    {t.time ? fmtTime(t.time) : "—"}
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td className="px-3 py-2 text-right font-mono text-slate-300">{fmt(t.entry)}</td>
+                    <td className="px-3 py-2 text-center">
+                      <span className={`text-[9px] font-medium ${
+                        t.status === "TP" ? "text-profit" : t.status === "SL" ? "text-loss" : "text-slate-500"
+                      }`}>
+                        {t.status}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-right text-slate-500 font-mono">{t.r_ratio != null ? `${t.r_ratio}R` : "—"}</td>
+                    <td className={`px-3 py-2 text-right font-mono font-semibold ${rColor(t.result_r ?? 0)}`}>
+                      {fmtR(t.result_r)}
+                    </td>
+                    <td className={`px-3 py-2 text-right font-mono ${rColor(t.pnl_usd)}`}>
+                      {fmtUsd(t.pnl_usd)}
+                    </td>
+                    <td className="px-3 py-2 text-right text-slate-500">
+                      {t.exit_time ?? t.entry_time ? fmtTime((t.exit_time ?? t.entry_time)!) : "—"}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -335,93 +293,26 @@ function TransactionsTab({ source }: { source: StatsSource }) {
           </button>
         </div>
       )}
-
-      {/* ── OBS sessions (execute=False) — concept specific Bot, fara echivalent MT5 ── */}
-      {!usingMt5 && <ObsTransactionsSection />}
-    </div>
-  );
-}
-
-function ObsTransactionsSection() {
-  const [open, setOpen] = React.useState(false);
-  const { data, isLoading } = useTransactions({ obs_only: true, limit: 200 });
-  const items = data?.items ?? [];
-  if (!open) {
-    return (
-      <div className="border-t border-surface-border/50 pt-3">
-        <button
-          onClick={() => setOpen(true)}
-          className="text-[10px] text-slate-500 hover:text-slate-300 flex items-center gap-1.5 transition-colors"
-        >
-          <span className="w-4 h-4 rounded border border-slate-700 flex items-center justify-center text-[9px]">▶</span>
-          Sesiuni OBS (observatie, fara executare) — {data?.total ?? "…"} semnale
-        </button>
-      </div>
-    );
-  }
-  return (
-    <div className="border-t border-surface-border/50 pt-3 space-y-3">
-      <div className="flex items-center gap-2">
-        <button onClick={() => setOpen(false)} className="text-[10px] text-slate-500 hover:text-slate-300">▼</button>
-        <span className="text-[11px] font-semibold text-slate-400">Sesiuni OBS — observatie fara executare reala</span>
-        <span className="text-[10px] bg-slate-700/50 text-slate-400 px-2 py-0.5 rounded-full">
-          {data?.total ?? 0} semnale · nu apar in statistici
-        </span>
-      </div>
-      {isLoading ? (
-        <div className="space-y-1">{[...Array(3)].map((_, i) => <div key={i} className="h-8 rounded bg-surface-card animate-pulse" />)}</div>
-      ) : items.length === 0 ? (
-        <p className="text-[11px] text-slate-600 py-4 text-center">Niciun semnal OBS înregistrat</p>
-      ) : (
-        <div className="overflow-x-auto rounded-xl border border-surface-border/50">
-          <table className="w-full text-[11px]">
-            <thead>
-              <tr className="border-b border-surface-border/50 bg-surface-card/50">
-                <th className="text-left px-3 py-2 text-slate-600 font-medium">Simbol</th>
-                <th className="text-left px-3 py-2 text-slate-600 font-medium">Sesiune</th>
-                <th className="text-left px-3 py-2 text-slate-600 font-medium">Status</th>
-                <th className="text-right px-3 py-2 text-slate-600 font-medium">R</th>
-                <th className="text-left px-3 py-2 text-slate-600 font-medium">Timp ieșire</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-surface-border/30">
-              {items.map((t) => (
-                <tr key={t.signal_id} className="hover:bg-surface-border/5 transition-colors opacity-70">
-                  <td className="px-3 py-2 text-slate-400 font-medium">{t.symbol}</td>
-                  <td className="px-3 py-2 text-slate-600 text-[10px]">{t.session_label.replace(/^S\d+ — /, "")}</td>
-                  <td className="px-3 py-2 text-slate-500">{t.status}</td>
-                  <td className={`px-3 py-2 text-right font-mono ${t.result_r > 0 ? "text-profit/60" : t.result_r < 0 ? "text-loss/60" : "text-slate-600"}`}>
-                    {t.result_r > 0 ? "+" : ""}{t.result_r.toFixed(3)}R
-                  </td>
-                  <td className="px-3 py-2 text-slate-600">{t.exit_time?.slice(0, 16) ?? "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
     </div>
   );
 }
 
 // ── Market stats tab ──────────────────────────────────────────────────────────
 
-function MarketStatsTab({ source }: { source: StatsSource }) {
-  const usingMt5 = source === "mt5";
-  const botQuery = useMarketStats();
+function MarketStatsTab() {
   const mt5Query = useMt5MarketStats();
 
-  const isLoading = usingMt5 ? mt5Query.isLoading : botQuery.isLoading;
-  const items: MarketStat[] = usingMt5 ? (mt5Query.data?.items ?? []) : (botQuery.data?.items ?? []);
+  const isLoading = mt5Query.isLoading;
+  const items: MarketStat[] = mt5Query.data?.items ?? [];
 
   const totalTrades = items.reduce((s, m) => s + m.trades, 0);
   const totalR      = items.reduce((s, m) => s + m.total_r, 0);
 
   return (
     <div className="space-y-4">
-      {usingMt5 && mt5Query.data && !mt5Query.data.connected && (
+      {mt5Query.data && !mt5Query.data.connected && (
         <div className="text-[11px] text-warn/80 bg-warn/10 border border-warn/30 rounded-lg px-3 py-2">
-          MT5 neconectat — {mt5Query.data.error ?? "clasamentul direct nu este disponibil"}. Comută pe „Bot" pentru date din outcomes.csv.
+          MT5 neconectat — {mt5Query.data.error ?? "clasamentul nu este disponibil"}.
         </div>
       )}
 
@@ -465,7 +356,6 @@ function MarketStatsTab({ source }: { source: StatsSource }) {
                 <th className="text-right px-3 py-2.5 text-slate-500 font-medium">Expectancy</th>
                 <th className="text-right px-3 py-2.5 text-slate-500 font-medium">Total R</th>
                 <th className="text-right px-3 py-2.5 text-slate-500 font-medium">P&L $</th>
-                {!usingMt5 && <th className="text-left px-3 py-2.5 text-slate-500 font-medium">Sesiuni</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-surface-border/40">
@@ -495,11 +385,6 @@ function MarketStatsTab({ source }: { source: StatsSource }) {
                   <td className={`px-3 py-2.5 text-right font-mono ${m.pnl_usd != null ? rColor(m.pnl_usd) : "text-slate-600"}`}>
                     {fmtUsd(m.pnl_usd)}
                   </td>
-                  {!usingMt5 && (
-                    <td className="px-3 py-2.5 text-slate-500 text-[10px] max-w-[140px] truncate">
-                      {m.sessions.map(s => s.replace(/^S\d+ — /, "")).join(", ")}
-                    </td>
-                  )}
                 </tr>
               ))}
             </tbody>
@@ -713,25 +598,22 @@ function SessionChangesTab() {
 
 // ── Costs tab ────────────────────────────────────────────────────────────────
 
-function CostsTab({ source }: { source: StatsSource }) {
-  const usingMt5 = source === "mt5";
-  const botSym  = useCosts();
-  const botDay  = useCostsDaily();
+function CostsTab() {
   const mt5Sym  = useMt5Costs();
   const mt5Day  = useMt5CostsDaily();
 
-  const loadSym = usingMt5 ? mt5Sym.isLoading : botSym.isLoading;
-  const loadDay = usingMt5 ? mt5Day.isLoading : botDay.isLoading;
-  const perDay  = usingMt5 ? mt5Day.data : botDay.data;
+  const loadSym = mt5Sym.isLoading;
+  const loadDay = mt5Day.isLoading;
+  const perDay  = mt5Day.data;
 
-  const symItems: CostStat[]   = usingMt5 ? (mt5Sym.data?.items ?? []) : (botSym.data?.items ?? []);
+  const symItems: CostStat[]   = mt5Sym.data?.items ?? [];
   const dayItems: CostsDayEntry[] = perDay?.items ?? [];
 
   const totalComm  = perDay?.total_commission ?? 0;
   const totalSwap  = perDay?.total_swap ?? 0;
   const totalCosts = perDay?.total_costs ?? 0;
   const hasAnyData = dayItems.some(d => d.has_cost_data);
-  const mt5NotConnected = usingMt5 && mt5Sym.data && !mt5Sym.data.connected;
+  const mt5NotConnected = mt5Sym.data && !mt5Sym.data.connected;
 
   // Zile cu date de cost (pentru bara vizuala)
   const maxCost = Math.max(...dayItems.map(d => Math.abs(d.total_costs)), 0.01);
@@ -766,7 +648,7 @@ function CostsTab({ source }: { source: StatsSource }) {
 
       {mt5NotConnected && (
         <div className="text-[11px] text-warn/80 bg-warn/10 border border-warn/30 rounded-lg px-3 py-2">
-          MT5 neconectat — {mt5Sym.data?.error ?? "costurile directe nu sunt disponibile"}. Comută pe „Bot" pentru date din outcomes.csv.
+          MT5 neconectat — {mt5Sym.data?.error ?? "costurile nu sunt disponibile"}.
         </div>
       )}
 
@@ -1178,13 +1060,8 @@ function ManualReportButtons() {
   );
 }
 
-// Tab-uri fara echivalent MT5 — concepte specifice botului (procese/profile),
-// nu tranzactii, deci raman mereu pe date Bot indiferent de sursa selectata.
-const BOT_ONLY_TABS: ReadonlySet<ReportTab> = new Set(["uptime", "changes", "sistem"]);
-
 export function ReportsPage() {
   const [activeTab, setActiveTab] = useState<ReportTab>("transactions");
-  const [statsSource, setStatsSource] = useStatsSource();
 
   return (
     <div className="p-4 md:p-6 space-y-5">
@@ -1193,21 +1070,9 @@ export function ReportsPage() {
         <BarChart2 size={16} className="text-blue-400" />
         <h1 className="text-sm font-semibold text-white">Rapoarte</h1>
         <span className="text-[10px] text-slate-500">
-          {statsSource === "mt5"
-            ? "Date live din toate tranzacțiile de pe MT5"
-            : "Date live din toate sesiunile active"}
+          Tranzacții, piețe și costuri: direct din MT5 · Uptime, modificări, loguri: din aplicație
         </span>
         <ManualReportButtons />
-      </div>
-
-      {/* Sursa Bot / MT5 — se aplica taburilor Tranzacții / Piețe / Comisioane+Swap */}
-      <div className="flex items-center gap-2 flex-wrap">
-        <SourceToggle source={statsSource} onChange={setStatsSource} />
-        {statsSource === "mt5" && BOT_ONLY_TABS.has(activeTab) && (
-          <span className="text-[10px] text-slate-600">
-            Acest tab e specific botului (fără echivalent MT5) — afișează mereu date Bot.
-          </span>
-        )}
       </div>
 
       {/* Tab selector */}
@@ -1230,9 +1095,9 @@ export function ReportsPage() {
 
       {/* Tab content */}
       <div>
-        {activeTab === "transactions" && <TransactionsTab source={statsSource} />}
-        {activeTab === "markets"      && <MarketStatsTab source={statsSource} />}
-        {activeTab === "costs"        && <CostsTab source={statsSource} />}
+        {activeTab === "transactions" && <TransactionsTab />}
+        {activeTab === "markets"      && <MarketStatsTab />}
+        {activeTab === "costs"        && <CostsTab />}
         {activeTab === "uptime"       && <UptimeTab />}
         {activeTab === "changes"      && <SessionChangesTab />}
         {activeTab === "sistem"       && <SystemLogsTab />}

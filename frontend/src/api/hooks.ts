@@ -1,15 +1,15 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "./client";
 import type {
-  BotStatus, SessionStatus, Signal, Outcome, EquityCurvePoint,
+  BotStatus, SessionStatus, Signal,
   Profile, ProfileSummary, Meta,
   DataCheckResult, DownloadJob, TelegramConfig, Mt5Status, Mt5TradeStats, Mt5EquityCurveResponse,
   Mt5WeeklyStats, Mt5TopMarketsResponse, Mt5MarketStatsResponse, Mt5TransactionsResponse,
   Mt5CostsResponse, Mt5CostsDailyResponse, Mt5SessionsResponse,
-  BacktestHistoryEntry, BacktestJob, WeeklyStats,
-  NotificationsResponse, TransactionsResponse, MarketStatsResponse,
-  UptimeResponse, SessionChangesResponse, TopMarketEntry, TimezoneConfig,
-  SystemLogsResponse, SyncResult, CostsResponse, CostsDailyResponse,
+  BacktestHistoryEntry, BacktestJob,
+  NotificationsResponse,
+  UptimeResponse, SessionChangesResponse, TimezoneConfig,
+  SystemLogsResponse,
 } from "./types";
 
 
@@ -31,18 +31,10 @@ export const useSessions = () =>
     refetchIntervalInBackground: true,
   });
 
-export const useWeeklyStats = () =>
-  useQuery<WeeklyStats>({
-    queryKey: ["weekly-stats"],
-    queryFn:  () => apiFetch("/sessions/weekly_stats"),
-    refetchInterval: 60_000,
-    refetchIntervalInBackground: false,
-  });
-
-export const useMt5WeeklyStats = () =>
+export const useMt5WeeklyStats = (source: string = "all") =>
   useQuery<Mt5WeeklyStats>({
-    queryKey: ["mt5-weekly-stats"],
-    queryFn:  () => apiFetch("/mt5/weekly-stats"),
+    queryKey: ["mt5-weekly-stats", source],
+    queryFn:  () => apiFetch(`/mt5/weekly-stats?source=${source}`),
     refetchInterval: 60_000,
     refetchIntervalInBackground: false,
   });
@@ -69,24 +61,6 @@ export const useSignals = (sessionId: string) =>
       sessionId === "all"
         ? apiFetch("/sessions/all/signals?limit=50")
         : apiFetch(`/sessions/${sessionId}/signals?limit=30`),
-    refetchInterval: POLL,
-  });
-
-export const useOutcomes = (sessionId: string) =>
-  useQuery<Outcome[]>({
-    queryKey: ["outcomes", sessionId],
-    queryFn:  () =>
-      sessionId === "all"
-        ? apiFetch("/sessions/all/outcomes?limit=200")
-        : apiFetch(`/sessions/${sessionId}/outcomes`),
-    refetchInterval: POLL,
-    enabled:  !!sessionId,
-  });
-
-export const useEquityCurve = () =>
-  useQuery<EquityCurvePoint[]>({
-    queryKey: ["equity-curve"],
-    queryFn:  () => apiFetch("/sessions/all/equity-curve"),
     refetchInterval: POLL,
   });
 
@@ -167,7 +141,12 @@ export const useBacktestJob = (jobId: string | null) =>
   });
 
 export const useMt5Markets = () =>
-  useQuery<{ symbols: string[]; error: string | null }>({
+  useQuery<{
+    symbols: string[];
+    items?: { name: string; description: string; path: string; tradable: boolean }[];
+    account?: { login: number; server: string; is_demo: boolean } | null;
+    error: string | null;
+  }>({
     queryKey: ["mt5-markets"],
     queryFn:  () => apiFetch("/markets/mt5"),
     staleTime: 5 * 60 * 1000,
@@ -396,18 +375,18 @@ export const useMt5Status = () =>
     retry: false,
   });
 
-export const useMt5Stats = () =>
+export const useMt5Stats = (source: string = "all") =>
   useQuery<Mt5TradeStats>({
-    queryKey: ["mt5-stats"],
-    queryFn:  () => apiFetch("/mt5/stats"),
+    queryKey: ["mt5-stats", source],
+    queryFn:  () => apiFetch(`/mt5/stats?source=${source}`),
     refetchInterval: POLL,
     retry: false,
   });
 
-export const useMt5EquityCurve = (metric: "usd" | "r" = "usd") =>
+export const useMt5EquityCurve = (metric: "usd" | "r" = "usd", source: string = "all") =>
   useQuery<Mt5EquityCurveResponse>({
-    queryKey: ["mt5-equity-curve", metric],
-    queryFn:  () => apiFetch(`/mt5/equity-curve?metric=${metric}`),
+    queryKey: ["mt5-equity-curve", metric, source],
+    queryFn:  () => apiFetch(`/mt5/equity-curve?metric=${metric}&source=${source}`),
     refetchInterval: POLL,
     retry: false,
   });
@@ -537,56 +516,10 @@ export const useClearNotifications = () => {
 
 // ── Reports ──────────────────────────────────────────────────────────────────
 
-export const useTransactions = (params: {
-  status?: string;
-  symbol?: string;
-  direction?: string;
-  date_from?: string;
-  date_to?: string;
-  session_id?: string;
-  obs_only?: boolean;
-  limit?: number;
-  offset?: number;
-}) =>
-  useQuery<TransactionsResponse>({
-    queryKey: ["transactions", params],
-    queryFn:  () => {
-      const qs = new URLSearchParams();
-      if (params.status)     qs.set("status",     params.status);
-      if (params.symbol)     qs.set("symbol",     params.symbol);
-      if (params.direction)  qs.set("direction",  params.direction);
-      if (params.date_from)  qs.set("date_from",  params.date_from);
-      if (params.date_to)    qs.set("date_to",    params.date_to);
-      if (params.session_id) qs.set("session_id", params.session_id);
-      if (params.obs_only)   qs.set("obs_only",   "true");
-      qs.set("limit",  String(params.limit  ?? 200));
-      qs.set("offset", String(params.offset ?? 0));
-      return apiFetch(`/reports/transactions?${qs.toString()}`);
-    },
-    refetchInterval: 60_000,
-    refetchIntervalInBackground: false,
-  });
-
-export const useMarketStats = () =>
-  useQuery<MarketStatsResponse>({
-    queryKey: ["market-stats"],
-    queryFn:  () => apiFetch("/reports/market-stats"),
-    refetchInterval: 60_000,
-    refetchIntervalInBackground: false,
-  });
-
-export const useTopMarkets = (period: string) =>
-  useQuery<TopMarketEntry[]>({
-    queryKey: ["top-markets", period],
-    queryFn:  () => apiFetch(`/sessions/top-markets?period=${period}&limit=5`),
-    refetchInterval: 60_000,
-    refetchIntervalInBackground: false,
-  });
-
-export const useMt5TopMarkets = (period: string, limit = 5) =>
+export const useMt5TopMarkets = (period: string, limit = 5, source: string = "all") =>
   useQuery<Mt5TopMarketsResponse>({
-    queryKey: ["mt5-top-markets", period, limit],
-    queryFn:  () => apiFetch(`/mt5/top-markets?period=${period}&limit=${limit}`),
+    queryKey: ["mt5-top-markets", period, limit, source],
+    queryFn:  () => apiFetch(`/mt5/top-markets?period=${period}&limit=${limit}&source=${source}`),
     refetchInterval: 60_000,
     refetchIntervalInBackground: false,
   });
@@ -599,10 +532,10 @@ export const useMt5MarketStats = () =>
     refetchIntervalInBackground: false,
   });
 
-export const useMt5SessionStats = () =>
+export const useMt5SessionStats = (source: string = "bot") =>
   useQuery<Mt5SessionsResponse>({
-    queryKey: ["mt5-session-stats"],
-    queryFn:  () => apiFetch("/mt5/sessions"),
+    queryKey: ["mt5-session-stats", source],
+    queryFn:  () => apiFetch(`/mt5/sessions?source=${source}`),
     refetchInterval: POLL,
     refetchIntervalInBackground: false,
   });
@@ -611,6 +544,10 @@ export const useMt5Transactions = (params: {
   status?: string;
   direction?: string;
   symbol?: string;
+  source?: "bot" | "ai" | "manual";
+  session_id?: string;
+  date_from?: string;
+  date_to?: string;
   limit?: number;
   offset?: number;
 }) =>
@@ -621,6 +558,10 @@ export const useMt5Transactions = (params: {
       if (params.status)    qs.set("status",    params.status);
       if (params.direction) qs.set("direction", params.direction);
       if (params.symbol)    qs.set("symbol",    params.symbol);
+      if (params.source)    qs.set("source",    params.source);
+      if (params.session_id) qs.set("session_id", params.session_id);
+      if (params.date_from) qs.set("date_from", params.date_from);
+      if (params.date_to)   qs.set("date_to",   params.date_to);
       qs.set("limit",  String(params.limit  ?? 200));
       qs.set("offset", String(params.offset ?? 0));
       return apiFetch(`/mt5/transactions?${qs.toString()}`);
@@ -705,43 +646,6 @@ export const useLogSessions = () =>
     staleTime: 60_000,
     refetchIntervalInBackground: false,
   });
-
-export const useCosts = () =>
-  useQuery<CostsResponse>({
-    queryKey: ["costs"],
-    queryFn:  () => apiFetch("/reports/costs"),
-    refetchInterval: 120_000,
-    refetchIntervalInBackground: false,
-  });
-
-export const useCostsDaily = () =>
-  useQuery<CostsDailyResponse>({
-    queryKey: ["costs-daily"],
-    queryFn:  () => apiFetch("/reports/costs-daily"),
-    refetchInterval: 120_000,
-    refetchIntervalInBackground: false,
-  });
-
-// ── MT5 Sync ─────────────────────────────────────────────────────────────────
-
-export const useSyncStatus = () =>
-  useQuery<SyncResult>({
-    queryKey: ["mt5-sync-status"],
-    queryFn:  () => apiFetch("/mt5/sync-status"),
-    refetchInterval: 30_000,
-  });
-
-export const useRunSync = () => {
-  const qc = useQueryClient();
-  return useMutation<SyncResult, Error, { fix: boolean }>({
-    mutationFn: ({ fix }) => apiFetch(`/mt5/sync?fix=${fix}`, { method: "POST" }),
-    onSuccess:  () => {
-      qc.invalidateQueries({ queryKey: ["mt5-sync-status"] });
-      qc.invalidateQueries({ queryKey: ["sessions"] });
-      qc.invalidateQueries({ queryKey: ["outcomes"] });
-    },
-  });
-};
 
 // ── Backtest history (legacy) ─────────────────────────────────────────────────
 
@@ -954,5 +858,86 @@ export const useSetLiveTrading = () => {
                      Error, { component: "bot" | "ai_engine"; allowed: boolean }>({
     mutationFn: body => apiFetch("/settings/live-trading", { method: "PUT", body }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["live-trading"] }),
+  });
+};
+
+// ─── Setari Globale (Bot + AI) — data/global_settings.json, hot-reload ───────
+export interface GlobalSettings {
+  capital_protection: { enabled: boolean; threshold_pct: number; start_balance: number | null };
+  circuit_breaker: { enabled: boolean; max_consecutive_losses: number; max_daily_loss_pct: number };
+  friday_close: { enabled: boolean; hour: number; exclude_crypto: boolean };
+  news_protection: { enabled: boolean; impact_level: number; pre_minutes: number; post_minutes: number };
+  max_concurrent_per_market: { enabled: boolean; max: number };
+  ai_filter: { enabled: boolean; level: "permissive" | "balanced" | "strict"; strict: boolean };
+}
+
+export const useGlobalSettings = () =>
+  useQuery<GlobalSettings>({
+    queryKey: ["global-settings"],
+    queryFn:  () => apiFetch("/settings/global"),
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
+  });
+
+export const useSaveGlobalSettings = () => {
+  const qc = useQueryClient();
+  return useMutation<GlobalSettings, Error, Partial<GlobalSettings>>({
+    mutationFn: body => apiFetch("/settings/global", { method: "PUT", body }),
+    onSuccess: data => qc.setQueryData(["global-settings"], data),
+  });
+};
+
+// ─── Verdicte M0 per sesiune (data/m0_audit.csv) — gate vizual in Settings ───
+export interface M0Verdict { verdict: "KEEP" | "OBSERVE" | "DEMOTE" | "INSUFF"; n: number;
+  expectancy: number | null; prob_positive: number | null; audited_at: string }
+export const useM0Verdicts = () =>
+  useQuery<Record<string, M0Verdict>>({
+    queryKey: ["m0-verdicts"],
+    queryFn:  () => apiFetch("/sessions/m0-verdicts"),
+    staleTime: 10 * 60_000,
+    refetchInterval: false,
+  });
+
+// ── Daily Engine ─────────────────────────────────────────────────────────────
+import type { DailyStatus, DailyTrade } from "./types";
+
+export const useDailyStatus = () =>
+  useQuery<DailyStatus>({
+    queryKey: ["daily-status"],
+    queryFn:  () => apiFetch("/daily/status"),
+    refetchInterval: 10_000,
+    refetchIntervalInBackground: false,
+  });
+
+export const useDailyTrades = () =>
+  useQuery<DailyTrade[]>({
+    queryKey: ["daily-trades"],
+    queryFn:  () => apiFetch("/daily/trades?limit=200"),
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
+  });
+
+export const useDailyLogs = (enabled: boolean) =>
+  useQuery<{ lines: string[] }>({
+    queryKey: ["daily-logs"],
+    queryFn:  () => apiFetch("/daily/logs?lines=150"),
+    refetchInterval: 15_000,
+    refetchIntervalInBackground: false,
+    enabled,
+  });
+
+export const useDailyStart = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiFetch("/daily/start", { method: "POST" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["daily-status"] }),
+  });
+};
+
+export const useDailyStop = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiFetch("/daily/stop", { method: "POST" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["daily-status"] }),
   });
 };

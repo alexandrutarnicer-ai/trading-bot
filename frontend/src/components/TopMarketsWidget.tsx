@@ -1,8 +1,6 @@
 import { useState } from "react";
-import { useTopMarkets, useMt5TopMarkets } from "../api/hooks";
+import { useMt5TopMarkets } from "../api/hooks";
 import { InfoTooltip } from "./InfoTooltip";
-import type { StatsSource } from "../hooks/useStatsSource";
-import { SourceToggle } from "./SourceToggle";
 
 type Period = "day" | "week" | "month" | "all";
 
@@ -18,30 +16,10 @@ const fmtR = (v: number) =>
 const fmtUsd = (v: number) =>
   `${v >= 0 ? "+" : ""}${v.toLocaleString("ro-RO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} $`;
 
-// Vedere unificata Bot/MT5 pentru randarea listei.
-interface ViewEntry {
-  symbol: string;
-  trades: number;
-  win_rate: number;
-  total_r: number;
-  pnl_usd: number | null;
-}
-
-interface Props {
-  source: StatsSource;
-  onSourceChange: (s: StatsSource) => void;
-}
-
-export function TopMarketsWidget({ source, onSourceChange }: Props) {
+export function TopMarketsWidget({ source = "all" }: { source?: string }) {
   const [period, setPeriod] = useState<Period>("week");
-  const usingMt5 = source === "mt5";
-  const { data: botData, isLoading: botLoading } = useTopMarkets(period);
-  const { data: mt5Data, isLoading: mt5Loading } = useMt5TopMarkets(period);
-
-  const isLoading = usingMt5 ? mt5Loading : botLoading;
-  const items: ViewEntry[] | undefined = usingMt5
-    ? mt5Data?.items?.map(e => ({ symbol: e.symbol, trades: e.trades, win_rate: e.win_rate, total_r: e.total_r, pnl_usd: e.pnl_usd }))
-    : botData?.map(e => ({ symbol: e.symbol, trades: e.trades, win_rate: e.win_rate, total_r: e.total_r, pnl_usd: e.pnl_usd }));
+  const { data: mt5Data, isLoading } = useMt5TopMarkets(period, 5, source);
+  const items = mt5Data?.items;
 
   return (
     <div className="bg-surface-card border border-surface-border rounded-xl p-4 space-y-3">
@@ -50,11 +28,8 @@ export function TopMarketsWidget({ source, onSourceChange }: Props) {
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold text-white">Top 5 Piețe</span>
           <InfoTooltip text={
-            usingMt5
-              ? "Cele mai profitabile 5 piețe după R cumulat, calculate direct din tranzacțiile MT5 (history_deals_get). " +
-                "R e recalculat din SL-ul original al ordinului de deschidere."
-              : "Cele mai profitabile 5 piețe după R cumulat, calculate din tranzacțiile închise (TP/SL/vineri). " +
-                "Filtrate pe perioada selectată. P&L USD apare doar pentru sesiunile cu execute_trades activ."
+            "Cele mai profitabile 5 piețe după R cumulat, calculate direct din tranzacțiile MT5 (history_deals_get, cont-wide). " +
+            "R e recalculat din SL-ul original al ordinului de deschidere."
           } />
         </div>
 
@@ -76,11 +51,9 @@ export function TopMarketsWidget({ source, onSourceChange }: Props) {
         </div>
       </div>
 
-      <SourceToggle source={source} onChange={onSourceChange} />
-
-      {usingMt5 && mt5Data && !mt5Data.connected && (
+      {mt5Data && !mt5Data.connected && (
         <div className="text-[11px] text-warn/80 bg-warn/10 border border-warn/30 rounded-lg px-3 py-2">
-          MT5 neconectat — {mt5Data.error ?? "clasamentul direct nu este disponibil"}. Comută pe „Bot" pentru date din outcomes.csv.
+          MT5 neconectat — {mt5Data.error ?? "clasamentul nu este disponibil"}.
         </div>
       )}
 

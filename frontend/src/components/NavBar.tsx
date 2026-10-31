@@ -1,9 +1,8 @@
 import { useBacktestJobs, useDownloadJobs, useNotifications } from "../api/hooks";
 import { AutostartToggle } from "./AutostartToggle";
 import { AiAutostartToggle } from "./AiAutostartToggle";
-import Mt5SyncButton from "./Mt5SyncButton";
 
-type Tab = "dashboard" | "profile" | "ai" | "notifications" | "audit" | "reports" | "guide";
+type Tab = "dashboard" | "profile" | "ai" | "daily" | "settings" | "notifications" | "audit" | "reports" | "guide";
 
 interface Props {
   active: Tab;
@@ -12,8 +11,10 @@ interface Props {
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "dashboard",     label: "Dashboard" },
-  { id: "profile",       label: "Profile" },
+  { id: "profile",       label: "Custom Engine" },
   { id: "ai",            label: "AI Engine" },
+  { id: "daily",         label: "Daily Engine" },
+  { id: "settings",      label: "Settings" },
   { id: "notifications", label: "Notificări" },
   { id: "audit",         label: "Audit" },
   { id: "reports",       label: "Rapoarte" },
@@ -78,7 +79,6 @@ export function NavBar({ active, onChange }: Props) {
         </button>
       ))}
       <div className="ml-auto flex items-center gap-2">
-        <Mt5SyncButton />
         <AutostartToggle />
         <AiAutostartToggle />
       </div>

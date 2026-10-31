@@ -612,18 +612,17 @@ export function GuidePage() {
             <WeekStatsDiagram />
             <div className="mt-3 space-y-1.5 text-xs">
               <KV k="Tab Săptămână / Lună" v="Comutare între intervalul curent și cel precedent" />
-              <KV k="Trades" v="Tranzacții cu status final (TP/SL/vineri/news)" />
-              <KV k="Câștiguri/Pierderi" v="Trades cu result_r > 0 / result_r < 0" />
-              <KV k="Total R" v="Suma tuturor result_r din interval" />
-              <KV k="P&L USD" v="Suma pnl_usd (profit real MT5) — apare doar când există date" />
+              <KV k="Trades" v="Tranzacții închise în MT5 în interval (tot contul)" />
+              <KV k="Câștiguri/Pierderi" v="Tranzacții MT5 cu profit > 0 / < 0" />
+              <KV k="Total R" v="R recalculat din SL-ul original al fiecărui ordin MT5" />
+              <KV k="P&L USD" v="Profitul real MT5 al perioadei" />
               <KV k="Comisioane" v="Comisioane + swap ale perioadei (curentă vs precedentă)" vColor="text-loss" />
               <KV k="-DD max R" v="Cel mai adânc jgheab de la peak-ul R al perioadei" vColor="text-loss" />
             </div>
             <Tip>
               Tab-ul Lună oferă o perspectivă mai stabilă decât săptămâna — fluctuațiile săptămânale
-              sunt normale. P&L USD apare doar pentru sesiunile cu execute_trades=True care au ordine
-              închise prin MT5 (câmpul pnl_usd din outcomes.csv). Rândul <b>Comisioane</b> respectă la fel
-              comutatorul de sursă: pe <b>MT5 direct</b> include și Motorul AI (cont-wide), pe <b>Bot</b> doar botul.
+              sunt normale. Toate cifrele vin direct din istoricul MT5 (cont-wide: Bot + AI + manual) —
+              aplicația nu mai ține o a doua evidență a rezultatelor.
             </Tip>
           </SubSection>
 
@@ -644,22 +643,17 @@ export function GuidePage() {
                 <div className="text-[11px] font-semibold text-slate-300">Comisioane + Swap</div>
                 <div className="text-slate-400">
                   Comisioanele și swap-ul, cu total dezagregat (<em>com: X $ · swap: Y $</em>) plus un rând <b>Azi / Ieri</b>.
-                  Respectă comutatorul de sursă <Badge color="bg-surface-border text-slate-300" label="Bot" /> /
-                  <Badge color="bg-surface-border text-slate-300" label="MT5 direct" />:
-                </div>
-                <div className="mt-1 space-y-1 text-xs">
-                  <KV k="Sursă Bot" v="Doar botul pe reguli (din outcomes.csv)" />
-                  <KV k="Sursă MT5 direct" v="Tot contul (history_deals_get) — include și Motorul AI, și trade-urile manuale" />
+                  Sursa: tot contul MT5 (history_deals_get) — include Bot Engine, Motorul AI și trade-urile manuale.
                 </div>
               </div>
             </div>
             <Note>
-              <b>Comisioanele Motorului AI</b> nu au un card separat — sunt incluse automat în totalul pe sursa
-              <Badge color="bg-surface-border text-slate-300" label="MT5 direct" /> (care numără tot contul: bot + AI + manual).
-              Acolo distincția nu contează; totalul reflectă costul real al contului.
+              <b>Comisioanele Motorului AI</b> nu au un card separat — sunt incluse automat în totalul MT5
+              (care numără tot contul: bot + AI + manual). Pentru defalcare pe engine, folosește
+              Rapoarte → Tranzacții cu filtrul Bot / AI / Manual.
             </Note>
             <Note>
-              Sesiunile de observație (<Badge color="bg-surface-border text-slate-500" label="OBS" />) sunt excluse din toate agregările. Excepție: dacă o sesiune a avut tranzacții reale MT5 (<code className="text-blue-300">pnl_usd ≠ 0</code>) și ulterior a fost oprită din execuție, tranzacțiile istorice rămân vizibile în statistici. MT5 este sursa de adevăr — dacă există <code className="text-blue-300">pnl_usd</code> real, trade-ul a fost executat indiferent de setarea curentă a profilului.
+              Sesiunile de observație (<Badge color="bg-surface-border text-slate-500" label="OBS" />) nu plasează ordine, deci nu apar în statisticile MT5. Dacă o sesiune a avut tranzacții reale și ulterior a fost trecută pe OBS, tranzacțiile ei istorice rămân în MT5 și deci în statistici — MT5 este sursa de adevăr.
             </Note>
             <Note>
               <b>Comutarea LIVE ⇄ OBS se aplică de la bara următoare, fără restart de bot</b> (ca butonul de pauză). Dacă dezactivezi execuția unei piețe din Profil și salvezi, botul oprește imediat ordinele noi pe acea piață (pozițiile deschise rămân monitorizate până la SL/TP) și trimite o notificare Telegram. Sursa de adevăr pentru execuție e <code className="text-blue-300">execute_trades</code> din profilul activ, nu valoarea hardcodată din scriptul sesiunii.
@@ -669,18 +663,16 @@ export function GuidePage() {
           <SubSection title="Statistici Totale (TradingStatsPanel)">
             <p>Carduri care afișează agregatul tuturor sesiunilor:</p>
             <div className="grid grid-cols-2 gap-3 text-xs">
-              <KV k="Total Semnale" v="Toate setup-urile detectate" />
-              <KV k="Total Trades" v="Tranzacții cu outcome final" />
-              <KV k="Câștiguri" v="Numărul TP-urilor + ▲/▼ azi vs ieri" vColor="text-profit" />
-              <KV k="Pierderi" v="Numărul SL-urilor + ▲/▼ azi vs ieri" vColor="text-loss" />
-              <KV k="P&L USD" v="Suma P&L real azi + ieri (din MT5)" vColor="text-profit" />
+              <KV k="Total Semnale" v="Setup-urile detectate de Bot Engine (jurnalul botului — MT5 nu le cunoaște)" />
+              <KV k="Total Trades" v="Tranzacții închise în MT5 (tot contul)" />
+              <KV k="Câștiguri" v="Tranzacții MT5 cu profit + ▲/▼ azi vs ieri" vColor="text-profit" />
+              <KV k="Pierderi" v="Tranzacții MT5 cu pierdere + ▲/▼ azi vs ieri" vColor="text-loss" />
+              <KV k="P&L USD" v="P&L real azi + ieri (din MT5)" vColor="text-profit" />
             </div>
             <p className="text-xs text-slate-400 mt-2">
               Fiecare card numeric afișează și <em>X azi</em> față de <em>ieri</em> cu indicator trend ▲/▼.
-              Câștigurile și Pierderile au acum trend separat (câștiguri azi vs ieri, pierderi azi vs ieri)
-              — câmpurile <code className="text-blue-300">wins_today</code>, <code className="text-blue-300">wins_yesterday</code>, <code className="text-blue-300">losses_today</code>, <code className="text-blue-300">losses_yesterday</code> din <code className="text-blue-300">SessionStatus</code>.
-              Cardul P&L USD apare doar când există date reale MT5 (execute_trades=True + ordine închise).
-              Click pe "Total Semnale" sau "Total Trades" expandează breakdownul per sesiune.
+              Toate cardurile de tranzacționare vin din <code className="text-blue-300">/mt5/stats</code>; doar „Total Semnale”
+              vine din jurnalul Bot Engine. Click pe "Total Semnale" expandează breakdownul per sesiune.
             </p>
           </SubSection>
 
@@ -736,19 +728,21 @@ export function GuidePage() {
 
         {/* ── 3. PROFILE & SESIUNI ── */}
         <Section id="profile" title="3. Profile & Sesiuni">
-          <SubSection title="Ce este un Profil?">
+          <SubSection title="Configurație unică + Setări Globale">
             <p>
-              Un profil grupează configurarea tuturor sesiunilor active. Poți crea multiple profile
-              (ex: "Conservator", "Agresiv") și activa unul la pornirea botului.
+              Tab-ul <strong className="text-white">Settings</strong> conține o singură configurație (fișierul
+              <code className="text-blue-300 mx-1">standard</code>) cu toate piețele. Selectorul de profile a fost eliminat;
+              profilele vechi rămân pe disc, neatinse.
             </p>
             <div className="space-y-1 text-xs">
-              <KV k="standard" v="Profilul implicit — protejat la ștergere" />
-              <KV k="Profil activ" v="Cel selectat la Start Bot — aplicat tuturor sesiunilor" />
+              <KV k="Setări Globale" v="Protecție capital, circuit breaker, vineri, știri, poziții simultane, filtru AI — Bot + AI, toate oprite implicit" />
+              <KV k="Regula" v="Cea mai strictă câștigă: o piață poate fi mai strictă decât globalul, niciodată mai permisivă" />
+              <KV k="Aplicare" v="Setările Globale se aplică de la următoarea bară, fără restart" />
               <KV k="Salvare" v="Butonul Salvează apare atât sus cât și jos în listă" />
             </div>
             <Note>
-              Modificările unui profil nu se aplică botului în timp real dacă acesta rulează deja.
-              Trebuie să oprești și repornești botul cu noul profil.
+              Parametrii pieței (ore, R:R, criterii) se aplică la repornirea botului. Pauza, execuția
+              (observație/live) și Setările Globale se aplică imediat.
             </Note>
           </SubSection>
 
@@ -1479,7 +1473,9 @@ export function GuidePage() {
           <SubSection title="Circuit Breaker" defaultOpen={false}>
             <p>
               Dacă o sesiune înregistrează <strong className="text-white">N pierderi consecutive</strong>
-              într-o zi (default N=3), nu mai deschide poziții noi în acea zi.
+              într-o zi (default N=3), nu mai deschide poziții noi în acea zi — aplicat atât în backtest
+              cât și în live (din 2026-10-31, din istoricul MT5). Există și un Circuit Breaker
+              <strong className="text-white">global</strong> în Setări Globale, pe tot contul (Bot + AI).
             </p>
             <Tip>
               Circuit breaker resetat automat la miezul nopții (ziua nouă). Configurabil per sesiune din Profile.
@@ -2071,38 +2067,26 @@ export function GuidePage() {
               <KV k="P&L Real MT5 vs așteptat" v="Compară zilnic cu suma raportată de MT5 — diferențe mari pot indica duplicate" />
               <KV k="Notificări [RECOVER]" v="Apar când botul a recuperat tranzacții închise în lipsa lui — normale după restart" />
               <KV k="min stops distance" v="Log warning = SL prea aproape de preț curent — ordinul nu s-a plasat, se reîncearcă la bara următoare" />
-              <KV k="Sync MT5" v="Butonul din NavBar forțează resincronizarea outcomes cu history MT5 — folosește dacă P&L pare incorect" />
               <KV k="Notificări [DEDUP]" v="Apar când botul a detectat un ordin MT5 deja existent pentru același semnal și l-a adoptat în loc să plaseze un duplicat — pot apărea după un crash/restart" />
             </div>
           </SubSection>
 
-          <SubSection title="Sync MT5 — Reconciliere manuală" defaultOpen={false}>
+          <SubSection title="MT5 = sursa unică pentru rezultate" defaultOpen={false}>
             <p>
-              Butonul <strong className="text-white">Sync MT5</strong> din NavBar reconciliază <code className="text-blue-300">outcomes.csv</code> cu
-              istoricul real din MT5. Principiu: <strong className="text-yellow-400">MT5 este sursa de adevăr</strong> — dacă o tranzacție
-              există în MT5, ea trebuie să fie reflectată în dashboard.
+              Dashboard-ul, Rapoartele și raportul zilnic/săptămânal Telegram citesc rezultatele
+              <strong className="text-yellow-400"> exclusiv din istoricul MT5</strong>. Nu mai există o a doua evidență
+              (și nici butonul „Sync MT5” care o repara).
             </p>
-            <div className="grid grid-cols-2 gap-3 text-xs mt-3">
-              <div className="bg-surface rounded-lg border border-surface-border p-3 space-y-1">
-                <div className="text-[11px] font-semibold text-slate-300">Detectează</div>
-                <div className="text-slate-400">Scanează history MT5 (10 zile) și raportează discrepanțele fără să modifice nimic. Arată ticket, simbol, R și P&L pentru fiecare poziție MT5 care lipsește din outcomes.csv.</div>
-              </div>
-              <div className="bg-surface rounded-lg border border-surface-border p-3 space-y-1">
-                <div className="text-[11px] font-semibold text-slate-300">Corectează</div>
-                <div className="text-slate-400">Scrie în outcomes.csv rândurile lipsă cu datele reale MT5. Sigur de rulat și cu botul activ — nu modifică state.pkl.</div>
-              </div>
-            </div>
             <div className="mt-3 space-y-1.5 text-xs">
-              <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Ce detectează</div>
-              <KV k="Pozitii MT5 lipsă din outcomes" v="Ordine executate în MT5 care nu au rând corespondent în outcomes.csv (ex: bot oprit înainte să scrie rezultatul)" />
-              <KV k="Semnale triggered fără poziție deschisă" v="State.pkl are semnal ca triggered, dar poziția MT5 nu mai există — potențial trade neînregistrat" />
+              <KV k="Atribuire Bot / AI / Manual" v="Magic 770015 = Motorul AI; comment „S<n>-…” = Bot Engine; restul = manual" />
+              <KV k="Sesiune + strategie" v="Din comment-ul ordinului de intrare (ex: S15-GBPUSD-IB002 → S15, Inside Bar)" />
+              <KV k="R" v="Recalculat din SL-ul original al ordinului de deschidere" />
             </div>
             <Note>
-              Sincronizarea filtrează automat semnalele altor sesiuni care tranzacționează același simbol (ex: S2-NZDJPY găsit în sesiunea care tranzacționează și ea NZDJPY). Prefixul comentariului MT5 (<code>S18-</code>, <code>S2-</code> etc.) identifică sesiunea de origine.
+              <code>outcomes.csv</code> / <code>signals.csv</code> rămân jurnalul de lucru al Bot Engine (deduplicare,
+              recuperare după restart) — aplicația nu le mai folosește pentru statistici. Lista „Semnale” din Dashboard
+              arată doar starea semnalelor (respins AI, expirat, executat), fără R/USD.
             </Note>
-            <Tip>
-              Dacă după sync mai apar discrepanțe persistente, verifică în MT5 că ordinul comentariul include prefix-ul corect al sesiunii. ICMarketsEU trunchiază comentariile la 16 caractere — semnalele cu ID lung (ex: <code>S18-NZDJPY-H1-IB0010</code>) sunt stocate trunchiat în MT5.
-            </Tip>
           </SubSection>
         </Section>
 

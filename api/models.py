@@ -18,22 +18,11 @@ class SessionStatus(BaseModel):
     signals_yesterday: int = 0
     signals_total: int
     last_signal_time: Optional[str]
-    outcomes_total: int
-    outcomes_today: int = 0
-    outcomes_yesterday: int = 0
-    wins: int
-    losses: int
-    wins_today: int = 0
-    wins_yesterday: int = 0
-    losses_today: int = 0
-    losses_yesterday: int = 0
+    # Rezultatele tranzactiilor (trades/wins/P&L) NU mai sunt aici — sursa unica
+    # e MT5 (/mt5/sessions, /mt5/stats). Sesiunea expune doar starea Bot Engine.
     paused: bool = False
     news_paused: bool = False
     news_events: list = []
-    pnl_usd_today: Optional[float] = None
-    pnl_usd_yesterday: Optional[float] = None
-    pnl_usd_total: Optional[float] = None
-    pnl_count: Optional[int] = None
 
 
 class Signal(BaseModel):
@@ -46,26 +35,7 @@ class Signal(BaseModel):
     sl: float
     tp: float
     r_ratio: float
-
-
-class Outcome(BaseModel):
-    signal_id: str
-    time_check: str
-    symbol: str
-    direction: int
-    status: str
-    entry: float
-    sl: float
-    tp: float
-    r_ratio: float
-    triggered_at: Optional[str]
-    exit_price: Optional[float]
-    exit_time: Optional[str]
-    result_r: float
-    pnl_usd: Optional[float] = None
-    # Filtru AI Pre-Trade — None cand filtrul nu a participat la acest semnal
-    ai_approved: Optional[bool] = None
-    ai_confidence: Optional[float] = None
+    status: Optional[str] = None   # starea semnalului din jurnalul Bot Engine (ai_reject, expirat, TP...)
 
 
 class BotStatus(BaseModel):
@@ -79,9 +49,3 @@ class BotStatus(BaseModel):
     active_profile_start_balance: Optional[float] = None
     last_started_at: Optional[str] = None
     last_stopped_at: Optional[str] = None
-
-
-class EquityCurvePoint(BaseModel):
-    date: str
-    cumulative_r: float
-    session_id: str

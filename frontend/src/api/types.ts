@@ -37,6 +37,7 @@ export interface Mt5EquityCurveResponse {
 export interface Mt5TradeStats {
   connected: boolean;
   total_trades: number;
+  by_source?: { bot: number; ai: number; manual: number };
   wins: number;
   losses: number;
   trades_today: number;
@@ -73,15 +74,7 @@ export interface SessionStatus {
   signals_yesterday: number;
   signals_total: number;
   last_signal_time: string | null;
-  outcomes_total: number;
-  outcomes_today: number;
-  outcomes_yesterday: number;
-  wins: number;
-  losses: number;
-  wins_today: number;
-  wins_yesterday: number;
-  losses_today: number;
-  losses_yesterday: number;
+  // Rezultatele (trades/wins/P&L) vin exclusiv din MT5 — vezi Mt5SessionStat.
   paused: boolean;
   news_paused: boolean;
   news_events: Array<{
@@ -91,10 +84,6 @@ export interface SessionStatus {
     event_time: string;
     minutes_to: number;
   }>;
-  pnl_usd_today: number | null;
-  pnl_usd_yesterday: number | null;
-  pnl_usd_total: number | null;
-  pnl_count: number | null;
 }
 
 export interface Signal {
@@ -107,33 +96,7 @@ export interface Signal {
   sl: number;
   tp: number;
   r_ratio: number;
-}
-
-export interface Outcome {
-  signal_id: string;
-  time_check: string;
-  symbol: string;
-  direction: number;
-  status: string;
-  entry: number;
-  sl: number;
-  tp: number;
-  r_ratio: number;
-  triggered_at: string | null;
-  exit_price: number | null;
-  exit_time: string | null;
-  result_r: number;
-  pnl_usd: number | null;
-  commission_usd: number | null;
-  swap_usd: number | null;
-  ai_approved?: boolean | null;
-  ai_confidence?: number | null;
-}
-
-export interface EquityCurvePoint {
-  date: string;
-  cumulative_r: number;
-  session_id: string;
+  status: string | null;   // starea din jurnalul Bot Engine: ai_reject, expirat, TP, SL...
 }
 
 export interface ProfileSession {
@@ -176,6 +139,7 @@ export interface ProfileSession {
   atr_max_pips: Record<string, number>;
   circuit_breaker: number;
   r_base: number;
+  rr_level?: "short" | "standard" | "extended";
   r_mid: number;
   r_top: number;
   r_max: number;
@@ -320,27 +284,6 @@ export interface BacktestResult {
   hour_stats?: Record<number, HourStat>;
 }
 
-export interface PeriodStats {
-  start: string;
-  end: string;
-  trades: number;
-  wins: number;
-  losses: number;
-  total_r: number;
-  win_rate: number;
-  max_dd_r: number;
-  pnl_usd: number | null;
-  commission_usd?: number;
-  swap_usd?: number;
-}
-
-export interface WeeklyStats {
-  current_week: PeriodStats;
-  previous_week: PeriodStats;
-  current_month: PeriodStats;
-  previous_month: PeriodStats;
-}
-
 export interface Mt5PeriodStats {
   start: string;
   end: string;
@@ -463,52 +406,7 @@ export interface NotificationsResponse {
 
 // ── Reports ───────────────────────────────────────────────────────────────────
 
-export interface Transaction {
-  signal_id: string;
-  session_id: string;
-  session_label: string;
-  time_check: string;
-  symbol: string;
-  direction: number;
-  dir_str: string;
-  status: string;
-  entry: number;
-  sl: number;
-  tp: number;
-  r_ratio: number;
-  triggered_at: string | null;
-  exit_price: number | null;
-  exit_time: string | null;
-  result_r: number;
-  pnl_usd: number | null;
-  ai_approved?: boolean | null;
-  ai_confidence?: number | null;
-  ai_n_councils?: number | null;
-  ai_consensus?: number | null;
-}
-
-export interface TransactionsResponse {
-  items: Transaction[];
-  total: number;
-}
-
 export interface MarketStat {
-  symbol: string;
-  trades: number;
-  wins: number;
-  losses: number;
-  total_r: number;
-  win_rate: number;
-  expectancy: number;
-  pnl_usd: number | null;
-  sessions: string[];
-}
-
-export interface MarketStatsResponse {
-  items: MarketStat[];
-}
-
-export interface TopMarketEntry {
   symbol: string;
   trades: number;
   wins: number;
@@ -560,7 +458,11 @@ export interface Mt5SessionsResponse {
   connected: boolean;
   items: Mt5SessionStat[];
   error: string | null;
+  unassigned?: Record<string, number>;   // tranzactii pe piete fara card (ex: AI pe AUDUSD)
 }
+
+// Filtrul de sursa al Dashboard-ului (pagina intreaga) — default "all".
+export type SourceFilter = "all" | "bot" | "ai" | "manual";
 
 export interface Mt5Transaction {
   ticket: number;
@@ -579,6 +481,12 @@ export interface Mt5Transaction {
   pnl_usd: number;
   commission_usd: number;
   swap_usd: number;
+  // Atribuire din magic + comment-ul ordinului (api/mt5_pool.py::classify_trade)
+  source: "bot" | "ai" | "manual";
+  session_id: string | null;
+  strategy: "pullback" | "inside_bar" | "flag" | "smart_news" | null;
+  ai_approved: boolean | null;     // verdictul Filtrului AI Pre-Trade (doar bot)
+  ai_confidence: number | null;
 }
 
 export interface Mt5TransactionsResponse {
@@ -644,35 +552,6 @@ export interface SystemLogsResponse {
   total: number;
 }
 
-export interface SyncDiscrepancy {
-  type: string;
-  sig_id: string;
-  symbol: string;
-  ticket?: number;
-  status?: string;
-  result_r?: number;
-  pnl_usd?: number;
-  exit_time?: string;
-  detail: string;
-}
-
-export interface SyncSessionReport {
-  session_id: string;
-  label: string;
-  discrepancies: SyncDiscrepancy[];
-  fixed: number;
-}
-
-export interface SyncResult {
-  ok: boolean | null;
-  time: string | null;
-  total_discrepancies: number | null;
-  total_fixed: number;
-  fix_applied: boolean;
-  error?: string;
-  sessions: SyncSessionReport[];
-}
-
 export interface CostStat {
   symbol: string;
   trades: number;
@@ -694,12 +573,6 @@ export interface CostsDayAggregate {
   has_cost_data: boolean;
 }
 
-export interface CostsResponse {
-  items: CostStat[];
-  today?: CostsDayAggregate;
-  yesterday?: CostsDayAggregate;
-}
-
 export interface CostsDayEntry {
   date: string;
   trades: number;
@@ -710,13 +583,6 @@ export interface CostsDayEntry {
   pnl_usd: number | null;
   total_r: number | null;
   has_cost_data: boolean;
-}
-
-export interface CostsDailyResponse {
-  items: CostsDayEntry[];
-  total_commission: number;
-  total_swap: number;
-  total_costs: number;
 }
 
 // ── AI Engine (motor autonom AI — ai_engine/) ────────────────────────────────
@@ -737,6 +603,7 @@ export interface AiStatus {
   pid: number | null;
   ts: string | null;
   mode: "demo" | "shadow" | null;
+  account_is_demo?: boolean;
   model: string | null;
   markets: string[] | null;
   equity: number | null;
@@ -745,6 +612,8 @@ export interface AiStatus {
   // Config per piata: statistici SEPARATE per simbol + pietele izolate
   scorecard_by_symbol?: Record<string, AiScorecard> | null;
   isolated_markets?: string[] | null;
+  market_status?: Record<string, AiMarketStatus> | null;
+  global_limits?: { max_open_positions: number; max_daily_loss_R: number; daily_r: number } | null;
 }
 
 // Override-uri per piata (toate campurile optionale; lipsa = comportament global)
@@ -755,7 +624,19 @@ export interface MarketOverride {
   max_daily_loss_R?: number | null;    // stop zilnic pe piata
   max_trades_per_day?: number | null;  // anti-overtrading
   fixed_lots?: number | null;          // volum FIX per ordin (null = sizing dinamic pe risc)
-  isolated?: boolean;                  // date separate, excluse din scorecard-ul principal
+  isolated?: boolean;                  // LEGACY — inlocuit de mode
+  mode?: "active" | "observe";         // observe = analizeaza, ZERO ordine, exclus din scorecard
+}
+
+// Starea LIVE a limitelor unei piete (status.json → market_status)
+export interface AiMarketStatus {
+  mode: "active" | "observe";
+  daily_r: number;
+  trades_today: number;
+  max_daily_loss_R: number | null;
+  max_trades_per_day: number | null;
+  can_open: boolean;
+  blocked_reason: string | null;
 }
 
 // Raspunsul POST /ai/lot-info — costul real (MT5) al unui volum fix pe o piata
@@ -820,6 +701,7 @@ export interface AiConfig {
   risk_pct_default: number;
   risk_pct_max: number;
   max_open_positions: number;
+  disabled_triggers?: string[];
   max_daily_loss_R: number;
   heartbeat_hours: number;
   council_cooldown_min: number;
@@ -943,4 +825,71 @@ export interface AiProviderModelsResult {
   count?: number;
   detail?: string;
   kind?: string | null;
+}
+
+// ── Daily Engine (intraday ORB, mod SHADOW) ──────────────────────────────────
+export type DailyPhase =
+  | "waiting_open" | "forming_or" | "waiting_entry" | "in_position" | "closed"
+  | "skipped" | "weekend" | "disabled" | "error";
+
+export interface DailyMarketStatus {
+  symbol: string;
+  label?: string;
+  role?: string;
+  entry_mode?: "breakout" | "direction";
+  or_minutes?: number;
+  day?: string;
+  window_ro?: string;
+  window_local?: string;
+  phase: DailyPhase;
+  reason?: string;
+  note?: string;
+  or_hi?: number;
+  or_lo?: number;
+  side?: 1 | -1;
+  entry?: number;          // pretul de intrare (virtual), cand exista pozitie
+  entry_min?: number;
+  sl?: number;
+  last?: number;
+  open_R?: number;
+  R?: number;
+  exit?: number;
+  exit_min?: number;
+}
+
+export interface DailyScore {
+  trades: number;
+  wins: number;
+  losses: number;
+  total_R: number;
+  expectancy_R: number | null;
+  win_rate: number | null;
+}
+
+export interface DailyStatus {
+  running: boolean;
+  pid: number | null;
+  mode: string;
+  heartbeat?: string;
+  server_offset_h?: number | null;
+  account?: { login?: number; server?: string; is_demo?: boolean };
+  markets?: DailyMarketStatus[];
+  scorecard?: DailyScore & { by_symbol: Record<string, DailyScore> };
+  errors?: string[];
+  backtest_ref?: Record<string, { trades: number; expectancy_R: number; period: string; verdict: string }>;
+}
+
+export interface DailyTrade {
+  day: string;
+  symbol: string;
+  side: "LONG" | "SHORT";
+  entry: number;
+  sl: number;
+  exit: number;
+  R: number;
+  reason: "SL" | "TP" | "EOD";
+  or_hi: number;
+  or_lo: number;
+  mode: string;
+  recorded_at: string;
 }

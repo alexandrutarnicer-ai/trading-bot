@@ -1,20 +1,23 @@
 import { Pause, Play, Clock, Layers } from "lucide-react";
-import type { SessionStatus } from "../api/types";
+import type { SessionStatus, Mt5SessionStat } from "../api/types";
 import { usePauseSession, useResumeSession } from "../api/hooks";
 
 interface Props {
   session: SessionStatus;
+  /** Rezultatele tranzactiilor sesiunii, din MT5 (undefined = MT5 indisponibil) */
+  mt5?: Mt5SessionStat;
   onClick: () => void;
   selected: boolean;
 }
 
-export function SessionCard({ session: s, onClick, selected }: Props) {
+export function SessionCard({ session: s, mt5: m, onClick, selected }: Props) {
   const pause  = usePauseSession();
   const resume = useResumeSession();
 
-  const wr = s.outcomes_total > 0
-    ? Math.round((s.wins / s.outcomes_total) * 100)
-    : null;
+  const closed = m ? m.wins + m.losses : 0;
+  const wr = m && closed > 0 ? Math.round((m.wins / closed) * 100) : null;
+  const pnlToday = m?.pnl_usd_today ?? 0;
+  const pnlYest  = m?.pnl_usd_yesterday ?? 0;
 
   const isPaused   = s.paused;
   const isNewsPaused = s.news_paused;
@@ -119,13 +122,13 @@ export function SessionCard({ session: s, onClick, selected }: Props) {
 
       {/* Stats row */}
       <div className={`grid grid-cols-3 gap-2 text-center ${isPaused || isNewsPaused ? "opacity-60" : ""}`}>
-        <div>
+        <div title="Semnale detectate azi de Bot Engine">
           <div className="text-lg font-bold text-white">{s.signals_today}</div>
-          <div className="text-[10px] text-slate-500">azi</div>
+          <div className="text-[10px] text-slate-500">semn. azi</div>
         </div>
-        <div>
-          <div className="text-lg font-bold text-white">{s.signals_total}</div>
-          <div className="text-[10px] text-slate-500">total</div>
+        <div title="Tranzacții închise în MT5 (doar Bot Engine, sesiunea aceasta)">
+          <div className="text-lg font-bold text-white">{m ? m.trades_total : "—"}</div>
+          <div className="text-[10px] text-slate-500">trades</div>
         </div>
         <div>
           {wr !== null ? (
@@ -143,17 +146,16 @@ export function SessionCard({ session: s, onClick, selected }: Props) {
       </div>
 
       {/* P&L USD azi / ieri — afisat DOAR cand exista o valoare reala (nu 0.00) */}
-      {((s.pnl_usd_today != null && s.pnl_usd_today !== 0) ||
-        (s.pnl_usd_yesterday != null && s.pnl_usd_yesterday !== 0)) && (
+      {(pnlToday !== 0 || pnlYest !== 0) && (
         <div className={`mt-2 flex gap-3 text-[10px] ${isPaused || isNewsPaused ? "opacity-60" : ""}`}>
-          {s.pnl_usd_today != null && s.pnl_usd_today !== 0 && (
-            <span className={s.pnl_usd_today > 0 ? "text-profit" : "text-loss"}>
-              {s.pnl_usd_today > 0 ? "+" : ""}{s.pnl_usd_today.toFixed(2)} USD azi
+          {pnlToday !== 0 && (
+            <span className={pnlToday > 0 ? "text-profit" : "text-loss"}>
+              {pnlToday > 0 ? "+" : ""}{pnlToday.toFixed(2)} USD azi
             </span>
           )}
-          {s.pnl_usd_yesterday != null && s.pnl_usd_yesterday !== 0 && (
-            <span className={s.pnl_usd_yesterday > 0 ? "text-profit/60" : "text-loss/60"}>
-              {s.pnl_usd_yesterday > 0 ? "+" : ""}{s.pnl_usd_yesterday.toFixed(2)} ieri
+          {pnlYest !== 0 && (
+            <span className={pnlYest > 0 ? "text-profit/60" : "text-loss/60"}>
+              {pnlYest > 0 ? "+" : ""}{pnlYest.toFixed(2)} ieri
             </span>
           )}
         </div>
