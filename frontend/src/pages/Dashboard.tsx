@@ -252,7 +252,10 @@ export function Dashboard() {
       <div className="flex items-center justify-between gap-4">
         {/* Stanga: profil + cont MT5 */}
         <div className="flex items-center gap-4 flex-wrap">
-          <span className="text-sm font-semibold text-white">{profileLabel} Profile</span>
+          <div className="leading-tight">
+            <h1 className="text-base font-bold text-white">Dashboard</h1>
+            <p className="text-[10px] text-slate-500">3 engine-uri · rezultate direct din MT5 · profil {profileLabel.replace(/\s*Profile$/i, "").toLowerCase()}</p>
+          </div>
           {mt5?.connected && (
             <div className="flex items-center gap-3 text-xs text-slate-400 bg-surface-card border border-surface-border rounded-lg px-3 py-1.5">
               <span className="text-slate-500">Cont</span>
