@@ -58,6 +58,10 @@ def _setup_logging() -> None:
     fh = RotatingFileHandler(LOG_FILE, maxBytes=2_000_000, backupCount=3, encoding="utf-8")
     fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
     log.addHandler(fh)
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")   # stdout -> fisier: diacritice fara erori
+    except Exception:
+        pass
     sh = logging.StreamHandler(sys.stdout)
     sh.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
     log.addHandler(sh)

@@ -10,7 +10,8 @@ converteste tranzactiile), configurabile in data/reports_config.json (GET/PUT /r
                niciodata sambata / duminica / luni.
   Lunar      : in ziua monthly_day (1) la monthly_time (09:00) — LUNA CALENDARISTICA completa
                precedenta (inclusiv weekendurile). Daca API-ul era oprit, se trimite la prima
-               ocazie din luna respectiva (marcaj in data/reports_state.json, fara dubluri).
+               ocazie din PRIMELE 7 ZILE (marcaj in data/reports_state.json, fara dubluri);
+               mai tarziu nu se mai trimite (ar fi un raport vechi de saptamani).
 Continutul saptamanal / lunar: api/reports_builder.py (performanta per engine, comparatie,
 conditii de piata, evenimente, weekend, probleme, analiza AI — fiecare sectiune izolata).
 
@@ -123,9 +124,16 @@ def weekly_due(now: datetime, cfg: dict, st: dict) -> bool:
     return st.get("weekly_sent") != now.date().isoformat()
 
 
+MONTHLY_CATCHUP_DAYS = 7     # recuperare doar in prima saptamana dupa ziua programata
+
+
 def monthly_due(now: datetime, cfg: dict, st: dict) -> bool:
     h, m = _hm(cfg["monthly_time"])
     if (now.day, now.hour, now.minute) < (cfg["monthly_day"], h, m):
+        return False
+    # API oprit mult timp / prima pornire la final de luna: NU trimite raportul lunii trecute cu
+    # saptamani intarziere (incident 31.10: raportul pe septembrie a plecat pe 31 octombrie)
+    if now.day >= cfg["monthly_day"] + MONTHLY_CATCHUP_DAYS:
         return False
     start, _ = monthly_window(now)
     return st.get("monthly_sent") != start.strftime("%Y-%m")
