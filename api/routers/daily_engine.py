@@ -76,7 +76,9 @@ def daily_status():
     if not running:
         st["scorecard"] = scorecard(load_trades())   # disponibil si cu motorul oprit
     st["backtest_ref"] = BACKTEST_REF
-    st.setdefault("mode", load_config()["mode"])
+    _cfg = load_config()
+    st.setdefault("mode", _cfg["mode"])
+    st.setdefault("sizing", _cfg.get("sizing"))
     return st
 
 

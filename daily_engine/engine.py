@@ -33,6 +33,7 @@ if ROOT not in sys.path:
 
 from daily_engine.config import DATA_DIR, ENTRY_MODES, load_config, save_default_config, hm_to_min  # noqa: E402
 from daily_engine.strategy import evaluate_day  # noqa: E402
+import position_sizing as ps  # noqa: E402
 
 PID_FILE = os.path.join(DATA_DIR, "daily_engine.pid")
 STATUS_FILE = os.path.join(DATA_DIR, "status.json")
@@ -132,7 +133,9 @@ def scorecard(trades: list[dict]) -> dict:
         rs = [t["R"] for t in ts]
         n = len(rs)
         w = sum(1 for r in rs if r > 0)
+        est = [t["pnl_money_est"] for t in ts if t.get("pnl_money_est") is not None]
         return {"trades": n, "wins": w, "losses": sum(1 for r in rs if r < 0),
+                "pnl_money_est": round(sum(est), 2) if est else None,
                 "total_R": round(sum(rs), 3), "expectancy_R": round(sum(rs) / n, 3) if n else None,
                 "win_rate": round(w / n, 3) if n else None}
     syms = sorted({t["symbol"] for t in trades})
@@ -246,8 +249,13 @@ class DailyEngine:
         side = {1: "LONG", -1: "SHORT"}.get(st.get("side"), "")
         if st["phase"] in ("in_position", "closed") and "entry" not in sent:
             sent.append("entry")
+            sz = self.virtual_size(sym, st)
+            ev.setdefault(f"{key}|size", sz)
+            lot_txt = (f"\nLot ipotetic {sz['lots']} · risc ~{sz['risk_money']:.2f} {sz['currency']}"
+                       + (" (lot minim > țintă)" if sz.get("at_min_lot") else "")) if sz.get("lots") else ""
             msg = (f"🧪 <b>Daily SHADOW — {sym} {side}</b> (virtual, fără ordin)\n"
-                   f"Intrare {st['entry']:.5g} | SL {st['sl']:.5g} | interval {st['or_lo']:.5g}–{st['or_hi']:.5g}")
+                   f"Intrare {st['entry']:.5g} | SL {st['sl']:.5g} | interval {st['or_lo']:.5g}–{st['or_hi']:.5g}"
+                   + lot_txt)
             log.info(msg.replace("<b>", "").replace("</b>", ""))
             _notify(self.cfg, msg)
         if st["phase"] == "closed" and "closed" not in sent:
@@ -256,6 +264,10 @@ class DailyEngine:
                    "exit": st["exit"], "R": round(st["R"], 4), "reason": st["reason"],
                    "or_hi": st["or_hi"], "or_lo": st["or_lo"], "risk": st["risk"],
                    "mode": self.cfg["mode"], "recorded_at": datetime.now(RO).isoformat(timespec="seconds")}
+            sz = ev.get(f"{key}|size") or self.virtual_size(sym, st)
+            if sz.get("lots"):
+                rec.update(lots=sz["lots"], risk_money=round(sz["risk_money"], 4),
+                           pnl_money_est=round(st["R"] * sz["risk_money"], 4), currency=sz["currency"])
             with open(TRADES_FILE, "a", encoding="utf-8") as f:
                 f.write(json.dumps(rec, ensure_ascii=False) + "\n")
             icon = "✅" if st["R"] > 0 else "❌"
@@ -272,6 +284,19 @@ class DailyEngine:
                 ev.pop(k, None)
         _write_json(STATE_FILE, self.state)
 
+    def virtual_size(self, sym: str, st: dict) -> dict:
+        """Lotul pe care Daily l-ar plasa (aceeasi componenta ca Custom / AI). Shadow: doar estimare."""
+        try:
+            sz = self.cfg.get("sizing") or {}
+            acc = self.mt5.account_info()
+            eq = float(getattr(acc, "equity", 0) or 0) if acc else 0.0
+            base = ps.capital_base(sz.get("capital_sync_mt5", True), sz.get("capital_usd"), eq)
+            cap = base * ps.clamp_fraction(sz.get("fraction", 1.0))
+            r = ps.size_by_risk(self.mt5.symbol_info(sym), st["entry"], st["sl"], cap, sz.get("risk_pct", 0.01))
+            return {**r, "currency": getattr(acc, "currency", "USD") if acc else "USD", "capital": round(cap, 2)}
+        except Exception as e:                 # estimarea nu are voie sa opreasca shadow-ul
+            return {"lots": 0.0, "risk_money": None, "reason": str(e), "currency": "USD"}
+
     def iteration(self, now_utc: datetime | None = None) -> dict:
         self.cfg = load_config()                        # hot-reload
         now_utc = now_utc or datetime.now(timezone.utc)
@@ -287,6 +312,7 @@ class DailyEngine:
                   "heartbeat": datetime.now(RO).isoformat(timespec="seconds"),
                   "server_offset_h": None if self.server_offset_s is None else self.server_offset_s / 3600,
                   "account": self.account, "markets": markets, "scorecard": scorecard(trades),
+                  "sizing": self.cfg.get("sizing"),
                   "errors": self.errors}
         _write_json(STATUS_FILE, status)
         return status

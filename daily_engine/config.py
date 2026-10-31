@@ -24,6 +24,10 @@ DEFAULTS: dict = {
     "mode": "shadow",
     "poll_seconds": 15,
     "notify_telegram": True,
+    # Dimensionare — ACEEASI logica pe toate engine-urile (position_sizing): baza = equity MT5
+    # (sau capital fix plafonat), × fractie, × risc%. In SHADOW se calculeaza doar lotul pe care
+    # l-ar fi plasat (estimare in bani a trade-ului virtual), fara ordin.
+    "sizing": {"capital_sync_mt5": True, "capital_usd": None, "fraction": 1.0, "risk_pct": 0.01},
     "markets": [
         {"symbol": "GBPUSD", "enabled": True, "label": "Dimineata — deschiderea Londrei",
          "tz": "Europe/London", "open": "08:00", "last_bar": "14:25",
@@ -44,7 +48,15 @@ def hm_to_min(s: str) -> int:
 
 def _sanitize(cfg: dict) -> dict:
     out = copy.deepcopy(DEFAULTS)
-    out.update({k: v for k, v in cfg.items() if k in DEFAULTS and k != "markets"})
+    out.update({k: v for k, v in cfg.items() if k in DEFAULTS and k not in ("markets", "sizing")})
+    sz = {**DEFAULTS["sizing"], **(cfg.get("sizing") or {})}
+    try:
+        sz["fraction"] = max(0.0, min(1.0, float(sz.get("fraction") or 0)))
+        sz["risk_pct"] = max(0.0, min(0.02, float(sz.get("risk_pct") or 0)))
+        sz["capital_sync_mt5"] = bool(sz.get("capital_sync_mt5", True))
+    except (TypeError, ValueError):
+        sz = dict(DEFAULTS["sizing"])
+    out["sizing"] = sz
     if out["mode"] not in MODES:
         out["mode"] = "shadow"
     out["poll_seconds"] = max(5, min(120, int(out.get("poll_seconds") or 15)))

@@ -1,3 +1,4 @@
+import { PositionSizingCard } from "../components/PositionSizingCard";
 import { useState, useEffect } from "react";
 import { Bot, Play, Square, Brain, AlertTriangle, ChevronDown, ChevronRight, RefreshCw, Loader2 } from "lucide-react";
 import {
@@ -827,6 +828,33 @@ function MarketLimitsCard() {
 
 // ── Pagina ────────────────────────────────────────────────────────────────────
 
+function AiSizingCard() {
+  const { data: cfg } = useAiConfig();
+  const [sym, setSym] = useState<string | null>(null);
+  if (!cfg) return null;
+  const markets = cfg.markets ?? [];
+  const symbol = sym ?? markets[0];
+  const ov = ((cfg.market_overrides ?? {}) as Record<string, MarketOverride>)[symbol ?? ""] ?? {};
+  // Aceeasi regula ca executor.place: fractia per piata (implicit 100%), riscul ales de consiliu
+  // plafonat la risk_pct (piata) / risk_pct_max (global) — exemplul foloseste plafonul.
+  const frac = ov.capital_fraction ?? 1.0;
+  const risk = Math.min(ov.risk_pct ?? (cfg.risk_pct_max as number) ?? 0.01, (cfg.risk_pct_max as number) ?? 0.01);
+  return (
+    <div className="bg-surface rounded-xl border border-surface-border p-4 space-y-2">
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-sm font-semibold text-white">Dimensionarea poziției</span>
+        <span className="text-[11px] text-slate-500">riscul exact îl alege consiliul pe fiecare decizie (exemplul = plafonul de risc)</span>
+        <select value={symbol ?? ""} onChange={e => setSym(e.target.value)}
+          className="ml-auto bg-surface-card border border-surface-border rounded px-2 py-0.5 text-[11px] text-white">
+          {markets.map(m => <option key={m} value={m}>{m}</option>)}
+        </select>
+      </div>
+      <PositionSizingCard engine="AI Engine" symbol={symbol} fraction={frac} riskPct={risk}
+        fixedLots={ov.fixed_lots ?? null} capitalSync={cfg.capital_sync_mt5 ?? true} capitalUsd={cfg.capital_usd ?? null} />
+    </div>
+  );
+}
+
 export function AiEnginePage() {
   const { data: st } = useAiStatus();
   const { data: decisions } = useAiDecisions(30);
@@ -942,6 +970,8 @@ export function AiEnginePage() {
       <CapitalConfig />
 
       <MarketLimitsCard />
+
+      <AiSizingCard />
 
       <AiProvidersCard />
 

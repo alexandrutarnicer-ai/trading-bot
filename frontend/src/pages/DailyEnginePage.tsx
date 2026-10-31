@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { CalendarClock, Loader2, Play, Square, FlaskConical } from "lucide-react";
+import { PositionSizingCard } from "../components/PositionSizingCard";
 import { useDailyStatus, useDailyTrades, useDailyLogs, useDailyStart, useDailyStop } from "../api/hooks";
 import type { DailyMarketStatus, DailyScore } from "../api/types";
 
@@ -166,6 +167,15 @@ export function DailyEnginePage() {
         )}
       </div>
 
+      <div className="bg-surface rounded-xl border border-surface-border p-4 space-y-3">
+        <div className="text-sm font-semibold text-white">Dimensionarea poziției <span className="text-[11px] font-normal text-slate-500">— în SHADOW se calculează doar lotul ipotetic al fiecărui trade virtual (estimare în bani)</span></div>
+        {(st?.markets ?? []).map(m => (
+          <PositionSizingCard key={m.symbol} engine="Daily Engine" symbol={m.symbol}
+            fraction={st?.sizing?.fraction ?? 1} riskPct={st?.sizing?.risk_pct ?? 0.01}
+            capitalSync={st?.sizing?.capital_sync_mt5 ?? true} capitalUsd={st?.sizing?.capital_usd ?? null} />
+        ))}
+      </div>
+
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         {[
           { label: "Trade-uri virtuale", value: String(sc?.trades ?? 0) },
@@ -191,7 +201,7 @@ export function DailyEnginePage() {
               <thead className="text-slate-500">
                 <tr className="text-left">
                   <th className="py-1">Zi</th><th>Piață</th><th>Direcție</th><th>Intrare</th><th>SL</th>
-                  <th>Ieșire</th><th>Motiv</th><th className="text-right">R</th>
+                  <th>Ieșire</th><th>Motiv</th><th>Lot ipotetic</th><th className="text-right">≈ bani (estimat)</th><th className="text-right">R</th>
                 </tr>
               </thead>
               <tbody>
@@ -204,6 +214,8 @@ export function DailyEnginePage() {
                     <td className="text-slate-400">{fmt(t.sl)}</td>
                     <td className="text-slate-300">{fmt(t.exit)}</td>
                     <td className="text-slate-400">{t.reason === "EOD" ? "final de zi" : t.reason}</td>
+                    <td className="text-slate-400">{t.lots ?? "—"}</td>
+                    <td className={`text-right ${rCls(t.pnl_money_est)}`}>{t.pnl_money_est != null ? `${t.pnl_money_est > 0 ? "+" : ""}${t.pnl_money_est.toFixed(2)} ${t.currency ?? ""}` : "—"}</td>
                     <td className={`text-right font-semibold ${rCls(t.R)}`}>{fmtR(t.R)}</td>
                   </tr>
                 ))}

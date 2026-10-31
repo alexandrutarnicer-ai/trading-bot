@@ -877,6 +877,7 @@ export interface DailyStatus {
   scorecard?: DailyScore & { by_symbol: Record<string, DailyScore> };
   errors?: string[];
   backtest_ref?: Record<string, { trades: number; expectancy_R: number; period: string; verdict: string }>;
+  sizing?: { capital_sync_mt5: boolean; capital_usd: number | null; fraction: number; risk_pct: number };
 }
 
 export interface DailyTrade {
@@ -888,6 +889,10 @@ export interface DailyTrade {
   exit: number;
   R: number;
   reason: "SL" | "TP" | "EOD";
+  lots?: number;            // lotul ipotetic (aceeasi dimensionare ca Custom / AI)
+  risk_money?: number;
+  pnl_money_est?: number;   // R × risc in bani — ESTIMARE, trade-ul e virtual
+  currency?: string;
   or_hi: number;
   or_lo: number;
   mode: string;
@@ -966,4 +971,24 @@ export interface TradingPaceResponse {
   custom: EnginePace;
   ai: EnginePace;
   daily: EnginePace;
+}
+
+// ── Dimensionarea pozitiei (/sizing/preview) — aceeasi logica pe toate engine-urile ──
+export interface SizingPreview {
+  connected: boolean;
+  error: string | null;
+  symbol?: string;
+  synced_at?: string;
+  account?: { balance: number; equity: number; margin: number; free_margin: number; currency: string;
+              leverage: number; is_demo: boolean; login: number; server: string;
+              margin_call_pct: number; stop_out_pct: number } | null;
+  spec?: { volume_min: number; volume_max: number; volume_step: number; tick_size: number; tick_value: number;
+           contract_size: number; digits: number; stops_level_points: number; currency_profit: string;
+           value_per_price_unit: number | null; price: number; margin_per_lot: number | null };
+  inputs?: { fraction: number; risk_pct: number; fixed_lots: number | null };
+  sl?: { distance: number | null; source: string };
+  result?: { capital_base: number; fraction: number; capital: number; mode: "risk" | "fixed";
+             lots?: number; raw_lots?: number | null; risk_money?: number | null; target_money?: number | null;
+             at_min_lot?: boolean; capped_max?: boolean; ratio?: number | null; reason?: string | null;
+             margin_need?: number; margin_pct_free?: number; risk_pct_equity?: number; equity_for_target?: number };
 }

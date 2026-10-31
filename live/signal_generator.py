@@ -33,6 +33,7 @@ from strategy.structure import detect_setup
 from strategy.patterns import detect_flag, detect_inside_bar
 from strategy.signals import pip_size, count_optional, reward_R
 from live import global_guard
+import position_sizing as ps
 
 
 # ---------------------------------------------------------------------------
@@ -349,30 +350,14 @@ def _write_health_alerts(alerts: dict) -> None:
 
 def _calc_lots(symbol: str, entry: float, sl: float,
                capital: float, risk_pct: float) -> tuple[float, float | None]:
-    """Calculeaza lotajul si riscul real in USD pentru 1R.
-
-    Returns:
-        (lots, risk_usd) — risk_usd = lot × sl_pips × pip_val (USD efectiv per 1R)
-                           risk_usd = None daca MT5 nedisponibil
-    """
+    """Lotajul pentru un risc tinta + riscul real in moneda contului pentru 1R.
+    Calculul e cel COMUN tuturor engine-urilor (position_sizing.size_by_risk).
+    Returns (lots, risk_usd); lots == 0 → ordinul NU se plaseaza (MT5 indisponibil,
+    capital alocat 0, SL invalid) — inainte se plasa lotul minim / 0.01 orbeste."""
     if _mt5_exec is None:
-        return 0.01, None
-    info = _mt5_exec.symbol_info(symbol)
-    if info is None:
-        return 0.01, None
-    pip     = pip_size(symbol)
-    sl_pips = abs(entry - sl) / pip
-    if sl_pips <= 0 or info.trade_tick_size <= 0:
-        return info.volume_min, None
-    pip_val = info.trade_tick_value / info.trade_tick_size * pip
-    if pip_val <= 0:
-        return info.volume_min, None
-    raw  = (capital * risk_pct) / (sl_pips * pip_val)
-    step = info.volume_step if info.volume_step > 0 else 0.01
-    lot  = max(info.volume_min, (raw // step) * step)
-    lot  = round(lot, 2)
-    risk_usd = round(lot * sl_pips * pip_val, 4)
-    return lot, risk_usd
+        return 0.0, None
+    r = ps.size_by_risk(_mt5_exec.symbol_info(symbol), entry, sl, capital, risk_pct)
+    return r["lots"], (round(r["risk_money"], 4) if r["risk_money"] is not None else None)
 
 
 # ── Sizing pe LOT FIX (per sesiune, optional, oprit by default) ───────────────
@@ -398,18 +383,9 @@ def _fixed_lots_active(session_cfg: dict) -> bool:
 
 
 def _snap_lots_to_broker(info, lots: float) -> float:
-    """
-    Aliniaza `lots` la constrangerile brokerului: clamp la [volume_min, volume_max]
-    si rotunjire in JOS la volume_step (nu crestem niciodata expunerea peste ce a
-    cerut utilizatorul, cu exceptia lotului minim — sub el ordinul nu exista).
-    Floor cu epsilon: fara el, 0.5 / 0.01 = 49 (eroare float) → 0.49 in loc de 0.50.
-    """
-    step = info.volume_step if info.volume_step > 0 else 0.01
-    snapped = int(float(lots) / step + 1e-9) * step
-    snapped = max(info.volume_min, snapped)
-    if info.volume_max and info.volume_max > 0:
-        snapped = min(snapped, info.volume_max)
-    return round(snapped, 2)
+    """Aliniere la volume_min / volume_step / volume_max — componenta comuna
+    (position_sizing.snap_volume, floor cu epsilon: 0.5 nu mai devine 0.49)."""
+    return ps.snap_volume(info, lots)
 
 
 def _fixed_lot_size(symbol: str, entry: float, sl: float, direction: int,
@@ -441,13 +417,8 @@ def _fixed_lot_size(symbol: str, entry: float, sl: float, direction: int,
         need  = _mt5_exec.order_calc_margin(otype, symbol, lots, entry)
         if acc is not None and need is not None and need > 0:
             free = float(acc.margin_free)
-            cap  = free * _FIXED_LOT_MARGIN_CAP
-            if cap > 0 and need > cap:
-                # Marja e ~liniara in volum → volumul maxim care incape sub `cap`.
-                step        = info.volume_step if info.volume_step > 0 else 0.01
-                margin_per_lot = need / lots
-                fitted      = int((cap / margin_per_lot) / step + 1e-9) * step
-                fitted      = max(info.volume_min, round(fitted, 2))
+            fitted, reduced = ps.fit_to_margin(info, lots, need, free, _FIXED_LOT_MARGIN_CAP)
+            if reduced:
                 if fitted < lots:
                     reduction = {"requested": lots, "final": fitted,
                                  "margin_need": round(need, 2),
@@ -512,6 +483,10 @@ def _place_order(sig: dict, lots: float, expire_bars: int,
     if _mt5_exec is None:
         log.warning("  [EXEC] MetaTrader5 indisponibil.")
         return False
+    if not lots or lots <= 0:
+        log.warning(f"  [EXEC] {sig.get('signal_id')}: volum 0 (sizing imposibil acum) — "
+                    "nu plasez, reincerc la bara urmatoare")
+        return None
 
     symbol    = sig["symbol"]
     direction = sig["direction"]
@@ -900,26 +875,30 @@ def _ai_filter_check(sig: dict, session_cfg: dict, src, log) -> dict | None:
 
 def _bot_capital_base(session_cfg: dict, equity: float | None) -> float:
     """
-    Baza de capital a BOTULUI pentru sizing, aliniata cu motorul AI
-    (executor.capital_base):
-      - capital_sync_mt5 True (DEFAULT): equity-ul REAL MT5 — comportament identic
-        cu cel de dinainte (sizing dinamic pe equity × account_fraction).
-      - capital_sync_mt5 False: capital FIX alocat botului (capital_usd), PLAFONAT
-        la equity cand acesta e disponibil (nu poti aloca mai mult decat exista;
-        util cand acelasi cont ruleaza si motorul AI / trade-uri manuale).
-    Peste aceasta baza se aplica in continuare account_fraction per sesiune.
-    `equity` None/0 (MT5 indisponibil) → capitalul fix ca atare / 0 la sync.
-    Campurile lipsesc din profil → sync ON (backward-compat total).
+    Baza de capital a BOTULUI — identica cu AI Engine (position_sizing.capital_base):
+    capital_sync_mt5 True (DEFAULT / camp lipsa) = equity-ul REAL MT5; False = capital
+    FIX alocat (capital_usd), plafonat la equity. equity None/0 → 0 la sync (fara ordin).
+    Peste aceasta baza se aplica account_fraction per sesiune.
     """
-    sync = session_cfg.get("capital_sync_mt5", True)
-    if sync:
-        return float(equity) if equity else 0.0
-    try:
-        cap = float(session_cfg.get("capital_usd") or 0.0)
-    except (TypeError, ValueError):
-        cap = 0.0
-    eq = float(equity) if equity else 0.0
-    return min(cap, eq) if eq > 0 else cap
+    return ps.capital_base(session_cfg.get("capital_sync_mt5", True),
+                           session_cfg.get("capital_usd"), equity)
+
+
+def _session_capital(session_cfg: dict, log) -> float:
+    """Capitalul alocat sesiunii = baza (equity MT5 / capital fix) × account_fraction.
+    0 cand equity-ul MT5 nu se poate citi sau fractia lipseste → ordinul NU se plaseaza
+    (inainte: fallback orb pe $1000 — pe un cont de ~$200 risc de ~5x)."""
+    if _fixed_lots_active(session_cfg):
+        return 0.0          # lotul fix nu foloseste capitalul (fractia e ignorata)
+    frac = ps.clamp_fraction(session_cfg.get("account_fraction"))
+    acc = _mt5_exec.account_info() if _mt5_exec is not None else None
+    if acc is None or frac <= 0:
+        log.warning(f"  [SIZING] capital alocat 0 ({'equity MT5 indisponibil' if acc is None else 'fractie de cont 0'}) — ordinul nu se plaseaza la aceasta bara")
+        return 0.0
+    capital = _bot_capital_base(session_cfg, acc.equity) * frac
+    log.debug("sizing: equity=%.2f frac=%.3f capital=%.2f (sync=%s)", acc.equity, frac, capital,
+              session_cfg.get("capital_sync_mt5", True))
+    return capital
 
 
 def _ai_strict_blocked(session_cfg: dict, verdict: dict | None) -> bool:
@@ -3079,14 +3058,9 @@ def _smart_news_place_order(
         return
 
     # Sizing cu risc 1.5 × risk_base (mod dinamic) SAU lot fix daca e activ pe sesiune
-    frac      = session_cfg.get("account_fraction")
     risk_base = session_cfg.get("risk_base", session_cfg.get("risk_pct", 0.01))
     risk_pct  = risk_base * 1.5
-    capital   = 1000.0
-    if frac and _mt5_exec is not None:
-        _ai = _mt5_exec.account_info()
-        if _ai:
-            capital = _bot_capital_base(session_cfg, _ai.equity) * float(frac)
+    capital   = _session_capital(session_cfg, log)
     lots, risk_usd, _lot_reduction = _resolve_order_lots(
         symbol, entry, sl, direction, capital, risk_pct, session_cfg, log)
 
@@ -4233,18 +4207,7 @@ def run_generator(session_cfg: dict):
                     if session_cfg.get("execute_trades", False):
                         # Sizing dinamic: baza de capital (equity sync sau capital fix
                         # alocat, aliniat cu motorul AI) × account_fraction per sesiune.
-                        frac = session_cfg.get("account_fraction")
-                        if frac and _mt5_exec is not None:
-                            _ai = _mt5_exec.account_info()
-                            capital = (_bot_capital_base(session_cfg, _ai.equity) * frac
-                                       if _ai else session_cfg.get("session_capital", 1000))
-                            log.debug(
-                                "sizing dinamic: equity=%.2f frac=%.3f capital=%.2f (sync=%s)",
-                                _ai.equity if _ai else 0, frac, capital,
-                                session_cfg.get("capital_sync_mt5", True),
-                            )
-                        else:
-                            capital = session_cfg.get("session_capital", 1000)
+                        capital = _session_capital(session_cfg, log)
                         _sig_type = sig.get("signal_type", "pullback")
                         if _sig_type == "flag":
                             risk_pct = session_cfg.get("flag_risk_pct", 0.01)
@@ -4300,12 +4263,7 @@ def run_generator(session_cfg: dict):
                 # Retry plasare pentru semnale pending fara ticket MT5 inca
                 # (order_send a returnat None la bara precedenta — eroare tranzitorie)
                 if not session_paused and session_cfg.get("execute_trades", False):
-                    frac    = session_cfg.get("account_fraction")
-                    capital = session_cfg.get("session_capital", 1000)
-                    if frac and _mt5_exec is not None:
-                        _ai = _mt5_exec.account_info()
-                        if _ai:
-                            capital = _bot_capital_base(session_cfg, _ai.equity) * frac
+                    capital = _session_capital(session_cfg, log)
 
                     for _sid, _p in list(state["pending"].get(symbol, {}).items()):
                         if _sid in state.get("mt5_tickets", {}):

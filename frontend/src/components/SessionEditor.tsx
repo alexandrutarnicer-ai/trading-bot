@@ -5,7 +5,7 @@ import { useMt5Markets, useMt5Status, useMarketAtr, useAiProviders, useAiLotInfo
 import { BacktestPanel } from "./BacktestPanel";
 import { InfoTooltip } from "./InfoTooltip";
 import { ImageTooltip } from "./ImageTooltip";
-import { MARKET_SPECS, calcOvershoot } from "../marketSpecs";
+import { PositionSizingCard } from "./PositionSizingCard";
 
 interface Props {
   session: ProfileSession;
@@ -84,12 +84,13 @@ const TIPS = {
   circuit_breaker: "Oprește tranzacționarea după N pierderi consecutive în aceeași zi. Repornește la miezul nopții.",
   risk_pct:      "Procentul din equity riscat per tranzacție. Equity-ul este citit din MT5 la fiecare ordin.",
   account_fraction: [
-    "Fracția din equity-ul total MT5 alocat acestei sesiuni.",
+    "Ce parte din equity-ul REAL MT5 se folosește pentru calculul lotului acestei piețe.",
     "",
-    "Ex: 12.5% → la $800 equity → $100 capital sesiune.",
-    "Fiecare trade din sesiune riscă risk% din această sumă.",
+    "Lot = equity × fracție × risc% ÷ (distanța SL × valoarea punctului) — calculat la fiecare ordin.",
+    "Ex: $206 × 20% × 1% = $0,41 țintă de risc pe trade.",
     "",
-    "Sesiunea poate tranzacționa simultan pe mai multe piețe — capitalul NU e împărțit per piață, ci fiecare trade folosește aceeași bază de calcul a lot-ului.",
+    "Influențează DOAR mărimea lotului — nu SL/TP, nu protecțiile. Suma fracțiilor nu trebuie să fie 100%.",
+    "Dacă ținta e sub lotul minim al brokerului, se plasează lotul minim (vezi cardul de mai jos).",
   ].join("\n"),
   fixed_lots: [
     "Volum FIX pe fiecare ordin (loturi), în loc de calculul dinamic din capital × risc%.",
@@ -782,114 +783,12 @@ export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted,
                       />
                     </div>
                     <div className="flex-1 text-xs text-slate-500 leading-relaxed pt-3">
-                      {equity != null && capital != null && riskBaseUsd != null && riskMaxUsd != null ? (
-                        <>
-                          <span className="text-slate-300 font-medium">${fmt(capital)}</span>
-                          {" "}capital sesiune
-                          {session.markets.length > 1 && (
-                            <> · <span className="text-slate-400">${fmt(capital / session.markets.length)}</span>/piață</>
-                          )}
-                          <br />
-                          risc/trade:{" "}
-                          <span className="text-loss font-medium">~${fmt(riskBaseUsd)}</span>
-                          {riskBaseUsd !== riskMaxUsd && (
-                            <> → <span className="text-warn font-medium">~${fmt(riskMaxUsd)}</span></>
-                          )}
-                          <span className="text-slate-600"> (Base→Max)</span>
-                          {session.markets.length > 0 && (
-                            <span className="text-slate-600"> × max {session.markets.length} piețe simultan</span>
-                          )}
-                          {/* Lot minim per piată */}
-                          {session.markets.length > 0 && (() => {
-                            const capitalPerMarket = capital / session.markets.length;
-                            const rows = session.markets.map(m => {
-                              const spec = MARKET_SPECS[m.toUpperCase()];
-                              if (!spec) return null;
-                              const over = calcOvershoot(capitalPerMarket, rBase, spec);
-                              return { m, spec, over };
-                            }).filter(Boolean) as { m: string; spec: typeof MARKET_SPECS[string]; over: ReturnType<typeof calcOvershoot> }[];
-                            if (rows.length === 0) return null;
-                            return (
-                              <div className="mt-2 pt-2 border-t border-surface-border/30">
-                                <div className="flex items-center gap-1 text-[10px] text-slate-600 uppercase tracking-wider mb-1">
-                                  Lot minim broker (estimat live)
-                                  <InfoTooltip
-                                    position="above"
-                                    align="right"
-                                    wide
-                                    text={
-                                      "Brokerul impune un volum minim per ordin (ex: 0.1 loturi pentru indici).\n\n" +
-                                      "Dacă lotajul calculat din (capital × risc%) e sub acest minim, botul plasează automat lotajul minim — " +
-                                      "riscând mai mult decât intenționat.\n\n" +
-                                      "Valorile sunt estimații bazate pe un SL tipic pentru această strategie și cursuri valutare aproximative."
-                                    }
-                                  />
-                                </div>
-                                <div className="space-y-0.5">
-                                  {rows.map(({ m, spec, over }) => (
-                                    <div key={m} className="flex items-center gap-2 text-[11px]">
-                                      <span className="font-mono text-slate-400 w-16 flex-shrink-0">{m}</span>
-                                      <span className="text-slate-600">
-                                        min {spec.volMin} lot
-                                        <InfoTooltip
-                                          position="above"
-                                          text={`Volumul minim acceptat de broker pentru ${m}. Sub această valoare, ordinul este respins.`}
-                                        />
-                                      </span>
-                                      {over ? (
-                                        <>
-                                          <span className="text-slate-600">→</span>
-                                          <span className={over.factor >= 8 ? "text-loss" : "text-warn"}>
-                                            ~${over.actualRisk.toFixed(0)} real
-                                            <InfoTooltip
-                                              position="above"
-                                              wide
-                                              text={
-                                                `Riscul real estimat la lotajul minim de ${spec.volMin} loturi.\n\n` +
-                                                `Intenționat: $${over.intendedRisk.toFixed(2)} (capital/piață × risc%)\n` +
-                                                `Real (lot min): ~$${over.actualRisk.toFixed(0)}\n\n` +
-                                                "Estimat pe SL tipic al strategiei — variază per semnal."
-                                              }
-                                            />
-                                          </span>
-                                          <span className={`font-mono text-[10px] ${over.factor >= 8 ? "text-loss/70" : "text-warn/70"}`}>
-                                            ({over.factor.toFixed(0)}× int.
-                                            <InfoTooltip
-                                              position="above"
-                                              wide
-                                              text={
-                                                `De câte ori riscul real depășește cel intenționat din cauza lotajului minim.\n\n` +
-                                                `${over.factor.toFixed(0)}× = riscul real este de ~${over.factor.toFixed(0)} ori mai mare decât cel configurat.\n\n` +
-                                                "Portocaliu = 2–8×, Roșu = peste 8×. Problema dispare când contul crește suficient pentru a genera natural lotajul minim."
-                                              }
-                                            />
-                                            )
-                                          </span>
-                                        </>
-                                      ) : (
-                                        <span className="text-profit text-[10px]">
-                                          ✓ lot calc. ok
-                                          <InfoTooltip
-                                            position="above"
-                                            text="Lotajul calculat din risc% × capital depășește minimul brokerului — riscul real este aproape de cel intenționat."
-                                          />
-                                        </span>
-                                      )}
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            );
-                          })()}
-                        </>
-                      ) : (
-                        <span className="text-slate-600">
-                          {frac > 0
-                            ? `${(frac * 100).toFixed(1)}% din equity MT5`
-                            : "0% — sesiunea nu alocă capital"}
-                          {equity == null ? " (MT5 deconectat)" : ""}
-                        </span>
-                      )}
+                      {frac > 0
+                        ? <>Partea din equity-ul MT5 folosită pentru calculul lotului acestei piețe · risc <b className="text-slate-300">{(rBase * 100).toFixed(2)}%</b> pe trade
+                            {equity != null && capital != null && riskBaseUsd != null
+                              ? <> → țintă ~${fmt(riskBaseUsd)} din ${fmt(capital)}{riskMaxUsd != null && riskMaxUsd !== riskBaseUsd ? ` (max ~$${fmt(riskMaxUsd)})` : ""}</>
+                              : " (MT5 deconectat)"}</>
+                        : "0% — sesiunea nu alocă capital: ordinele NU se plasează (doar cu lot fix)"}
                     </div>
                   </div>
 
@@ -933,6 +832,13 @@ export function SessionEditor({ session, meta, onChange, onRemove, onJobStarted,
                       </div>
                     )}
                   </div>
+                  <PositionSizingCard
+                    engine="Custom Engine"
+                    symbol={session.markets[0]?.toUpperCase()}
+                    fraction={frac}
+                    riskPct={rBase}
+                    fixedLots={fixedLotsActive ? (session.fixed_lots ?? 0.01) : null}
+                  />
                 </div>
               );
             })()}

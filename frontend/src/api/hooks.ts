@@ -924,3 +924,23 @@ export const useTradingPace = () =>
     refetchIntervalInBackground: false,
     staleTime: 5 * 60_000,
   });
+
+// ── Previzualizare dimensionare (acelasi calcul ca la ordine) ────────────────
+import type { SizingPreview } from "./types";
+
+export const useSizingPreview = (p: { symbol?: string; fraction: number; riskPct: number;
+                                      fixedLots?: number | null; capitalSync?: boolean; capitalUsd?: number | null }) =>
+  useQuery<SizingPreview>({
+    queryKey: ["sizing-preview", p.symbol, p.fraction, p.riskPct, p.fixedLots ?? null, p.capitalSync ?? true, p.capitalUsd ?? null],
+    queryFn: () => {
+      const q = new URLSearchParams({ symbol: p.symbol ?? "", fraction: String(p.fraction), risk_pct: String(p.riskPct),
+                                      capital_sync_mt5: String(p.capitalSync ?? true) });
+      if (p.fixedLots) q.set("fixed_lots", String(p.fixedLots));
+      if (p.capitalUsd) q.set("capital_usd", String(p.capitalUsd));
+      return apiFetch(`/sizing/preview?${q.toString()}`);
+    },
+    enabled: !!p.symbol,
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
+  });

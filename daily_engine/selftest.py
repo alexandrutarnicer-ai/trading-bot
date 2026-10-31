@@ -159,9 +159,10 @@ class _FakeMt5:
     def initialize(self): return True
     def shutdown(self): pass
     def last_error(self): return (0, "ok")
-    def account_info(self): return SimpleNamespace(login=1, server="Fake", trade_mode=0)
+    def account_info(self): return SimpleNamespace(login=1, server="Fake", trade_mode=0, equity=206.0, currency="USD")
     def symbol_select(self, s, f): return True
-    def symbol_info(self, s): return SimpleNamespace(point=0.01)
+    def symbol_info(self, s): return SimpleNamespace(point=0.01, volume_min=0.1, volume_step=0.1, volume_max=100.0,
+                                                     trade_tick_size=0.01, trade_tick_value=0.01)
     def symbol_info_tick(self, s): return SimpleNamespace(time=int(self.now.timestamp()) + self.offset_h * 3600)
     def copy_rates_from_pos(self, s, tf, a, n): return self.rates
 
@@ -192,6 +193,11 @@ def t_engine():
           phases == ["forming_or", "in_position", "in_position", "in_position", "closed"], phases)
     trades = E.load_trades()
     check("un singur trade inregistrat", len(trades) == 1 and trades[0]["side"] == "LONG" and trades[0]["R"] > 0, trades)
+    tr0 = trades[0] if trades else {}
+    # 1% din $206 = $2.06 la SL 6.51 puncte ($1/punct/lot) -> 0.316 -> floor la pas 0.1 = 0.3 loturi
+    check("dimensionare comuna pe trade-ul virtual (0.3 loturi, risc $1.95)",
+          tr0.get("lots") == 0.3 and abs(tr0.get("risk_money", 0) - 1.953) < 1e-3
+          and abs(tr0.get("pnl_money_est", 0) - tr0["R"] * tr0["risk_money"]) < 1e-3, tr0)
     eng.iteration(fake.now)
     check("re-iteratie: fara dublura", len(E.load_trades()) == 1)
     check("notificari: intrare + inchidere, o singura data", len(sent) == 2, len(sent))
