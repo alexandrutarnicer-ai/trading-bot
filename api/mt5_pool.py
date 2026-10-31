@@ -211,11 +211,14 @@ def _fetch_closed_trades_raw(mt5, days: int) -> list[dict]:
 # ── Atribuire tranzactie → engine / sesiune / strategie ──────────────────────
 # MT5 e sursa de adevar pentru rezultate; atribuirea vine din magic + comment-ul
 # ordinului de intrare, scrise de engine-uri la plasare:
-#   AI Engine : magic 770015, comment "AI-<id>"
-#   Bot Engine: magic 0,      comment "S<n>-<SIMBOL>-<SIG|IB|FLG|SN><nr>" (trunchiat la 16)
-#   altceva   : manual
+#   AI Engine   : magic 770015, comment "AI-<id>"
+#   Daily Engine: magic 880001, comment "D-<simbol>-<zi>" — REZERVAT: in mod SHADOW engine-ul
+#                 nu plaseaza ordine, deci nu exista (inca) tranzactii daily in MT5
+#   Bot Engine  : magic 0,      comment "S<n>-<SIMBOL>-<SIG|IB|FLG|SN><nr>" (trunchiat la 16)
+#   altceva     : manual (nicio sursa nu e ghicita)
 
 AI_MAGIC = 770015
+DAILY_MAGIC = 880001        # tinut sincron cu daily_engine/config.py::MAGIC
 _BOT_COMMENT_RE = re.compile(r"^S(\d+)-")
 _SMART_NEWS_RE  = re.compile(r"^SN\d+$")
 _STRATEGY_TAGS  = (("SIG", "pullback"), ("IB", "inside_bar"), ("FLG", "flag"))
@@ -237,9 +240,11 @@ def _strategy_from_comment(comment: str) -> str | None:
 
 
 def classify_trade(magic: int, comment: str) -> dict:
-    """{source: bot|ai|manual, session_id: 'sessionN'|None, strategy: str|None}."""
+    """{source: bot|ai|daily|manual, session_id: 'sessionN'|None, strategy: str|None}."""
     if magic == AI_MAGIC:
         return {"source": "ai", "session_id": None, "strategy": None}
+    if magic == DAILY_MAGIC:
+        return {"source": "daily", "session_id": None, "strategy": "orb"}
     m = _BOT_COMMENT_RE.match(comment or "")
     if not m:
         # Ordinele "Mod Inteligent" la stiri au comment "SN<nr>" (fara prefix de sesiune)
@@ -337,6 +342,8 @@ def _classify_source(magic: int, comment: str) -> str:
     """Clasifica originea unui ordin/pozitii: bot (sesiuni reguli) / ai / manual."""
     if magic == _AI_MAGIC or (comment or "").startswith("AI-"):
         return "ai"
+    if magic == DAILY_MAGIC:
+        return "daily"
     c = (comment or "").strip()
     if c.startswith("S") and "-" in c:
         return "bot"

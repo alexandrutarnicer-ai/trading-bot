@@ -18,6 +18,7 @@ DATA_DIR = os.path.join(ROOT, "data", "daily_engine")
 
 MODES = ("shadow",)          # DOAR shadow in aceasta versiune — zero ordine reale
 ENTRY_MODES = {"breakout": "brk", "direction": "dir"}
+MAGIC = 880001               # rezervat pentru ordinele reale viitoare (api/mt5_pool.DAILY_MAGIC)
 
 DEFAULTS: dict = {
     "mode": "shadow",

@@ -86,7 +86,7 @@ def _build_report(trades: list[dict] | None, title: str) -> str:
     labels = {s["id"]: s["label"] for s in SESSIONS}
     bot = [t for t in trades if t.get("source") == "bot"]
     if bot:
-        lines.append(f"\n⚙️ <b>Bot Engine:</b> {_summary_line(bot)}")
+        lines.append(f"\n⚙️ <b>Custom Engine:</b> {_summary_line(bot)}")
         lines += _grouped(bot, lambda t: labels.get(t.get("session_id"), t["symbol"]))
         by_strat = _grouped(bot, lambda t: _STRATEGY_LABELS.get(t.get("strategy"), "—"))
         if len(by_strat) > 1:
@@ -97,6 +97,11 @@ def _build_report(trades: list[dict] | None, title: str) -> str:
     if ai:
         lines.append(f"\n🤖 <b>AI Engine:</b> {_summary_line(ai)}")
         lines += _grouped(ai, lambda t: t["symbol"])
+
+    daily = [t for t in trades if t.get("source") == "daily"]
+    if daily:
+        lines.append(f"\n🕘 <b>Daily Engine:</b> {_summary_line(daily)}")
+        lines += _grouped(daily, lambda t: t["symbol"])
 
     manual = [t for t in trades if t.get("source") == "manual"]
     if manual:

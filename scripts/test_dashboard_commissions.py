@@ -46,6 +46,16 @@ def check(cond, msg):
 
 
 # ---------------------------------------------------------------------------
+# Atribuirea sursei (magic + comment) — fara ghicire
+# ---------------------------------------------------------------------------
+print("\n0. Atribuire sursa tranzactie")
+check(classify_trade(770015, "AI-12")["source"] == "ai", "magic 770015 -> ai")
+check(classify_trade(880001, "D-US500-1102")["source"] == "daily", "magic 880001 -> daily (rezervat Daily Engine)")
+check(classify_trade(0, "S7-XRPUSD-SIG0003")["source"] == "bot", "comment S<n>- -> bot (Custom Engine)")
+check(classify_trade(0, "")["source"] == "manual", "fara magic/comment cunoscut -> manual (nu se inventeaza sursa)")
+check(classify_trade(0, "D-US500-1102")["source"] == "manual", "comment D- fara magic Daily -> manual (doar magic-ul atribuie)")
+
+# ---------------------------------------------------------------------------
 # Tranzactii sintetice (close_time = ora locala naiva, ca in mt5_pool)
 # ---------------------------------------------------------------------------
 AI_MAGIC = 770015
@@ -172,7 +182,7 @@ try:
     print("\n[Test 5] raport Telegram — construit din MT5, Bot / AI separat")
     import api.scheduled_reports as sr
     txt = sr._build_report(sr._mt5_trades(_today, _today + timedelta(days=1)), "T")
-    check("Bot Engine:</b> 1 trades" in txt, "sectiunea Bot Engine are tranzactia botului de azi")
+    check("Custom Engine:</b> 1 trades" in txt, "sectiunea Custom Engine are tranzactia botului de azi")
     check("AI Engine:</b> 2 trades" in txt, "sectiunea AI Engine are cele 2 tranzactii AI de azi")
     check("MT5 indisponibil" in sr._build_report(None, "T"), "MT5 indisponibil → mesaj explicit, nu raport gol")
 

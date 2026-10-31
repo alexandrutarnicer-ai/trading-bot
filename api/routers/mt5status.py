@@ -34,7 +34,7 @@ _SYMBOL_TO_SESSION: dict[str, str] = {
     m: s["id"] for s in SESSIONS for m in s["markets"]
 }
 
-_SOURCES = ("bot", "ai", "manual")
+_SOURCES = ("bot", "ai", "daily", "manual")
 
 
 def _by_source(trades: list, source: str) -> list:
@@ -313,7 +313,7 @@ def mt5_transactions(
     offset: int = 0,
 ):
     """Lista tranzactiilor inchise, calculate direct din MT5 history_deals_get.
-    `source` = bot|ai|manual, `session_id` = sessionN (atribuire din comment/magic),
+    `source` = bot|ai|daily|manual, `session_id` = sessionN (atribuire din comment/magic),
     `date_from`/`date_to` = YYYY-MM-DD inclusiv, pe ora de inchidere."""
     try:
         trades = mt5_pool.get_closed_trades(400)
