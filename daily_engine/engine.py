@@ -313,8 +313,8 @@ class DailyEngine:
         # protectiile globale (capital, circuit breaker, max pozitii / piata) + stiri globale
         from live import global_guard
         ok_g, reason = global_guard.check_open(self.mt5, "daily", sym)
-        if ok_g:
-            try:
+        if ok_g and global_guard.load_settings()["news_protection"]["enabled"]:
+            try:                            # calendarul se descarca DOAR cand protectia globala e activa
                 from live.news_guard import _fetch_forexfactory
                 if global_guard.news_window_active(sym, _fetch_forexfactory()):
                     ok_g, reason = False, "fereastră de știri (Setări Globale)"
