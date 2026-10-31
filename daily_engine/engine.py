@@ -39,6 +39,7 @@ STATUS_FILE = os.path.join(DATA_DIR, "status.json")
 STATE_FILE = os.path.join(DATA_DIR, "state.json")
 TRADES_FILE = os.path.join(DATA_DIR, "trades.jsonl")
 LOG_FILE = os.path.join(DATA_DIR, "engine.log")
+DESIRED_FILE = os.path.join(DATA_DIR, "desired_running.json")   # sters doar de Stop-ul din UI
 RO = ZoneInfo("Europe/Bucharest")
 _MUTEX_NAMES = ("Global\\TradingBot_DailyEngine_SingleInstance", "Local\\TradingBot_DailyEngine_SingleInstance")
 _mutex_handle = None
@@ -316,6 +317,8 @@ def _run() -> None:
         return
     with open(PID_FILE, "w") as f:
         f.write(str(os.getpid()))
+    _write_json(DESIRED_FILE, {"running": True, "since": datetime.now(RO).isoformat(timespec="seconds"),
+                               "pid": os.getpid()})
     eng = DailyEngine()
     log.info("Daily Engine pornit — mod SHADOW (trade-uri virtuale, zero ordine reale)")
     _notify(cfg, "🧪 <b>Daily Engine pornit</b> — mod SHADOW (fără ordine reale)\n"

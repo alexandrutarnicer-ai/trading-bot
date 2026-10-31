@@ -26,6 +26,10 @@ router = APIRouter(prefix="/daily", tags=["daily_engine"])
 PID_FILE = os.path.join(DATA_DIR, "daily_engine.pid")
 STATUS_FILE = os.path.join(DATA_DIR, "status.json")
 LOG_FILE = os.path.join(DATA_DIR, "engine.log")
+# Starea DORITA: scrisa de engine la pornire (orice cale: UI, autostart, manual), stearsa DOAR de
+# Stop-ul din UI. Watchdog-ul API (api/watchdog.py) reporneste engine-ul daca procesul moare
+# fara Stop. Tinut sincron cu daily_engine/engine.py::DESIRED_FILE.
+DESIRED_FILE = os.path.join(DATA_DIR, "desired_running.json")
 
 # Referinta backtest (docs/DAILY_ENGINE_PLAN.md sect. 8) — afisata langa rezultatele shadow
 BACKTEST_REF = {
@@ -96,12 +100,16 @@ def daily_stop():
     pid = _read_pid()
     if not pid or not _pid_alive(pid):
         raise HTTPException(409, "Daily Engine nu ruleaza")
+    # INTAI starea dorita — altfel watchdog-ul ar putea reporni engine-ul imediat dupa kill
+    try:
+        os.remove(DESIRED_FILE)
+    except OSError:
+        pass
     subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)], capture_output=True, text=True)
-    for path in (PID_FILE,):
-        try:
-            os.remove(path)
-        except OSError:
-            pass
+    try:
+        os.remove(PID_FILE)
+    except OSError:
+        pass
     try:
         with open(STATUS_FILE, encoding="utf-8") as f:
             st = json.load(f)

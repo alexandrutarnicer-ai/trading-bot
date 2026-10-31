@@ -191,9 +191,43 @@ def _check_capital_protection(ap: dict) -> None:
         pass
 
 
+_daily_restarts: list[float] = []      # momentele repornirilor automate (fereastra 1h)
+
+
+def _check_daily_engine() -> None:
+    """Daily Engine pornit (desired_running.json) dar proces mort, fara Stop -> Telegram +
+    repornire automata (max 3/ora; dupa aceea alerta si renunta, ca sa nu bucleze)."""
+    from api.routers import daily_engine as de
+    if not os.path.isfile(de.DESIRED_FILE):
+        return
+    pid = de._read_pid()
+    if pid and _pid_alive(pid):
+        return
+    now = time.time()
+    _daily_restarts[:] = [t for t in _daily_restarts if now - t < 3600]
+    if len(_daily_restarts) >= 3:
+        tg.send_message("<b>Daily Engine nu rămâne pornit</b> — 3 reporniri automate în ultima oră.\n"
+                        "<i>Oprit din watchdog. Verifică data/daily_engine/stdout.log și crash.log.</i>")
+        try:
+            os.remove(de.DESIRED_FILE)
+        except OSError:
+            pass
+        return
+    _daily_restarts.append(now)
+    try:
+        de.daily_start()
+        tg.send_message("<b>Daily Engine oprit neașteptat</b> — repornit automat de watchdog (mod SHADOW).")
+    except Exception as e:
+        tg.send_message(f"<b>Daily Engine oprit neașteptat</b> — repornirea a eșuat: {e}")
+
+
 def _watchdog_loop() -> None:
     while True:
         time.sleep(_CHECK_INTERVAL)
+        try:
+            _check_daily_engine()
+        except Exception:
+            pass
         try:
             ap = _read_active_profile()
             if ap is None:
