@@ -13,7 +13,7 @@ from collections import deque
 from datetime import date, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 
 from api.config import DATA_DIR
 
@@ -181,16 +181,42 @@ def trigger_daily_report(target_date: Optional[str] = None):
 
 
 @router.post("/send-weekly")
-def trigger_weekly_report(week_start: Optional[str] = None):
-    """
-    Trimite manual raportul saptamanal via Telegram + Notificari.
-    week_start: YYYY-MM-DD (default: luni din saptamana curenta)
-    """
-    from api.scheduled_reports import send_weekly_report
-    today = date.today()
-    ws = date.fromisoformat(week_start) if week_start else today - timedelta(days=today.weekday())
-    text = send_weekly_report(ws)
-    return {"sent": True, "week_start": str(ws), "preview": text[:200]}
+def trigger_weekly_report():
+    """Trimite ACUM raportul saptamanal complet (fereastra: vinerea trecuta la ora raportului ->
+    cea mai recenta vineri la ora raportului). Trimiterea automata ramane doar vineri."""
+    from api.scheduled_reports import send_period_report
+    text = send_period_report("weekly")
+    return {"sent": True, "preview": text[:300]}
+
+
+@router.post("/send-monthly")
+def trigger_monthly_report():
+    """Trimite ACUM raportul lunar al lunii calendaristice precedente (complete)."""
+    from api.scheduled_reports import send_period_report
+    text = send_period_report("monthly")
+    return {"sent": True, "preview": text[:300]}
+
+
+@router.get("/config")
+def reports_config():
+    from api.scheduled_reports import load_reports_config, weekly_window, monthly_window
+    from tz_helper import now_local, get_configured_tz_name
+    cfg = load_reports_config()
+    now = now_local()
+    ws, we = weekly_window(now, cfg)
+    ms, me = monthly_window(now)
+    return {**cfg, "timezone": get_configured_tz_name(),
+            "last_weekly_window": [ws.isoformat(), we.isoformat()],
+            "last_monthly_window": [ms.isoformat(), me.isoformat()]}
+
+
+@router.put("/config")
+def reports_config_save(body: dict):
+    from api.scheduled_reports import save_reports_config
+    try:
+        return save_reports_config(body)
+    except (ValueError, TypeError) as e:
+        raise HTTPException(400, str(e))
 
 
 @router.post("/ai-data-cleanup")

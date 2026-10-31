@@ -5,6 +5,7 @@ import { MatrixSettings } from "../components/MatrixSettings";
 import { LiveTradingCard } from "../components/LiveTradingCard";
 import { GlobalSettingsCard } from "../components/GlobalSettingsCard";
 import { TimezoneSelector } from "./ProfilePage";
+import { ReportsSettingsCard } from "../components/ReportsSettingsCard";
 
 /**
  * Settings — setarile GLOBALE ale aplicatiei, comune pentru Custom Engine + AI Engine:
@@ -19,6 +20,7 @@ export function SettingsPage() {
       <LiveTradingCard />
       <GlobalSettingsCard />
       <TelegramSettings />
+      <ReportsSettingsCard />
       <TelegramBridgeCard />
       <MatrixSettings />
       <TimezoneSelector />
