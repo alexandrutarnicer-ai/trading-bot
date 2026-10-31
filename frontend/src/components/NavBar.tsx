@@ -1,4 +1,5 @@
 import { useBacktestJobs, useDownloadJobs, useNotifications } from "../api/hooks";
+import { BrandLockup } from "./BrandLogo";
 
 type Tab = "dashboard" | "profile" | "ai" | "daily" | "settings" | "notifications" | "audit" | "reports" | "guide";
 
@@ -33,7 +34,7 @@ export function NavBar({ active, onChange }: Props) {
 
   return (
     <header className="sticky top-0 z-10 bg-surface border-b border-surface-border flex items-center gap-1 px-6 h-12">
-      <span className="text-sm font-bold text-white tracking-wide mr-5">Trading Bot</span>
+      <BrandLockup />
       {TABS.map(({ id, label }) => (
         <button
           key={id}

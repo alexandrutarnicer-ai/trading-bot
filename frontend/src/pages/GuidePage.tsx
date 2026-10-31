@@ -270,7 +270,7 @@ export function GuidePage() {
         <div className="flex items-center gap-3 mb-2">
           <BookOpen size={20} className="text-blue-400" />
           <div>
-            <h1 className="text-lg font-bold text-white">Ghid Trading Bot</h1>
+            <h1 className="text-lg font-bold text-white">Ghid No Trading</h1>
             <p className="text-xs text-slate-500">Documentație completă — cele 3 engine-uri, Dashboard, protecții, date (actualizat 31.10.2026)</p>
           </div>
         </div>
@@ -1740,7 +1740,7 @@ export function GuidePage() {
 
         {/* Footer */}
         <div className="border-t border-surface-border pt-6 text-center text-xs text-slate-600 space-y-1">
-          <p>Trading Bot — Ghid intern · Ultima actualizare: {new Date().toLocaleDateString("ro-RO")}</p>
+          <p>No Trading — Ghid intern · Ultima actualizare: {new Date().toLocaleDateString("ro-RO")}</p>
           <p className="text-slate-700">
             Nicio modificare la fișierele <code>strategy/</code>, <code>engine/</code> sau <code>live/</code>
             nu este necesară pentru funcționarea UI.
