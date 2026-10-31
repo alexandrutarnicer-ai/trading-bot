@@ -57,13 +57,15 @@ function rColor(v: number) {
 const STATUS_FILTERS = ["Toate", "TP", "SL"];
 const SOURCE_FILTERS: Array<{ id: "" | Mt5Transaction["source"]; label: string }> = [
   { id: "",       label: "Toate" },
-  { id: "bot",    label: "Bot" },
+  { id: "bot",    label: "Custom" },
   { id: "ai",     label: "AI" },
+  { id: "daily",  label: "Daily" },
   { id: "manual", label: "Manual" },
 ];
 const SOURCE_BADGE: Record<Mt5Transaction["source"], { label: string; cls: string }> = {
-  bot:    { label: "BOT", cls: "bg-blue-500/15 text-blue-300" },
+  bot:    { label: "CUSTOM", cls: "bg-emerald-500/15 text-emerald-300" },
   ai:     { label: "AI",  cls: "bg-purple-500/15 text-purple-300" },
+  daily:  { label: "DAILY", cls: "bg-cyan-500/15 text-cyan-300" },
   manual: { label: "MAN", cls: "bg-slate-500/20 text-slate-300" },
 };
 const STRATEGY_LABEL: Record<string, string> = {

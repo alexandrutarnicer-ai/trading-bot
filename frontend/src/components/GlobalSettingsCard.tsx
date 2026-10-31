@@ -4,7 +4,7 @@ import { useGlobalSettings, useSaveGlobalSettings } from "../api/hooks";
 import type { GlobalSettings } from "../api/hooks";
 
 /**
- * Setări Globale — punct unic de control pentru Bot Engine + AI Engine.
+ * Setări Globale — punct unic de control pentru Custom Engine + AI Engine.
  *
  * Regula: „cea mai strictă câștigă". Globalul e un minim de siguranță peste
  * setările fiecărei piețe; o piață poate fi mai strictă, niciodată mai permisivă.

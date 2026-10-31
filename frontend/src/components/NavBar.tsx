@@ -1,6 +1,4 @@
 import { useBacktestJobs, useDownloadJobs, useNotifications } from "../api/hooks";
-import { AutostartToggle } from "./AutostartToggle";
-import { AiAutostartToggle } from "./AiAutostartToggle";
 
 type Tab = "dashboard" | "profile" | "ai" | "daily" | "settings" | "notifications" | "audit" | "reports" | "guide";
 
@@ -78,10 +76,6 @@ export function NavBar({ active, onChange }: Props) {
           )}
         </button>
       ))}
-      <div className="ml-auto flex items-center gap-2">
-        <AutostartToggle />
-        <AiAutostartToggle />
-      </div>
     </header>
   );
 }

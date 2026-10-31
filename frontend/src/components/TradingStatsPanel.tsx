@@ -83,7 +83,7 @@ export function TradingStatsPanel({ sessions, mt5, botStatus, source = "all" }: 
   const [expanded, setExpanded] = useState(false);
   const { data: mt5Stats } = useMt5Stats(source);
 
-  // Semnalele nu au echivalent in MT5 (sunt detectii pre-tranzactie ale Bot Engine)
+  // Semnalele nu au echivalent in MT5 (sunt detectii pre-tranzactie ale Custom Engine)
   // — singura statistica luata din jurnalul botului. Doar sesiunile live.
   const liveSessions = sessions.filter(x => x.execute);
   const totalSignals = liveSessions.reduce((s, x) => s + x.signals_total,     0);
@@ -130,7 +130,7 @@ export function TradingStatsPanel({ sessions, mt5, botStatus, source = "all" }: 
           value={totalSignals}
           today={signalsToday}
           yesterday={signalsYest}
-          sub="detectate de Bot Engine"
+          sub="detectate de Custom Engine"
           onClick={() => setExpanded(e => !e)}
           active={expanded}
         />
@@ -211,7 +211,7 @@ export function TradingStatsPanel({ sessions, mt5, botStatus, source = "all" }: 
         </div>
       )}
 
-      {/* Semnale per sesiune (jurnalul Bot Engine) */}
+      {/* Semnale per sesiune (jurnalul Custom Engine) */}
       {expanded && (
         <div className="border border-surface-border rounded-xl overflow-hidden">
           <div className="px-4 py-2 border-b border-surface-border/60 flex items-center justify-between">

@@ -11,7 +11,12 @@ export async function apiFetch<T>(
   });
   if (!res.ok) {
     let msg = `API error ${res.status}: ${path}`;
-    try { const d = await res.json(); msg = d.detail ?? msg; } catch {}
+    try {
+      const d = await res.json();
+      // detail poate fi text sau obiect {message, log_tail} (ex: /engines/{id}/start esuat)
+      if (typeof d.detail === "string") msg = d.detail;
+      else if (d.detail?.message) msg = [d.detail.message, ...(d.detail.log_tail ?? [])].join("\n");
+    } catch {}
     throw new Error(msg);
   }
   return res.json();

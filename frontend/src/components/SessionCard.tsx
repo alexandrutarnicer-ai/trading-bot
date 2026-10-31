@@ -122,11 +122,11 @@ export function SessionCard({ session: s, mt5: m, onClick, selected }: Props) {
 
       {/* Stats row */}
       <div className={`grid grid-cols-3 gap-2 text-center ${isPaused || isNewsPaused ? "opacity-60" : ""}`}>
-        <div title="Semnale detectate azi de Bot Engine">
+        <div title="Semnale detectate azi de Custom Engine">
           <div className="text-lg font-bold text-white">{s.signals_today}</div>
           <div className="text-[10px] text-slate-500">semn. azi</div>
         </div>
-        <div title="Tranzacții închise în MT5 (doar Bot Engine, sesiunea aceasta)">
+        <div title="Tranzacții închise în MT5 (doar Custom Engine, sesiunea aceasta)">
           <div className="text-lg font-bold text-white">{m ? m.trades_total : "—"}</div>
           <div className="text-[10px] text-slate-500">trades</div>
         </div>

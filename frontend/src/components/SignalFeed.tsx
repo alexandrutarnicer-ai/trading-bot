@@ -1,17 +1,17 @@
 import { useState } from "react";
 import { useSignals, useMt5Transactions } from "../api/hooks";
-import type { Signal, Mt5Transaction } from "../api/types";
+import type { Signal, Mt5Transaction, SourceFilter } from "../api/types";
 
 export type FeedView = "trades" | "signals";
 
 interface Props {
   sessionId: string;
   view: FeedView;
-  source?: "all" | "bot" | "ai" | "manual";   // filtrul Dashboard (pagina intreaga)
+  source?: SourceFilter;   // filtrul Dashboard (pagina intreaga)
   symbol?: string;                             // simbolul cardului selectat
 }
 
-// Starea unui semnal din jurnalul Bot Engine. Doar eticheta — rezultatele
+// Starea unui semnal din jurnalul Custom Engine. Doar eticheta — rezultatele
 // (R / USD) ale tranzactiilor executate vin exclusiv din MT5 (vederea "Tranzacții").
 function signalStatusBadge(status: string | null) {
   switch (status) {
@@ -50,8 +50,9 @@ function signalStatusBadge(status: string | null) {
 }
 
 const SOURCE_BADGE: Record<Mt5Transaction["source"], { label: string; cls: string }> = {
-  bot:    { label: "BOT", cls: "bg-blue-500/15 text-blue-300" },
+  bot:    { label: "CUSTOM", cls: "bg-emerald-500/15 text-emerald-300" },
   ai:     { label: "AI",  cls: "bg-purple-500/15 text-purple-300" },
+  daily:  { label: "DAILY", cls: "bg-cyan-500/15 text-cyan-300" },
   manual: { label: "MAN", cls: "bg-slate-500/20 text-slate-300" },
 };
 
@@ -129,14 +130,14 @@ function SignalsList({ sessionId }: { sessionId: string }) {
 }
 
 function TradesList({ sessionId, source = "all", symbol }: {
-  sessionId: string; source?: "all" | "bot" | "ai" | "manual"; symbol?: string;
+  sessionId: string; source?: SourceFilter; symbol?: string;
 }) {
-  // "all" = tot contul (Bot + AI + manual); o sesiune = doar tranzactiile Bot Engine ale ei
+  // "all" = tot contul (Bot + AI + manual); o sesiune = doar tranzactiile Custom Engine ale ei
   // Paginare: inainte se afisau DOAR ultimele 50 (fara indiciu) → parea ca lipsesc
   // tranzactii fata de istoricul MT5. Acum: contor „X din total" + „Încarcă mai multe".
   const [limit, setLimit] = useState(50);
   // Pe o piata: „Toate" = tot ce s-a tranzactionat pe simbolul ei (Bot + AI + manual);
-  // „Bot" = doar tranzactiile sesiunii Bot Engine; „AI"/„Manual" = acelea, pe simbol.
+  // „Bot" = doar tranzactiile sesiunii Custom Engine; „AI"/„Manual" = acelea, pe simbol.
   const { data, isLoading } = useMt5Transactions(
     sessionId === "all"
       ? { limit, ...(source !== "all" ? { source } : {}) }
@@ -161,7 +162,15 @@ function TradesList({ sessionId, source = "all", symbol }: {
     </div>
   );
   if (!items.length) {
-    return <div>{header}<div className="text-center py-8 text-slate-500 text-sm">Nicio tranzacție închisă înregistrată</div></div>;
+    return (
+      <div>{header}
+        <div className="text-center py-8 text-slate-500 text-sm">
+          {source === "daily"
+            ? "Daily Engine rulează în mod SHADOW — nu plasează ordine reale, deci nu are tranzacții MT5. Trade-urile virtuale sunt în tab-ul Daily Engine."
+            : "Nicio tranzacție închisă înregistrată"}
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -206,10 +215,10 @@ function TradesList({ sessionId, source = "all", symbol }: {
 
 export function SignalFeed({ sessionId, view, source = "all", symbol }: Props) {
   if (view === "trades") return <TradesList key={source} sessionId={sessionId} source={source} symbol={symbol} />;
-  if (source === "ai" || source === "manual") {
+  if (source === "ai" || source === "daily" || source === "manual") {
     return (
       <div className="text-center py-8 text-slate-500 text-sm">
-        Semnalele sunt detectate doar de Bot Engine — alege „Toate” sau „Bot” în filtrul de sursă.
+        Semnalele sunt detectate doar de Custom Engine — alege „Toate” sau „Custom Engine” în filtrul de sursă.
       </div>
     );
   }

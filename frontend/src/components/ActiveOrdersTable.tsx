@@ -8,7 +8,8 @@ import { Layers } from "lucide-react";
  */
 
 const SOURCE_BADGE: Record<string, { label: string; cls: string }> = {
-  bot:    { label: "BOT",    cls: "bg-blue-500/20 text-blue-300" },
+  bot:    { label: "CUSTOM", cls: "bg-emerald-500/20 text-emerald-300" },
+  daily:  { label: "DAILY",  cls: "bg-cyan-500/20 text-cyan-300" },
   ai:     { label: "AI",     cls: "bg-purple-500/20 text-purple-300" },
   manual: { label: "MANUAL", cls: "bg-slate-600/40 text-slate-300" },
 };
@@ -18,14 +19,14 @@ function Src({ s, aiApproved, aiConfidence }: {
   aiApproved?: boolean | null;
   aiConfidence?: number | null;
 }) {
-  // Ordin BOT validat de Filtrul AI Pre-Trade → badge combinat BOT·AI
+  // Ordin Custom Engine validat de Filtrul AI Pre-Trade → badge combinat BOT·AI
   if (s === "bot" && aiApproved) {
     return (
       <span
         className="text-[9px] px-1.5 py-0.5 rounded font-semibold bg-gradient-to-r from-blue-500/20 to-purple-500/20 text-indigo-300"
         title={`Validat de Filtrul AI Pre-Trade${aiConfidence != null ? ` — încredere ${aiConfidence}%` : ""}`}
       >
-        BOT·AI
+        CUSTOM·AI
       </span>
     );
   }

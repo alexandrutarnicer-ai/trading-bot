@@ -4,14 +4,13 @@ import { useQueryClient } from "@tanstack/react-query";
 import { apiFetch } from "../api/client";
 import { useSessions, useBotStatus, useMt5Status, useMt5WeeklyStats, useFrequencyEstimate, useMt5SessionStats } from "../api/hooks";
 import type { Mt5PeriodStats, SourceFilter } from "../api/types";
-import { BotStatusBar } from "../components/BotStatusBar";
-import { AiStatusBar } from "../components/AiStatusBar";
 import { SessionCard } from "../components/SessionCard";
 import { SignalFeed, type FeedView } from "../components/SignalFeed";
 import { EquityChart } from "../components/EquityChart";
 import { TradingStatsPanel } from "../components/TradingStatsPanel";
 import { TopMarketsWidget } from "../components/TopMarketsWidget";
 import { AiActivityCard } from "../components/AiActivityCard";
+import { EngineControlCards } from "../components/EngineControlCards";
 import { ActiveOrdersTable } from "../components/ActiveOrdersTable";
 
 // Vedere pentru randare — R e recalculat din SL-ul original al ordinelor
@@ -329,8 +328,6 @@ export function Dashboard() {
 
         {/* Dreapta: bot status + timer + refresh */}
         <div className="flex items-center gap-3 flex-shrink-0">
-          <BotStatusBar />
-          <AiStatusBar />
           {updateLabel && (
             <span className="text-[10px] text-slate-600 tabular-nums">
               actualizat {updateLabel}
@@ -346,10 +343,13 @@ export function Dashboard() {
         </div>
       </div>
 
+      {/* Engine-uri: stare reala + Start/Stop + autostart (Engine Lifecycle comun) */}
+      <EngineControlCards />
+
       {/* Filtru de SURSA pentru toata pagina (carduri, statistici, grafic, tranzactii) */}
       <div className="flex items-center gap-2 flex-wrap">
         <span className="text-[11px] text-slate-500">Arată tranzacțiile:</span>
-        {([["all", "Toate"], ["bot", "Bot Engine"], ["ai", "AI Engine"], ["manual", "Manual"]] as const).map(([v, label]) => (
+        {([["all", "Toate"], ["bot", "Custom Engine"], ["ai", "AI Engine"], ["daily", "Daily Engine"], ["manual", "Manual"]] as const).map(([v, label]) => (
           <button key={v} onClick={() => setSource(v)}
             className={`text-[11px] px-2.5 py-1 rounded-lg border transition-colors ${
               source === v ? "border-blue-500 bg-blue-500/15 text-white font-semibold"
@@ -359,7 +359,7 @@ export function Dashboard() {
         ))}
         {source !== "all" && (
           <span className="text-[10px] text-amber-400/80">
-            filtru activ — cifrele de pe pagină includ doar {source === "bot" ? "Bot Engine" : source === "ai" ? "AI Engine" : "tranzacțiile manuale"}
+            filtru activ — cifrele de pe pagină includ doar {source === "bot" ? "Custom Engine" : source === "ai" ? "AI Engine" : source === "daily" ? "Daily Engine (ordine reale MT5; shadow = 0)" : "tranzacțiile manuale"}
           </span>
         )}
       </div>
@@ -467,8 +467,9 @@ export function Dashboard() {
             Sesiuni active
             <span className="ml-2 normal-case font-normal text-slate-600">
               {source === "all" ? "· tranzacții din toate sursele pe fiecare piață"
-                : source === "bot" ? "· doar tranzacțiile Bot Engine ale sesiunii"
+                : source === "bot" ? "· doar tranzacțiile Custom Engine ale sesiunii"
                 : source === "ai" ? "· doar tranzacțiile AI Engine pe piața cardului"
+                : source === "daily" ? "· doar tranzacțiile reale Daily Engine pe piața cardului"
                 : "· doar tranzacțiile manuale pe piața cardului"}
             </span>
           </h2>
@@ -518,7 +519,7 @@ export function Dashboard() {
           <div className="flex items-center justify-between mb-4 flex-shrink-0">
             <div className="flex items-center gap-3 min-w-0">
               <h2 className="text-sm font-semibold text-white truncate">
-                {feedView === "trades" ? "Tranzacții MT5" : "Semnale Bot Engine"}
+                {feedView === "trades" ? "Tranzacții MT5" : "Semnale Custom Engine"}
                 {" — "}{selectedSession === "all" ? "Toate" : (selected?.label ?? "—")}
               </h2>
               <div className="flex gap-1 flex-shrink-0">
@@ -528,7 +529,7 @@ export function Dashboard() {
                     onClick={() => setFeedView(v)}
                     title={v === "trades"
                       ? "Tranzacțiile închise, direct din MT5 (Bot + AI + manual; pe o sesiune: doar Bot)"
-                      : "Semnalele detectate de Bot Engine și starea lor (respins AI, expirat, executat...)"}
+                      : "Semnalele detectate de Custom Engine și starea lor (respins AI, expirat, executat...)"}
                     className={`text-[10px] px-2 py-0.5 rounded transition-colors font-medium ${
                       feedView === v ? "bg-blue-500/20 text-blue-400" : "text-slate-500 hover:text-slate-300"
                     }`}

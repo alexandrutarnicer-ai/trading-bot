@@ -643,7 +643,7 @@ export function GuidePage() {
                 <div className="text-[11px] font-semibold text-slate-300">Comisioane + Swap</div>
                 <div className="text-slate-400">
                   Comisioanele și swap-ul, cu total dezagregat (<em>com: X $ · swap: Y $</em>) plus un rând <b>Azi / Ieri</b>.
-                  Sursa: tot contul MT5 (history_deals_get) — include Bot Engine, Motorul AI și trade-urile manuale.
+                  Sursa: tot contul MT5 (history_deals_get) — include Custom Engine, Motorul AI și trade-urile manuale.
                 </div>
               </div>
             </div>
@@ -663,7 +663,7 @@ export function GuidePage() {
           <SubSection title="Statistici Totale (TradingStatsPanel)">
             <p>Carduri care afișează agregatul tuturor sesiunilor:</p>
             <div className="grid grid-cols-2 gap-3 text-xs">
-              <KV k="Total Semnale" v="Setup-urile detectate de Bot Engine (jurnalul botului — MT5 nu le cunoaște)" />
+              <KV k="Total Semnale" v="Setup-urile detectate de Custom Engine (jurnalul botului — MT5 nu le cunoaște)" />
               <KV k="Total Trades" v="Tranzacții închise în MT5 (tot contul)" />
               <KV k="Câștiguri" v="Tranzacții MT5 cu profit + ▲/▼ azi vs ieri" vColor="text-profit" />
               <KV k="Pierderi" v="Tranzacții MT5 cu pierdere + ▲/▼ azi vs ieri" vColor="text-loss" />
@@ -672,7 +672,7 @@ export function GuidePage() {
             <p className="text-xs text-slate-400 mt-2">
               Fiecare card numeric afișează și <em>X azi</em> față de <em>ieri</em> cu indicator trend ▲/▼.
               Toate cardurile de tranzacționare vin din <code className="text-blue-300">/mt5/stats</code>; doar „Total Semnale”
-              vine din jurnalul Bot Engine. Click pe "Total Semnale" expandează breakdownul per sesiune.
+              vine din jurnalul Custom Engine. Click pe "Total Semnale" expandează breakdownul per sesiune.
             </p>
           </SubSection>
 
@@ -2078,12 +2078,12 @@ export function GuidePage() {
               (și nici butonul „Sync MT5” care o repara).
             </p>
             <div className="mt-3 space-y-1.5 text-xs">
-              <KV k="Atribuire Bot / AI / Manual" v="Magic 770015 = Motorul AI; comment „S<n>-…” = Bot Engine; restul = manual" />
+              <KV k="Atribuire Bot / AI / Manual" v="Magic 770015 = Motorul AI; comment „S<n>-…” = Custom Engine; restul = manual" />
               <KV k="Sesiune + strategie" v="Din comment-ul ordinului de intrare (ex: S15-GBPUSD-IB002 → S15, Inside Bar)" />
               <KV k="R" v="Recalculat din SL-ul original al ordinului de deschidere" />
             </div>
             <Note>
-              <code>outcomes.csv</code> / <code>signals.csv</code> rămân jurnalul de lucru al Bot Engine (deduplicare,
+              <code>outcomes.csv</code> / <code>signals.csv</code> rămân jurnalul de lucru al Custom Engine (deduplicare,
               recuperare după restart) — aplicația nu le mai folosește pentru statistici. Lista „Semnale” din Dashboard
               arată doar starea semnalelor (respins AI, expirat, executat), fără R/USD.
             </Note>

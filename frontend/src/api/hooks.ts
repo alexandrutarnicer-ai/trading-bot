@@ -216,55 +216,7 @@ export const useResumeSession = () => {
   });
 };
 
-// ── Autostart Windows ────────────────────────────────────────────────────────
-
-export const useAutostartStatus = () =>
-  useQuery<{ enabled: boolean }>({
-    queryKey: ["autostart-status"],
-    queryFn:  () => apiFetch("/bot/autostart/status"),
-    refetchInterval: 30_000,
-  });
-
-export const useAutostartEnable = () => {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: () => apiFetch("/bot/autostart/enable", { method: "POST" }),
-    onSuccess: () => { setTimeout(() => qc.invalidateQueries({ queryKey: ["autostart-status"] }), 4000); },
-  });
-};
-
-export const useAutostartDisable = () => {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: () => apiFetch("/bot/autostart/disable", { method: "POST" }),
-    onSuccess: () => { setTimeout(() => qc.invalidateQueries({ queryKey: ["autostart-status"] }), 4000); },
-  });
-};
-
-// ── Autostart AI Engine (mirror al autostart bot) ────────────────────────────
-
-export const useAiAutostartStatus = () =>
-  useQuery<{ enabled: boolean }>({
-    queryKey: ["ai-autostart-status"],
-    queryFn:  () => apiFetch("/ai/autostart/status"),
-    refetchInterval: 30_000,
-  });
-
-export const useAiAutostartEnable = () => {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: () => apiFetch("/ai/autostart/enable", { method: "POST" }),
-    onSuccess: () => { setTimeout(() => qc.invalidateQueries({ queryKey: ["ai-autostart-status"] }), 4000); },
-  });
-};
-
-export const useAiAutostartDisable = () => {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: () => apiFetch("/ai/autostart/disable", { method: "POST" }),
-    onSuccess: () => { setTimeout(() => qc.invalidateQueries({ queryKey: ["ai-autostart-status"] }), 4000); },
-  });
-};
+// Autostart-ul engine-urilor: useEngines / useEngineAction (Engine Lifecycle comun, la final).
 
 // ── Punte Telegram (control + autostart) ─────────────────────────────────────
 
@@ -544,7 +496,7 @@ export const useMt5Transactions = (params: {
   status?: string;
   direction?: string;
   symbol?: string;
-  source?: "bot" | "ai" | "manual";
+  source?: "bot" | "ai" | "daily" | "manual";
   session_id?: string;
   date_from?: string;
   date_to?: string;
@@ -939,5 +891,28 @@ export const useDailyStop = () => {
   return useMutation({
     mutationFn: () => apiFetch("/daily/stop", { method: "POST" }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["daily-status"] }),
+  });
+};
+
+// ── Engine Lifecycle comun (/engines) — status real + start/stop verificat + autostart ──
+import type { EngineState, EngineId } from "./types";
+
+export const useEngines = () =>
+  useQuery<EngineState[]>({
+    queryKey: ["engines"],
+    queryFn:  () => apiFetch("/engines"),
+    refetchInterval: 10_000,
+    refetchIntervalInBackground: false,
+  });
+
+export const useEngineAction = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, action }: { id: EngineId; action: "start" | "stop" | "autostart/enable" | "autostart/disable" }) =>
+      apiFetch(`/engines/${id}/${action}`, { method: "POST" }),
+    onSettled: () => {
+      for (const k of ["engines", "bot-status", "ai-status", "daily-status", "sessions"])
+        qc.invalidateQueries({ queryKey: [k] });
+    },
   });
 };

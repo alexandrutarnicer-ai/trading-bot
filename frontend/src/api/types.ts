@@ -96,7 +96,7 @@ export interface Signal {
   sl: number;
   tp: number;
   r_ratio: number;
-  status: string | null;   // starea din jurnalul Bot Engine: ai_reject, expirat, TP, SL...
+  status: string | null;   // starea din jurnalul Custom Engine: ai_reject, expirat, TP, SL...
 }
 
 export interface ProfileSession {
@@ -462,7 +462,7 @@ export interface Mt5SessionsResponse {
 }
 
 // Filtrul de sursa al Dashboard-ului (pagina intreaga) — default "all".
-export type SourceFilter = "all" | "bot" | "ai" | "manual";
+export type SourceFilter = "all" | "bot" | "ai" | "daily" | "manual";
 
 export interface Mt5Transaction {
   ticket: number;
@@ -482,7 +482,7 @@ export interface Mt5Transaction {
   commission_usd: number;
   swap_usd: number;
   // Atribuire din magic + comment-ul ordinului (api/mt5_pool.py::classify_trade)
-  source: "bot" | "ai" | "manual";
+  source: "bot" | "ai" | "daily" | "manual";
   session_id: string | null;
   strategy: "pullback" | "inside_bar" | "flag" | "smart_news" | null;
   ai_approved: boolean | null;     // verdictul Filtrului AI Pre-Trade (doar bot)
@@ -745,7 +745,7 @@ export interface Mt5Position {
   tp: number | null;
   profit: number;
   swap: number;
-  source: "bot" | "ai" | "manual";
+  source: "bot" | "ai" | "daily" | "manual";
   comment: string;
   margin: number;
   // Filtru AI Pre-Trade — null cand ordinul nu a trecut prin filtru
@@ -761,7 +761,7 @@ export interface Mt5PendingOrder {
   entry: number;
   sl: number | null;
   tp: number | null;
-  source: "bot" | "ai" | "manual";
+  source: "bot" | "ai" | "daily" | "manual";
   comment: string;
   ai_approved?: boolean | null;
   ai_confidence?: number | null;
@@ -892,4 +892,18 @@ export interface DailyTrade {
   or_lo: number;
   mode: string;
   recorded_at: string;
+}
+
+// ── Engine Lifecycle comun (/engines) ────────────────────────────────────────
+export type EngineId = "custom" | "ai" | "daily";
+
+export interface EngineState {
+  id: EngineId;
+  label: string;
+  running: boolean;
+  pid: number | null;
+  detail: string;
+  mode: string | null;
+  autostart: boolean | null;
+  error: string | null;
 }
