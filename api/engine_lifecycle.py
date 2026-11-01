@@ -38,6 +38,9 @@ ENGINES: dict[str, dict] = {
                "setup": ["setup_autostart_engine.ps1", "-Engine", "daily"],
                "remove": ["remove_autostart_engine.ps1", "-Engine", "daily"],
                "log": os.path.join(ROOT, "data", "daily_engine", "engine.log")},
+    # Noisy: INTENTIONAT fara autostart (pornire doar manuala, cu confirmare) — task None
+    "noisy":  {"label": "Noisy Engine", "task": None, "setup": None, "remove": None,
+               "log": os.path.join(ROOT, "data", "noisy_engine", "engine.log")},
 }
 
 router = APIRouter(prefix="/engines", tags=["engines"])
@@ -73,6 +76,12 @@ def _status(eid: str) -> dict:
                 "detail": f"{len(mk)} piețe" + (f" · {mode}" if mode else "")
                           + (" · CONT REAL" if demo is False else ""),
                 "mode": mode}
+    if eid == "noisy":
+        from api.routers import noisy_engine
+        s = noisy_engine.noisy_status()
+        return {"running": bool(s.get("running")), "pid": s.get("pid"),
+                "detail": f"{s.get('symbol', 'USDJPY')} · shadow · {s.get('state_label') or ''}".rstrip(" ·"),
+                "mode": s.get("mode", "shadow")}
     from api.routers import daily_engine
     s = daily_engine.daily_status()
     mk = [m.get("symbol") for m in (s.get("markets") or []) if m.get("symbol")]
@@ -90,6 +99,9 @@ def _do_start(eid: str) -> None:
     elif eid == "ai":
         from api.routers import ai_engine
         ai_engine.ai_start()
+    elif eid == "noisy":
+        from api.routers import noisy_engine
+        noisy_engine.noisy_start()
     else:
         from api.routers import daily_engine
         daily_engine.daily_start()
@@ -102,6 +114,9 @@ def _do_stop(eid: str) -> None:
     elif eid == "ai":
         from api.routers import ai_engine
         ai_engine.ai_stop()
+    elif eid == "noisy":
+        from api.routers import noisy_engine
+        noisy_engine.noisy_stop()
     else:
         from api.routers import daily_engine
         daily_engine.daily_stop()
@@ -129,7 +144,7 @@ def _wait_for(eid: str, running: bool, timeout_s: float) -> dict:
 def _autostart_all(force: bool = False) -> dict[str, bool]:
     if not force and time.time() - _autostart_cache["ts"] < _AUTOSTART_TTL:
         return _autostart_cache["data"]
-    names = ",".join(f"'{e['task']}'" for e in ENGINES.values())
+    names = ",".join(f"'{e['task']}'" for e in ENGINES.values() if e.get("task"))
     cmd = (f"@({names}) | ForEach-Object {{ if (Get-ScheduledTask -TaskName $_ -ErrorAction "
            f"SilentlyContinue) {{ \"$_=1\" }} else {{ \"$_=0\" }} }}")
     data = {}
@@ -137,11 +152,16 @@ def _autostart_all(force: bool = False) -> dict[str, bool]:
         r = subprocess.run(["powershell", "-NoProfile", "-Command", cmd],
                            capture_output=True, text=True, timeout=15)
         found = dict(line.strip().split("=", 1) for line in r.stdout.splitlines() if "=" in line)
-        data = {eid: found.get(e["task"]) == "1" for eid, e in ENGINES.items()}
+        data = {eid: (found.get(e["task"]) == "1" if e.get("task") else None) for eid, e in ENGINES.items()}
     except Exception:
         data = {eid: None for eid in ENGINES}
     _autostart_cache.update(ts=time.time(), data=data)
     return data
+
+
+def _no_autostart(eid: str) -> None:
+    if not ENGINES[eid].get("task"):
+        raise HTTPException(400, f"{ENGINES[eid]['label']} nu are autostart — se pornește doar manual, cu confirmare")
 
 
 def _run_elevated(script_args: list[str]) -> None:
@@ -206,11 +226,15 @@ def engine_autostart_status(eid: str):
 
 @router.post("/{eid}/autostart/enable")
 def engine_autostart_enable(eid: str):
+    _engine(eid)
+    _no_autostart(eid)
     _run_elevated(_engine(eid)["setup"])
     return {"started": True, "note": "Confirmă fereastra UAC; statusul se actualizează în ~30s"}
 
 
 @router.post("/{eid}/autostart/disable")
 def engine_autostart_disable(eid: str):
+    _engine(eid)
+    _no_autostart(eid)
     _run_elevated(_engine(eid)["remove"])
     return {"started": True, "note": "Confirmă fereastra UAC; statusul se actualizează în ~30s"}
