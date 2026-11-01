@@ -18,7 +18,7 @@ NU se sincronizeaza: state.pkl / loguri / PID-uri / cheile API / deblocarea LIVE
 pozitiile deschise se reconciliaza din MT5).
 
 Cand vin date de pe celalalt dispozitiv, copiile LOCALE care s-ar suprascrie se MUTA in
-data/_sync_backup/<data-ora>/ — nu se sterge nimic. Modificari locale de COD in conflict → oprire cu mesaj.
+data/_sync_backup/<data-ora>/ (pastrate BACKUP_KEEP_DAYS=30 zile). Modificari locale de COD in conflict → oprire cu mesaj.
 """
 from __future__ import annotations
 
@@ -39,6 +39,7 @@ except Exception:
     pass
 
 RECENT_DAYS = 3
+BACKUP_KEEP_DAYS = 30                     # data/_sync_backup/<data-ora>/ mai vechi → sterse
 LEDGER_REL = "data/ai/ledger.db"
 # engine → (jurnale = dovada ca a rulat aici, PID-uri, fisierele lui de date)
 ENGINES = {
@@ -195,6 +196,22 @@ def merge_remote(br: str) -> None:
                    + (r.stdout + r.stderr).strip())
 
 
+def prune_backups(now: datetime | None = None, keep_days: int = BACKUP_KEEP_DAYS) -> int:
+    """Sterge copiile din data/_sync_backup/ mai vechi de keep_days (dupa data din numele folderului)."""
+    now = now or datetime.now()
+    base = os.path.join(ROOT, "data", "_sync_backup")
+    n = 0
+    for name in (os.listdir(base) if os.path.isdir(base) else []):
+        try:
+            when = datetime.strptime(name, "%Y%m%d-%H%M%S")
+        except ValueError:
+            continue                              # folder necunoscut → neatins
+        if (now - when).days >= keep_days:
+            shutil.rmtree(os.path.join(base, name), ignore_errors=True)
+            n += 1
+    return n
+
+
 # ── principal ────────────────────────────────────────────────────────────────
 
 def sync() -> None:
@@ -219,6 +236,9 @@ def sync() -> None:
         if r.returncode != 0:
             raise Stop("Push esuat (autentificare GitHub / retea):\n" + (r.stderr or r.stdout).strip())
     say("La zi cu GitHub (cod + date)", "ok")
+    gone = prune_backups()
+    if gone:
+        say(f"{gone} copii de siguranta mai vechi de {BACKUP_KEEP_DAYS} zile sterse din data/_sync_backup/")
     if old != new:
         changed = git("diff", "--name-only", old, new).splitlines()
         if any(not f.startswith("data/") and f.endswith((".py", ".ts", ".tsx")) for f in changed):

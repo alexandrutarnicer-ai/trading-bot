@@ -3720,7 +3720,11 @@ def run_generator(session_cfg: dict):
         fmt = logging.Formatter("%(asctime)s  %(message)s", "%Y-%m-%d %H:%M:%S")
         sh = logging.StreamHandler(sys.stdout)
         sh.setFormatter(fmt)
-        fh = logging.FileHandler(log_file, encoding="utf-8")
+        try:                                   # rotatie 5 MB x 3 (inainte crestea la nesfarsit)
+            from log_utils import rotating_handler
+            fh = rotating_handler(log_file)
+        except Exception:
+            fh = logging.FileHandler(log_file, encoding="utf-8")
         fh.setFormatter(fmt)
         log.addHandler(sh)
         log.addHandler(fh)
