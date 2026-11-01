@@ -174,8 +174,8 @@ function Today({ st }: { st?: NoisyStatus }) {
   const pct = b ? Math.max(0, Math.min(100, ((b.remaining - b.min_remaining) / Math.max(0.01, b.capital - b.min_remaining)) * 100)) : 0;
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-      <Stat k="Trade-uri azi" v={`${c?.trades ?? 0}${l(lim?.max_trades_day)}`} sub={`R azi ${fmtR(st?.today?.R)} · ${fmt$(st?.today?.pnl_money)}`} />
-      <Stat k="Pierderi azi" v={`${c?.losses ?? 0}${l(lim?.max_losses_day)}`} sub={`la rând ${c?.consec_losses ?? 0}${l(lim?.max_consec_losses)}`}
+      <Stat k={`Trade-uri azi · ${st?.config?.timeframe ?? "M1"}`} v={`${c?.trades ?? 0}${l(lim?.max_trades_day)}`} sub={`R azi ${fmtR(st?.today?.R)} · ${fmt$(st?.today?.pnl_money)}`} />
+      <Stat k={`Pierderi azi · ${st?.config?.timeframe ?? "M1"}`} v={`${c?.losses ?? 0}${l(lim?.max_losses_day)}`} sub={`la rând ${c?.consec_losses ?? 0}${l(lim?.max_consec_losses)}`}
             cls={(c?.losses ?? 0) > 0 ? "text-loss" : "text-white"} />
       <div className="rounded-lg bg-surface border border-surface-border px-3 py-2 col-span-2">
         <div className="text-[10px] uppercase tracking-wider text-slate-500">Buget izolat Noisy</div>
@@ -259,14 +259,26 @@ function Config({ cfg }: { cfg?: NoisyConfig }) {
   if (!d) return null;
   const set = (fn: (x: NoisyConfig) => void) => { const c = structuredClone(d); fn(c); setD(c); setDirty(true); };
   const num = (v: string) => (v === "" ? 0 : Number(v));
+  // limitele = profilul timeframe-ului ACTIV (M1 / M5 au valori separate, testate pe fiecare)
+  const prof = d.tf_profiles[d.timeframe];
   const limRow = (k: keyof NoisyConfig["limits"], label: string) => (
     <label className="flex items-center gap-2">
-      <input type="checkbox" checked={d.limits[k].enabled} onChange={e => set(c => { c.limits[k].enabled = e.target.checked; })} />
+      <input type="checkbox" checked={prof.limits[k].enabled}
+        onChange={e => set(c => { c.tf_profiles[c.timeframe].limits[k].enabled = e.target.checked; })} />
       <span className="w-40 text-slate-300">{label}</span>
-      <input type="number" min={1} value={d.limits[k].value} disabled={!d.limits[k].enabled}
-        onChange={e => set(c => { c.limits[k].value = num(e.target.value); })}
+      <input type="number" min={1} value={prof.limits[k].value} disabled={!prof.limits[k].enabled}
+        onChange={e => set(c => { c.tf_profiles[c.timeframe].limits[k].value = num(e.target.value); })}
         className="w-16 bg-surface border border-surface-border rounded px-2 py-0.5 disabled:opacity-40" />
-      {!d.limits[k].enabled && <span className="text-slate-500">dezactivat</span>}
+      {!prof.limits[k].enabled && <span className="text-slate-500">dezactivat</span>}
+    </label>
+  );
+  const be = d.break_even;
+  const beNum = (label: string, key: "trigger_pct" | "lock1_pct" | "phase2_zone_pct" | "lock2_pct", min: number, max: number, tip: string) => (
+    <label className="flex items-center gap-2" title={tip}>
+      <span className="w-32 text-slate-300">{label}</span>
+      <input type="number" min={min} max={max} value={be[key]}
+        onChange={e => set(c => { c.break_even[key] = num(e.target.value); })}
+        className="w-16 bg-surface border border-surface-border rounded px-2 py-0.5" />
     </label>
   );
   return (
@@ -327,7 +339,8 @@ function Config({ cfg }: { cfg?: NoisyConfig }) {
           </label>
         </div>
         <div className="space-y-2">
-          <div className="text-slate-400 font-semibold">Limite (opționale, resetate zilnic)</div>
+          <div className="text-slate-400 font-semibold">Limite {d.timeframe} (opționale, resetate zilnic)</div>
+          <div className="text-[10px] text-slate-500">Valori separate pe M1 și M5 — la comutare se folosesc automat cele ale timeframe-ului ales.</div>
           {limRow("max_trades_day", "Max trade-uri / zi")}
           {limRow("max_losses_day", "Max pierderi / zi")}
           {limRow("max_consec_losses", "Max pierderi la rând")}
@@ -340,12 +353,69 @@ function Config({ cfg }: { cfg?: NoisyConfig }) {
             Risc / trade <input type="number" step={0.1} min={0.05} value={+(d.sizing.risk_pct * 100).toFixed(2)} onChange={e => set(c => { c.sizing.risk_pct = num(e.target.value) / 100; })} className="w-16 bg-surface border border-surface-border rounded px-2 py-0.5" /> % din buget
             <span className="text-slate-500">(lotul minim 0,01 domină la buget mic)</span>
           </div>
-          <div className="text-[10px] text-slate-500">Protecțiile globale (capital, circuit breaker, știri, risc maxim pe trade) se aplică peste acestea și nu pot fi ocolite.</div>
+          <div className="text-[10px] text-slate-500">Protecțiile globale (capital, circuit breaker, știri, închidere de vineri, risc maxim pe trade, poziții simultane) se aplică peste acestea și nu pot fi ocolite.</div>
+          <div className="text-slate-400 font-semibold pt-2">Țintă (R:R)</div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button onClick={() => set(c => { c.strategy.tp_rr = 0; })}
+              className={`px-2 py-0.5 rounded border ${!Number(d.strategy.tp_rr) ? "border-amber-500/50 text-amber-200" : "border-surface-border text-slate-500"}`}>
+              revenirea la EMA20 (testat, implicit)
+            </button>
+            <button onClick={() => set(c => { c.strategy.tp_rr = Number(c.strategy.tp_rr) || 2; })}
+              className={`px-2 py-0.5 rounded border ${Number(d.strategy.tp_rr) ? "border-amber-500/50 text-amber-200" : "border-surface-border text-slate-500"}`}>
+              R:R fix
+            </button>
+            {!!Number(d.strategy.tp_rr) && (
+              <span className="flex items-center gap-1">
+                1 : <input type="number" step={0.1} min={0.5} max={10} value={Number(d.strategy.tp_rr)}
+                  onChange={e => set(c => { c.strategy.tp_rr = num(e.target.value); })}
+                  className="w-16 bg-surface border border-surface-border rounded px-2 py-0.5" />
+              </span>
+            )}
+          </div>
+          {!!Number(d.strategy.tp_rr) && (
+            <div className="text-[10px] text-yellow-300/90">
+              Backtest 12 luni (USDJPY): țintele fixe au fost mai slabe decât revenirea la EMA (M5: 1,5R +0,061R · 2R +0,058R ·
+              3R +0,041R față de +0,081R; M1: toate ~0 sau negative). Prețul revine rar atât de departe în timpul trade-ului.
+            </div>
+          )}
+          <div className="text-slate-400 font-semibold pt-2">Break-Even</div>
+          <label className="flex items-center gap-2">
+            <input type="checkbox" checked={be.enabled} onChange={e => set(c => { c.break_even.enabled = e.target.checked; })} />
+            Activează Break-Even <span className="text-slate-500">(aceeași regulă ca în Custom Engine; dezactivat implicit)</span>
+          </label>
+          {be.enabled && (
+            <div className="space-y-2 pl-2 border-l-2 border-surface-border">
+              <div className="rounded-lg border border-yellow-500/40 bg-yellow-500/10 px-3 py-2 text-[11px] text-yellow-200 space-y-1">
+                <div className="font-semibold">Ce au arătat testele (USDJPY, 12 luni, setările implicite 80 / 30 / 40 / 50)</div>
+                <div>• M5: win rate 44% → 48%, dar câștigul mediu scade +0,081R → +0,069R / trade; drawdown neschimbat (−31R).</div>
+                <div>• M1: win rate 41% → 45%, câștig ~0 (−0,010R → −0,006R); drawdown −117R → −104R.</div>
+                <div>Pe scurt: mai multe trade-uri câștigătoare și scăderi puțin mai mici, dar <b>nu mai mult profit</b> — la
+                  mean reversion prețul atinge des 80% din drum și revine, iar SL-ul mutat taie o parte din trade-urile care ar fi
+                  ajuns la țintă. În Execuție, SL-ul real e mutat la broker când trade-ul ajunge în faza respectivă.</div>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                {beNum("Trigger TP%", "trigger_pct", 50, 99, "Prețul trebuie să atingă X% din distanța până la țintă pentru a arma break-even.")}
+                {beNum("Lock SL Faza 1%", "lock1_pct", 5, 60, "SL mutat la X% din distanța până la țintă la faza 1.")}
+              </div>
+              <label className="flex items-center gap-2">
+                <input type="checkbox" checked={be.phase2_enabled} onChange={e => set(c => { c.break_even.phase2_enabled = e.target.checked; })} />
+                Activează Faza 2 (opțional)
+              </label>
+              {be.phase2_enabled && (
+                <div className="grid grid-cols-2 gap-2">
+                  {beNum("Zonă Faza 2%", "phase2_zone_pct", 20, 70, "Limita superioară a zonei de retragere Faza 2 (lock1–X%).")}
+                  {beNum("Lock SL Faza 2%", "lock2_pct", 30, 80, "SL mutat la X% din distanța până la țintă la faza 2.")}
+                </div>
+              )}
+              <p className="text-[10px] text-slate-500">Faza 1: prețul atinge trigger% din țintă și se întoarce → SL la lock1%. Faza 2: retragere în zona
+                lock1–zonă%, din nou trigger% și întoarcere → SL la lock2%.</p>
+            </div>
+          )}
         </div>
       </div>
       <div className="text-[10px] text-slate-500 border-t border-surface-border pt-2">
-        Strategia (testată pe 12 luni): EMA{String(d.strategy.ema)} ± {String(d.strategy.dev_atr)}×ATR{String(d.strategy.atr)} · SL {String(d.strategy.sl_atr)}×ATR · țintă EMA · stop de timp {String(d.strategy.time_stop_bars)} bare ·
-        cost/ATR ≥ {String(d.strategy.min_atr_over_cost)} · spread live ≤ {String(d.strategy.spread_max_mult)}× normal. Parametrii strategiei se schimbă doar în noisy_engine/config.json (orice schimbare = variantă netestată).
+        Strategia (testată pe 12 luni): EMA{String(d.strategy.ema)} ± {String(d.strategy.dev_atr)}×ATR{String(d.strategy.atr)} · SL {String(d.strategy.sl_atr)}×ATR · țintă {Number(d.strategy.tp_rr) ? `${d.strategy.tp_rr}R` : "EMA"} · stop de timp {String(d.strategy.time_stop_bars)} bare ·
+        cost/ATR ≥ {String(prof.min_atr_over_cost)} ({d.timeframe}) · spread live ≤ {String(d.strategy.spread_max_mult)}× normal. Parametrii strategiei se schimbă doar în noisy_engine/config.json (orice schimbare = variantă netestată).
       </div>
       {save.isError && <div className="text-loss">{(save.error as Error).message}</div>}
     </div>
