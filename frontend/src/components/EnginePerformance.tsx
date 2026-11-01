@@ -1,5 +1,5 @@
-import { Activity, Brain, CalendarClock, Sigma } from "lucide-react";
-import { useEnginePerformance, useDailyStatus, useAiStatus, useEngines } from "../api/hooks";
+import { Activity, Brain, CalendarClock, Sigma, Zap } from "lucide-react";
+import { useEnginePerformance, useDailyStatus, useAiStatus, useEngines, useNoisyStatus } from "../api/hooks";
 import type { EnginePerf, EngineId } from "../api/types";
 
 /**
@@ -11,13 +11,15 @@ import type { EnginePerf, EngineId } from "../api/types";
  * sunt 0, iar trade-urile virtuale sunt afisate separat, in R, niciodata adunate la bani.
  */
 
-type Key = "total" | EngineId;
+type Key = "total" | EngineId | "noisy";
+type EngineKey = Exclude<Key, "total">;
 
 const THEME: Record<Key, { label: string; text: string; dot: string; border: string; bg: string; icon: typeof Activity }> = {
   total:  { label: "TOTAL",         text: "text-blue-300",    dot: "bg-blue-400",    border: "border-blue-500/30",    bg: "bg-blue-500/5",    icon: Sigma },
   custom: { label: "Custom Engine", text: "text-emerald-300", dot: "bg-emerald-400", border: "border-emerald-500/30", bg: "bg-emerald-500/5", icon: Activity },
   ai:     { label: "AI Engine",     text: "text-purple-300",  dot: "bg-purple-400",  border: "border-purple-500/30",  bg: "bg-purple-500/5",  icon: Brain },
   daily:  { label: "Daily Engine",  text: "text-cyan-300",    dot: "bg-cyan-400",    border: "border-cyan-500/30",    bg: "bg-cyan-500/5",    icon: CalendarClock },
+  noisy:  { label: "Noisy Engine",  text: "text-amber-300",   dot: "bg-amber-400",   border: "border-amber-500/30",   bg: "bg-amber-500/5",   icon: Zap },
 };
 
 const money = (v: number | null | undefined, cur: string) =>
@@ -34,11 +36,12 @@ function Stat({ label, value, cls, sub }: { label: string; value: string; cls?: 
   );
 }
 
-function ShadowLine() {
-  const { data } = useDailyStatus();
-  const sc = data?.scorecard;
+function ShadowLine({ engine = "daily" }: { engine?: "daily" | "noisy" }) {
+  const { data: d } = useDailyStatus();
+  const { data: n } = useNoisyStatus();
+  const sc = engine === "noisy" ? n?.scorecard : d?.scorecard;
   return (
-    <div className="text-[10px] text-cyan-300/80 border-t border-cyan-500/20 pt-1.5">
+    <div className={`text-[10px] border-t pt-1.5 ${engine === "noisy" ? "text-amber-300/80 border-amber-500/20" : "text-cyan-300/80 border-cyan-500/20"}`}>
       SHADOW (virtual, fără bani): {sc?.trades ?? 0} trade-uri · {sc?.wins ?? 0}W / {sc?.losses ?? 0}L ·{" "}
       <span className={pnlCls(sc?.total_R)}>{rTxt(sc?.total_R)}</span>
     </div>
@@ -66,6 +69,7 @@ function PerfCard({ k, p, cur }: { k: Key; p?: EnginePerf; cur: string }) {
         {" · "}după costuri <span className={pnlCls(p?.net)}>{money(p?.net, cur)}</span>
       </div>
       {k === "daily" && <ShadowLine />}
+      {k === "noisy" && <ShadowLine engine="noisy" />}
     </div>
   );
 }
@@ -79,24 +83,25 @@ export function EnginePerformanceCards() {
   const manual = data?.manual;
   return (
     <div className="space-y-1.5">
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        {(["total", "custom", "ai", "daily"] as Key[]).map(k => <PerfCard key={k} k={k} p={data?.[k]} cur={cur} />)}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+        {(["total", "custom", "ai", "daily", "noisy"] as Key[]).map(k => <PerfCard key={k} k={k} p={data?.[k]} cur={cur} />)}
       </div>
       <p className="text-[10px] text-slate-600">
         Ultimele {data?.days ?? 365} zile · doar poziții închise (P&L flotant: Ordine Active) · profit brut din MT5, costurile
         (comision + swap) separat · cont {data?.is_demo === false ? "REAL" : data?.is_demo ? "DEMO" : "?"}
-        {manual && manual.trades > 0 ? ` · ${manual.trades} tranzacții manuale (${money(manual.pnl, cur)}) excluse din TOTAL` : " · TOTAL = cele 3 engine-uri (manualele excluse)"}
+        {manual && manual.trades > 0 ? ` · ${manual.trades} tranzacții manuale (${money(manual.pnl, cur)}) excluse din TOTAL` : " · TOTAL = cele 4 engine-uri (manualele excluse)"}
       </p>
     </div>
   );
 }
 
 /** Sectiunea de analiza a unui engine — acelasi layout pentru toate, difera doar datele + culoarea. */
-export function EnginePerformanceSection({ engine }: { engine: EngineId }) {
+export function EnginePerformanceSection({ engine }: { engine: EngineKey }) {
   const { data } = useEnginePerformance();
   const { data: engines } = useEngines();
   const { data: ai } = useAiStatus();
   const { data: daily } = useDailyStatus();
+  const { data: noisy } = useNoisyStatus();
   const th = THEME[engine];
   const Icon = th.icon;
   const cur = data?.currency ?? "USD";
@@ -116,6 +121,14 @@ export function EnginePerformanceSection({ engine }: { engine: EngineId }) {
     extra = [{ label: "Medie / trade", value: rTxt(p?.avg_r), cls: pnlCls(p?.avg_r) },
              { label: "Decizii", value: sc ? `${sc.decisions} (${sc.waits} WAIT)` : "—" }];
     note = "Motorul autonom AI (consiliu Ollama + Gemini, magic 770015). Deciziile vin din ledger-ul motorului.";
+  } else if (engine === "noisy") {
+    const sc = noisy?.scorecard;
+    extra = [{ label: "Shadow (virtual)", value: `${sc?.trades ?? 0} · ${rTxt(sc?.total_R)}`, cls: pnlCls(sc?.total_R) },
+             { label: "Stare", value: noisy?.state_label ?? "—" }];
+    chips = [`${noisy?.config?.symbol ?? "USDJPY"} ${noisy?.config?.timeframe ?? "M1"}`,
+             noisy?.mode === "execute" ? "EXECUȚIE" : "SHADOW",
+             noisy?.config ? `${noisy.config.window.start}–${noisy.config.window.end}` : ""].filter(Boolean);
+    note = "Frecvență mare: mean reversion pe o singură piață, fără autostart (pornire doar manuală). Bani reali doar în modul Execuție.";
   } else {
     const sc = daily?.scorecard;
     extra = [{ label: "Shadow (virtual)", value: `${sc?.trades ?? 0} · ${rTxt(sc?.total_R)}`, cls: pnlCls(sc?.total_R) },

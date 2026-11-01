@@ -462,7 +462,7 @@ export interface Mt5SessionsResponse {
 }
 
 // Filtrul de sursa al Dashboard-ului (pagina intreaga) — default "all".
-export type SourceFilter = "all" | "bot" | "ai" | "daily" | "manual";
+export type SourceFilter = "all" | "bot" | "ai" | "daily" | "noisy" | "manual";
 
 export interface Mt5Transaction {
   ticket: number;
@@ -482,7 +482,7 @@ export interface Mt5Transaction {
   commission_usd: number;
   swap_usd: number;
   // Atribuire din magic + comment-ul ordinului (api/mt5_pool.py::classify_trade)
-  source: "bot" | "ai" | "daily" | "manual";
+  source: "bot" | "ai" | "daily" | "noisy" | "manual";
   session_id: string | null;
   strategy: "pullback" | "inside_bar" | "flag" | "smart_news" | null;
   ai_approved: boolean | null;     // verdictul Filtrului AI Pre-Trade (doar bot)
@@ -745,7 +745,7 @@ export interface Mt5Position {
   tp: number | null;
   profit: number;
   swap: number;
-  source: "bot" | "ai" | "daily" | "manual";
+  source: "bot" | "ai" | "daily" | "noisy" | "manual";
   comment: string;
   margin: number;
   // Filtru AI Pre-Trade — null cand ordinul nu a trecut prin filtru
@@ -761,7 +761,7 @@ export interface Mt5PendingOrder {
   entry: number;
   sl: number | null;
   tp: number | null;
-  source: "bot" | "ai" | "daily" | "manual";
+  source: "bot" | "ai" | "daily" | "noisy" | "manual";
   comment: string;
   ai_approved?: boolean | null;
   ai_confidence?: number | null;
@@ -904,9 +904,11 @@ export interface DailyTrade {
 
 // ── Engine Lifecycle comun (/engines) ────────────────────────────────────────
 export type EngineId = "custom" | "ai" | "daily";
+/** Engine-urile din lifecycle (/engines) — include Noisy (shadow, fara tranzactii reale / performanta MT5). */
+export type LifecycleEngineId = EngineId | "noisy";
 
 export interface EngineState {
-  id: EngineId;
+  id: LifecycleEngineId;
   label: string;
   running: boolean;
   pid: number | null;
@@ -943,6 +945,7 @@ export interface EnginePerformanceResponse {
   custom?: EnginePerf;
   ai?: EnginePerf;
   daily?: EnginePerf;
+  noisy?: EnginePerf;
   manual?: EnginePerf;
   account?: EnginePerf;
 }
@@ -995,4 +998,61 @@ export interface SizingPreview {
              at_min_lot?: boolean; capped_max?: boolean; ratio?: number | null; reason?: string | null;
              margin_need?: number; margin_pct_free?: number; risk_pct_equity?: number; equity_for_target?: number;
              risk_cap_pct?: number | null; risk_cap_note?: string };
+}
+
+// ── Noisy Engine (/noisy/*) ──────────────────────────────────────────────────
+export interface NoisyLimit { enabled: boolean; value: number }
+export interface NoisyConfig {
+  mode: string;
+  symbol: string;
+  timeframe: "M1" | "M5";
+  notify_trades: boolean;
+  on_stop: "close" | "keep";
+  poll_seconds: number;
+  notify_telegram: boolean;
+  window: { start: string; end: string; days: number[] };
+  strategy: Record<string, number | boolean>;
+  news: { enabled: boolean; pre_min: number; post_min: number };
+  limits: { max_trades_day: NoisyLimit; max_losses_day: NoisyLimit; max_consec_losses: NoisyLimit };
+  budget: { capital: number; min_remaining: number };
+  sizing: { risk_pct: number };
+}
+export interface NoisyTrade {
+  id: string; symbol: string; day: string; dir: "LONG" | "SHORT";
+  signal_t: string; entry_t: string; exit_t: string;
+  entry: number; exit: number; sl: number; tp: number; risk: number; cost: number;
+  reason: string; gross_R: number; R: number; bars: number; lots: number; pnl_money: number | null;
+  tf?: string; hold_min?: number;
+}
+export interface NoisyScore {
+  trades: number; wins: number; losses: number; win_rate: number | null; total_R: number;
+  expectancy_R: number | null; gross_R: number | null; cost_R: number | null; profit_factor: number | null;
+  max_dd_R: number; max_loss_streak: number; pnl_money: number | null; avg_hold_min: number | null;
+}
+export interface NoisyStatus {
+  running: boolean;
+  pid: number | null;
+  state?: string;
+  state_label?: string;
+  reason?: string;
+  mode: string;
+  symbol?: string;
+  timeframe?: string;
+  tf_min?: number;
+  paused?: boolean;
+  heartbeat?: string;
+  open?: { id: string; dir: string; entry: number; sl: number; tp: number; float_R: number; bars_held: number; entry_t: string } | null;
+  pending?: { dir: string; signal_t: string } | null;
+  last?: { t: string; close: number; ema: number; atr: number | null; dev_atr: number | null; spread: number; er: number | null } | null;
+  counters?: { trades: number; losses: number; consec_losses: number; flips_hour: number };
+  today?: { trades: number; R: number; pnl_money: number };
+  budget?: { capital: number; min_remaining: number; realized: number; floating: number; remaining: number; locked: unknown };
+  budget_lock?: { at: string; remaining: number } | null;
+  scorecard?: NoisyScore;
+  backtest_ref?: Record<string, number | string>;
+  news_next?: [string, string][];
+  errors?: string[];
+  config?: NoisyConfig;
+  execution?: { active: boolean; reason: string };
+  real_positions?: { ticket: number; type: string; volume: number; price: number; sl: number; tp: number; profit: number }[];
 }

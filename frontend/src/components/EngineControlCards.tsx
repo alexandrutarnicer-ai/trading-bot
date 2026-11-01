@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { Activity, Brain, CalendarClock, Loader2, Play, Square, Power } from "lucide-react";
+import { Activity, Brain, CalendarClock, Loader2, Play, Square, Power, Zap } from "lucide-react";
 import { useEngines, useEngineAction } from "../api/hooks";
-import type { EngineId, EngineState } from "../api/types";
+import type { LifecycleEngineId, EngineState } from "../api/types";
 
 /**
  * Carduri de stare + quick actions pentru fiecare engine (Engine Lifecycle comun, /engines).
@@ -10,17 +10,27 @@ import type { EngineId, EngineState } from "../api/types";
  * Actiunile care pot plasa sau opri ordine reale cer confirmare.
  */
 
-export const ENGINE_THEME: Record<EngineId, { text: string; dot: string; bg: string; border: string; icon: typeof Activity }> = {
+export const ENGINE_THEME: Record<LifecycleEngineId, { text: string; dot: string; bg: string; border: string; icon: typeof Activity }> = {
   custom: { text: "text-emerald-300", dot: "bg-emerald-400", bg: "bg-emerald-500/10", border: "border-emerald-500/30", icon: Activity },
   ai:     { text: "text-purple-300",  dot: "bg-purple-400",  bg: "bg-purple-500/10",  border: "border-purple-500/30",  icon: Brain },
   daily:  { text: "text-cyan-300",    dot: "bg-cyan-400",    bg: "bg-cyan-500/10",    border: "border-cyan-500/30",    icon: CalendarClock },
+  noisy:  { text: "text-amber-300",   dot: "bg-amber-400",   bg: "bg-amber-500/10",   border: "border-amber-500/30",   icon: Zap },
 };
+
+export const NOISY_START_CONFIRM =
+  "Start Noisy Engine?  — RISK LEVEL: HIGH\n\n" +
+  "Acest engine:\n" +
+  "• analizează piața foarte des (la fiecare bară de 5 minute) și poate deschide mai multe trade-uri pe zi;\n" +
+  "• suportă costuri relativ mai mari (spread, comision, slippage) față de celelalte engine-uri;\n" +
+  "• e expus la volatilitate și poate produce pierderi mai rapid.\n\n" +
+  "Acum rulează în SHADOW: trade-uri virtuale pe prețuri reale, ZERO ordine. Are buget propriu și se oprește singur la pragul setat.";
 
 const CONFIRM: Partial<Record<string, string>> = {
   "custom:start": "Pornești Custom Engine? Sesiunile cu execuție activă plasează ordine REALE în MT5.",
   "custom:stop":  "Oprești Custom Engine? Pozițiile deja deschise rămân în MT5 cu SL/TP, dar nu mai sunt monitorizate.",
   "ai:start":     "Pornești AI Engine? Pe piețele în mod Activ poate plasa ordine în contul MT5 conectat.",
   "ai:stop":      "Oprești AI Engine? Pozițiile AI deschise rămân în MT5 cu SL/TP.",
+  "noisy:start":  NOISY_START_CONFIRM,
 };
 
 function EngineCard({ e }: { e: EngineState }) {
@@ -65,6 +75,12 @@ function EngineCard({ e }: { e: EngineState }) {
             {busy ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />} Start
           </button>
         )}
+        {e.id === "noisy" ? (
+          <span className="ml-auto text-[10px] px-2 py-0.5 rounded border border-surface-border text-slate-500"
+                title="Noisy Engine nu pornește automat — doar manual, cu confirmare">
+            <Power size={10} className="inline mr-1" />Doar manual
+          </span>
+        ) : (
         <button
           onClick={() => run(e.autostart ? "autostart/disable" : "autostart/enable")}
           disabled={busy || e.autostart == null}
@@ -74,6 +90,7 @@ function EngineCard({ e }: { e: EngineState }) {
             e.autostart ? `${th.border} ${th.text}` : "border-surface-border text-slate-500 hover:text-slate-300"}`}>
           <Power size={10} /> Autostart {e.autostart == null ? "?" : e.autostart ? "ON" : "OFF"}
         </button>
+        )}
       </div>
       {(err || e.error) && (
         <pre className="text-[10px] text-loss whitespace-pre-wrap max-h-24 overflow-auto">{err ?? e.error}</pre>
@@ -86,8 +103,8 @@ export function EngineControlCards() {
   const { data, isLoading, error } = useEngines();
   if (isLoading) {
     return (
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-        {[0, 1, 2].map(i => <div key={i} className="h-24 rounded-xl bg-surface-card animate-pulse" />)}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+        {[0, 1, 2, 3].map(i => <div key={i} className="h-24 rounded-xl bg-surface-card animate-pulse" />)}
       </div>
     );
   }
@@ -95,7 +112,7 @@ export function EngineControlCards() {
     return <div className="text-[11px] text-loss">Starea engine-urilor indisponibilă (API).</div>;
   }
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
       {data.map(e => <EngineCard key={e.id} e={e} />)}
     </div>
   );
