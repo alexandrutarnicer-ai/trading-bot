@@ -73,11 +73,14 @@ except ValueError:
     check(True, "ora invalida respinsa")
 
 print("4. Continut + failure handling")
-B.market_conditions = lambda syms, s, e: ("🌍 <b>Condiții de piață</b>\nok", [{"symbol": "EURUSD"}])
-B.weekend_section = lambda k, syms, s, e: "🗓️ <b>Weekend</b>\nok"
-B.events_section = lambda k, s, e, n: "📅 <b>Evenimente</b>\nok"
-B.issues_section = lambda s, e: "🧯 <b>Probleme</b>\nok"
-B.ai_section = lambda facts, timeout_s=150: "🧠 <b>Analiză AI</b>\nIndisponibilă la generarea raportului (test)"
+_ROWS = [{"symbol": "EURUSD", "vol_ratio": 1.0, "er": 0.4, "change_pct": 0.5, "liq_ratio": 1.0},
+         {"symbol": "US500", "vol_ratio": 1.4, "er": 0.1, "change_pct": -1.2, "liq_ratio": None}]
+_full_issues, _full_events, _full_weekend = B.issues_section, B.events_section, B.weekend_section
+B.market_conditions = lambda syms, s, e: ("🌍 <b>Condiții de piață</b>\nok", _ROWS)
+B.weekend_section = lambda k, syms, s, e, brief=False: "🗓️ <b>Weekend</b>\nok"
+B.events_section = lambda k, s, e, n, brief=False: "📅 <b>Evenimente</b>\nok"
+B.issues_section = lambda s, e, brief=False: "🧯 <b>Probleme</b>\nok"
+B.ai_section = lambda facts, timeout_s=150, brief=False: "🧠 <b>Analiză AI</b>\nIndisponibilă la generarea raportului (test)"
 import api.mt5_pool as P  # noqa: E402
 P.get_status = lambda: {"currency": "USD", "is_demo": False}
 
@@ -89,7 +92,7 @@ def tr(src, profit, day, sym="EURUSD", r=None):
 
 start, end, now = datetime(2026, 10, 30, 23, 30), datetime(2026, 11, 6, 23, 30), datetime(2026, 11, 6, 23, 31)
 txt = "\n".join(B.build_period_report("weekly", start, end, now, None, with_ai=True))
-check("MT5 indisponibil" in txt and "Componente indisponibile: MT5" in txt and "Condiții de piață" in txt,
+check("MT5 indisponibil" in txt and "Componente indisponibile: MT5" in txt and "Piața" in txt,
       "MT5 indisponibil -> raportul se trimite, sectiunea marcata, restul prezent")
 txt = "\n".join(B.build_period_report("weekly", start, end, now, [], with_ai=True))
 check("nicio tranzacție" in txt and "Date insuficiente" in txt, "saptamana fara trade-uri -> raport valid + comparatie 'date insuficiente'")
@@ -106,7 +109,7 @@ check("Daily Engine: nicio tranzacție" in txt, "Daily fara tranzactii reale (sh
 st = B.engine_stats([tr("bot", 2.0, 2), tr("bot", -3.0, 3), tr("bot", 1.0, 4)])
 check(st["max_dd"] == -3.07 and st["profit_factor"] == 1.0, "drawdown si factor de profit corecte", st)
 big = [tr("bot", 1.0, 2, sym=f"S{i}") for i in range(400)]
-B.issues_section = lambda s, e: "🧯 <b>Probleme</b>\n" + "x" * 3500
+B.issues_section = lambda s, e, brief=False: "🧯 <b>Probleme</b>\n" + "x" * 3500
 parts = B.build_period_report("monthly", start, end, now, big, with_ai=False)
 check(len(parts) >= 2 and all(len(p) < 4000 for p in parts), "raport lung -> impartit in mesaje < 4000 caractere", [len(p) for p in parts])
 
@@ -118,6 +121,35 @@ def boom(*a, **k):
 B.events_section = boom
 txt = "\n".join(B.build_period_report("weekly", start, end, now, trades, with_ai=False))
 check("calendar picat" in txt and "Performanță" in txt, "o sectiune care arunca -> marcata, raportul continua")
+
+print("4b. Saptamanal = esential (trading complet, context scurt); lunar = complet")
+B.issues_section = lambda s, e, brief=False: "" if brief else "🧯 <b>Probleme</b>\nok"
+B.weekend_section = lambda k, syms, s, e, brief=False: "" if brief else "🗓️ <b>Weekend</b>\nok"
+B.events_section = lambda k, s, e, n, brief=False: "📅 <b>Evenimente</b>\nok"
+wk = "\n".join(B.build_period_report("weekly", start, end, now, trades, with_ai=False))
+mo = "\n".join(B.build_period_report("monthly", start, end, now, trades, with_ai=False))
+check("5 trades · 3W/2L · WR 60.0%" in wk and "Cel mai bun (ajustat la risc)" in wk,
+      "saptamanal: partea de trading neschimbata (performanta + comparatie)")
+check("🌍 <b>Piața</b>: TREND" in wk and "EURUSD trend +0.50%" in wk and "US500 range -1.20%" in wk
+      and "Condiții de piață" not in wk, "saptamanal: piata intr-un rand (regim + variatie)", wk[-400:])
+check("Weekend" not in wk and "Probleme" not in wk, "saptamanal: weekend / probleme omise cand nu e nimic de raportat")
+check("Condiții de piață" in mo and "Weekend" in mo and "Probleme" in mo, "lunar: ramane complet")
+wk2 = "\n".join(B.build_period_report("weekly", start, end, now, trades, with_ai=False, brief=False))
+check("Condiții de piață" in wk2, "brief=False -> saptamanal complet (la cerere)")
+
+print("4c. Sectiunile esentiale reale")
+import api.notifications as N  # noqa: E402
+_orig_read = N._read_all_entries
+N._read_all_entries = lambda: [
+    {"time": "2026-11-02T10:00:00", "text_plain": "Ollama a inchis conexiunea"},
+    {"time": "2026-11-03T10:00:00", "text_plain": "Bot Trading oprit neasteptat!"},
+    {"time": "2026-11-03T11:00:00", "text_plain": "eroare ordin retcode 10006"}]
+iss = _full_issues(start, end, brief=True)
+check(iss.startswith("🧯 <b>Probleme</b>:") and "Engine oprit neașteptat (1)" in iss and "Ordine eșuate" in iss
+      and "Ollama" not in iss, "probleme esentiale: doar 🔴/🟠, pe un rand", iss)
+N._read_all_entries = lambda: [{"time": "2026-11-02T10:00:00", "text_plain": "Ollama a inchis conexiunea"}]
+check(_full_issues(start, end, brief=True) == "", "doar zgomot 🟡 -> sectiunea lipseste")
+N._read_all_entries = _orig_read
 
 print("5. Modul liniste nu mai suprima rapoartele")
 from api.notifications import is_important_notification as imp  # noqa: E402

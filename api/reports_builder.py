@@ -190,10 +190,29 @@ def market_conditions(symbols: list[str], start: datetime, end: datetime) -> tup
     return "\n".join(lines), rows
 
 
+def market_conditions_brief(rows: list[dict]) -> str:
+    """Varianta esentiala (raport saptamanal): un rand cu regimul pe piata + verdictul."""
+    if not rows:
+        return ""
+    reg = lambda r: "trend" if (r["er"] or 0) >= 0.35 else "range" if (r["er"] or 0) < 0.15 else "mixt"
+    regs = [reg(r) for r in rows]
+    n = len(rows)
+    verdict = ("TREND — favorabil strategiilor de continuare" if regs.count("trend") >= n / 2 else
+               "RANGE — nefavorabil strategiilor de trend (rupturi false)" if regs.count("range") >= n / 2 else "MIXT")
+    hi = sum(r["vol_ratio"] > 1.3 for r in rows)
+    lo = sum(r["vol_ratio"] < 0.75 for r in rows)
+    if hi >= n / 2:
+        verdict += "; volatilitate peste normal"
+    elif lo >= n / 2:
+        verdict += "; volatilitate sub normal"
+    return ("🌍 <b>Piața</b>: " + verdict + "\n"
+            + " · ".join(f"{r['symbol']} {g} {_sgn(r['change_pct'])}%" for r, g in zip(rows, regs)))
+
+
 # ── 4. Evenimente + weekend ───────────────────────────────────────────────────
 
-def events_section(kind: str, start: datetime, end: datetime, now: datetime) -> str:
-    lines = ["📅 <b>Evenimente economice (High impact)</b>"]
+def events_section(kind: str, start: datetime, end: datetime, now: datetime, brief: bool = False) -> str:
+    lines = ["📅 <b>Știri (High impact)</b>" if brief else "📅 <b>Evenimente economice (High impact)</b>"]
     try:
         from live.news_guard import _fetch_forexfactory
         evs = [e for e in _fetch_forexfactory() if str(e.get("impact", "")).lower() == "high"]
@@ -212,6 +231,9 @@ def events_section(kind: str, start: datetime, end: datetime, now: datetime) -> 
     future = [e for e in evs if loc(e) >= now]
     if kind == "monthly":
         lines.append("Insufficient data pentru luna întreagă — sursa oferă doar săptămâna curentă și următoarea.")
+    elif brief:
+        curs = sorted({e["currency"] for e in past})
+        lines.append(f"Săptămâna aceasta: {len(past)} evenimente" + (f" ({', '.join(curs)})" if curs else ""))
     else:
         by_cur: dict = {}
         for e in past:
@@ -219,15 +241,16 @@ def events_section(kind: str, start: datetime, end: datetime, now: datetime) -> 
         lines.append("Săptămâna aceasta: " + ("; ".join(f"{c}: {len(v)} ({', '.join(sorted(set(v))[:3])})"
                                                       for c, v in sorted(by_cur.items())) or "niciun eveniment High"))
     if future:
-        nxt = sorted(future, key=lambda e: e["event_time"])[:8]
+        nxt = sorted(future, key=lambda e: e["event_time"])[:5 if brief else 8]
         lines.append("Urmează: " + "; ".join(f"{loc(e):%a %d.%m %H:%M} {e['currency']} {e['title']}" for e in nxt))
     else:
         lines.append("Săptămâna următoare: Insufficient data (calendarul nu e publicat încă).")
     return "\n".join(lines)
 
 
-def weekend_section(kind: str, symbols: list[str], start: datetime, end: datetime) -> str:
-    """Gap-urile de weekend (ultima bara H1 de vineri -> prima de luni), in multipli de ATR D1."""
+def weekend_section(kind: str, symbols: list[str], start: datetime, end: datetime, brief: bool = False) -> str:
+    """Gap-urile de weekend (ultima bara H1 de vineri -> prima de luni), in multipli de ATR D1.
+    brief = doar gap-urile mari (≥ 0,3×ATR), altfel nimic."""
     from api import mt5_pool
     lines = ["🗓️ <b>Weekend</b>"]
     found = []
@@ -247,7 +270,10 @@ def weekend_section(kind: str, symbols: list[str], start: datetime, end: datetim
                         if start <= when < end:              # redeschiderea cade in perioada
                             found.append((s, when, g))
     except Exception as e:
-        return f"🗓️ <b>Weekend</b>\n⚠️ Date indisponibile ({e})."
+        return "" if brief else f"🗓️ <b>Weekend</b>\n⚠️ Date indisponibile ({e})."
+    if brief:
+        big = sorted([f for f in found if abs(f[2]) >= 0.3], key=lambda x: -abs(x[2]))[:3]
+        return ("🗓️ <b>Gap-uri weekend</b>: " + " · ".join(f"{s} {_sgn(g, 2)}×ATR" for s, w, g in big)) if big else ""
     if not found:
         lines.append("Insufficient data — nicio redeschidere după weekend în barele MT5 pentru perioadă "
                      "(sau piețe 24/7).")
@@ -278,7 +304,8 @@ _ISSUE_RULES = [  # (severitate, eticheta, cuvinte-cheie in notificare)
 ]
 
 
-def issues_section(start: datetime, end: datetime) -> str:
+def issues_section(start: datetime, end: datetime, brief: bool = False) -> str:
+    """brief = doar incidentele 🔴/🟠 (fara zgomotul 🟡 si fara contoarele informative); nimic daca nu exista."""
     lines = ["🧯 <b>Probleme / incidente</b>"]
     counts: dict = {}
     coverage = None
@@ -321,6 +348,12 @@ def issues_section(start: datetime, end: datetime) -> str:
         pass
     if ai.get("failed"):
         counts[("🟠", "AI: ordine eșuate la plasare")] = ai["failed"]
+    if brief:
+        serious = [(sev, label, n) for (sev, label), n in counts.items() if sev != "🟡"]
+        if not serious:
+            return ""
+        serious.sort(key=lambda x: ("🔴🟠".index(x[0]), -x[2]))
+        return "🧯 <b>Probleme</b>: " + " · ".join(f"{sev} {label} ({n})" for sev, label, n in serious)
     for (sev, label), n in sorted(counts.items(), key=lambda kv: ("🔴🟠🟡".index(kv[0][0]), -kv[1])):
         lines.append(f"{sev} {label}: {n}")
     extra = []
@@ -350,8 +383,14 @@ _AI_SYSTEM = ("Ești analist de trading pentru un sistem automat cu 3 engine-uri
               "nu confunda categoriile (ex: problemele Ollama nu sunt semnale respinse). Dacă datele sunt prea puține, spune-o.")
 
 
-def ai_section(facts: dict, timeout_s: float = 150.0) -> str:
+_AI_BRIEF = (" FORMAT SCURT: maximum 3 puncte de o singură propoziție — concluzia săptămânii, problema principală "
+             "(dacă există) și ce e de urmărit săptămâna viitoare.")
+
+
+def ai_section(facts: dict, timeout_s: float = 150.0, brief: bool = False) -> str:
     out: dict = {}
+    system = _AI_SYSTEM + (_AI_BRIEF if brief else "")
+    limit = 700 if brief else 2500
 
     def _run():
         try:
@@ -365,7 +404,7 @@ def ai_section(facts: dict, timeout_s: float = 150.0) -> str:
                 if inst is None:
                     continue
                 try:
-                    out["text"] = inst.chat(_AI_SYSTEM, json.dumps(facts, ensure_ascii=False, default=str)[:12000]).strip()
+                    out["text"] = inst.chat(system, json.dumps(facts, ensure_ascii=False, default=str)[:12000]).strip()
                     out["src"] = name
                     reg.report_success(name)
                     return
@@ -378,7 +417,9 @@ def ai_section(facts: dict, timeout_s: float = 150.0) -> str:
     th.start()
     th.join(timeout_s)
     if out.get("text"):
-        return f"🧠 <b>Analiză AI</b> <i>(consultativă, sursa: {out['src']} — nu e sursă de adevăr)</i>\n{out['text'][:2500]}"
+        if brief:
+            return f"🧠 <b>Analiză AI</b> <i>(consultativă, {out['src']})</i>\n{out['text'][:limit]}"
+        return f"🧠 <b>Analiză AI</b> <i>(consultativă, sursa: {out['src']} — nu e sursă de adevăr)</i>\n{out['text'][:limit]}"
     return ("🧠 <b>Analiză AI</b>\nIndisponibilă la generarea raportului"
             + (f" ({out['err'][:120]})" if out.get("err") else " (timp depășit)") + " — restul raportului e complet.")
 
@@ -403,8 +444,14 @@ def _markets_for(trades: list[dict] | None) -> list[str]:
 
 
 def build_period_report(kind: str, start: datetime, end: datetime, now: datetime,
-                        trades: list[dict] | None, with_ai: bool = True) -> list[str]:
-    """Intoarce raportul ca lista de mesaje Telegram (fiecare < 4000 caractere)."""
+                        trades: list[dict] | None, with_ai: bool = True, brief: bool | None = None) -> list[str]:
+    """Intoarce raportul ca lista de mesaje Telegram (fiecare < 4000 caractere).
+
+    brief (implicit = saptamanal): partea de TRADING ramane completa (performanta + comparatie);
+    contextul e redus la esential — piata intr-un rand, stirile High (5 urmatoare), gap-uri de
+    weekend si probleme DOAR daca exista (fara 🟡), analiza AI in 3 puncte. Lunarul ramane complet."""
+    if brief is None:
+        brief = kind == "weekly"
     from api import mt5_pool
     try:
         st = mt5_pool.get_status()
@@ -428,20 +475,25 @@ def build_period_report(kind: str, start: datetime, end: datetime, now: datetime
         mc, mrows = f"🌍 <b>Condiții de piață</b>\n⚠️ {e}", []
     if not mrows:
         missing.append("date de piață")
+    if brief and mrows:
+        try:
+            mc = market_conditions_brief(mrows)
+        except Exception:
+            pass                                  # varianta completa ramane
     sections.append(mc)
     try:
-        ev = events_section(kind, start, end, now)
+        ev = events_section(kind, start, end, now, brief=brief)
     except Exception as e:
         ev = f"📅 <b>Evenimente</b>\n⚠️ {e}"
     if "Insufficient" in ev:
         missing.append("calendar știri (parțial)")
     sections.append(ev)
     try:
-        sections.append(weekend_section(kind, syms, start, end))
+        sections.append(weekend_section(kind, syms, start, end, brief=brief))
     except Exception as e:
-        sections.append(f"🗓️ <b>Weekend</b>\n⚠️ {e}")
+        sections.append("" if brief else f"🗓️ <b>Weekend</b>\n⚠️ {e}")
     try:
-        iss = issues_section(start, end)
+        iss = issues_section(start, end, brief=brief)
     except Exception as e:
         iss = f"🧯 <b>Probleme</b>\n⚠️ {e}"
     sections.append(iss)
@@ -452,7 +504,7 @@ def build_period_report(kind: str, start: datetime, end: datetime, now: datetime
                  "context": ("Daily Engine rulează în SHADOW: nu plasează ordine reale, deci 0 tranzacții MT5 e normal; "
                              "trade-urile lui virtuale apar separat. Rezultatele în bani vin din MT5."),
                  "FAPTE (text exact din raport)": "\n\n".join(plain(x) for x in (perf, mc, iss, ev[:1200]))}
-        ai = ai_section(facts)
+        ai = ai_section(facts, brief=brief)
         if "Indisponibil" in ai:
             missing.append("AI")
         sections.append(ai)
