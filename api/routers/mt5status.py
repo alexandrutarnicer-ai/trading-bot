@@ -24,6 +24,7 @@ from fastapi.responses import Response
 
 from api.config import SESSIONS
 from api import mt5_pool
+from tz_helper import now_local   # close_time e in fusul aplicatiei → si „azi” trebuie sa fie
 
 router = APIRouter(prefix="/mt5", tags=["mt5"])
 
@@ -77,7 +78,7 @@ def mt5_trade_stats(days: int = 365, source: str = "all"):
     by_source_all = {s: sum(1 for t in trades if t.get("source") == s) for s in _SOURCES}
     trades = _by_source(trades, source)
 
-    today = _date.today()
+    today = now_local().date()
     yesterday = today - timedelta(days=1)
 
     today_trades = [t for t in trades if t["close_time"].date() == today]
@@ -217,7 +218,7 @@ def mt5_weekly_stats(source: str = "all"):
         return {"connected": False, "error": str(e), **_EMPTY_WEEKLY}
     trades = _by_source(trades, source)
 
-    now = datetime.now()
+    now = now_local()
     week_start = (now - timedelta(days=now.weekday())).replace(
         hour=0, minute=0, second=0, microsecond=0)
     prev_week_start = week_start - timedelta(weeks=1)
@@ -297,12 +298,12 @@ def mt5_weekly_stats(source: str = "all"):
 def mt5_top_markets(period: str = "week", limit: int = 5, source: str = "all"):
     """Top piete dupa R cumulat, calculate direct din tranzactiile inchise MT5."""
     try:
-        trades = mt5_pool.get_closed_trades(400)  # acopera si perioada "all"
+        trades = mt5_pool.get_closed_trades(mt5_pool.HISTORY_DAYS)  # acopera si perioada "all"
     except mt5_pool.Mt5Unavailable as e:
         return {"connected": False, "error": str(e), "items": []}
     trades = _by_source(trades, source)
 
-    today = _date.today()
+    today = now_local().date()
     if period == "day":
         cutoff = datetime.combine(today, datetime.min.time())
     elif period == "week":
@@ -370,7 +371,7 @@ def mt5_transactions(
     `source` = bot|ai|daily|manual, `session_id` = sessionN (atribuire din comment/magic),
     `date_from`/`date_to` = YYYY-MM-DD inclusiv, pe ora de inchidere."""
     try:
-        trades = mt5_pool.get_closed_trades(400)
+        trades = mt5_pool.get_closed_trades(mt5_pool.HISTORY_DAYS)
     except mt5_pool.Mt5Unavailable as e:
         return {"connected": False, "error": str(e), "items": [], "total": 0}
 
@@ -456,7 +457,7 @@ def mt5_transactions_csv(
     text/csv cu attachment. Fail-safe: MT5 indisponibil → CSV cu doar antet.
     """
     try:
-        trades = mt5_pool.get_closed_trades(400)
+        trades = mt5_pool.get_closed_trades(mt5_pool.HISTORY_DAYS)
     except mt5_pool.Mt5Unavailable:
         trades = []
 
@@ -515,7 +516,7 @@ def mt5_transactions_csv(
 def mt5_costs():
     """Comisioane+swap per simbol, din tranzactiile inchise MT5."""
     try:
-        trades = mt5_pool.get_closed_trades(400)
+        trades = mt5_pool.get_closed_trades(mt5_pool.HISTORY_DAYS)
     except mt5_pool.Mt5Unavailable as e:
         return {"connected": False, "error": str(e), "items": []}
 
@@ -553,7 +554,7 @@ def mt5_costs():
 def mt5_costs_daily():
     """Comisioane+swap pe zi, din tranzactiile inchise MT5."""
     try:
-        trades = mt5_pool.get_closed_trades(400)
+        trades = mt5_pool.get_closed_trades(mt5_pool.HISTORY_DAYS)
     except mt5_pool.Mt5Unavailable as e:
         return {"connected": False, "error": str(e), "items": [],
                 "total_commission": 0.0, "total_swap": 0.0, "total_costs": 0.0}
@@ -607,11 +608,11 @@ def mt5_session_stats(source: str = "bot"):
     """
     src = (source or "bot").lower()
     try:
-        trades = mt5_pool.get_closed_trades(400)
+        trades = mt5_pool.get_closed_trades(mt5_pool.HISTORY_DAYS)
     except mt5_pool.Mt5Unavailable as e:
         return {"connected": False, "error": str(e), "items": []}
 
-    today = _date.today()
+    today = now_local().date()
     yesterday = today - timedelta(days=1)
 
     by_session: dict[str, dict] = {}
