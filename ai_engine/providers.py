@@ -8,7 +8,7 @@ Arhitectura (docs/PLAN_SURSE_AI_MULTI_PROVIDER.md):
       GeminiProvider            — Google Gemini (are free tier cu quota zilnica)
       OpenAICompatProvider      — OpenAI/ChatGPT, Groq, DeepSeek, Mistral, xAI,
                                   OpenRouter, LM Studio... (base_url configurabil)
-  - Erorile sunt CLASIFICATE (quota / rate_limit / auth / network / bad_response)
+  - Erorile sunt CLASIFICATE (quota / rate_limit / auth / network / bad_response / truncated)
     si alimenteaza starea de sanatate per sursa, cu pauze diferite:
       quota epuizata → 6h   rate limit → 60s (sau retry-after)
       retea/server   → 2min cheie invalida → DEZACTIVAT pana la retest manual
@@ -33,6 +33,9 @@ _COOLDOWNS = {
     "rate_limit":   60,
     "network":      120,
     "bad_response": 120,
+    # raspuns taiat (MAX_TOKENS): sursa merge, dar nu termina raspunsul → pauza scurta,
+    # rolurile ei trec imediat pe urmatoarea sursa (failover pana la Ollama)
+    "truncated":    300,
     # backend defect (Ollama fara runner) — persistent, necesita interventie umana;
     # pauza mai lunga ca sa nu intram in loop strans de retry, dar tot 'paused'
     # (nu 'disabled') ca sa se auto-repare in ≤5 min dupa ce utilizatorul repara Ollama.
@@ -57,6 +60,16 @@ def _remaining() -> float | None:
 
 def _budget_error(where: str) -> "ProviderError":
     return ProviderError(f"{where}: buget de timp consiliu epuizat", kind="budget")
+
+
+def _gemini_thinking_config(model: str) -> dict | None:
+    """Gemini 2.5 „gandeste” implicit, iar tokenii de gandire se scad din maxOutputTokens —
+    raspunsurile lungi (Head Trader, JSON) ieseau TAIATE. Flash / Flash-Lite: gandire oprita (0);
+    Pro nu accepta 0 → minimul permis (128). Alte modele: nu trimitem campul (nu-l suporta)."""
+    m = (model or "").lower()
+    if "2.5" not in m:
+        return None
+    return {"thinkingBudget": 128 if "pro" in m else 0}
 
 # Semnaturi de backend Ollama defect: serverul raspunde la /api/tags (200) dar da
 # 500 la /api/chat pentru ca runner-ul 'llama-server' lipseste / nu porneste. NU e
@@ -432,17 +445,28 @@ class GeminiProvider(BaseProvider):
         payload: dict = {
             "system_instruction": {"parts": [{"text": system}]},
             "contents": [{"role": "user", "parts": [{"text": user}]}],
-            "generationConfig": {"temperature": 0.3, "maxOutputTokens": 2000},
+            "generationConfig": {"temperature": 0.3, "maxOutputTokens": 8192},
         }
+        thinking = _gemini_thinking_config(self.model)
+        if thinking is not None:
+            payload["generationConfig"]["thinkingConfig"] = thinking
         if json_mode:
             payload["generationConfig"]["responseMimeType"] = "application/json"
         out = _http_json(url, payload, {"x-goog-api-key": self.api_key},
                          self._timeout(), self.name)
         try:
-            parts = out["candidates"][0]["content"]["parts"]
+            cand = out["candidates"][0]
+            finish = cand.get("finishReason", "")
+            parts = (cand.get("content") or {}).get("parts") or []
             text = "".join(p.get("text", "") for p in parts).strip()
         except (KeyError, IndexError):
-            text = ""
+            finish, text = "", ""
+        if finish == "MAX_TOKENS":
+            # raspuns TAIAT (limita de tokeni, de obicei consumata de „gandirea” modelului):
+            # un JSON incomplet ar fi reincercat inutil de 3 ori pe aceeasi sursa → eroare
+            # imediata, rolul trece pe sursa urmatoare (failover pana la Ollama)
+            raise ProviderError(f"{self.name}: raspuns taiat (MAX_TOKENS, {len(text)} caractere)",
+                                kind="truncated")
         if not text:
             raise ProviderError(f"{self.name}: raspuns gol "
                                 f"({json.dumps(out)[:160]})", kind="bad_response")
