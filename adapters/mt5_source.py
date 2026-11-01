@@ -112,6 +112,22 @@ class Mt5DataSource:
         self._connected = True
         return acc
 
+    def _ensure_ipc(self) -> None:
+        """Conexiune VIE la terminal. Daca terminalul MT5 a fost inchis / repornit, IPC-ul procesului se
+        rupe, iar FIECARE apel MT5 intoarce None pana la un nou initialize() — fara asta, o sesiune
+        ramanea „conectata” in memorie si esua la fiecare bara pana la restartul botului (gasit la
+        auditul 2026-11-01). Cost: un terminal_info() (~0,01 ms). Terminal inca inchis → connect()
+        ridica RuntimeError, iar bucla sesiunii reincearca (60 s)."""
+        if self._connected and mt5.terminal_info() is None:
+            try:
+                mt5.shutdown()
+            except Exception:
+                pass
+            self._connected = False
+            self._server_offset_h = None
+        if not self._connected:
+            self.connect()
+
     def disconnect(self) -> None:
         if self._connected:
             mt5.shutdown()
@@ -183,8 +199,7 @@ class Mt5DataSource:
 
     def server_offset_h(self, symbol: str = "EURUSD") -> int:
         """Returneaza offset-ul serverului (re-detectat periodic, vezi load_bars)."""
-        if not self._connected:
-            self.connect()
+        self._ensure_ipc()
         self._refresh_server_offset(symbol)
         return self._server_offset_h
 
@@ -205,8 +220,7 @@ class Mt5DataSource:
         10-18 opereaza intotdeauna pe ora reala a Romaniei, indiferent de
         sezon sau schimbarile DST ale serverului broker.
         """
-        if not self._connected:
-            self.connect()
+        self._ensure_ipc()
 
         tf = _TF_MAP.get(timeframe)
         if tf is None:

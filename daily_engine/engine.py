@@ -465,9 +465,38 @@ class DailyEngine:
         except Exception as e:                 # estimarea nu are voie sa opreasca shadow-ul
             return {"lots": 0.0, "risk_money": None, "reason": str(e), "currency": "USD"}
 
+    def _ensure_terminal(self) -> tuple[bool, str]:
+        """Terminal MT5 VIU si conectat la broker. IPC pierdut (terminal inchis / repornit) → re-initialize
+        (altfel fiecare apel MT5 intoarce None pana la restartul engine-ului); deconectat de la broker →
+        datele sunt inghetate, iteratia e sarita cu motivul vizibil (audit 2026-11-01)."""
+        fn = getattr(self.mt5, "terminal_info", None)
+        if fn is None:                       # MT5 simulat in teste
+            return True, ""
+        ti = fn()
+        if ti is None:
+            try:
+                self.mt5.shutdown()
+            except Exception:
+                pass
+            if not self.connect() or fn() is None:
+                return False, "MT5: terminal indisponibil (IPC pierdut) — reîncerc automat"
+            self._err("MT5: IPC restabilit (terminal repornit) — reconectat automat")
+            ti = fn()
+        if not getattr(ti, "connected", True):
+            return False, "MT5 deconectat de la serverul brokerului — date înghețate, aștept reconectarea"
+        return True, ""
+
     def iteration(self, now_utc: datetime | None = None) -> dict:
         self.cfg = load_config()                        # hot-reload
         now_utc = now_utc or datetime.now(timezone.utc)
+        ok_t, why_t = self._ensure_terminal()
+        if not ok_t:
+            self._err(why_t)
+            st = {"running": True, "mode": self.cfg["mode"], "pid": os.getpid(), "markets": [],
+                  "heartbeat": datetime.now(RO).isoformat(timespec="seconds"), "errors": self.errors,
+                  "execution": {"active": False, "reason": why_t}, "scorecard": scorecard(load_trades())}
+            _write_json(STATUS_FILE, st)
+            return st
         markets = []
         self.sweep_stale(now_utc)
         for m in self.cfg["markets"]:
