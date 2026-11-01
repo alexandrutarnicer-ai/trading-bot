@@ -1467,7 +1467,19 @@ export function GuidePage() {
               <KV k="Buget izolat" v="P&L-ul Noisy (în Execuție: din MT5, magic 990001), NU equity-ul contului; sub prag → „Stopped – Budget Limit” până la reset manual" />
               <KV k="Protecții" v="Setările Globale (capital, circuit breaker, știri, risc maxim) se aplică și nu pot fi ocolite; plus știri High pe USD/JPY și spread live" />
               <KV k="Emergency Stop" v="Oprește imediat, ÎNCHIDE pozițiile reale Noisy și blochează intrările până la Resume (fără AI)" />
+              <KV k="M1 ⇄ M5" v="limitele au valori separate pe fiecare timeframe (M1: 60 / 25 / 8 · M5: 6 / 4 / 3); la comutare contoarele zilei se recalculează pe timeframe-ul ales" />
+              <KV k="Setări Globale" v="se aplică toate (capital, circuit breaker, știri, închidere de vineri, risc maxim, poziții simultane); filtrul AI pre-trade e doar al Custom Engine" />
             </div>
+          </SubSection>
+          <SubSection title="Break-Even și R:R (opționale, dezactivate implicit)" defaultOpen={false}>
+            <div className="space-y-1 text-xs">
+              <KV k="Break-Even" v="aceeași regulă și aceiași parametri ca în Custom Engine: trigger% din drumul spre țintă → la întoarcere SL la lock1%; Faza 2 opțională → SL la lock2%" />
+              <KV k="În Execuție" v="SL-ul REAL e mutat la broker când trade-ul ajunge în faza respectivă (o singură dată pe fază)" />
+              <KV k="R:R" v="implicit ținta = revenirea la EMA20 (~1,6R în medie); opțional R:R fix (ex. 1:2)" />
+            </div>
+            <Note>Testele pe 12 luni (USDJPY): Break-Even-ul crește win rate-ul (M5 44% → 48%, M1 41% → 45%) și reduce puțin scăderile,
+              dar NU crește profitul (M5 +0,081R → +0,069R / trade). Țintele fixe 1,5 / 2 / 3R au fost mai slabe decât revenirea la EMA.
+              Când bifezi Break-Even, pagina afișează aceste rezultate.</Note>
           </SubSection>
           <SubSection title="Shadow → Execuție (butonul de Live)" defaultOpen={false}>
             <div className="space-y-1 text-xs">

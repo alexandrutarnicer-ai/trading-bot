@@ -163,6 +163,22 @@ Motivul e același peste tot. Mean-reversion câștigă înainte de costuri doar
 
 Ca M1 să funcționeze, câștigul pe trade ar trebui să fie de 2–3 ori mai mare decât am găsit. Practic asta înseamnă ținte mai mari și mai puține trade-uri, adică exact varianta M5.
 
+### 4c. Țintă mai mare (R:R fix) și Break-Even — testat la cerere (2026-11-01)
+
+Aceeași funcție ca engine-ul, pe barele reale de 12 luni (USDJPY), 30 de variante. Câștig mediu pe trade, după costuri:
+
+| Variantă | M1 (~25/zi) | M5 (~4/zi) |
+|---|---|---|
+| **Acum** (țintă = revenirea la EMA20) | −0,010R · WR 41% · DD −117R | **+0,081R** · WR 44% · DD −31R |
+| R:R fix 1,5 / 2 / 3R | −0,012 / −0,029 / −0,003R | +0,061 / +0,058 / +0,041R |
+| Break-Even Custom implicit (80 / 30, faza 2 40 / 50) | −0,006R · WR 45% · DD −104R | +0,069R · WR 48% · DD −31R |
+| Break-Even fără faza 2 (80 / 30) | −0,006R · WR 45% · DD −103R | +0,070R · WR 48% · DD −31R |
+| BE după +0,5R (prototip) | −0,028R · WR 23% | +0,059R · WR 25% · DD −17R |
+
+**Concluzie:** nici ținta mai mare, nici break-even-ul nu cresc profitul. Break-even-ul crește win rate-ul și reduce puțin scăderile.
+La mean reversion prețul atinge des 80% din drum și revine, iar SL-ul mutat taie trade-uri care ar fi ajuns la țintă; o țintă
+fixă mai depărtată e atinsă rar în 20 de bare. Ambele rămân OPȚIONALE în Noisy Engine, **dezactivate implicit**.
+
 ## 5. Filters
 
 **Obligatorii (rapide, fără AI):**
