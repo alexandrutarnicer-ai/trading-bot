@@ -1,4 +1,6 @@
-const BASE = "http://localhost:8000/api";
+// 127.0.0.1, nu localhost: pe Windows localhost incearca intai IPv6 (::1), iar API-ul asculta doar
+// pe IPv4 → ~0,2–2 s pierdute la fiecare conexiune noua (masurat 2026-11-01)
+const BASE = "http://127.0.0.1:8000/api";
 
 export async function apiFetch<T>(
   path: string,
