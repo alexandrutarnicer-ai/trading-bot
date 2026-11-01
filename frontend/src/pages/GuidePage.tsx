@@ -419,31 +419,45 @@ export function GuidePage() {
               ca referință, nu ca estimare.</Note>
           </SubSection>
 
-          <SubSection title="Grila de sesiuni (Custom Engine)">
+          <SubSection title="Piețe active (toate engine-urile)">
             <div className="space-y-1 text-xs">
-              <KV k="Badge LIVE / OBS" v="LIVE = execuție reală; OBS = doar semnale (execute_trades=False)" />
-              <KV k="⏸ / ▶" v="Pauză / reluare sesiune, efect la bara următoare, fără restart" />
-              <KV k="Semnale" v="Din jurnalul Custom Engine (MT5 nu le cunoaște)" />
-              <KV k="Trades / W / L / P&L" v="Din MT5, filtrate după sursa aleasă" />
-              <KV k="Badge M0" v="Verdictul auditului statistic (KEEP / OBSERVE / DEMOTE)" />
+              <KV k="Un card = o piață" v="descoperite din configurările reale ale celor 4 engine-uri (nimic fix în cod); sesiunile S1 / S2… rămân doar în Custom Engine" />
+              <KV k="Banda colorată de sus" v="un segment pentru fiecare engine care folosește piața: verde Custom · mov AI · cyan Daily · portocaliu Noisy" />
+              <KV k="Rândurile din card" v="fiecare engine cu starea și motivul lui; OBS = observație, SHADOW = virtual (fără ordine), EXEC = execuție reală" />
+              <KV k="Engine pornit ≠ piață activă" v="engine-ul poate rula, dar piața să fie în afara programului sau blocată" />
+              <KV k="În poziție" v="poziție reală deschisă pe piață" />
+              <KV k="Activ" v="poate deschide acum (în program, nimic nu blochează)" />
+              <KV k="Observație" v="analizează, dar nu plasează ordine (Custom / AI în observație, Daily / Noisy în shadow)" />
+              <KV k="În afara programului" v="ore / zi exclusă / weekend / fereastra engine-ului" />
+              <KV k="Blocat" v="pauză, știri, Setări Globale (capital / circuit breaker), limite zilnice, buget, eroare — motivul e scris în card" />
+              <KV k="Oprit" v="engine-ul (sau sesiunea) nu rulează" />
+              <KV k="Trades / WR / P&L" v="din MT5, toate engine-urile pe acea piață (sau doar engine-ul ales în filtrul de sursă); trade-urile virtuale Daily / Noisy sunt separate, în R" />
+              <KV k="Click pe card" v="Tranzacțiile și Semnalele de dedesubt arată doar piața aleasă, de la toate engine-urile; ✕ = înapoi la toate" />
             </div>
+            <Note>Sub carduri apar piețele cu tranzacții dar fără niciun engine configurat acum (ex. o piață scoasă din AI) —
+              ca totalurile să se lege: carduri + aceste piețe = Total Trades din Statistici.</Note>
+            <Note>Pauza / reluarea unei sesiuni și verdictul M0 sunt în tab-ul Custom Engine.</Note>
           </SubSection>
 
           <SubSection title="Tranzacții, Semnale, Ordine Active">
             <div className="space-y-1 text-xs">
-              <KV k="Tranzacții MT5" v="Poziții închise, „X din total” + Încarcă mai multe; badge CUSTOM / AI / DAILY / MAN" />
-              <KV k="Semnale" v="Ce a detectat Custom Engine și starea (respins AI, expirat, invalidat, executat)" />
+              <KV k="Tranzacții MT5" v="Poziții închise de la toate engine-urile, „X din total” + Încarcă mai multe; badge CUSTOM / AI / DAILY / NOISY / MAN" />
+              <KV k="Semnale" v="Toate engine-urile: setup-uri Custom (respins AI / expirat / executat / observație), decizii AI OPEN / CLOSE (plasat / respins de rails), trade-uri Daily / Noisy (virtuale în shadow)" />
               <KV k="Ordine Active" v="Poziții deschise + pending din MT5, pe sursă, cu marja folosită și P&L flotant" />
             </div>
           </SubSection>
 
           <SubSection title="Statistici, Indice Săptămânal, Top 5, Performanță">
             <div className="space-y-1 text-xs">
-              <KV k="Statistici" v="Total trades / câștiguri / pierderi (azi vs ieri), P&L Real, comisioane + swap (azi / ieri)" />
-              <KV k="Indice Săptămânal" v="Săptămâna / luna curentă vs precedentă: trades, W/L, win rate, R, P&L, comisioane, DD" />
+              <KV k="Semnale azi" v="Pe toate engine-urile (click = defalcare pe piață și engine)" />
+              <KV k="Statistici" v="Total trades (Custom / AI / Daily / Noisy / manual), câștiguri, pierderi (azi vs ieri), P&L Real" />
+              <KV k="Costuri broker (comision + swap)" v="Total = comision + swap pe pozițiile ÎNCHISE în ultimele 365 zile (tot contul sau sursa din filtru). Azi / Ieri = costurile pozițiilor închise azi / ieri (swap-ul acumulat pe toată durata lor). Cont Standard: comision ~0 — costul principal e spread-ul, care e deja în prețul de execuție (în P&L), nu aici" />
+              <KV k="Indice Săptămânal" v="Săptămâna / luna curentă vs precedentă: trades, W/L, win rate, R, P&L, costuri broker, DD" />
               <KV k="Top 5 piețe" v="După rezultat, pe Azi / Săpt / Lună / Tot" />
               <KV k="Performanță" v="Curba cumulată (USD sau R din SL-ul original)" />
             </div>
+            <Note>Aceeași listă MT5 și aceleași definiții peste tot (Dashboard, Tranzacții, Rapoarte, carduri de piață):
+              câștig = profit &gt; 0, win rate = câștiguri / (câștiguri + pierderi), ultimele 365 zile, „azi” în fusul aplicației.</Note>
           </SubSection>
 
           <SubSection title="Analiza per engine (jos)">

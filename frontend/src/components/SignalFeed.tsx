@@ -1,53 +1,20 @@
 import { useState } from "react";
-import { useSignals, useMt5Transactions } from "../api/hooks";
-import type { Signal, Mt5Transaction, SourceFilter } from "../api/types";
+import { useDashboardSignals, useMt5Transactions } from "../api/hooks";
+import type { Mt5Transaction, SourceFilter, GlobalSignal } from "../api/types";
+import { ENGINE_COLOR } from "./MarketCard";
 
 export type FeedView = "trades" | "signals";
 
 interface Props {
-  sessionId: string;
   view: FeedView;
   source?: SourceFilter;   // filtrul Dashboard (pagina intreaga)
-  symbol?: string;                             // simbolul cardului selectat
+  symbol?: string;         // piata selectata (card) — undefined = toate pietele
 }
 
-// Starea unui semnal din jurnalul Custom Engine. Doar eticheta — rezultatele
-// (R / USD) ale tranzactiilor executate vin exclusiv din MT5 (vederea "Tranzacții").
-function signalStatusBadge(status: string | null) {
-  switch (status) {
-    case null:
-    case undefined:
-      return <span className="text-[10px] text-slate-600">în așteptare</span>;
-    case "ai_reject":
-      // Fara procent inline: la o respingere `confidence` e convingerea de NU a
-      // consiliului, nu o incredere comparabila cu pragul. Motivul e in Notificari.
-      return (
-        <span
-          className="text-[10px] font-bold text-purple-400"
-          title="Respins de Filtrul AI Pre-Trade — vezi cauza și motivul complet în Notificări"
-        >
-          ⛔ respins AI
-        </span>
-      );
-    case "global_block":
-      return (
-        <span className="text-[10px] font-bold text-orange-400"
-              title="Blocat de Setările Globale (protecție capital / circuit breaker / poziții simultane) — motivul e în Notificări">
-          🛡 blocat global
-        </span>
-      );
-    case "expirat":   return <span className="text-[10px] text-slate-500">expirat</span>;
-    case "invalidat": return <span className="text-[10px] text-warn">invalidat</span>;
-    case "news_cancel": return <span className="text-[10px] text-slate-500">anulat (știre)</span>;
-    default:
-      // TP / SL / vineri_close / news_close / be_lock* — ordin executat; rezultatul e in MT5
-      return (
-        <span className="text-[10px] text-blue-400" title="Executat — rezultatul real e în vederea Tranzacții (MT5)">
-          executat
-        </span>
-      );
-  }
-}
+// filtrul de sursa al paginii → engine-ul semnalelor (manual nu are semnale)
+const SOURCE_ENGINE: Record<SourceFilter, string | null> = {
+  all: null, bot: "custom", ai: "ai", daily: "daily", noisy: "noisy", manual: null,
+};
 
 const SOURCE_BADGE: Record<Mt5Transaction["source"], { label: string; cls: string }> = {
   bot:    { label: "CUSTOM", cls: "bg-emerald-500/15 text-emerald-300" },
@@ -92,59 +59,70 @@ function DirBadge({ dir, label }: { dir: number; label: string }) {
   );
 }
 
-function SignalsList({ sessionId }: { sessionId: string }) {
-  const { data: signals, isLoading } = useSignals(sessionId);
+const SIGNAL_STATUS_CLS: Record<GlobalSignal["status"], string> = {
+  executed: "text-blue-400", rejected: "text-purple-400 font-bold", expired: "text-slate-500",
+  pending: "text-slate-400", observe: "text-sky-300/80", virtual: "text-amber-300/80", other: "text-slate-400",
+};
 
+function SignalsList({ source, symbol }: { source: SourceFilter; symbol?: string }) {
+  const [limit, setLimit] = useState(100);
+  const { data: signals, isLoading } = useDashboardSignals(symbol, SOURCE_ENGINE[source] ?? undefined, limit);
+
+  if (source === "manual") {
+    return <div className="text-center py-8 text-slate-500 text-sm">Tranzacțiile manuale nu au semnale.</div>;
+  }
   if (isLoading) return <FeedSkeleton />;
   if (!signals?.length) {
-    return <div className="text-center py-8 text-slate-500 text-sm">Niciun semnal înregistrat</div>;
+    return <div className="text-center py-8 text-slate-500 text-sm">Niciun semnal înregistrat{symbol ? ` pe ${symbol}` : ""}</div>;
   }
 
   return (
     <div className="space-y-1.5 h-full overflow-y-auto pr-1">
-      {signals.map((sig: Signal) => {
-        const fmt = sig.entry > 100 ? 2 : 5;
+      <div className="text-[10px] text-slate-500 pb-1 text-right">
+        {signals.length} semnale — Custom (setup-uri), AI (decizii OPEN / CLOSE), Daily / Noisy (trade-uri, virtuale în shadow)
+      </div>
+      {signals.map(sig => {
+        const c = ENGINE_COLOR[sig.engine];
+        const dir = sig.direction === "LONG" ? 1 : sig.direction === "SHORT" ? -1 : 0;
         return (
-          <div
-            key={sig.signal_id}
-            className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-surface-border/20 hover:bg-surface-border/40 transition-colors"
-          >
-            <DirBadge dir={sig.direction} label={sig.dir_str} />
+          <div key={`${sig.engine}-${sig.id}`} title={sig.detail}
+            className="flex items-center gap-3 px-3 py-2.5 rounded-lg bg-surface-border/20 hover:bg-surface-border/40 transition-colors">
+            {dir !== 0 ? <DirBadge dir={dir} label={sig.direction} />
+              : <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-500/20 text-slate-300">{sig.direction || "—"}</span>}
             <div className="flex-1 min-w-0">
               <div className="flex items-baseline gap-2">
                 <span className="text-sm font-semibold text-white">{sig.symbol}</span>
+                <span className={`text-[9px] font-bold px-1 rounded border ${c.badge}`}>
+                  {c.label}{sig.engine === "custom" ? ` ${sig.ref}` : ""}
+                </span>
                 <span className="text-[10px] text-slate-500">{sig.time.slice(0, 16)}</span>
               </div>
-              <div className="text-[10px] text-slate-400 font-mono">
-                {sig.entry.toFixed(fmt)} → TP {sig.tp.toFixed(fmt)}
-              </div>
+              <div className="text-[10px] text-slate-400 truncate">{sig.strategy}</div>
             </div>
-            <div className="text-right flex-shrink-0">
-              <div className="text-xs text-slate-400">{sig.r_ratio}R</div>
-              {signalStatusBadge(sig.status)}
+            <div className={`text-[10px] text-right flex-shrink-0 max-w-[45%] ${SIGNAL_STATUS_CLS[sig.status]}`}>
+              {sig.status_label}
             </div>
           </div>
         );
       })}
+      {signals.length >= limit && (
+        <button onClick={() => setLimit(l => l + 100)}
+          className="w-full text-[11px] py-1.5 rounded border border-surface-border text-slate-400 hover:text-white">
+          Încarcă mai multe
+        </button>
+      )}
     </div>
   );
 }
 
-function TradesList({ sessionId, source = "all", symbol }: {
-  sessionId: string; source?: SourceFilter; symbol?: string;
-}) {
-  // "all" = tot contul (Bot + AI + manual); o sesiune = doar tranzactiile Custom Engine ale ei
-  // Paginare: inainte se afisau DOAR ultimele 50 (fara indiciu) → parea ca lipsesc
-  // tranzactii fata de istoricul MT5. Acum: contor „X din total" + „Încarcă mai multe".
+function TradesList({ source = "all", symbol }: { source?: SourceFilter; symbol?: string }) {
+  // Tranzactiile inchise din MT5, toate engine-urile (badge CUSTOM / AI / DAILY / NOISY / MAN).
+  // Piata selectata = tot ce s-a tranzactionat pe simbol, de oricare engine (filtrul de sursa ramane).
+  // Paginare: contor „X din total" + „Încarcă mai multe" (nu se ascunde nimic).
   const [limit, setLimit] = useState(50);
-  // Pe o piata: „Toate" = tot ce s-a tranzactionat pe simbolul ei (Bot + AI + manual);
-  // „Bot" = doar tranzactiile sesiunii Custom Engine; „AI"/„Manual" = acelea, pe simbol.
-  const { data, isLoading } = useMt5Transactions(
-    sessionId === "all"
-      ? { limit, ...(source !== "all" ? { source } : {}) }
-      : source === "bot" ? { source: "bot", session_id: sessionId, limit }
-      : { limit, symbol, ...(source !== "all" ? { source } : {}) },
-  );
+  const { data, isLoading } = useMt5Transactions({
+    limit, ...(symbol ? { symbol } : {}), ...(source !== "all" ? { source } : {}),
+  });
 
   if (isLoading) return <FeedSkeleton />;
   if (data && !data.connected) {
@@ -214,14 +192,7 @@ function TradesList({ sessionId, source = "all", symbol }: {
   );
 }
 
-export function SignalFeed({ sessionId, view, source = "all", symbol }: Props) {
-  if (view === "trades") return <TradesList key={source} sessionId={sessionId} source={source} symbol={symbol} />;
-  if (source === "ai" || source === "daily" || source === "manual") {
-    return (
-      <div className="text-center py-8 text-slate-500 text-sm">
-        Semnalele sunt detectate doar de Custom Engine — alege „Toate” sau „Custom Engine” în filtrul de sursă.
-      </div>
-    );
-  }
-  return <SignalsList sessionId={sessionId} />;
+export function SignalFeed({ view, source = "all", symbol }: Props) {
+  if (view === "trades") return <TradesList key={`${source}-${symbol ?? ""}`} source={source} symbol={symbol} />;
+  return <SignalsList key={`${source}-${symbol ?? ""}`} source={source} symbol={symbol} />;
 }

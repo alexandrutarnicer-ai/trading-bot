@@ -1002,3 +1002,23 @@ export const useNoisySaveConfig = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["noisy-status"] }),
   });
 };
+
+// ── Dashboard global: piete active + semnale din toate engine-urile ──────────
+import type { DashboardMarkets, GlobalSignal } from "./types";
+
+export const useDashboardMarkets = () =>
+  useQuery<DashboardMarkets>({
+    queryKey: ["dashboard-markets"],
+    queryFn:  () => apiFetch("/dashboard/markets"),
+    refetchInterval: 15_000,                 // starea engine-urilor; server cache 5 s
+    refetchIntervalInBackground: false,
+  });
+
+export const useDashboardSignals = (symbol?: string, engine?: string, limit = 100) =>
+  useQuery<GlobalSignal[]>({
+    queryKey: ["dashboard-signals", symbol ?? "", engine ?? "", limit],
+    queryFn:  () => apiFetch(`/dashboard/signals?limit=${limit}`
+      + (symbol ? `&symbol=${encodeURIComponent(symbol)}` : "") + (engine ? `&engine=${engine}` : "")),
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
+  });

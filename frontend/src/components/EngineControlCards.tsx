@@ -20,7 +20,7 @@ export const ENGINE_THEME: Record<LifecycleEngineId, { text: string; dot: string
 export const NOISY_START_CONFIRM =
   "Start Noisy Engine?  — RISK LEVEL: HIGH\n\n" +
   "Acest engine:\n" +
-  "• analizează piața foarte des (la fiecare bară de 5 minute) și poate deschide mai multe trade-uri pe zi;\n" +
+  "• analizează piața foarte des (la fiecare bară de 1 sau 5 minute) și poate deschide mai multe trade-uri pe zi;\n" +
   "• suportă costuri relativ mai mari (spread, comision, slippage) față de celelalte engine-uri;\n" +
   "• e expus la volatilitate și poate produce pierderi mai rapid.\n\n" +
   "Acum rulează în SHADOW: trade-uri virtuale pe prețuri reale, ZERO ordine. Are buget propriu și se oprește singur la pragul setat.";

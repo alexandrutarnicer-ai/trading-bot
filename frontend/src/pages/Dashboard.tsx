@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
 import { RefreshCw, TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useSessions, useBotStatus, useMt5Status, useMt5WeeklyStats, useMt5SessionStats } from "../api/hooks";
-import type { Mt5PeriodStats, SourceFilter } from "../api/types";
-import { SessionCard } from "../components/SessionCard";
+import { useBotStatus, useMt5Status, useMt5WeeklyStats, useDashboardMarkets } from "../api/hooks";
+import type { Mt5PeriodStats, SourceFilter, MarketCardData, MarketEngineId } from "../api/types";
+import { MarketCard, ENGINE_COLOR } from "../components/MarketCard";
 import { SignalFeed, type FeedView } from "../components/SignalFeed";
 import { EquityChart } from "../components/EquityChart";
 import { TradingStatsPanel } from "../components/TradingStatsPanel";
@@ -172,10 +172,10 @@ function WeeklyStatsPanel({ source }: { source: string }) {
       {(cur.costs != null || prev.costs != null) && (
         <div className="grid grid-cols-3 items-center">
           <div className="text-[11px] text-slate-400 flex items-center gap-1">
-            Comisioane
+            Costuri broker
             <span
               className="text-[10px] text-slate-600 cursor-help"
-              title="Comisioane + swap ale perioadei, din MT5 (cont-wide — include și Motorul AI)."
+              title="Comision + swap ale pozițiilor închise în perioadă, din MT5 (aceeași sursă ca filtrul paginii). Spread-ul e deja în P&L."
             >ⓘ</span>
           </div>
           <div className="text-center">
@@ -211,14 +211,15 @@ function WeeklyStatsPanel({ source }: { source: string }) {
 }
 
 export function Dashboard() {
-  const { data: sessions, isLoading, dataUpdatedAt } = useSessions();
+  // Piete active pe TOATE engine-urile (Custom / AI / Daily / Noisy) — S1/S2 raman in Custom Engine
+  const { data: marketsData, isLoading, dataUpdatedAt } = useDashboardMarkets();
   const { data: botStatus } = useBotStatus();
   const { data: mt5 } = useMt5Status();
   // Filtrul de SURSA la nivel de pagina (default Toate): cardurile, statisticile,
   // indicele saptamanal, Top 5, graficul si lista de tranzactii folosesc aceeasi sursa.
   const [source, setSource] = useState<SourceFilter>("all");
-  const { data: mt5SessionsData } = useMt5SessionStats(source);
-  const [selectedSession, setSelectedSession] = useState<string>("all");
+  const [selectedMarket, setSelectedMarket] = useState<string | null>(null);
+  const [hideStopped, setHideStopped] = useState(false);
   const [now, setNow] = useState(Date.now());
   const [feedView, setFeedView] = useState<FeedView>("trades");
   const qc = useQueryClient();
@@ -234,11 +235,17 @@ export function Dashboard() {
     : secsAgo < 60 ? `${secsAgo}s`
     : `${Math.floor(secsAgo / 60)}m`;
 
-  const selected = sessions?.find(s => s.id === selectedSession);
-
-  const mt5SessionMap = new Map(
-    (mt5SessionsData?.connected ? mt5SessionsData.items : []).map(m => [m.session_id, m]),
-  );
+  // Filtrul de sursa al paginii se aplica si cardurilor: pe un engine → doar pietele lui,
+  // cu statisticile MT5 ale acelui engine pe piata (aceleasi definitii).
+  const srcEngine: MarketEngineId | null =
+    source === "bot" ? "custom" : source === "ai" || source === "daily" || source === "noisy" ? source : null;
+  const markets: MarketCardData[] = (marketsData?.markets ?? [])
+    .filter(m => !srcEngine || m.engine_ids.includes(srcEngine))
+    .filter(m => !hideStopped || m.status !== "stopped")
+    .map(m => srcEngine ? { ...m, stats: m.stats_by_engine?.[srcEngine] ?? null,
+                            engines: m.engines.filter(e => e.engine === srcEngine) } : m);
+  const counts = marketsData?.counts;
+  const histOnly = marketsData?.history_only ?? [];
 
   function refresh() {
     qc.invalidateQueries();
@@ -254,7 +261,7 @@ export function Dashboard() {
         <div className="flex items-center gap-4 flex-wrap">
           <div className="leading-tight">
             <h1 className="text-base font-bold text-white">Dashboard</h1>
-            <p className="text-[10px] text-slate-500">3 engine-uri · rezultate direct din MT5 · profil {profileLabel.replace(/\s*Profile$/i, "").toLowerCase()}</p>
+            <p className="text-[10px] text-slate-500">4 engine-uri · rezultate direct din MT5 · profil {profileLabel.replace(/\s*Profile$/i, "").toLowerCase()}</p>
           </div>
           {mt5?.connected && (
             <div className="flex items-center gap-3 text-xs text-slate-400 bg-surface-card border border-surface-border rounded-lg px-3 py-1.5">
@@ -341,54 +348,77 @@ export function Dashboard() {
       {/* Ritm de tranzactionare pe engine (inlocuieste Frecventa estimata) */}
       <TradingPace />
 
-      {/* Sessions grid */}
+      {/* Piete active — toate engine-urile; o piata = un card, banda colorata = engine-urile ei */}
       <div>
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
           <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-            Sesiuni active
-            <span className="ml-2 normal-case font-normal text-slate-600">
-              {source === "all" ? "· tranzacții din toate sursele pe fiecare piață"
-                : source === "bot" ? "· doar tranzacțiile Custom Engine ale sesiunii"
-                : source === "ai" ? "· doar tranzacțiile AI Engine pe piața cardului"
-                : source === "daily" ? "· doar tranzacțiile reale Daily Engine pe piața cardului"
-                : source === "noisy" ? "· doar tranzacțiile reale Noisy Engine pe piața cardului"
-                : "· doar tranzacțiile manuale pe piața cardului"}
-            </span>
+            Piețe active
+            {counts && (
+              <span className="ml-2 normal-case font-normal text-slate-600">
+                · {markets.length} piețe
+                {counts.in_position ? ` · ${counts.in_position} în poziție` : ""}
+                {counts.active ? ` · ${counts.active} active` : ""}
+                {counts.observe ? ` · ${counts.observe} în observație` : ""}
+                {counts.blocked ? ` · ${counts.blocked} blocate` : ""}
+                {counts.stopped ? ` · ${counts.stopped} oprite` : ""}
+              </span>
+            )}
           </h2>
+          <div className="flex items-center gap-3 text-[10px] text-slate-500 flex-wrap">
+            {(Object.keys(ENGINE_COLOR) as MarketEngineId[]).map(id => (
+              <span key={id} className="flex items-center gap-1">
+                <span className={`w-2.5 h-1 rounded ${ENGINE_COLOR[id].bar}`} />{ENGINE_COLOR[id].label}
+                {marketsData && <span className={marketsData.engines[id] ? "text-profit" : "text-slate-600"}>
+                  {marketsData.engines[id] ? "pornit" : "oprit"}</span>}
+              </span>
+            ))}
+            <label className="flex items-center gap-1 cursor-pointer">
+              <input type="checkbox" checked={hideStopped} onChange={e => setHideStopped(e.target.checked)} />
+              ascunde piețele oprite
+            </label>
+          </div>
         </div>
-        {mt5SessionsData && !mt5SessionsData.connected && (
+        {marketsData?.global_block && (
+          <div className="text-[11px] text-warn bg-warn/10 border border-warn/30 rounded-lg px-3 py-2 mb-3">
+            🛡 Setări Globale — ordinele noi sunt blocate pe tot contul: {marketsData.global_block}
+          </div>
+        )}
+        {marketsData && !marketsData.mt5_connected && (
           <div className="text-[11px] text-warn/80 bg-warn/10 border border-warn/30 rounded-lg px-3 py-2 mb-3">
-            MT5 neconectat — {mt5SessionsData.error ?? "rezultatele pe sesiune nu sunt disponibile"}.
+            MT5 neconectat — starea engine-urilor e afișată, rezultatele pe piață nu sunt disponibile.
+          </div>
+        )}
+        {marketsData && Object.keys(marketsData.errors).filter(k => k !== "mt5").length > 0 && (
+          <div className="text-[11px] text-slate-500 mb-2">
+            Date indisponibile pentru: {Object.keys(marketsData.errors).filter(k => k !== "mt5").join(", ")} (restul piețelor e afișat normal).
           </div>
         )}
         {isLoading ? (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-            {[...Array(6)].map((_, i) => (
-              <div key={i} className="h-40 rounded-xl bg-surface-card animate-pulse" />
-            ))}
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+            {[...Array(10)].map((_, i) => <div key={i} className="h-40 rounded-xl bg-surface-card animate-pulse" />)}
           </div>
         ) : (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-            {sessions?.map(s => (
-              <SessionCard
-                key={s.id}
-                session={s}
-                mt5={mt5SessionMap.get(s.id)}
-                selected={s.id === selectedSession}
-                onClick={() => setSelectedSession(s.id)}
-              />
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+            {markets.map(m => (
+              <MarketCard key={m.symbol} m={m} selected={m.symbol === selectedMarket}
+                onClick={() => setSelectedMarket(s => (s === m.symbol ? null : m.symbol))} />
             ))}
+            {!markets.length && <div className="text-xs text-slate-500 col-span-full py-4">Nicio piață configurată pentru filtrul ales.</div>}
+          </div>
+        )}
+        {!srcEngine && histOnly.length > 0 && (
+          <div className="text-[11px] text-slate-500 mt-2">
+            + piețe cu tranzacții dar fără niciun engine configurat acum:{" "}
+            {histOnly.map(h => (
+              <button key={h.symbol} onClick={() => setSelectedMarket(h.symbol)}
+                className="underline decoration-dotted hover:text-slate-300 mr-2">
+                {h.symbol} ({Object.entries(h.sources).map(([s, n]) => `${s === "bot" ? "Custom" : s.toUpperCase()} ${n}`).join(", ")})
+              </button>
+            ))}
+            — incluse în statistici și în lista de tranzacții.
           </div>
         )}
       </div>
-
-      {mt5SessionsData?.unassigned && Object.keys(mt5SessionsData.unassigned).length > 0 && (
-        <div className="text-[11px] text-slate-500 -mt-3">
-          + {Object.values(mt5SessionsData.unassigned).reduce((a, b) => a + b, 0)} tranzacții pe piețe fără card de sesiune:{" "}
-          {Object.entries(mt5SessionsData.unassigned).map(([sym, n]) => `${sym} (${n})`).join(", ")}
-          {" "}— incluse în statistici și în lista de tranzacții.
-        </div>
-      )}
 
       {/* Ordine active — sursa de adevar MT5 (pozitii + pending, Bot/AI/Manual) */}
       <ActiveOrdersTable />
@@ -401,8 +431,8 @@ export function Dashboard() {
           <div className="flex items-center justify-between mb-4 flex-shrink-0">
             <div className="flex items-center gap-3 min-w-0">
               <h2 className="text-sm font-semibold text-white truncate">
-                {feedView === "trades" ? "Tranzacții MT5" : "Semnale Custom Engine"}
-                {" — "}{selectedSession === "all" ? "Toate" : (selected?.label ?? "—")}
+                {feedView === "trades" ? "Tranzacții MT5" : "Semnale"}
+                {" — "}{selectedMarket ?? "toate piețele"}
               </h2>
               <div className="flex gap-1 flex-shrink-0">
                 {([["trades", "Tranzacții"], ["signals", "Semnale"]] as const).map(([v, label]) => (
@@ -410,8 +440,8 @@ export function Dashboard() {
                     key={v}
                     onClick={() => setFeedView(v)}
                     title={v === "trades"
-                      ? "Tranzacțiile închise, direct din MT5 (Bot + AI + manual; pe o sesiune: doar Bot)"
-                      : "Semnalele detectate de Custom Engine și starea lor (respins AI, expirat, executat...)"}
+                      ? "Tranzacțiile închise, direct din MT5 — toate engine-urile (badge colorat); pe o piață: tot ce s-a tranzacționat pe ea"
+                      : "Semnalele tuturor engine-urilor: setup-uri Custom, decizii AI, trade-uri Daily / Noisy — cu starea lor"}
                     className={`text-[10px] px-2 py-0.5 rounded transition-colors font-medium ${
                       feedView === v ? "bg-blue-500/20 text-blue-400" : "text-slate-500 hover:text-slate-300"
                     }`}
@@ -421,35 +451,16 @@ export function Dashboard() {
                 ))}
               </div>
             </div>
-            <div className="flex gap-1 flex-wrap justify-end">
-              <button
-                onClick={() => setSelectedSession("all")}
-                className={`text-[10px] px-2 py-0.5 rounded transition-colors font-medium ${
-                  selectedSession === "all"
-                    ? "bg-blue-500/20 text-blue-400"
-                    : "text-slate-500 hover:text-slate-300"
-                }`}
-              >
-                ALL
+            {selectedMarket && (
+              <button onClick={() => setSelectedMarket(null)}
+                className="text-[10px] px-2 py-0.5 rounded bg-blue-500/20 text-blue-400 hover:text-white flex-shrink-0"
+                title="Arată din nou toate piețele">
+                {selectedMarket} ✕
               </button>
-              {sessions?.map(s => (
-                <button
-                  key={s.id}
-                  onClick={() => setSelectedSession(s.id)}
-                  className={`text-[10px] px-2 py-0.5 rounded transition-colors ${
-                    s.id === selectedSession
-                      ? "bg-blue-500/20 text-blue-400"
-                      : "text-slate-500 hover:text-slate-300"
-                  }`}
-                >
-                  {s.id.replace("session", "S")}
-                </button>
-              ))}
-            </div>
+            )}
           </div>
           <div className="flex-1 min-h-0">
-            <SignalFeed sessionId={selectedSession} view={feedView} source={source}
-              symbol={mt5SessionMap.get(selectedSession)?.symbol} />
+            <SignalFeed view={feedView} source={source} symbol={selectedMarket ?? undefined} />
           </div>
         </div>
 
@@ -467,15 +478,7 @@ export function Dashboard() {
           {/* Trading stats */}
           <div className="bg-surface-card rounded-xl border border-surface-border p-4">
             <h2 className="text-sm font-semibold text-white mb-3">Statistici</h2>
-            {sessions && sessions.length > 0
-              ? <TradingStatsPanel
-                  sessions={sessions}
-                  mt5={mt5}
-                  botStatus={botStatus}
-                  source={source}
-                />
-              : <div className="text-xs text-slate-500 text-center py-4">Nicio sesiune activă</div>
-            }
+            <TradingStatsPanel markets={marketsData} mt5={mt5} botStatus={botStatus} source={source} />
           </div>
 
           {/* Weekly index */}

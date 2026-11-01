@@ -1,10 +1,10 @@
 import { useState } from "react";
 import { useMt5Stats } from "../api/hooks";
-import type { SessionStatus } from "../api/types";
-import type { Mt5Status, BotStatus } from "../api/types";
+import type { Mt5Status, BotStatus, DashboardMarkets, MarketEngineId } from "../api/types";
+import { ENGINE_COLOR } from "./MarketCard";
 
 interface Props {
-  sessions: SessionStatus[];
+  markets?: DashboardMarkets;      // /dashboard/markets — semnalele de azi pe toate engine-urile
   mt5?: Mt5Status | null;
   botStatus?: BotStatus | null;
   source?: string;                 // filtrul Dashboard (all/bot/ai/manual)
@@ -79,16 +79,17 @@ function PnlCard({ todayUsd, yesterdayUsd }: { todayUsd: number; yesterdayUsd: n
 const sum2 = (a?: number | null, b?: number | null): number | null =>
   a == null && b == null ? null : Math.round(((a ?? 0) + (b ?? 0)) * 100) / 100;
 
-export function TradingStatsPanel({ sessions, mt5, botStatus, source = "all" }: Props) {
+export function TradingStatsPanel({ markets, mt5, botStatus, source = "all" }: Props) {
   const [expanded, setExpanded] = useState(false);
   const { data: mt5Stats } = useMt5Stats(source);
 
-  // Semnalele nu au echivalent in MT5 (sunt detectii pre-tranzactie ale Custom Engine)
-  // — singura statistica luata din jurnalul botului. Doar sesiunile live.
-  const liveSessions = sessions.filter(x => x.execute);
-  const totalSignals = liveSessions.reduce((s, x) => s + x.signals_total,     0);
-  const signalsToday = liveSessions.reduce((s, x) => s + x.signals_today,     0);
-  const signalsYest  = liveSessions.reduce((s, x) => s + x.signals_yesterday, 0);
+  // Semnalele nu au echivalent in MT5 (sunt detectii pre-tranzactie ale engine-urilor) — azi, pe
+  // toate engine-urile: setup-uri Custom, decizii AI OPEN, trade-uri Daily / Noisy (virtuale in shadow).
+  const engIds = Object.keys(ENGINE_COLOR) as MarketEngineId[];
+  const sigByEngine = Object.fromEntries(engIds.map(id => [id, 0])) as Record<MarketEngineId, number>;
+  for (const m of markets?.markets ?? []) for (const e of m.engines) sigByEngine[e.engine] += e.signals_today;
+  const signalsToday = engIds.reduce((s, id) => s + sigByEngine[id], 0);
+  const sigMarkets = (markets?.markets ?? []).filter(m => m.signals_today > 0);
 
   // Trades / wins / losses / P&L / costuri — exclusiv MT5 (history_deals_get, cont-wide).
   const connected   = mt5Stats?.connected ?? false;
@@ -126,11 +127,11 @@ export function TradingStatsPanel({ sessions, mt5, botStatus, source = "all" }: 
       {/* Stat cards row */}
       <div className="flex gap-2 flex-wrap">
         <StatCard
-          label="Total Semnale"
-          value={totalSignals}
-          today={signalsToday}
-          yesterday={signalsYest}
-          sub="detectate de Custom Engine"
+          label="Semnale azi"
+          value={signalsToday}
+          today={0}
+          yesterday={0}
+          sub={engIds.filter(id => sigByEngine[id] > 0).map(id => `${ENGINE_COLOR[id].label} ${sigByEngine[id]}`).join(" · ") || "toate engine-urile"}
           onClick={() => setExpanded(e => !e)}
           active={expanded}
         />
@@ -141,7 +142,9 @@ export function TradingStatsPanel({ sessions, mt5, botStatus, source = "all" }: 
           yesterday={mt5Stats?.trades_yesterday ?? 0}
           sub={[
             winRate !== null ? `${winRate}% win rate` : null,
-            mt5Stats?.by_source ? `bot ${mt5Stats.by_source.bot} · AI ${mt5Stats.by_source.ai}${mt5Stats.by_source.manual ? ` · man ${mt5Stats.by_source.manual}` : ""}` : null,
+            mt5Stats?.by_source ? ([["Custom", mt5Stats.by_source.bot], ["AI", mt5Stats.by_source.ai],
+              ["Daily", mt5Stats.by_source.daily], ["Noisy", mt5Stats.by_source.noisy], ["man", mt5Stats.by_source.manual]] as [string, number | undefined][])
+              .filter(([, n]) => n).map(([k, n]) => `${k} ${n}`).join(" · ") : null,
           ].filter(Boolean).join(" · ") || undefined}
           accent={winRate !== null && winRate >= 50 ? "text-profit" : "text-white"}
         />
@@ -187,17 +190,23 @@ export function TradingStatsPanel({ sessions, mt5, botStatus, source = "all" }: 
           {costBroker != null && (
             <div className="flex-1 min-w-0 px-4 py-2.5 rounded-xl border border-surface-border bg-surface-card">
               <div className="flex items-center gap-1 mb-0.5">
-                <span className="text-[10px] text-slate-500 uppercase tracking-wider">Comisioane + Swap</span>
+                <span className="text-[10px] text-slate-500 uppercase tracking-wider">Costuri broker (comision + swap)</span>
                 <span
                   className="text-[10px] text-slate-600 cursor-help"
-                  title={`Comisioane: ${fmtUsd(totalCommission)} · Swap: ${fmtUsd(totalSwap)}. Sursă: MT5 (cont-wide — Bot + AI + manual) — ${totalTrades} trades.`}
+                  title={"Ce costă tranzacțiile închise, direct din MT5 (aceeași listă ca Tranzacții și Rapoarte).\n"
+                    + `• Total = comision + swap pe cele ${totalTrades} poziții închise în ultimele 365 zile`
+                    + (source === "all" ? " (tot contul)" : " (doar sursa aleasă în filtru)") + ".\n"
+                    + "• com = comisionul brokerului (cont Standard: ~0, costul e inclus în spread).\n"
+                    + "• swap = dobânda pentru pozițiile ținute peste noapte.\n"
+                    + "• Azi / Ieri = costurile pozițiilor ÎNCHISE azi / ieri (swap-ul acumulat pe toată durata lor).\n"
+                    + "Spread-ul nu apare aici — e deja în prețul de intrare / ieșire, deci în P&L. Pozițiile încă deschise nu sunt incluse."}
                 >ⓘ</span>
               </div>
               <span className={`text-lg font-bold font-mono tabular-nums ${costBroker > 0 ? "text-profit" : costBroker < 0 ? "text-loss" : "text-slate-400"}`}>
                 {fmtUsd(costBroker)}
               </span>
               <div className="text-[10px] text-slate-600 mt-0.5">
-                com: {fmtUsd(totalCommission)} · swap: {fmtUsd(totalSwap)}
+                comision: {fmtUsd(totalCommission)} · swap: {fmtUsd(totalSwap)} · poziții închise{source !== "all" ? " · sursa din filtru" : ""}
               </div>
               {(costToday != null || costYest != null) && (
                 <div className="flex items-center gap-1 mt-1 text-[10px]">
@@ -211,35 +220,28 @@ export function TradingStatsPanel({ sessions, mt5, botStatus, source = "all" }: 
         </div>
       )}
 
-      {/* Semnale per sesiune (jurnalul Custom Engine) */}
+      {/* Semnale azi pe piata si engine */}
       {expanded && (
         <div className="border border-surface-border rounded-xl overflow-hidden">
           <div className="px-4 py-2 border-b border-surface-border/60 flex items-center justify-between">
-            <span className="text-[10px] text-slate-500 uppercase tracking-wider font-medium">Semnale per sesiune</span>
+            <span className="text-[10px] text-slate-500 uppercase tracking-wider font-medium">Semnale azi pe piață</span>
             <button onClick={() => setExpanded(false)} className="text-slate-600 hover:text-slate-400 text-xs">✕</button>
           </div>
           <div className="divide-y divide-surface-border/40">
-            {sessions.map(s => {
-              if (s.signals_total === 0 && s.signals_today === 0) return null;
-              return (
-                <div key={s.id} className="flex items-center gap-3 px-4 py-2.5">
-                  <div className="flex items-center gap-2 min-w-0 flex-1">
-                    <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${s.running ? "bg-profit" : "bg-slate-600"}`} />
-                    <span className="text-xs text-slate-300 font-medium">{s.label}</span>
-                    {!s.execute && <span className="text-[9px] text-slate-500 border border-slate-700 rounded px-1">OBS</span>}
-                    <span className="text-[10px] text-slate-600 truncate">{s.markets.join(" · ")}</span>
-                  </div>
-                  <div className="flex items-center gap-3 text-[10px] text-right flex-shrink-0">
-                    <span className="text-slate-300 font-mono tabular-nums text-xs font-medium">{s.signals_total} total</span>
-                    <span className="text-slate-500">
-                      Azi: <strong className="text-slate-300">{s.signals_today}</strong>
-                      <span className="text-slate-600 mx-1">/</span>
-                      Ieri: {s.signals_yesterday}
+            {!sigMarkets.length && <div className="px-4 py-2.5 text-[11px] text-slate-500">Niciun semnal azi.</div>}
+            {sigMarkets.map(m => (
+              <div key={m.symbol} className="flex items-center gap-3 px-4 py-2">
+                <span className="text-xs text-slate-300 font-medium w-24">{m.symbol}</span>
+                <div className="flex gap-1.5 flex-wrap flex-1">
+                  {m.engines.filter(e => e.signals_today > 0).map(e => (
+                    <span key={`${e.engine}-${e.ref}`} className={`text-[10px] px-1 rounded border ${ENGINE_COLOR[e.engine].badge}`}>
+                      {ENGINE_COLOR[e.engine].label}{e.engine === "custom" ? ` ${e.ref}` : ""} {e.signals_today}
                     </span>
-                  </div>
+                  ))}
                 </div>
-              );
-            })}
+                <span className="text-slate-300 font-mono tabular-nums text-xs">{m.signals_today}</span>
+              </div>
+            ))}
           </div>
         </div>
       )}
