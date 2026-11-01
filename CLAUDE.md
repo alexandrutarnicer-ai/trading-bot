@@ -76,6 +76,7 @@ python scripts/test_position_sizing.py    # 38 teste: dimensionare comuna, Custo
 python scripts/test_reports.py            # 37 teste: rapoarte saptamanal/lunar, program + failure handling (offline)
 python scripts/test_market_overview.py    # 34 teste: Dashboard global — piete active pe toate engine-urile (offline)
 python scripts/test_timezones.py          # 20 teste: fus orar RO / DE pe toate engine-urile (offline, config simulat)
+python scripts/test_update_vlad_live.py   # 18 teste: update-vlad-live (stash configurari → update → reaplicare, repo-uri temporare)
 python -m noisy_engine.selftest           # 52 teste: Noisy Engine (strategie pura, BE = Custom, R:R, profile M1/M5, buget, shadow + executie)
 python scripts/test_sync_branch.py        # 20 teste: sync PC <-> laptop pe alex-live (clone git temporare)
 sync_data.bat                             # PC <-> laptop: trimite + aduce cod si date (acelasi pe ambele)
@@ -289,6 +290,10 @@ Branch-ul de date `alex-live` e folosit pe DOUA dispozitive; userul decide singu
 - **Fara pierderi:** copiile locale care s-ar suprascrie (neurmarite, sau urmarite modificate necomise) se MUTA in `data/_sync_backup/<data-ora>/`; cod local necomis in conflict → oprire cu mesaj; merge in conflict → `merge --abort`. Refuza `main`/`vlad-live`. `update_bot.bat` / `update_bot_alex-pc-laptop.bat` refuza sa ruleze pe alex-live. Cod nou primit → mesaj de restart (dashboard + engine-uri).
 - Teste: `python scripts/test_sync_branch.py` (20; doua clone git temporare + remote local, offline).
 - **Curatenie (2026-11-01):** copiile din `data/_sync_backup/` mai vechi de `BACKUP_KEEP_DAYS`=30 zile sunt sterse la fiecare sync (`prune_backups`, dupa data din numele folderului; foldere cu alt nume neatinse). Jurnalele Custom (`live_signals/session*/generator.log`) si AI (`data/ai/engine.log`) se ROTESC acum la 5 MB × 3 copii (`log_utils.rotating_handler`; inainte cresteau la nesfarsit; Daily avea deja 2 MB × 3) — `SafeRotatingFileHandler` amana rotatia fara eroare daca Windows refuza redenumirea (fisier tinut deschis de alt proces). Necesita restart engine. Teste: `python scripts/test_log_rotation.py` (9).
+
+### Update vlad-live — `update-vlad-live.bat` → `scripts/update_vlad_live.py` (2026-11-01)
+
+Vechiul `.bat` REFUZA orice arbore modificat („Commit or stash them first”), iar Vlad are mereu configurari locale editate din UI (profil, Setari Globale, config AI / Daily / Noisy, fus orar DE) → update-ul nu rula niciodata. Acum: branch obligatoriu vlad-live; Custom Engine pornit → refuza (celelalte: avertisment de restart); tinta = `origin/vlad-live` sau `origin/main`, cel mai nou; modificarile locale urmarite → `git stash`; fisierele NEURMARITE pe care update-ul le-ar aduce → mutate in `data/_update_backup/<data-ora>/` (gitignored); fast-forward (sau merge daca vlad-live are commit-uri proprii; la conflict: abort + restaurare, nimic schimbat); `stash pop` cu conflict → se PASTREAZA versiunea LOCALA a lui Vlad (listata in raport), modificarile raman necomise; pip / npm doar daca s-au schimbat dependentele. Prima data, cu scriptul vechi pe masina lui: `git fetch origin && git checkout origin/vlad-live -- update-vlad-live.bat scripts/update_vlad_live.py`, apoi dublu-click. Teste: `python scripts/test_update_vlad_live.py` (18).
 
 ### `noisy_engine/` — Noisy Engine (mean reversion, o piata, M1 implicit), SHADOW / EXECUTIE (2026-11-01)
 
