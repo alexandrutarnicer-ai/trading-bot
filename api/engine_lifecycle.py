@@ -177,11 +177,6 @@ def engine_start(eid: str):
     _engine(eid)
     if _status(eid)["running"]:
         raise HTTPException(409, f"{ENGINES[eid]['label']} rulează deja")
-    import device_owner
-    other = device_owner.other_device_running()
-    if other:      # engine-urile sunt preluate de celalalt dispozitiv -> ordine duble pe acelasi cont
-        raise HTTPException(409, f"Engine-urile rulează pe {other}. Ca să le muți aici: pe {other} "
-                                 f"schimb_dispozitiv.bat → Predau, apoi aici → Preiau.")
     _do_start(eid)
     st = _wait_for(eid, True, 12.0)
     if not st["running"]:
