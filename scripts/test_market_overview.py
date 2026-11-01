@@ -125,6 +125,12 @@ check("pozitie reala Custom → in pozitie", mk(d, "USDJPY")["status"] == "in_po
 d = M.build(base(daily={"running": True, "mode": "shadow", "markets": [{"symbol": "GBPUSD", "enabled": False}]}), MON)
 check("piata Daily dezactivata → oprit", mk(d, "GBPUSD")["status"] == "stopped")
 
+d = M.build(base(daily={"running": True, "mode": "shadow", "markets": [{"symbol": "US500", "enabled": True}],
+                       "status_markets": [{"symbol": "US500", "phase": "waiting_open", "window_ro": "16:30–23:00",
+                                           "window_app": "15:30–22:00", "app_tz_label": "DE"}]}), MON)
+check("Daily: fereastra afisata in fusul aplicatiei (DE), nu fix RO", "15:30–22:00 ora DE" in mk(d, "US500")["engines"][0]["reason"],
+      mk(d, "US500")["engines"][0]["reason"])
+
 print("5. Fara hardcodare: piete doar cu istoric, MT5 indisponibil, semnale + virtuale")
 d = M.build(base(custom={"running": True, "sessions": [sess(1, "EURUSD")]}, trades=[tr("AUDUSD", "ai", 2), tr("EURUSD", "bot", 1)]), MON)
 check("AUDUSD (tranzactii AI, nu mai e configurata) → 'doar istoric', nu card",

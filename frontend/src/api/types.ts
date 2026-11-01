@@ -840,6 +840,9 @@ export interface DailyMarketStatus {
   or_minutes?: number;
   day?: string;
   window_ro?: string;
+  window_app?: string;          // fereastra in fusul aplicatiei (RO / DE) — doar afisare
+  app_tz?: string;
+  app_tz_label?: "RO" | "DE";
   window_local?: string;
   phase: DailyPhase;
   reason?: string;

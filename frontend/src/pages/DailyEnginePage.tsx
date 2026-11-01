@@ -43,8 +43,9 @@ function MarketCard({ m, score, bt }: {
       </div>
 
       <div className="grid grid-cols-2 gap-2 text-[11px]">
-        <div className="text-slate-500">Fereastra (ora RO)</div>
-        <div className="text-white font-semibold">{m.window_ro ?? "—"}</div>
+        <div className="text-slate-500">Fereastra (ora {m.app_tz_label ?? "RO"})</div>
+        <div className="text-white font-semibold"
+          title={m.app_tz_label === "DE" ? `ora RO: ${m.window_ro ?? "—"}` : undefined}>{m.window_app ?? m.window_ro ?? "—"}</div>
         <div className="text-slate-500">Ora bursei</div>
         <div className="text-slate-300">{m.window_local ?? "—"}</div>
         <div className="text-slate-500">Regulă</div>
@@ -107,7 +108,7 @@ function ModeSwitch({ mode, execution, running }: { mode?: string; execution?: {
   }
   function toggle() {
     if (!exec) {
-      if (!window.confirm("Treci Daily Engine pe EXECUȚIE?\n\nDe la următoarea fereastră (Londra 10:00 / New York 16:30 RO) " +
+      if (!window.confirm("Treci Daily Engine pe EXECUȚIE?\n\nDe la următoarea fereastră (deschiderea Londrei / a New York-ului)" +
         "plasează ORDINE REALE în contul MT5 conectat: GBPUSD ordine stop pe margini, US500 ordin la piață, SL atașat, " +
         "închidere obligatorie în aceeași zi.\n\nPe un cont REAL trebuie în plus deblocat „Daily Engine” în Settings → Trading LIVE.")) return;
       if (!window.confirm("Confirmare finală: Daily Engine va tranzacționa cu ordine reale. Continui?")) return;

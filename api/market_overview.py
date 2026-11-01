@@ -175,8 +175,9 @@ def engine_entries(inp: dict, now: datetime) -> list[dict]:
             status, label = _DAILY_PHASE.get(ph.get("phase"), ("idle", ph.get("phase") or "—"))
             if ph.get("reason") and status in ("idle", "blocked"):
                 label = f"{label}: {ph['reason']}"
-            if ph.get("window_ro") and ph.get("phase") == "waiting_open":
-                label += f" ({ph['window_ro']})"
+            win = ph.get("window_app") or ph.get("window_ro")   # fusul aplicatiei (RO / DE), altfel RO
+            if win and ph.get("phase") == "waiting_open":
+                label += f" ({win} ora {ph.get('app_tz_label', 'RO')})"
             if shadow and status in ("active", "in_position"):
                 label = label + (" (virtual)" if status == "in_position" else "") + " · shadow"
                 status = "observe"

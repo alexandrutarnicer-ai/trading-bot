@@ -1,7 +1,24 @@
 import { useEffect, useState } from "react";
 import { AlertTriangle, Loader2, OctagonX, Pause, Play, RotateCcw, Square, Zap } from "lucide-react";
-import { useNoisyAction, useNoisyLogs, useNoisySaveConfig, useNoisyStatus, useNoisyTrades } from "../api/hooks";
+import { useNoisyAction, useNoisyLogs, useNoisySaveConfig, useNoisyStatus, useNoisyTrades, useTimezone } from "../api/hooks";
 import type { NoisyConfig, NoisyStatus } from "../api/types";
+
+// Ora RO (fereastra Noisy e definita si testata in ora RO) → ora din alt fus, pentru afisare.
+function roToZone(hm: string, zone: string): string {
+  const [h, m] = hm.split(":").map(Number);
+  const now = new Date();
+  const off = (tz: string) => {
+    const p = new Intl.DateTimeFormat("en-GB", { timeZone: tz, hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
+      .formatToParts(now);
+    const g = (k: string) => Number(p.find(x => x.type === k)?.value ?? 0);
+    return g("hour") * 60 + g("minute");
+  };
+  let diff = off(zone) - off("Europe/Bucharest");
+  if (diff > 720) diff -= 1440;
+  if (diff < -720) diff += 1440;
+  const tot = (((h * 60 + m + diff) % 1440) + 1440) % 1440;
+  return `${String(Math.floor(tot / 60)).padStart(2, "0")}:${String(tot % 60).padStart(2, "0")}`;
+}
 
 /**
  * Noisy Engine — mean reversion pe M5, o singura piata (USDJPY), mod SHADOW.
@@ -254,6 +271,7 @@ function Score({ st }: { st?: NoisyStatus }) {
 function Config({ cfg }: { cfg?: NoisyConfig }) {
   const save = useNoisySaveConfig();
   const [d, setD] = useState<NoisyConfig | undefined>(cfg);
+  const appTz = useTimezone().data?.timezone;   // RO / DE — doar pentru echivalentul afisat al ferestrei
   const [dirty, setDirty] = useState(false);
   useEffect(() => { if (!dirty) setD(cfg); }, [cfg, dirty]);
   if (!d) return null;
@@ -295,7 +313,11 @@ function Config({ cfg }: { cfg?: NoisyConfig }) {
       </div>
       <div className="grid md:grid-cols-2 gap-4">
         <div className="space-y-2">
-          <div className="text-slate-400 font-semibold">Fereastră de intrare (ora RO)</div>
+          <div className="text-slate-400 font-semibold">Fereastră de intrare (ora RO)
+            {appTz && appTz !== "Europe/Bucharest" && (
+              <span className="font-normal text-slate-500"> · ora DE: {roToZone(d.window.start, appTz)}–{roToZone(d.window.end, appTz)}</span>
+            )}
+          </div>
           <div className="flex items-center gap-2">
             <input type="time" value={d.window.start} onChange={e => set(c => { c.window.start = e.target.value; })} className="bg-surface border border-surface-border rounded px-2 py-0.5" />
             <span>–</span>
