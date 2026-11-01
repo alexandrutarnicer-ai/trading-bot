@@ -1014,6 +1014,10 @@ export interface NoisyConfig {
   strategy: Record<string, number | boolean>;
   news: { enabled: boolean; pre_min: number; post_min: number };
   limits: { max_trades_day: NoisyLimit; max_losses_day: NoisyLimit; max_consec_losses: NoisyLimit };
+  tf_profiles: Record<"M1" | "M5", { limits: { max_trades_day: NoisyLimit; max_losses_day: NoisyLimit; max_consec_losses: NoisyLimit };
+                                     min_atr_over_cost: number }>;
+  break_even: { enabled: boolean; trigger_pct: number; lock1_pct: number; phase2_enabled: boolean;
+                phase2_zone_pct: number; lock2_pct: number };
   budget: { capital: number; min_remaining: number };
   sizing: { risk_pct: number };
 }

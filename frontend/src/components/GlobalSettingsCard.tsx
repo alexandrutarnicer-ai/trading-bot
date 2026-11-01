@@ -60,14 +60,14 @@ export function GlobalSettingsCard() {
         </span>
       </h3>
 
-      {row("capital_protection", "Protecția Capitalului", "Bot + AI", <>
+      {row("capital_protection", "Protecția Capitalului", "toate engine-urile", <>
         blochează ordinele noi când equity &lt;
         {num(draft.capital_protection.threshold_pct, v => set("capital_protection", { threshold_pct: v }), 1, 99)}% din
         {num(draft.capital_protection.start_balance ?? 0, v => set("capital_protection", { start_balance: v || null }), 0, 1e9, 1, "w-20")}$
         <span className="text-slate-600">(0 = capitalul inițial din profil)</span>
       </>)}
 
-      {row("circuit_breaker", "Circuit Breaker global", "Bot + AI · tot contul", <>
+      {row("circuit_breaker", "Circuit Breaker global", "toate engine-urile · tot contul", <>
         stop azi după
         {num(draft.circuit_breaker.max_consecutive_losses, v => set("circuit_breaker", { max_consecutive_losses: v }), 1, 50)} pierderi consecutive
         · sau pierdere zilnică ≥
@@ -75,7 +75,7 @@ export function GlobalSettingsCard() {
         <span className="text-slate-600">(0 = fără limită %)</span>
       </>)}
 
-      {row("friday_close", "Închidere de vineri", "Bot + AI", <>
+      {row("friday_close", "Închidere de vineri", "Custom + AI + Noisy (Daily nu ține nimic peste noapte)", <>
         de la ora
         {num(draft.friday_close.hour, v => set("friday_close", { hour: v }), 0, 23)}
         <label className="flex items-center gap-1">
@@ -85,7 +85,7 @@ export function GlobalSettingsCard() {
         </label>
       </>)}
 
-      {row("news_protection", "Protecție la știri", "Bot + AI", <>
+      {row("news_protection", "Protecție la știri", "toate engine-urile", <>
         impact
         <select value={draft.news_protection.impact_level}
           onChange={e => set("news_protection", { impact_level: Number(e.target.value) })}
@@ -97,13 +97,13 @@ export function GlobalSettingsCard() {
         {num(draft.news_protection.post_minutes, v => set("news_protection", { post_minutes: v }), 0, 720)}min
       </>)}
 
-      {row("risk_cap", "Risc maxim pe trade", "Custom + AI + Daily", <>
+      {row("risk_cap", "Risc maxim pe trade", "Custom + AI + Daily + Noisy", <>
         niciun trade nu riscă peste
         {num(draft.risk_cap.max_risk_pct, v => set("risk_cap", { max_risk_pct: v }), 0.1, 20, 0.1)}% din equity
         <span className="text-slate-600">(volumul se reduce; dacă nici lotul minim nu încape, ordinul nu se plasează)</span>
       </>)}
 
-      {row("max_concurrent_per_market", "Poziții simultane / piață", "Bot + AI · tot contul", <>
+      {row("max_concurrent_per_market", "Poziții simultane / piață", "toate engine-urile · tot contul", <>
         max
         {num(draft.max_concurrent_per_market.max, v => set("max_concurrent_per_market", { max: v }), 1, 20)}
         poziții + ordine pending pe același simbol (toate engine-urile și strategiile)
