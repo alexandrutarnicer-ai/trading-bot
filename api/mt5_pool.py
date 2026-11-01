@@ -44,6 +44,9 @@ _ORDERS_TTL = 6.0     # pozitii + pending
 _TRADES_TTL = 15.0    # istoric tranzactii inchise (cel mai scump)
 _OFFSET_TTL = 1800.0  # offset fus server — se schimba doar la DST (~2x/an)
 _FETCH_DAYS = 400     # fereastra maxima folosita de orice endpoint
+# Fereastra UNICA a vederilor „total” (Dashboard, Tranzactii, Rapoarte, Piete active) — aceeasi
+# lista peste tot, ca cifrele sa nu poata diverge intre pagini (2026-11-01).
+HISTORY_DAYS = 365
 
 # ── Cache: fiecare = (expiry_monotonic, value) sau None ──────────────────────
 _status_cache: tuple[float, dict] | None = None

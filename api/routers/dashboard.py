@@ -181,3 +181,17 @@ def trading_pace(refresh: bool = False):
     if refresh or _cache["data"] is None or time.time() - _cache["ts"] > CACHE_TTL_S:
         _cache.update(ts=time.time(), data=_compute())
     return _cache["data"]
+
+
+# ── Piete active + semnale GLOBALE (toate engine-urile) — vezi api/market_overview.py ──
+
+@router.get("/markets")
+def dashboard_markets(refresh: bool = False):
+    from api import market_overview
+    return market_overview.get_markets(refresh)
+
+
+@router.get("/signals")
+def dashboard_signals(symbol: str | None = None, engine: str | None = None, limit: int = 100):
+    from api import market_overview
+    return market_overview.signals(symbol or None, engine or None, max(1, min(int(limit), 500)))
