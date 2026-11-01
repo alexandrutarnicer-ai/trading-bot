@@ -102,7 +102,7 @@ function TransactionsTab() {
     if (dirFilter)    qs.set("direction", dirFilter);
     if (dateFrom)     qs.set("date_from", dateFrom);
     if (dateTo)       qs.set("date_to", dateTo);
-    window.open(`http://localhost:8000/api/mt5/transactions.csv?${qs.toString()}`, "_blank");
+    window.open(`http://127.0.0.1:8000/api/mt5/transactions.csv?${qs.toString()}`, "_blank");
   }
 
   const total = query.data?.total ?? 0;
