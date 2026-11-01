@@ -1,13 +1,13 @@
 @echo off
 chcp 65001 >nul 2>&1
 setlocal
-:: Pe branch-ul de date alex-live (PC <-> laptop) se lucreaza DOAR cu schimb_dispozitiv.bat:
+:: Pe branch-ul de date alex-live (PC <-> laptop) se lucreaza DOAR cu sync_data.bat:
 :: acest script trage din alt branch si ar amesteca codul / datele.
 for /f %%B in ('git -C "%~dp0." branch --show-current 2^>nul') do set "CURBR=%%B"
 if /i "%CURBR%"=="alex-live" (
     echo.
-    echo  [!] Esti pe alex-live. Pentru cod + date foloseste schimb_dispozitiv.bat
-    echo      ^(Preiau / Actualizez aduc si codul nou^). Acest script NU ruleaza aici.
+    echo  [!] Esti pe alex-live. Pentru cod + date foloseste sync_data.bat
+    echo      ^(aduce si codul nou^). Acest script NU ruleaza aici.
     echo.
     pause
     exit /b 1

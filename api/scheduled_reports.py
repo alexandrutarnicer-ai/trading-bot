@@ -285,8 +285,7 @@ def _scheduler_loop() -> None:
             now = now_local()                       # fusul aplicatiei, nu ora sistemului
             today = now.date()
             cfg = load_reports_config()
-            import device_owner                       # PC <-> laptop: doar proprietarul engine-urilor
-            if cfg.get("enabled_on_this_machine", True) and device_owner.is_reporting_machine():
+            if cfg.get("enabled_on_this_machine", True):
                 dh, dm = _hm(cfg["daily_time"])
                 if (now.hour, now.minute) >= (dh, dm) and (_last_daily is None or _last_daily < today):
                     _last_daily = today

@@ -1,8 +1,8 @@
 @echo off
 chcp 65001 >nul
-title Sync date - ACTUALIZEZ (aduc datele, fara sa pornesc engine-uri)
+title Sync PC / laptop - cod + date (alex-live)
 cd /d "%~dp0"
-:: Inlocuit de schimb_dispozitiv.bat (predare / preluare completa). Aici: ACTUALIZEZ = aduce
-:: datele celuilalt dispozitiv; fisierele locale care s-ar suprascrie merg in data\_sync_backup\.
-py scripts\device_switch.py actualizez
+:: Acelasi script pe ambele dispozitive: trimite datele engine-urilor care au rulat aici,
+:: aduce codul + datele celuilalt, trimite tot pe GitHub. Nu porneste / opreste nimic.
+py scripts\sync_branch.py
 pause
