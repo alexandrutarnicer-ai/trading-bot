@@ -481,7 +481,7 @@ export const useMt5Transactions = (params: {
   status?: string;
   direction?: string;
   symbol?: string;
-  source?: "bot" | "ai" | "daily" | "manual";
+  source?: "bot" | "ai" | "daily" | "noisy" | "manual";
   session_id?: string;
   date_from?: string;
   date_to?: string;
@@ -776,7 +776,7 @@ export const useAiLotInfo = () =>
 // ── Trading LIVE — deblocarea explicita a contului real, per componenta ──────
 
 export interface LiveTradingState {
-  flags: { bot: boolean; ai_engine: boolean; daily_engine?: boolean };
+  flags: { bot: boolean; ai_engine: boolean; daily_engine?: boolean; noisy_engine?: boolean };
   account: { connected: boolean; is_demo: boolean | null;
              login: string | null; server: string | null };
 }
@@ -792,7 +792,7 @@ export const useLiveTrading = () =>
 export const useSetLiveTrading = () => {
   const qc = useQueryClient();
   return useMutation<{ ok: boolean; flags: LiveTradingState["flags"]; note: string },
-                     Error, { component: "bot" | "ai_engine" | "daily_engine"; allowed: boolean }>({
+                     Error, { component: "bot" | "ai_engine" | "daily_engine" | "noisy_engine"; allowed: boolean }>({
     mutationFn: body => apiFetch("/settings/live-trading", { method: "PUT", body }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["live-trading"] }),
   });
@@ -881,7 +881,7 @@ export const useDailyStop = () => {
 };
 
 // ── Engine Lifecycle comun (/engines) — status real + start/stop verificat + autostart ──
-import type { EngineState, EngineId } from "./types";
+import type { EngineState, LifecycleEngineId } from "./types";
 
 export const useEngines = () =>
   useQuery<EngineState[]>({
@@ -894,10 +894,10 @@ export const useEngines = () =>
 export const useEngineAction = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, action }: { id: EngineId; action: "start" | "stop" | "autostart/enable" | "autostart/disable" }) =>
+    mutationFn: ({ id, action }: { id: LifecycleEngineId; action: "start" | "stop" | "autostart/enable" | "autostart/disable" }) =>
       apiFetch(`/engines/${id}/${action}`, { method: "POST" }),
     onSettled: () => {
-      for (const k of ["engines", "bot-status", "ai-status", "daily-status", "sessions"])
+      for (const k of ["engines", "bot-status", "ai-status", "daily-status", "noisy-status", "sessions"])
         qc.invalidateQueries({ queryKey: [k] });
     },
   });
@@ -951,5 +951,54 @@ export const useDailySetMode = () => {
   return useMutation({
     mutationFn: (mode: "shadow" | "execute") => apiFetch("/daily/config", { method: "PUT", body: { mode } }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["daily-status"] }),
+  });
+};
+
+// ── Noisy Engine ─────────────────────────────────────────────────────────────
+import type { NoisyStatus, NoisyTrade, NoisyConfig } from "./types";
+
+export const useNoisyStatus = () =>
+  useQuery<NoisyStatus>({
+    queryKey: ["noisy-status"],
+    queryFn:  () => apiFetch("/noisy/status"),
+    refetchInterval: 5_000,
+    refetchIntervalInBackground: false,
+  });
+
+export const useNoisyTrades = () =>
+  useQuery<NoisyTrade[]>({
+    queryKey: ["noisy-trades"],
+    queryFn:  () => apiFetch("/noisy/trades?limit=300"),
+    refetchInterval: 20_000,
+    refetchIntervalInBackground: false,
+  });
+
+export const useNoisyLogs = (enabled: boolean) =>
+  useQuery<{ lines: string[] }>({
+    queryKey: ["noisy-logs"],
+    queryFn:  () => apiFetch("/noisy/logs?lines=150"),
+    refetchInterval: 10_000,
+    refetchIntervalInBackground: false,
+    enabled,
+  });
+
+/** start / stop / emergency-stop / pause / resume / reset-budget */
+export const useNoisyAction = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (action: "start" | "stop" | "emergency-stop" | "pause" | "resume" | "reset-budget") =>
+      apiFetch(`/noisy/${action}`, { method: "POST" }),
+    onSettled: () => {
+      for (const k of ["noisy-status", "engines"]) qc.invalidateQueries({ queryKey: [k] });
+    },
+  });
+};
+
+export const useNoisySaveConfig = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: Partial<NoisyConfig>) =>
+      apiFetch<NoisyConfig>("/noisy/config", { method: "PUT", body }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["noisy-status"] }),
   });
 };

@@ -1,0 +1,413 @@
+import { useEffect, useState } from "react";
+import { AlertTriangle, Loader2, OctagonX, Pause, Play, RotateCcw, Square, Zap } from "lucide-react";
+import { useNoisyAction, useNoisyLogs, useNoisySaveConfig, useNoisyStatus, useNoisyTrades } from "../api/hooks";
+import type { NoisyConfig, NoisyStatus } from "../api/types";
+
+/**
+ * Noisy Engine — mean reversion pe M5, o singura piata (USDJPY), mod SHADOW.
+ * Fara autostart: pornire DOAR manuala, cu confirmare (risc HIGH). Emergency Stop oprește imediat.
+ * Toate limitele sunt optionale; bugetul e izolat de celelalte engine-uri.
+ */
+
+const STATE_CLS: Record<string, string> = {
+  running: "bg-amber-500/15 text-amber-300 border-amber-500/40",
+  in_position: "bg-amber-500/25 text-amber-200 border-amber-400/60",
+  outside_window: "bg-slate-700/40 text-slate-300 border-surface-border",
+  paused: "bg-slate-700/40 text-slate-300 border-surface-border",
+  starting: "bg-slate-700/40 text-slate-300 border-surface-border",
+  stopped: "bg-slate-800 text-slate-400 border-surface-border",
+  budget_locked: "bg-loss/15 text-loss border-loss/40",
+  loss_limit: "bg-loss/15 text-loss border-loss/40",
+  loss_streak: "bg-loss/15 text-loss border-loss/40",
+  trade_limit: "bg-yellow-500/15 text-yellow-300 border-yellow-500/40",
+  risk_locked: "bg-loss/15 text-loss border-loss/40",
+  error: "bg-loss/15 text-loss border-loss/40",
+};
+const DAYS = ["L", "Ma", "Mi", "J", "V", "S", "D"];
+
+const fmtR = (v?: number | null, d = 2) => (v == null ? "—" : `${v >= 0 ? "+" : ""}${v.toFixed(d)}R`);
+const fmt$ = (v?: number | null) => (v == null ? "—" : `${v >= 0 ? "+" : ""}${v.toFixed(2)} $`);
+
+function StartModal({ onCancel, onYes }: { onCancel: () => void; onYes: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4">
+      <div className="max-w-md w-full rounded-xl border border-loss/50 bg-surface-card p-5 space-y-3">
+        <div className="flex items-center gap-2 text-white font-semibold">
+          <Zap size={16} className="text-amber-300" /> Start Noisy Engine?
+        </div>
+        <p className="text-xs text-slate-300">Acest engine:</p>
+        <ul className="text-xs text-slate-300 list-disc pl-5 space-y-1">
+          <li>analizează piața foarte des (la fiecare minut);</li>
+          <li>poate deschide mai multe trade-uri pe oră (~25 pe zi);</li>
+          <li>suportă costuri relativ mai mari (spread, comision, slippage);</li>
+          <li>e expus la volatilitate și poate produce pierderi mai rapid decât celelalte engine-uri.</li>
+        </ul>
+        <p className="text-xs text-slate-400">
+          Mod curent: <b className="text-amber-300">SHADOW</b> = trade-uri virtuale, zero ordine; <b className="text-loss">EXECUȚIE</b> =
+          ordine reale (DEMO, sau REAL deblocat în Trading LIVE). Are buget propriu și se oprește singur la pragul setat.
+        </p>
+        <div className="flex items-center gap-2 text-xs font-bold text-loss"><AlertTriangle size={14} /> Risk level: HIGH</div>
+        <div className="flex justify-end gap-2 pt-1">
+          <button onClick={onCancel} className="px-4 py-1.5 rounded-lg text-xs text-slate-300 border border-surface-border hover:text-white">Cancel</button>
+          <button onClick={onYes} className="px-4 py-1.5 rounded-lg text-xs font-semibold bg-amber-500/20 text-amber-200 border border-amber-500/50 hover:bg-amber-500/30">
+            Yes, Start Noisy Engine
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Stat({ k, v, cls = "text-white", sub }: { k: string; v: string; cls?: string; sub?: string }) {
+  return (
+    <div className="rounded-lg bg-surface border border-surface-border px-3 py-2">
+      <div className="text-[10px] uppercase tracking-wider text-slate-500">{k}</div>
+      <div className={`text-sm font-semibold ${cls}`}>{v}</div>
+      {sub && <div className="text-[10px] text-slate-500">{sub}</div>}
+    </div>
+  );
+}
+
+function Header({ st }: { st?: NoisyStatus }) {
+  const act = useNoisyAction();
+  const [ask, setAsk] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const run = (a: Parameters<typeof act.mutate>[0]) => {
+    setErr(null);
+    act.mutate(a, { onError: (x: Error) => setErr(x.message) });
+  };
+  const state = st?.state ?? "stopped";
+  return (
+    <div className="rounded-xl border border-surface-border bg-surface-card p-4 space-y-3">
+      {ask && <StartModal onCancel={() => setAsk(false)} onYes={() => { setAsk(false); run("start"); }} />}
+      <div className="flex items-center gap-3 flex-wrap">
+        <Zap size={18} className="text-amber-300" />
+        <div>
+          <div className="text-white font-semibold">Noisy Engine <span className="text-slate-500 font-normal text-xs">· {st?.symbol ?? "USDJPY"} {st?.config?.timeframe ?? st?.timeframe ?? "M1"} · mean reversion · {(st?.config?.mode ?? st?.mode) === "execute" ? "EXECUȚIE" : "SHADOW"}</span></div>
+          <div className="text-[11px] text-slate-500">Pornire doar manuală (fără autostart, fără repornire automată).</div>
+        </div>
+        <span className={`ml-auto text-[11px] font-semibold px-2.5 py-1 rounded-lg border ${STATE_CLS[state] ?? STATE_CLS.stopped}`}>
+          {st?.state_label ?? "Stopped"}
+        </span>
+      </div>
+      {st?.reason && <div className="text-[11px] text-slate-400">{st.reason}</div>}
+      <div className="flex items-center gap-2 flex-wrap">
+        {!st?.running ? (
+          <button onClick={() => setAsk(true)} disabled={act.isPending}
+            className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/40 hover:bg-amber-500/25 disabled:opacity-50">
+            {act.isPending ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />} Start
+          </button>
+        ) : (
+          <button onClick={() => window.confirm("Oprești Noisy Engine?") && run("stop")} disabled={act.isPending}
+            className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold bg-loss/15 text-loss hover:bg-loss/25 disabled:opacity-50">
+            <Square size={12} /> Stop
+          </button>
+        )}
+        {st?.paused ? (
+          <button onClick={() => run("resume")} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-slate-200 border border-surface-border hover:text-white">
+            <Play size={12} /> Resume
+          </button>
+        ) : (
+          <button onClick={() => run("pause")} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-slate-300 border border-surface-border hover:text-white">
+            <Pause size={12} /> Pauză (fără intrări noi)
+          </button>
+        )}
+        {st?.budget_lock && (
+          <button onClick={() => window.confirm("Resetezi bugetul Noisy? Pierderile de până acum nu se mai socotesc, blocarea dispare.") &&
+                                window.confirm("Confirmare finală: reset buget?") && run("reset-budget")}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs text-yellow-300 border border-yellow-500/40">
+            <RotateCcw size={12} /> Reset buget
+          </button>
+        )}
+        <button onClick={() => window.confirm("EMERGENCY STOP: oprește Noisy imediat și blochează intrările până la Resume?") && run("emergency-stop")}
+          className="ml-auto flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-bold bg-loss text-white hover:brightness-110">
+          <OctagonX size={13} /> EMERGENCY STOP
+        </button>
+      </div>
+      {err && <pre className="text-[11px] text-loss whitespace-pre-wrap">{err}</pre>}
+    </div>
+  );
+}
+
+function ModeSwitch({ st }: { st?: NoisyStatus }) {
+  const save = useNoisySaveConfig();
+  const exec = (st?.config?.mode ?? st?.mode) === "execute";
+  const ex = st?.execution;
+  function choose(target: "shadow" | "execute") {
+    if ((target === "execute") === exec || save.isPending) return;
+    if (target === "execute") {
+      if (!window.confirm("Treci Noisy Engine pe EXECUȚIE?\n\nLa fiecare semnal plasează un ORDIN REAL la piață în contul MT5 " +
+        "conectat (SL + țintă atașate, stop de timp, o poziție odată, buget propriu).\n\nPe un cont REAL trebuie în plus deblocat " +
+        "„Noisy Engine” în Settings → Trading LIVE.")) return;
+      if (!window.confirm("Confirmare finală: Noisy Engine va tranzacționa cu ordine reale. Continui?")) return;
+    } else if (!window.confirm("Revii pe SHADOW? Nu se mai deschid ordine reale.")) return;
+    save.mutate({ mode: target });
+  }
+  return (
+    <div className={`rounded-xl border p-4 flex items-center gap-3 flex-wrap ${exec ? "bg-loss/5 border-loss/40" : "bg-surface-card border-surface-border"}`}>
+      <div className="flex rounded-lg border border-surface-border overflow-hidden shrink-0 text-xs font-semibold">
+        <button onClick={() => choose("shadow")} disabled={save.isPending}
+          className={`px-3 py-1.5 ${!exec ? "bg-amber-500/20 text-amber-200" : "text-slate-500 hover:text-slate-300"}`}>{!exec ? "● " : ""}SHADOW</button>
+        <button onClick={() => choose("execute")} disabled={save.isPending}
+          className={`px-3 py-1.5 border-l border-surface-border ${exec ? "bg-loss/20 text-loss" : "text-slate-500 hover:text-slate-300"}`}>{exec ? "● " : ""}EXECUȚIE (LIVE)</button>
+      </div>
+      <div className="text-xs">
+        <div className="font-semibold text-white">Mod activ: {exec ? "EXECUȚIE (ordine reale)" : "SHADOW (virtual)"}
+          {st && !st.running && <span className="ml-2 text-amber-400 font-normal">— engine-ul e OPRIT: modul se aplică după Start</span>}
+        </div>
+        <div className="text-[11px] text-slate-500">
+          {exec ? (ex?.active ? `Activ — ${ex.reason}. ` : `Blocat — ${ex?.reason ?? "pornește engine-ul ca să verifice contul"}. `)
+                : "Trade-uri virtuale pe prețuri reale, zero ordine. "}
+          Magic 990001 — apare ca „Noisy” în Tranzacții. Pe cont REAL: Settings → Trading LIVE → Noisy Engine.
+        </div>
+      </div>
+      {save.isError && <span className="text-[11px] text-loss">{(save.error as Error).message}</span>}
+    </div>
+  );
+}
+
+function Today({ st }: { st?: NoisyStatus }) {
+  const lim = st?.config?.limits;
+  const c = st?.counters;
+  const l = (x?: { enabled: boolean; value: number }) => (x?.enabled ? `/${x.value}` : " (fără limită)");
+  const b = st?.budget;
+  const pct = b ? Math.max(0, Math.min(100, ((b.remaining - b.min_remaining) / Math.max(0.01, b.capital - b.min_remaining)) * 100)) : 0;
+  return (
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+      <Stat k="Trade-uri azi" v={`${c?.trades ?? 0}${l(lim?.max_trades_day)}`} sub={`R azi ${fmtR(st?.today?.R)} · ${fmt$(st?.today?.pnl_money)}`} />
+      <Stat k="Pierderi azi" v={`${c?.losses ?? 0}${l(lim?.max_losses_day)}`} sub={`la rând ${c?.consec_losses ?? 0}${l(lim?.max_consec_losses)}`}
+            cls={(c?.losses ?? 0) > 0 ? "text-loss" : "text-white"} />
+      <div className="rounded-lg bg-surface border border-surface-border px-3 py-2 col-span-2">
+        <div className="text-[10px] uppercase tracking-wider text-slate-500">Buget izolat Noisy</div>
+        <div className={`text-sm font-semibold ${b?.locked ? "text-loss" : "text-white"}`}>
+          {b ? `${b.remaining.toFixed(2)} $ rămași din ${b.capital.toFixed(0)} $` : "—"}
+          {b?.locked ? " · BLOCAT" : ""}
+        </div>
+        <div className="h-1.5 rounded bg-surface-border mt-1 overflow-hidden"><div className={`h-full ${b?.locked ? "bg-loss" : "bg-amber-400"}`} style={{ width: `${pct}%` }} /></div>
+        <div className="text-[10px] text-slate-500 mt-0.5">
+          realizat {fmt$(b?.realized)} · flotant {fmt$(b?.floating)} · stop la {b?.min_remaining.toFixed(2) ?? "—"} $ (P&L Noisy, nu equity-ul contului)
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Market({ st }: { st?: NoisyStatus }) {
+  const o = st?.open, p = st?.pending, last = st?.last;
+  return (
+    <div className="rounded-xl border border-surface-border bg-surface-card p-4 space-y-2 text-xs">
+      <div className="text-[11px] uppercase tracking-wider text-slate-500">Piață și poziție (virtual)</div>
+      {o ? (
+        <div className="text-white">
+          <b className={o.dir === "LONG" ? "text-profit" : "text-loss"}>{o.dir}</b> @ {o.entry.toFixed(3)} · SL {o.sl.toFixed(3)} · țintă {o.tp.toFixed(3)} ·{" "}
+          <span className={o.float_R >= 0 ? "text-profit" : "text-loss"}>{fmtR(o.float_R)}</span> · {o.bars_held * (st?.tf_min ?? 1)} min
+        </div>
+      ) : p ? (
+        <div className="text-amber-300">Semnal {p.dir} la {p.signal_t.slice(11, 16)} — intrare la deschiderea barei următoare</div>
+      ) : (
+        <div className="text-slate-400">Fără poziție. Intrare când prețul se depărtează la peste {String(st?.config?.strategy?.dev_atr ?? 2)}×ATR de EMA20.</div>
+      )}
+      {last && (
+        <div className="text-[11px] text-slate-500">
+          Ultima bară {last.t.slice(11, 16)} · preț {last.close.toFixed(3)} · EMA20 {last.ema.toFixed(3)} · ATR {last.atr?.toFixed(3) ?? "—"} ·{" "}
+          deviație <b className="text-slate-300">{last.dev_atr == null ? "—" : `${last.dev_atr >= 0 ? "+" : ""}${last.dev_atr.toFixed(2)}×ATR`}</b>
+          {last.er != null && <> · efficiency ratio {last.er.toFixed(2)}</>}
+        </div>
+      )}
+      {!!st?.real_positions?.length && (
+        <div className="text-[11px] text-loss">
+          Poziții REALE Noisy: {st.real_positions.map(p => `#${p.ticket} ${p.type} ${p.volume} @ ${p.price.toFixed(3)} (${p.profit >= 0 ? "+" : ""}${p.profit.toFixed(2)} $)`).join(" · ")}
+        </div>
+      )}
+      {!!st?.news_next?.length && (
+        <div className="text-[11px] text-slate-500">Știri blocante: {st.news_next.map(([a, b]) => `${a.slice(5, 16).replace("T", " ")}–${b.slice(11, 16)}`).join(" · ")}</div>
+      )}
+    </div>
+  );
+}
+
+function Score({ st }: { st?: NoisyStatus }) {
+  const s = st?.scorecard, r = st?.backtest_ref ?? {};
+  const rows: [string, string, string][] = [
+    ["Trade-uri", String(s?.trades ?? 0), `${r.trades ?? "—"} (≈${r.per_day ?? "—"}/zi)`],
+    ["Win rate", s?.win_rate == null ? "—" : `${(s.win_rate * 100).toFixed(1)}%`, r.win_rate == null ? "—" : `${(Number(r.win_rate) * 100).toFixed(1)}%`],
+    ["Expectancy (după costuri)", fmtR(s?.expectancy_R, 3), fmtR(Number(r.expectancy_R), 3)],
+    ["Brut / cost per trade", `${fmtR(s?.gross_R, 3)} / ${s?.cost_R == null ? "—" : s.cost_R.toFixed(3)}R`, `${fmtR(Number(r.gross_R), 3)} / ${r.cost_R ?? "—"}R`],
+    ["Profit factor", s?.profit_factor == null ? "—" : String(s.profit_factor), String(r.profit_factor ?? "—")],
+    ["Max drawdown", s ? `${s.max_dd_R.toFixed(1)}R` : "—", `${r.max_dd_R ?? "—"}R`],
+    ["Serie max pierderi", String(s?.max_loss_streak ?? 0), String(r.max_loss_streak ?? "—")],
+    ["Ținere medie", s?.avg_hold_min == null ? "—" : `${s.avg_hold_min} min`, `${r.avg_hold_min ?? "—"} min`],
+    ["P&L virtual", fmt$(s?.pnl_money), "—"],
+  ];
+  return (
+    <div className="rounded-xl border border-surface-border bg-surface-card p-4">
+      <div className="text-[11px] uppercase tracking-wider text-slate-500 mb-2">Shadow vs backtest ({String(r.period ?? "")})</div>
+      <table className="w-full text-xs">
+        <thead><tr className="text-slate-500 text-left"><th className="py-1">Metrică</th><th>Shadow</th><th>Backtest</th></tr></thead>
+        <tbody>{rows.map(([k, a, b]) => <tr key={k} className="border-t border-surface-border"><td className="py-1 text-slate-400">{k}</td><td className="text-white">{a}</td><td className="text-slate-400">{b}</td></tr>)}</tbody>
+      </table>
+      <div className="text-[10px] text-slate-500 mt-2">Criterii de trecere spre execuție: {String(r.pass_criteria ?? "")}</div>
+    </div>
+  );
+}
+
+function Config({ cfg }: { cfg?: NoisyConfig }) {
+  const save = useNoisySaveConfig();
+  const [d, setD] = useState<NoisyConfig | undefined>(cfg);
+  const [dirty, setDirty] = useState(false);
+  useEffect(() => { if (!dirty) setD(cfg); }, [cfg, dirty]);
+  if (!d) return null;
+  const set = (fn: (x: NoisyConfig) => void) => { const c = structuredClone(d); fn(c); setD(c); setDirty(true); };
+  const num = (v: string) => (v === "" ? 0 : Number(v));
+  const limRow = (k: keyof NoisyConfig["limits"], label: string) => (
+    <label className="flex items-center gap-2">
+      <input type="checkbox" checked={d.limits[k].enabled} onChange={e => set(c => { c.limits[k].enabled = e.target.checked; })} />
+      <span className="w-40 text-slate-300">{label}</span>
+      <input type="number" min={1} value={d.limits[k].value} disabled={!d.limits[k].enabled}
+        onChange={e => set(c => { c.limits[k].value = num(e.target.value); })}
+        className="w-16 bg-surface border border-surface-border rounded px-2 py-0.5 disabled:opacity-40" />
+      {!d.limits[k].enabled && <span className="text-slate-500">dezactivat</span>}
+    </label>
+  );
+  return (
+    <div className="rounded-xl border border-surface-border bg-surface-card p-4 space-y-3 text-xs">
+      <div className="flex items-center">
+        <div className="text-[11px] uppercase tracking-wider text-slate-500">Configurare (se aplică din mers, fără restart)</div>
+        {dirty && (
+          <div className="ml-auto flex gap-2">
+            <button onClick={() => { setD(cfg); setDirty(false); }} className="px-3 py-1 rounded border border-surface-border text-slate-400">Renunță</button>
+            <button onClick={() => save.mutate(d, { onSuccess: () => setDirty(false) })}
+              className="px-3 py-1 rounded bg-amber-500/20 text-amber-200 border border-amber-500/40 font-semibold">Salvează</button>
+          </div>
+        )}
+      </div>
+      <div className="grid md:grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <div className="text-slate-400 font-semibold">Fereastră de intrare (ora RO)</div>
+          <div className="flex items-center gap-2">
+            <input type="time" value={d.window.start} onChange={e => set(c => { c.window.start = e.target.value; })} className="bg-surface border border-surface-border rounded px-2 py-0.5" />
+            <span>–</span>
+            <input type="time" value={d.window.end} onChange={e => set(c => { c.window.end = e.target.value; })} className="bg-surface border border-surface-border rounded px-2 py-0.5" />
+          </div>
+          <div className="flex gap-1">
+            {DAYS.map((x, i) => (
+              <button key={x} onClick={() => set(c => { c.window.days = c.window.days.includes(i) ? c.window.days.filter(y => y !== i) : [...c.window.days, i].sort(); })}
+                className={`px-2 py-0.5 rounded border ${d.window.days.includes(i) ? "border-amber-500/50 text-amber-200" : "border-surface-border text-slate-500"}`}>{x}</button>
+            ))}
+          </div>
+          <div className="text-[10px] text-slate-500">În afara ferestrei nu intră; poziția deschisă se termină după regulile ei (max {Number(d.strategy.time_stop_bars) * (d.timeframe === "M5" ? 5 : 1)} min). Exclude 22–00 (rollover, spread până la 250×).</div>
+          <div className="text-slate-400 font-semibold pt-2">Timeframe</div>
+          <div className="flex gap-2 items-center">
+            {(["M1", "M5"] as const).map(tf => (
+              <button key={tf} onClick={() => set(c => { c.timeframe = tf; })}
+                className={`px-3 py-0.5 rounded border ${d.timeframe === tf ? "border-amber-500/50 text-amber-200" : "border-surface-border text-slate-500"}`}>{tf}</button>
+            ))}
+            <span className="text-[10px] text-slate-500">{d.timeframe === "M5" ? "~3–4 trade-uri / zi, +0,08R în backtest" : "~25 trade-uri / zi (~2–3 / oră), ~0R după costuri în backtest"}</span>
+          </div>
+          <div className="flex items-center gap-2 pt-1">
+            La Stop / buget epuizat (în Execuție):
+            {(["close", "keep"] as const).map(v => (
+              <button key={v} onClick={() => set(c => { c.on_stop = v; })}
+                className={`px-2 py-0.5 rounded border ${d.on_stop === v ? "border-amber-500/50 text-amber-200" : "border-surface-border text-slate-500"}`}>
+                {v === "close" ? "închide pozițiile (recomandat)" : "le lasă cu SL/țintă"}
+              </button>
+            ))}
+          </div>
+          <div className="text-[10px] text-slate-500">Emergency Stop închide mereu pozițiile reale Noisy.</div>
+          <label className="flex items-center gap-2 pt-1">
+            <input type="checkbox" checked={d.notify_trades} onChange={e => set(c => { c.notify_trades = e.target.checked; })} />
+            Telegram la fiecare trade <span className="text-slate-500">(pe M1 = zeci de mesaje / zi; pornire, blocări și buget se trimit mereu)</span>
+          </label>
+          <div className="text-slate-400 font-semibold pt-2">Știri High pe {d.symbol.slice(0, 3)}/{d.symbol.slice(3, 6)}</div>
+          <label className="flex items-center gap-2">
+            <input type="checkbox" checked={d.news.enabled} onChange={e => set(c => { c.news.enabled = e.target.checked; })} />
+            fără intrări cu
+            <input type="number" min={0} value={d.news.pre_min} onChange={e => set(c => { c.news.pre_min = num(e.target.value); })} className="w-12 bg-surface border border-surface-border rounded px-1" /> min înainte și
+            <input type="number" min={0} value={d.news.post_min} onChange={e => set(c => { c.news.post_min = num(e.target.value); })} className="w-12 bg-surface border border-surface-border rounded px-1" /> min după
+          </label>
+        </div>
+        <div className="space-y-2">
+          <div className="text-slate-400 font-semibold">Limite (opționale, resetate zilnic)</div>
+          {limRow("max_trades_day", "Max trade-uri / zi")}
+          {limRow("max_losses_day", "Max pierderi / zi")}
+          {limRow("max_consec_losses", "Max pierderi la rând")}
+          <div className="text-slate-400 font-semibold pt-2">Buget izolat</div>
+          <div className="flex items-center gap-2">
+            Capital <input type="number" min={1} value={d.budget.capital} onChange={e => set(c => { c.budget.capital = num(e.target.value); })} className="w-20 bg-surface border border-surface-border rounded px-2 py-0.5" /> $
+            · stop sub <input type="number" min={0} value={d.budget.min_remaining} onChange={e => set(c => { c.budget.min_remaining = num(e.target.value); })} className="w-20 bg-surface border border-surface-border rounded px-2 py-0.5" /> $
+          </div>
+          <div className="flex items-center gap-2">
+            Risc / trade <input type="number" step={0.1} min={0.05} value={+(d.sizing.risk_pct * 100).toFixed(2)} onChange={e => set(c => { c.sizing.risk_pct = num(e.target.value) / 100; })} className="w-16 bg-surface border border-surface-border rounded px-2 py-0.5" /> % din buget
+            <span className="text-slate-500">(lotul minim 0,01 domină la buget mic)</span>
+          </div>
+          <div className="text-[10px] text-slate-500">Protecțiile globale (capital, circuit breaker, știri, risc maxim pe trade) se aplică peste acestea și nu pot fi ocolite.</div>
+        </div>
+      </div>
+      <div className="text-[10px] text-slate-500 border-t border-surface-border pt-2">
+        Strategia (testată pe 12 luni): EMA{String(d.strategy.ema)} ± {String(d.strategy.dev_atr)}×ATR{String(d.strategy.atr)} · SL {String(d.strategy.sl_atr)}×ATR · țintă EMA · stop de timp {String(d.strategy.time_stop_bars)} bare ·
+        cost/ATR ≥ {String(d.strategy.min_atr_over_cost)} · spread live ≤ {String(d.strategy.spread_max_mult)}× normal. Parametrii strategiei se schimbă doar în noisy_engine/config.json (orice schimbare = variantă netestată).
+      </div>
+      {save.isError && <div className="text-loss">{(save.error as Error).message}</div>}
+    </div>
+  );
+}
+
+function Trades() {
+  const { data } = useNoisyTrades();
+  if (!data?.length) return <div className="rounded-xl border border-surface-border bg-surface-card p-4 text-xs text-slate-500">Niciun trade virtual încă.</div>;
+  return (
+    <div className="rounded-xl border border-surface-border bg-surface-card p-4 overflow-x-auto">
+      <div className="text-[11px] uppercase tracking-wider text-slate-500 mb-2">Trade-uri virtuale ({data.length})</div>
+      <table className="w-full text-xs">
+        <thead><tr className="text-slate-500 text-left"><th className="py-1">Intrare</th><th>Dir</th><th>Preț</th><th>Ieșire</th><th>Motiv</th><th>Brut</th><th>Net</th><th>$ (0,01)</th><th>Min</th></tr></thead>
+        <tbody>
+          {data.slice(0, 100).map(t => (
+            <tr key={t.id} className="border-t border-surface-border">
+              <td className="py-1 text-slate-400">{t.entry_t.slice(5, 16).replace("T", " ")}</td>
+              <td className={t.dir === "LONG" ? "text-profit" : "text-loss"}>{t.dir}</td>
+              <td className="text-white">{t.entry.toFixed(3)}</td>
+              <td className="text-white">{t.exit.toFixed(3)}</td>
+              <td className="text-slate-400">{t.reason}</td>
+              <td className="text-slate-400">{fmtR(t.gross_R)}</td>
+              <td className={t.R >= 0 ? "text-profit" : "text-loss"}>{fmtR(t.R)}</td>
+              <td className="text-slate-300">{fmt$(t.pnl_money)}</td>
+              <td className="text-slate-500">{t.hold_min ?? t.bars * (t.tf === "M5" ? 5 : 1)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function Logs() {
+  const [open, setOpen] = useState(false);
+  const { data } = useNoisyLogs(open);
+  return (
+    <div className="rounded-xl border border-surface-border bg-surface-card p-4">
+      <button onClick={() => setOpen(!open)} className="text-[11px] uppercase tracking-wider text-slate-500 hover:text-slate-300">
+        {open ? "▾" : "▸"} Jurnal
+      </button>
+      {open && <pre className="mt-2 text-[10px] text-slate-400 whitespace-pre-wrap max-h-80 overflow-auto">{(data?.lines ?? []).join("")}</pre>}
+    </div>
+  );
+}
+
+export function NoisyEnginePage() {
+  const { data: st } = useNoisyStatus();
+  return (
+    <div className="space-y-4">
+      <Header st={st} />
+      <ModeSwitch st={st} />
+      <Today st={st} />
+      <div className="grid lg:grid-cols-2 gap-4">
+        <Market st={st} />
+        <Score st={st} />
+      </div>
+      <Config cfg={st?.config} />
+      <Trades />
+      <Logs />
+      {!!st?.errors?.length && <pre className="text-[10px] text-loss whitespace-pre-wrap">{st.errors.join("\n")}</pre>}
+    </div>
+  );
+}

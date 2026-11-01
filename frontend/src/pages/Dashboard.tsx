@@ -309,7 +309,7 @@ export function Dashboard() {
       {/* Filtru de SURSA pentru toata pagina (carduri, statistici, grafic, tranzactii) */}
       <div className="flex items-center gap-2 flex-wrap">
         <span className="text-[11px] text-slate-500">Arată tranzacțiile:</span>
-        {([["all", "Toate"], ["bot", "Custom Engine"], ["ai", "AI Engine"], ["daily", "Daily Engine"], ["manual", "Manual"]] as const).map(([v, label]) => (
+        {([["all", "Toate"], ["bot", "Custom Engine"], ["ai", "AI Engine"], ["daily", "Daily Engine"], ["noisy", "Noisy Engine"], ["manual", "Manual"]] as const).map(([v, label]) => (
           <button key={v} onClick={() => setSource(v)}
             className={`text-[11px] px-2.5 py-1 rounded-lg border transition-colors ${
               source === v ? "border-blue-500 bg-blue-500/15 text-white font-semibold"
@@ -319,7 +319,7 @@ export function Dashboard() {
         ))}
         {source !== "all" && (
           <span className="text-[10px] text-amber-400/80">
-            filtru activ — cifrele de pe pagină includ doar {source === "bot" ? "Custom Engine" : source === "ai" ? "AI Engine" : source === "daily" ? "Daily Engine (ordine reale MT5; shadow = 0)" : "tranzacțiile manuale"}
+            filtru activ — cifrele de pe pagină includ doar {source === "bot" ? "Custom Engine" : source === "ai" ? "AI Engine" : source === "daily" ? "Daily Engine (ordine reale MT5; shadow = 0)" : source === "noisy" ? "Noisy Engine (ordine reale MT5; shadow = 0)" : "tranzacțiile manuale"}
           </span>
         )}
       </div>
@@ -351,6 +351,7 @@ export function Dashboard() {
                 : source === "bot" ? "· doar tranzacțiile Custom Engine ale sesiunii"
                 : source === "ai" ? "· doar tranzacțiile AI Engine pe piața cardului"
                 : source === "daily" ? "· doar tranzacțiile reale Daily Engine pe piața cardului"
+                : source === "noisy" ? "· doar tranzacțiile reale Noisy Engine pe piața cardului"
                 : "· doar tranzacțiile manuale pe piața cardului"}
             </span>
           </h2>
@@ -486,10 +487,11 @@ export function Dashboard() {
       </div>
 
       {/* Analiza per engine — aceeasi componenta pentru toate, diferentiata prin culoare */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-4 gap-4">
         <EnginePerformanceSection engine="custom" />
         <EnginePerformanceSection engine="ai" />
         <EnginePerformanceSection engine="daily" />
+        <EnginePerformanceSection engine="noisy" />
       </div>
     </div>
   );

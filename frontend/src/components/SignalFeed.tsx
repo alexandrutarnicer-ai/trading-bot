@@ -53,6 +53,7 @@ const SOURCE_BADGE: Record<Mt5Transaction["source"], { label: string; cls: strin
   bot:    { label: "CUSTOM", cls: "bg-emerald-500/15 text-emerald-300" },
   ai:     { label: "AI",  cls: "bg-purple-500/15 text-purple-300" },
   daily:  { label: "DAILY", cls: "bg-cyan-500/15 text-cyan-300" },
+  noisy:  { label: "NOISY", cls: "bg-amber-500/15 text-amber-300" },
   manual: { label: "MAN", cls: "bg-slate-500/20 text-slate-300" },
 };
 
