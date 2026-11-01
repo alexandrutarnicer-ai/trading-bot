@@ -149,6 +149,18 @@ def scorecard(trades: list[dict]) -> dict:
 
 # ── timp ────────────────────────────────────────────────────────────────────
 
+def _app_window(w_open: datetime, w_end: datetime) -> dict:
+    """Fereastra in fusul aplicatiei (tz_helper: Romania / Germania) + eticheta scurta, pentru UI."""
+    try:
+        from tz_helper import get_configured_tz_name
+        name = get_configured_tz_name()
+    except Exception:
+        name = "Europe/Bucharest"
+    tz = ZoneInfo(name)
+    return {"window_app": f"{w_open.astimezone(tz):%H:%M}–{w_end.astimezone(tz):%H:%M}",
+            "app_tz": name, "app_tz_label": "DE" if name == "Europe/Berlin" else "RO"}
+
+
 def window_times(m: dict, day_local) -> tuple[datetime, datetime]:
     """(deschidere, sfarsit ultima bara) ca datetime aware in fusul bursei, pentru ziua data."""
     tz = ZoneInfo(m["tz"])
@@ -225,7 +237,9 @@ class DailyEngine:
                 "enabled": m.get("enabled", True), "entry_mode": m["entry"], "or_minutes": m["or_minutes"],
                 "day": str(day),
                 "window_local": f"{m['open']}–{w_end:%H:%M} ({m['tz'].split('/')[-1].replace('_', ' ')})",
-                "window_ro": f"{w_open.astimezone(RO):%H:%M}–{w_end.astimezone(RO):%H:%M}"}
+                "window_ro": f"{w_open.astimezone(RO):%H:%M}–{w_end.astimezone(RO):%H:%M}",
+                # fereastra si in fusul APLICATIEI (RO / DE) — doar afisare; logica ramane pe ora bursei
+                **_app_window(w_open, w_end)}
         if not m.get("enabled", True):
             return {**info, "phase": "disabled"}
         if now_loc.weekday() >= 5:

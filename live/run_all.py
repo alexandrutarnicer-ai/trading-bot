@@ -319,7 +319,8 @@ def _sig_stats(sig_dir):
     f = os.path.join(sig_dir, "signals.csv")
     if not os.path.exists(f):
         return 0, "-", 0
-    today      = str(date.today())
+    from tz_helper import now_local   # semnalele sunt in fusul aplicatiei (RO / DE), nu al masinii
+    today      = str(now_local().date())
     count_azi  = 0
     total      = 0
     last_ora   = "-"

@@ -1977,8 +1977,11 @@ def _recover_lost_outcomes(
         return
 
     log.info(f"  [RECOVER] Verificare {len(sigs_without_ticket)} semnale fara ticket MT5 in history...")
+    # Capatul ferestrei = +1 zi: MT5 filtreaza istoricul pe ora SERVERULUI (ICMarkets UTC+2/+3), iar
+    # datetime.now() e ora masinii — pe un PC din Germania (UTC+1) sau in saptamana cu DST US≠EU
+    # ora masinii e in urma serverului si ultima ora de ordine NU era gasita (2026-11-01).
     dt_from = datetime.now() - timedelta(days=10)
-    dt_to   = datetime.now()
+    dt_to   = datetime.now() + timedelta(days=1)
     recovered = 0
 
     # Previne doua semnale diferite sa claim-uiasca acelasi ordin MT5
@@ -2175,8 +2178,11 @@ def _scan_mt5_history_for_missing_outcomes(
     # Ticketele deja trackuite (nu le procesam din nou)
     tracked_tickets: set[int] = set(state.get("mt5_tickets", {}).values())
 
+    # Capatul ferestrei = +1 zi: MT5 filtreaza istoricul pe ora SERVERULUI (ICMarkets UTC+2/+3), iar
+    # datetime.now() e ora masinii — pe un PC din Germania (UTC+1) sau in saptamana cu DST US≠EU
+    # ora masinii e in urma serverului si ultima ora de ordine NU era gasita (2026-11-01).
     dt_from  = datetime.now() - timedelta(days=10)
-    dt_to    = datetime.now()
+    dt_to    = datetime.now() + timedelta(days=1)
     recovered = 0
 
     for symbol in markets:
