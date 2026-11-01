@@ -188,13 +188,16 @@ def _write_status(running: bool, cfg: dict | None = None,
 
 def _setup_logging() -> None:
     os.makedirs(AI_DATA, exist_ok=True)
+    path = os.path.join(AI_DATA, "engine.log")
+    try:                                       # rotatie 5 MB x 3 (inainte crestea la nesfarsit)
+        from log_utils import rotating_handler
+        fh = rotating_handler(path)
+    except Exception:
+        fh = logging.FileHandler(path, encoding="utf-8")
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
-        handlers=[
-            logging.FileHandler(os.path.join(AI_DATA, "engine.log"), encoding="utf-8"),
-            logging.StreamHandler(),
-        ],
+        handlers=[fh, logging.StreamHandler()],
     )
 
 
