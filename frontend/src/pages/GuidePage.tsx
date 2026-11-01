@@ -1482,8 +1482,9 @@ export function GuidePage() {
             <div className="space-y-1 text-xs">
               <KV k="Zilnic" v="În fiecare zi la ora setată (23:30): tranzacțiile zilei din MT5" />
               <KV k="Săptămânal" v="DOAR vineri la ora setată (23:30), de la raportul de vinerea trecută (include weekendul)" />
-              <KV k="Lunar" v="Pe 1 ale lunii la 09:00, luna calendaristică completă precedentă; recuperat la prima ocazie" />
-              <KV k="Conținut" v="Performanța Custom / AI / Daily + TOTAL, comparație (profit, risc, drawdown, consistență), condiții de piață, evenimente, weekend, probleme, analiză AI consultativă" />
+              <KV k="Lunar" v="Pe 1 ale lunii la 09:00, luna calendaristică completă precedentă; recuperat în primele 7 zile" />
+              <KV k="Conținut lunar" v="Complet: performanța Custom / AI / Daily + TOTAL, comparație (profit, risc, drawdown, consistență), condiții de piață, evenimente, weekend, probleme, analiză AI consultativă" />
+              <KV k="Conținut săptămânal" v="Esențial: partea de trading identică (performanță + comparație); piața într-un rând (trend / range pe piață), știrile High (următoarele 5), gap-uri de weekend și probleme grave DOAR dacă au existat, analiză AI în 3 puncte" />
               <KV k="Lipsuri" v="O sursă indisponibilă (MT5, calendar, AI) e marcată explicit — raportul se trimite oricum" />
               <KV k="Unde se setează" v="Settings → Rapoarte programate (ore, AI, mașina care trimite, trimitere manuală)" />
             </div>
