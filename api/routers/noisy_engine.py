@@ -1,10 +1,11 @@
 """
-Router API pentru Noisy Engine (noisy_engine/) — mean reversion M5 pe o singura piata, mod SHADOW.
+Router API pentru Noisy Engine (noisy_engine/) — mean reversion (M1 implicit) pe o singura piata,
+mod SHADOW (implicit) sau EXECUTIE (DEMO / REAL deblocat in Trading LIVE).
 
   GET  /noisy/status          — stare (cu motivul), pozitie / semnal, contoare azi, buget, scorecard
   POST /noisy/start           — porneste `python -m noisy_engine` detasat (UI-ul cere confirmare: risc HIGH)
   POST /noisy/stop            — oprire normala
-  POST /noisy/emergency-stop  — oprire IMEDIATA (fara AI, fara asteptare) + marcaj in status
+  POST /noisy/emergency-stop  — oprire IMEDIATA (fara AI) + inchide pozitiile REALE Noisy + blocheaza intrarile
   POST /noisy/pause | resume  — fara intrari noi / reluare (hot, fara restart)
   POST /noisy/reset-budget    — reseteaza bugetul (dupa BUDGET LIMIT), doar manual
   GET  /noisy/trades          — trade-urile virtuale (cele mai noi primele)
@@ -131,7 +132,26 @@ def noisy_start():
     out = open(os.path.join(DATA_DIR, "stdout.log"), "a", encoding="utf-8")
     proc = subprocess.Popen([sys.executable, "-m", "noisy_engine"], cwd=ROOT, creationflags=flags,
                             stdout=out, stderr=subprocess.STDOUT, close_fds=True)
-    return {"ok": True, "pid": proc.pid, "note": "Mod SHADOW — trade-uri virtuale, zero ordine reale"}
+    return {"ok": True, "pid": proc.pid, "mode": load_config()["mode"]}
+
+
+def _close_real(force: bool) -> str:
+    """Pozitiile REALE Noisy (magic 990001) la oprire: Emergency Stop = mereu; Stop = doar in EXECUTIE
+    cu on_stop = "close". Prin conexiunea MT5 a API-ului (mt5_pool), independent de procesul engine-ului."""
+    cfg = load_config()
+    if not force and (cfg["mode"] != "execute" or cfg.get("on_stop", "close") != "close"):
+        return ""
+    try:
+        from api import mt5_pool
+        from noisy_engine import executor as X
+        with mt5_pool._LOCK:
+            mt5 = mt5_pool._ensure_mt5()
+            ok, bad = X.close_all(mt5, cfg["symbol"])
+        if not ok and not bad:
+            return ""
+        return f" · {ok} poziții Noisy închise" + (f", {bad} EȘUATE — verifică MT5!" if bad else "")
+    except Exception as e:
+        return f" · ⚠️ închiderea pozițiilor Noisy a eșuat: {e}"
 
 
 def _kill(reason: str) -> bool:
@@ -154,18 +174,21 @@ def _kill(reason: str) -> bool:
 def noisy_stop():
     if not _kill("manual"):
         raise HTTPException(409, "Noisy Engine nu rulează")
-    _tg("⏹ <b>Noisy Engine oprit</b> (din UI)")
-    return {"ok": True}
+    closed = _close_real(force=False)
+    _tg("⏹ <b>Noisy Engine oprit</b> (din UI)" + closed)
+    return {"ok": True, "positions": closed.strip(" ·")}
 
 
 @router.post("/emergency-stop")
 def noisy_emergency_stop():
-    """Oprire IMEDIATA, independenta de AI. In shadow nu exista pozitii reale de inchis."""
+    """Oprire IMEDIATA, independenta de AI: oprește procesul, ÎNCHIDE pozițiile reale Noisy (mereu) și
+    blochează intrările până la Resume."""
     stopped = _kill("Emergency Stop")
     _write(CONTROL_FILE, {**_read(CONTROL_FILE, {}), "paused": True})   # si la repornire: fara intrari pana la Resume
-    _tg("🛑 <b>Noisy Engine — EMERGENCY STOP</b>" + ("" if stopped else " (nu rula)")
+    closed = _close_real(force=True)
+    _tg("🛑 <b>Noisy Engine — EMERGENCY STOP</b>" + ("" if stopped else " (nu rula)") + closed
         + "\nIntrările noi rămân blocate până la Resume.")
-    return {"ok": True, "was_running": stopped}
+    return {"ok": True, "was_running": stopped, "positions": closed.strip(" ·")}
 
 
 @router.post("/pause")
@@ -208,6 +231,7 @@ def noisy_config():
 def noisy_config_save(body: dict):
     """Merge partial peste configurarea curenta (hot-reload la iteratia urmatoare)."""
     cur = load_config()
+    before = cur["mode"]
 
     def merge(a, b):
         for k, v in b.items():
@@ -217,6 +241,10 @@ def noisy_config_save(body: dict):
                 a[k] = v
         return a
     clean = save_config(merge(cur, body or {}))
+    if clean["mode"] != before:
+        _tg("🟢 <b>Noisy Engine — mod EXECUȚIE</b>\nOrdine reale de la următorul semnal (DEMO, sau REAL dacă e "
+            "deblocat în Settings → Trading LIVE → Noisy Engine)." if clean["mode"] == "execute" else
+            "🧪 <b>Noisy Engine — mod SHADOW</b>\nFără ordine noi; trade-uri virtuale.")
     return clean
 
 

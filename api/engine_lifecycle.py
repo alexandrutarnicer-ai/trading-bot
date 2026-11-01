@@ -80,7 +80,8 @@ def _status(eid: str) -> dict:
         from api.routers import noisy_engine
         s = noisy_engine.noisy_status()
         return {"running": bool(s.get("running")), "pid": s.get("pid"),
-                "detail": f"{s.get('symbol', 'USDJPY')} · shadow · {s.get('state_label') or ''}".rstrip(" ·"),
+                "detail": f"{s.get('symbol', 'USDJPY')} {(s.get('config') or {}).get('timeframe', '')} · "
+                          f"{'EXECUȚIE' if s.get('mode') == 'execute' else 'shadow'} · {s.get('state_label') or ''}".rstrip(" ·"),
                 "mode": s.get("mode", "shadow")}
     from api.routers import daily_engine
     s = daily_engine.daily_status()

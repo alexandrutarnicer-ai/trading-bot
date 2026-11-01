@@ -219,6 +219,7 @@ def _fetch_closed_trades_raw(mt5, days: int) -> list[dict]:
 
 AI_MAGIC = 770015
 DAILY_MAGIC = 880001        # tinut sincron cu daily_engine/config.py::MAGIC
+NOISY_MAGIC = 990001        # tinut sincron cu noisy_engine/config.py::MAGIC
 _BOT_COMMENT_RE = re.compile(r"^S(\d+)-")
 _SMART_NEWS_RE  = re.compile(r"^SN\d+$")
 _STRATEGY_TAGS  = (("SIG", "pullback"), ("IB", "inside_bar"), ("FLG", "flag"))
@@ -240,11 +241,13 @@ def _strategy_from_comment(comment: str) -> str | None:
 
 
 def classify_trade(magic: int, comment: str) -> dict:
-    """{source: bot|ai|daily|manual, session_id: 'sessionN'|None, strategy: str|None}."""
+    """{source: bot|ai|daily|noisy|manual, session_id: 'sessionN'|None, strategy: str|None}."""
     if magic == AI_MAGIC:
         return {"source": "ai", "session_id": None, "strategy": None}
     if magic == DAILY_MAGIC:
         return {"source": "daily", "session_id": None, "strategy": "orb"}
+    if magic == NOISY_MAGIC:
+        return {"source": "noisy", "session_id": None, "strategy": "mean_reversion"}
     m = _BOT_COMMENT_RE.match(comment or "")
     if not m:
         # Ordinele "Mod Inteligent" la stiri au comment "SN<nr>" (fara prefix de sesiune)
@@ -344,6 +347,8 @@ def _classify_source(magic: int, comment: str) -> str:
         return "ai"
     if magic == DAILY_MAGIC:
         return "daily"
+    if magic == NOISY_MAGIC:
+        return "noisy"
     c = (comment or "").strip()
     if c.startswith("S") and "-" in c:
         return "bot"
