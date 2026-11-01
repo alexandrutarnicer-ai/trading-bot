@@ -410,11 +410,40 @@ class NoisyEngine:
                          if ok else f"⚠️ <b>Noisy EXECUȚIE — {sym} {signal['dir']}: ordin RESPINS</b> "
                                     f"({getattr(r, 'retcode', r)} {getattr(r, 'comment', '')})")
 
+    def _ensure_terminal(self) -> tuple[bool, str]:
+        """Terminal MT5 VIU si conectat la broker. IPC pierdut (terminal inchis / repornit) → re-initialize
+        (altfel fiecare apel MT5 intoarce None pana la restartul engine-ului); deconectat de la broker →
+        datele sunt inghetate, iteratia e sarita cu motivul vizibil (audit 2026-11-01)."""
+        fn = getattr(self.mt5, "terminal_info", None)
+        if fn is None:                       # MT5 simulat in teste
+            return True, ""
+        ti = fn()
+        if ti is None:
+            try:
+                self.mt5.shutdown()
+            except Exception:
+                pass
+            if not self.connect() or fn() is None:
+                return False, "MT5: terminal indisponibil (IPC pierdut) — reîncerc automat"
+            self._err("MT5: IPC restabilit (terminal repornit) — reconectat automat")
+            ti = fn()
+        if not getattr(ti, "connected", True):
+            return False, "MT5 deconectat de la serverul brokerului — date înghețate, aștept reconectarea"
+        return True, ""
+
     def iteration(self, now_utc: datetime | None = None) -> dict:
         self.cfg = load_config()
         cfg = self.cfg
         sym = cfg["symbol"]
         now_utc = now_utc or datetime.now(timezone.utc)
+        ok_t, why_t = self._ensure_terminal()
+        if not ok_t:
+            self._err(why_t)
+            st = {"running": True, "mode": cfg["mode"], "symbol": sym, "pid": os.getpid(), "state": "error",
+                  "state_label": STATES["error"], "reason": why_t, "errors": self.errors,
+                  "heartbeat": datetime.now(RO).isoformat(timespec="seconds"), "scorecard": scorecard(load_trades())}
+            _write_json(STATUS_FILE, st)
+            return st
         now_ro = now_utc.astimezone(RO).replace(tzinfo=None)
         day = now_ro.date()
         paused = bool(_read_json(CONTROL_FILE, {}).get("paused"))
