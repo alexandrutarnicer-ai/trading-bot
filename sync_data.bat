@@ -1,11 +1,8 @@
 @echo off
 chcp 65001 >nul
-title Sync date - PUSH (pleci de pe acest dispozitiv)
-cd /d C:\trading-bot
-echo ============================================
-echo   Trimit datele (semnale + tranzactii)
-echo   inainte sa treci pe celalalt dispozitiv
-echo ============================================
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\sync_data.ps1"
-echo.
+title Sync date - TRIMIT (de pe dispozitivul care ruleaza engine-urile)
+cd /d "%~dp0"
+:: Inlocuit de schimb_dispozitiv.bat (predare / preluare completa). Aici: TRIMIT = datele
+:: (inclusiv ledger-ul AI, copie consistenta) fara sa opreasca engine-urile.
+py scripts\device_switch.py trimit
 pause

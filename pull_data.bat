@@ -1,11 +1,8 @@
 @echo off
 chcp 65001 >nul
-title Sync date - PULL (ajungi pe acest dispozitiv)
-cd /d C:\trading-bot
-echo ============================================
-echo   Aduc datele de pe celalalt dispozitiv
-echo   INAINTE sa pornesti botul / motorul AI
-echo ============================================
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\sync_data.ps1" -Pull
-echo.
+title Sync date - ACTUALIZEZ (aduc datele, fara sa pornesc engine-uri)
+cd /d "%~dp0"
+:: Inlocuit de schimb_dispozitiv.bat (predare / preluare completa). Aici: ACTUALIZEZ = aduce
+:: datele celuilalt dispozitiv; fisierele locale care s-ar suprascrie merg in data\_sync_backup\.
+py scripts\device_switch.py actualizez
 pause
