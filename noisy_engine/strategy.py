@@ -8,9 +8,10 @@ backtestul. Cu toate filtrele / limitele oprite reproduce strategia MR din resea
 Regula (mean reversion, M5):
   semnal la INCHIDEREA barei i: close < EMA − dev×ATR → LONG ; close > EMA + dev×ATR → SHORT
   intrare la DESCHIDEREA barei i+1 (fara lookahead)
-  SL = intrare ∓ sl_atr×ATR_i ; tinta = intrare ± |EMA_i − close_i| ; stop de timp: iesire la
+  SL = intrare ∓ sl_atr×ATR_i ; tinta = intrare ± |EMA_i − close_i| (sau ± tp_rr×risc, R:R fix) ; stop de timp: iesire la
   inchiderea barei i+time_stop daca nu s-a atins nimic. SL si tinta in aceeasi bara → SL (prudent).
   O singura pozitie odata; dupa iesire, pauza (cooldown).
+  Break-Even OPTIONAL (cfg["break_even"]) = aceeasi regula ca Custom Engine (engine/simulator.py).
 Costul: max(spread bara de intrare, spread median, spread_floor) + comision + 2×slip×spread median (unitati de pret).
 spread_floor = spread-ul median masurat pe tick-uri (spread-ul barelor MT5 e minimul din bara).
 """
@@ -56,6 +57,50 @@ def _blocked(t: datetime, intervals) -> bool:
     return any(a <= t < b for a, b in intervals or ())
 
 
+def step_exit(pos: dict, i: int, hi: float, lo: float, cl: float, time_stop_bars: int, be: dict):
+    """Iesirea pozitiei pe bara i → (pret, motiv) sau (None, None). Muta SL-ul la break-even (pos e modificat).
+    Break-Even IDENTIC cu Custom Engine (engine/simulator.py::simulate_trade): max o tranzitie de faza pe
+    bara, apoi SL-ul (eventual mutat) verificat pe aceeasi bara, apoi tinta; plus stopul de timp Noisy."""
+    d = pos["dir"]
+    if be.get("enabled"):
+        b80 = pos["be_lv"]["trig"]
+        if d > 0:
+            reached, reversed_, in_zone = hi >= b80, lo < b80, pos["be_lv"]["lock1"] < lo <= pos["be_lv"]["zone"]
+        else:
+            reached, reversed_, in_zone = lo <= b80, hi > b80, pos["be_lv"]["zone"] <= hi < pos["be_lv"]["lock1"]
+        ph = pos["be_phase"]
+        if ph == 0 and reached:
+            pos["be_phase"] = 1
+        elif ph == 1 and reversed_:
+            pos["sl"], pos["be_phase"] = pos["be_lv"]["lock1"], 2
+        elif ph == 2 and be["phase2_enabled"]:
+            if in_zone:
+                pos["be_in_zone"] = True
+            if pos.get("be_in_zone") and reached:
+                pos["be_phase"] = 3
+        elif ph == 3 and reversed_ and be["phase2_enabled"]:
+            pos["sl"], pos["be_phase"] = pos["be_lv"]["lock2"], 4
+    if (d > 0 and lo <= pos["sl"]) or (d < 0 and hi >= pos["sl"]):
+        ph = pos.get("be_phase", 0)
+        return pos["sl"], ("be_lock2" if ph >= 4 else "be_lock" if ph >= 2 else "SL")
+    if (d > 0 and hi >= pos["tp"]) or (d < 0 and lo <= pos["tp"]):
+        return pos["tp"], "TP"
+    if i >= pos["sig_i"] + time_stop_bars:
+        return cl, "timp"
+    return None, None
+
+
+def simulate_exit(bars: pd.DataFrame, pos: dict, cfg: dict) -> dict | None:
+    """O pozitie data, bara cu bara, pana la iesire (pentru teste: echivalenta cu Custom Engine)."""
+    be = cfg.get("break_even") or {"enabled": False}
+    h, l, c = (bars[k].to_numpy(float) for k in ("high", "low", "close"))
+    for i in range(pos["entry_i"], len(bars)):
+        px, why = step_exit(pos, i, h[i], l[i], c[i], cfg["strategy"]["time_stop_bars"], be)
+        if px is not None:
+            return {"exit": float(px), "reason": why, "bar": i}
+    return None
+
+
 def run_day(bars: pd.DataFrame, day: date, cfg: dict, *, news_blocks=None, vetoed=None,
             no_new_entries: bool = False) -> dict:
     """
@@ -69,6 +114,7 @@ def run_day(bars: pd.DataFrame, day: date, cfg: dict, *, news_blocks=None, vetoe
     bara urmatoare), counters, lock (motivul blocarii zilei) si ultimele valori ale indicatorilor.
     """
     p, lim, w = cfg["strategy"], cfg["limits"], cfg["window"]
+    be = cfg.get("break_even") or {"enabled": False}
     res = {"trades": [], "open": None, "pending": None, "lock": None, "last": None,
            "counters": {"trades": 0, "losses": 0, "consec_losses": 0, "flips_hour": 0}}
     if bars is None or len(bars) < max(p["atr"], p["ema"]) + 2:
@@ -103,20 +149,15 @@ def run_day(bars: pd.DataFrame, day: date, cfg: dict, *, news_blocks=None, vetoe
         # 1) pozitia deschisa: iesire pe bara i
         if pos is not None and i >= pos["entry_i"]:
             d = pos["dir"]
-            exit_p = reason = None
-            if (d > 0 and l[i] <= pos["sl"]) or (d < 0 and h[i] >= pos["sl"]):
-                exit_p, reason = pos["sl"], "SL"
-            elif (d > 0 and h[i] >= pos["tp"]) or (d < 0 and l[i] <= pos["tp"]):
-                exit_p, reason = pos["tp"], "TP"
-            elif i >= pos["sig_i"] + p["time_stop_bars"]:
-                exit_p, reason = c[i], "timp"
+            exit_p, reason = step_exit(pos, i, h[i], l[i], c[i], p["time_stop_bars"], be)
             if exit_p is not None:
                 gross = d * (exit_p - pos["entry"])
                 net = gross - pos["cost"]
                 tr_ = {"id": pos["id"], "dir": "LONG" if d > 0 else "SHORT", "signal_t": pos["signal_t"],
                        "entry_t": pos["entry_t"], "exit_t": t[i].isoformat(), "entry": pos["entry"], "exit": float(exit_p),
-                       "sl": pos["sl"], "tp": pos["tp"], "risk": pos["risk"], "cost": pos["cost"], "reason": reason,
-                       "gross_R": gross / pos["risk"], "R": net / pos["risk"], "bars": i - pos["entry_i"] + 1}
+                       "sl": pos["sl0"], "sl_final": pos["sl"], "tp": pos["tp"], "risk": pos["risk"], "cost": pos["cost"], "reason": reason,
+                       "gross_R": gross / pos["risk"], "R": net / pos["risk"], "bars": i - pos["entry_i"] + 1,
+                       "be_phase": pos.get("be_phase", 0)}
                 res["trades"].append(tr_)
                 res["counters"]["trades"] += 1
                 if tr_["R"] < 0:
@@ -173,14 +214,21 @@ def run_day(bars: pd.DataFrame, day: date, cfg: dict, *, news_blocks=None, vetoe
             continue
         e = o[i + 1]
         risk = p["sl_atr"] * atr[i]
+        tp_dist = p["tp_rr"] * risk if p.get("tp_rr", 0) > 0 else abs(ema[i] - c[i]) + 1e-12
         pos = {"id": f"{t[i]:%Y%m%d-%H%M}", "dir": d, "sig_i": i, "entry_i": i + 1, "signal_t": t[i].isoformat(),
-               "entry_t": t[i + 1].isoformat(), "entry": float(e), "sl": float(e - d * risk),
-               "tp": float(e + d * (abs(ema[i] - c[i]) + 1e-12)), "risk": float(risk), "cost": float(cost_at(i + 1, i))}
+               "entry_t": t[i + 1].isoformat(), "entry": float(e), "sl": float(e - d * risk), "sl0": float(e - d * risk),
+               "tp": float(e + d * tp_dist), "risk": float(risk), "cost": float(cost_at(i + 1, i))}
+        if be["enabled"]:
+            # nivelurile break-even = procente din distanta intrare → tinta (ca in Custom Engine)
+            pos["be_lv"] = {k: float(e + d * tp_dist * be[f] / 100.0) for k, f in
+                            (("trig", "trigger_pct"), ("lock1", "lock1_pct"), ("zone", "phase2_zone_pct"), ("lock2", "lock2_pct"))}
+            pos["be_phase"] = 0
     res["counters"].update(losses=losses, consec_losses=consec,
                            flips_hour=len([x for x in flips if t[-1] - timedelta(hours=1) < x]))
     if pos is not None:
         d = pos["dir"]
-        res["open"] = {**{k: v for k, v in pos.items() if k not in ("sig_i", "entry_i")},
+        res["open"] = {**{k: v for k, v in pos.items() if k not in ("sig_i", "entry_i", "sl0", "be_lv")},
+                       "sl": pos["sl0"], "sl_now": pos["sl"], "be_phase": pos.get("be_phase", 0),
                        "dir": "LONG" if d > 0 else "SHORT", "last": float(c[-1]),
                        "float_R": (d * (c[-1] - pos["entry"]) - pos["cost"]) / pos["risk"],
                        "bars_held": len(df) - pos["entry_i"]}

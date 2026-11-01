@@ -121,6 +121,64 @@ c = raw(CFG)
 c["strategy"]["cooldown_bars"] = c["strategy"]["cooldown_after_sl_bars"] = 50
 check("cooldown dupa iesire → urmatoarea intrare amanata", len(S.run_day(many, DAY, c)["trades"]) < len(S.run_day(many, DAY, raw(CFG))["trades"]))
 
+print("3b. Break-Even IDENTIC cu Custom Engine (engine/simulator.py) + R:R configurabil + profile M1/M5")
+from engine.simulator import simulate_trade  # noqa: E402
+rng = np.random.default_rng(3)
+mism = 0
+checked = 0
+for trial in range(400):
+    n = 60
+    steps = rng.normal(0, 0.03, n).cumsum()
+    c_ = 150 + steps
+    o_ = np.r_[150.0, c_[:-1]]
+    h_ = np.maximum(o_, c_) + rng.uniform(0, 0.03, n)
+    l_ = np.minimum(o_, c_) - rng.uniform(0, 0.03, n)
+    bars_ = pd.DataFrame({"t": [datetime(2026, 11, 2, 11, 0) + timedelta(minutes=i) for i in range(n)],
+                          "open": o_, "high": h_, "low": l_, "close": c_, "spread": 0.0})
+    d = 1 if trial % 2 == 0 else -1
+    entry, risk, tpd = o_[1], 0.05, 0.08 + 0.04 * (trial % 3)
+    sl, tp = entry - d * risk, entry + d * tpd
+    p2 = {"enabled": True, "trigger_pct": 80, "lock1_pct": 30, "phase2_enabled": trial % 4 != 3,
+          "phase2_zone_pct": 40, "lock2_pct": 50}
+    ref = simulate_trade(bars_[["open", "high", "low", "close"]].assign(time=bars_.t), 1,
+                         {"dir": d, "entry": entry, "sl": sl, "tp": tp, "lots": 1, "R": 1, "risk_usd": 1, "time": None},
+                         0.0, 0.01, 1.0, 0.0, "USDJPY",
+                         be_cfg={"enabled": True, "trigger_pct": 80, "lock1_pct": 30, "lock2_pct": 50,
+                                 "phase2_zone_pct": 40, "phase2_enabled": p2["phase2_enabled"]})
+    if ref["outcome"] == "timeout":
+        continue
+    # aceeasi pozitie prin noisy run_day (semnal fortat pe bara 0, intrare la open[1])
+    cfg_be = raw(CFG)
+    cfg_be["break_even"] = p2
+    cfg_be["strategy"]["time_stop_bars"] = 500
+    pos_ = {"id": "x", "dir": d, "sig_i": 0, "entry_i": 1, "signal_t": "", "entry_t": "", "entry": entry, "sl": sl, "sl0": sl,
+            "tp": tp, "risk": risk, "cost": 0.0,
+            "be_lv": {k: entry + d * tpd * p2[f] / 100.0 for k, f in (("trig", "trigger_pct"), ("lock1", "lock1_pct"),
+                                                                      ("zone", "phase2_zone_pct"), ("lock2", "lock2_pct"))},
+            "be_phase": 0}
+    out = S.simulate_exit(bars_, pos_, cfg_be)
+    checked += 1
+    exp = {"loss": "SL", "win": "TP", "be_lock": "be_lock", "be_lock2": "be_lock2"}[ref["outcome"]]
+    ref_px = {"SL": sl, "TP": tp}.get(exp)
+    if out["reason"] != exp or out["bar"] != ref["exit_j"] or (ref_px is not None and abs(out["exit"] - ref_px) > 1e-9):
+        mism += 1
+check("Break-Even Noisy = Custom pe 400 trasee aleatoare (aceeasi iesire, aceeasi bara)", checked > 100 and mism == 0, (checked, mism))
+c_rr = raw(CFG)
+c_rr["strategy"]["tp_rr"] = 2.0
+tr_rr = S.run_day(b, DAY, c_rr)["trades"]
+check("R:R fix 2R → tinta = 2 × riscul", tr_rr and abs(abs(tr_rr[0]["tp"] - tr_rr[0]["entry"]) / tr_rr[0]["risk"] - 2.0) < 1e-6,
+      tr_rr[:1])
+m1, m5 = C.sanitize({"timeframe": "M1"}), C.sanitize({"timeframe": "M5"})
+check("comutare M1 ⇄ M5: limitele si filtrul cost/ATR ale profilului", m1["limits"]["max_trades_day"]["value"] == 60
+      and m5["limits"]["max_trades_day"]["value"] == 6 and m1["strategy"]["min_atr_over_cost"] == 5
+      and m5["strategy"]["min_atr_over_cost"] == 15)
+check("Break-Even OPRIT implicit, parametrii Custom (80/30/40/50, faza 2)", CFG["break_even"] == {
+    "enabled": False, "trigger_pct": 80, "lock1_pct": 30, "phase2_enabled": True, "phase2_zone_pct": 40, "lock2_pct": 50})
+fb = E.friday_block(datetime(2026, 10, 30, 19, 0), {"friday_close": {"enabled": True, "hour": 18}})
+check("inchiderea de vineri (Setari Globale) → interval blocat in ora RO",
+      fb is not None and fb[0].weekday() == 4 and not S.run_day(make_bars(drop + [149.82] + [150.0] * 3, start=datetime(2026, 10, 30, 18, 0)),
+                                                                  date(2026, 10, 30), raw(CFG), news_blocks=[fb])["trades"])
+
 print("4. Determinism / fara lookahead")
 full = S.run_day(many, DAY, CFG)
 part = S.run_day(many.iloc[:120], DAY, CFG)
@@ -221,7 +279,7 @@ from noisy_engine import executor as X  # noqa: E402
 
 
 class ExecMT5(FakeMT5):
-    TRADE_ACTION_DEAL, ORDER_TYPE_BUY, ORDER_TYPE_SELL, ORDER_TIME_GTC = 1, 0, 1, 0
+    TRADE_ACTION_DEAL, ORDER_TYPE_BUY, ORDER_TYPE_SELL, ORDER_TIME_GTC, TRADE_ACTION_SLTP = 1, 0, 1, 0, 6
     TRADE_RETCODE_DONE, POSITION_TYPE_BUY = 10009, 0
 
     def __init__(self, demo=True, tick_time=None):
@@ -247,6 +305,11 @@ class ExecMT5(FakeMT5):
 
     def order_send(self, req):
         self.sent.append(req)
+        if req.get("action") == self.TRADE_ACTION_SLTP:
+            for p_ in self.positions:
+                if p_.ticket == req["position"]:
+                    p_.sl = req["sl"]
+            return SimpleNamespace(retcode=10009, comment="done")
         if "position" in req:
             self.positions = [p for p in self.positions if p.ticket != req["position"]]
         else:
@@ -313,6 +376,30 @@ st_b = eng_x.iteration(now)
 check("buget din MT5 = doar deal-urile Noisy (nu AI) + flotant", st_b["budget"]["source"] == "mt5"
       and st_b["budget"]["realized"] == -12.0 and st_b["budget"]["floating"] == -1.0, st_b["budget"])
 check("BUDGET LIMIT in executie → pozitiile Noisy inchise", st_b["state"] == "budget_locked" and not m.positions, (st_b["state"], m.positions))
+# break-even pe pozitia REALA: faza virtuala ≥ 2 → SL real mutat la lock1% din tinta, o singura data
+eng_be = E.NoisyEngine(m, news_fetch=lambda: [], guard=lambda s: (True, ""))
+m.positions = [SimpleNamespace(ticket=555, magic=C.MAGIC, symbol="USDJPY", type=0, volume=0.01, price_open=150.0,
+                               sl=149.95, tp=150.10, profit=0.2, swap=0.0, time=m.tick_time, comment=X.tag("USDJPY", "2026-11-02T15:40:00"))]
+cfg_x = C.load_config()
+cfg_x["break_even"]["enabled"] = True
+eng_be.cfg = cfg_x
+n0 = len(m.sent)
+eng_be._execute("USDJPY", None, {"open": {"signal_t": "2026-11-02T15:40:00", "be_phase": 2}}, False, 1)
+sltp = [r for r in m.sent[n0:] if r.get("action") == m.TRADE_ACTION_SLTP]
+check("break-even real: SL mutat la intrare + 30% din tinta (150.030), tinta neschimbata",
+      len(sltp) == 1 and abs(sltp[0]["sl"] - 150.03) < 1e-9 and sltp[0]["tp"] == 150.10 and abs(m.positions[0].sl - 150.03) < 1e-9, sltp)
+eng_be._execute("USDJPY", None, {"open": {"signal_t": "2026-11-02T15:40:00", "be_phase": 2}}, False, 1)
+check("acelasi break-even NU e retrimis", len([r for r in m.sent[n0:] if r.get("action") == m.TRADE_ACTION_SLTP]) == 1)
+eng_be._execute("USDJPY", None, {"open": {"signal_t": "2026-11-02T15:40:00", "be_phase": 4}}, False, 1)
+check("faza 2 (break-even 2): SL → 50% din tinta", abs(m.positions[0].sl - 150.05) < 1e-9, m.positions[0].sl)
+m.positions = []
+cfg_x["break_even"]["enabled"] = False
+cfg_x["strategy"]["tp_rr"] = 2.0
+eng_be.cfg = cfg_x
+n0 = len(m.sent)
+eng_be._execute("USDJPY", {"dir": "LONG", "signal_t": "2026-11-02T16:00:00", "close": 149.9, "ema": 150.0, "atr": 0.02}, {}, False, 1)
+req2 = m.sent[n0] if len(m.sent) > n0 else {}
+check("R:R fix in executie: tinta = intrare + 2 × riscul", req2 and abs((req2["tp"] - req2["price"]) / (req2["price"] - req2["sl"]) - 2.0) < 0.05, req2)
 shutil.rmtree(tmp, ignore_errors=True)
 from api import engine_lifecycle as L  # noqa: E402
 check("Noisy e in lifecycle FARA autostart", "noisy" in L.ENGINES and L.ENGINES["noisy"].get("task") is None)
