@@ -1,6 +1,17 @@
 @echo off
 chcp 65001 >nul 2>&1
 setlocal
+:: Pe branch-ul de date alex-live (PC <-> laptop) se lucreaza DOAR cu schimb_dispozitiv.bat:
+:: acest script trage din alt branch si ar amesteca codul / datele.
+for /f %%B in ('git -C "%~dp0." branch --show-current 2^>nul') do set "CURBR=%%B"
+if /i "%CURBR%"=="alex-live" (
+    echo.
+    echo  [!] Esti pe alex-live. Pentru cod + date foloseste schimb_dispozitiv.bat
+    echo      ^(Preiau / Actualizez aduc si codul nou^). Acest script NU ruleaza aici.
+    echo.
+    pause
+    exit /b 1
+)
 set "ROOT=%~dp0"
 :: %~dp0 include backslash final (ex: C:\trading-bot\). git -C nu accepta calea cu
 :: backslash + ghilimele, deci il eliminam.

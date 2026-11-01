@@ -1495,6 +1495,20 @@ export function GuidePage() {
 
         {/* ── 14. DATE, STOCARE, RECOVERY ── */}
         <Section id="data-recovery" title="14. Date, stocare și recovery">
+          <SubSection title="Schimb dispozitiv: PC ↔ laptop (schimb_dispozitiv.bat)">
+            <div className="space-y-1 text-xs">
+              <KV k="Regula" v="Engine-urile rulează pe UN SINGUR dispozitiv odată (de obicei laptopul). Datele trec prin branch-ul alex-live." />
+              <KV k="1. Predau" v="Pe dispozitivul de pe care pleci: oprește engine-urile, trimite datele (semnale, ledger AI, trade-uri Daily, pauze, setări) și le predă" />
+              <KV k="2. Preiau" v="Pe dispozitivul pe care ajungi: aduce datele + codul nou, preia engine-urile și le pornește pe cele care rulau" />
+              <KV k="3. Actualizez" v="Doar analiză: aduce datele, nu pornește nimic (refuzat pe dispozitivul care rulează)" />
+              <KV k="4. Trimit" v="De pe dispozitivul care rulează: trimite datele fără să oprească engine-urile (ca să le vezi pe celălalt)" />
+              <KV k="Siguranță" v="Pe dispozitivul care nu deține engine-urile, Start din Dashboard e refuzat; rapoartele pleacă doar de pe proprietar" />
+              <KV k="Fișiere locale" v="Copiile locale care s-ar suprascrie sunt mutate în data/_sync_backup/<data-ora>/ — nu se șterge nimic" />
+            </div>
+            <Note>Preiau fără Predau pe celălalt dispozitiv = avertisment (risc de ordine duble); continui doar dacă celălalt e sigur oprit.
+              După Preiau / Actualizez cu cod nou, repornește dashboard-ul (start_ui.bat). Nu folosi update_bot.bat pe alex-live (refuză).</Note>
+          </SubSection>
+
           <SubSection title="Ce date există și unde">
             <div className="space-y-1 text-xs">
               <KV k="Istoric MT5" v="Sursa de adevăr pentru toate rezultatele (nu se copiază local)" />
