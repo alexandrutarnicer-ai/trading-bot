@@ -109,11 +109,41 @@ def prune_ai_filter_logs(data_dir: str = DATA_DIR, cutoff: str | None = None,
     return out
 
 
-def run_cleanup(apply: bool = True, now: datetime | None = None) -> dict:
+def _engine_running_here(pid_file: str) -> bool:
+    """Engine-ul ruleaza pe ACEASTA masina (PID din fisier, proces viu)."""
+    try:
+        pid = int(open(pid_file, encoding="utf-8").read().strip())
+    except Exception:
+        return False
+    try:
+        from api.routers.bot import _pid_alive
+        return _pid_alive(pid)
+    except Exception:
+        return False
+
+
+def local_engines() -> dict:
+    """Ce engine-uri ruleaza aici. ledger.db + ai_filter.jsonl sunt SINCRONIZATE prin git
+    (alex-live, PC <-> laptop): daca masina care DOAR afiseaza (fara engine) le-ar compacta,
+    fisierele urmarite s-ar modifica local → `git pull` refuza / un push ar suprascrie datele
+    mai noi ale celeilalte masini. Deci fiecare masina compacteaza doar datele propriilor engine-uri."""
+    return {"ai": _engine_running_here(os.path.join(DATA_DIR, "ai", "ai_engine.pid")),
+            "bot": _engine_running_here(os.path.join(DATA_DIR, "run_all.pid"))}
+
+
+_EMPTY_LEDGER = {"councils": 0, "snapshots": 0, "bytes": 0}
+_EMPTY_FILTER = {"verdicts": 0, "bytes": 0, "files": 0}
+
+
+def run_cleanup(apply: bool = True, now: datetime | None = None, local_only: bool = False,
+                engines: dict | None = None) -> dict:
+    """local_only (scheduler-ul API) = doar datele engine-urilor care ruleaza pe aceasta masina.
+    Rularea manuala (CLI) ramane pe tot."""
     cutoff = _cutoff(now)
-    rep = {"cutoff": cutoff, "apply": apply,
-           "ledger": prune_ledger(cutoff=cutoff, apply=apply),
-           "ai_filter": prune_ai_filter_logs(cutoff=cutoff, apply=apply)}
+    eng = (engines if engines is not None else local_engines()) if local_only else {"ai": True, "bot": True}
+    rep = {"cutoff": cutoff, "apply": apply, "engines": eng,
+           "ledger": prune_ledger(cutoff=cutoff, apply=apply) if eng["ai"] else dict(_EMPTY_LEDGER),
+           "ai_filter": prune_ai_filter_logs(cutoff=cutoff, apply=apply) if eng["bot"] else dict(_EMPTY_FILTER)}
     rep["freed_mb"] = round((rep["ledger"]["bytes"] + rep["ai_filter"]["bytes"]) / 1e6, 2)
     if apply:
         try:
