@@ -224,6 +224,7 @@ const TOC = [
   { id: "reports",         label: "10. Rapoarte" },
   { id: "ai-engine",       label: "11. AI Engine" },
   { id: "daily-engine",    label: "12. Daily Engine" },
+  { id: "noisy-engine",    label: "12b. Noisy Engine" },
   { id: "live",            label: "13. Demo / Live" },
   { id: "data-recovery",   label: "14. Date & Recovery" },
   { id: "telegram-bridge", label: "15. Punte Telegram" },
@@ -1449,6 +1450,35 @@ export function GuidePage() {
             </div>
             <Note>Cercetarea completă (studii oficiale, ore de vârf, 216 variante testate, constrângerea contului de ~$200):
               docs/DAILY_ENGINE_PLAN.md. Trecerea la ordine reale = etapă separată, cu aprobare.</Note>
+          </SubSection>
+        </Section>
+
+        {/* ── 12b. NOISY ENGINE ── */}
+        <Section id="noisy-engine" title="12b. Noisy Engine (frecvență mare — Shadow sau Execuție)">
+          <SubSection title="Ce face">
+            <p>Engine activ pe <b>o singură piață (USDJPY)</b>, implicit pe bare de <b>1 minut</b>: când prețul se depărtează brusc de
+              media lui (peste 2×ATR de EMA20), intră <b>contra mișcării</b> și iese la revenirea la medie, la SL (1,5×ATR) sau după 20 de bare.
+              Long și Short, o singură poziție odată. Pe M1: ~25 de trade-uri pe zi (~2–3 pe oră), ținere medie ~8 minute.</p>
+            <div className="space-y-1 text-xs">
+              <KV k="Scop" v="FRECVENȚĂ (multe trade-uri), nu profit: backtestul pe M1 e ~0 după costuri (−0,01R/trade). M5 rămâne opțiune (~4/zi, +0,08R)" />
+              <KV k="Pornire" v="DOAR manuală, cu confirmare (Risk level: HIGH). Fără autostart, nu e repornit de watchdog" />
+              <KV k="Fereastră" v="10:00–20:00 RO, luni–vineri (configurabil); niciodată 22–00 (rollover)" />
+              <KV k="Limite (opționale)" v="max 60 trade-uri / zi, max 25 pierderi / zi, max 8 la rând → blocat până a doua zi" />
+              <KV k="Buget izolat" v="P&L-ul Noisy (în Execuție: din MT5, magic 990001), NU equity-ul contului; sub prag → „Stopped – Budget Limit” până la reset manual" />
+              <KV k="Protecții" v="Setările Globale (capital, circuit breaker, știri, risc maxim) se aplică și nu pot fi ocolite; plus știri High pe USD/JPY și spread live" />
+              <KV k="Emergency Stop" v="Oprește imediat, ÎNCHIDE pozițiile reale Noisy și blochează intrările până la Resume (fără AI)" />
+            </div>
+          </SubSection>
+          <SubSection title="Shadow → Execuție (butonul de Live)" defaultOpen={false}>
+            <div className="space-y-1 text-xs">
+              <KV k="SHADOW (implicit)" v="trade-uri virtuale pe prețuri reale, zero ordine" />
+              <KV k="EXECUȚIE" v="selectorul din tab-ul Noisy (două confirmări): la fiecare semnal, ordin real la piață cu SL + țintă, stop de timp, o poziție odată" />
+              <KV k="Cont REAL" v="în plus: Settings → Trading LIVE → Noisy Engine (deblocare per mașină). Fără ea, Execuția rămâne blocată cu motivul afișat" />
+              <KV k="La oprire" v="implicit închide pozițiile reale (configurabil: le lasă cu SL/țintă); Emergency Stop le închide mereu" />
+              <KV k="În Dashboard" v="card portocaliu „Noisy Engine” (Doar manual), card de performanță cu banii reali + linia SHADOW separată, eticheta NOISY în Tranzacții" />
+            </div>
+            <Note>Pe M1 costurile (spread, eventual comision) cântăresc mult: backtestul arată un drawdown de ~117R pe an la ~0 câștig.
+              Bugetul izolat oprește engine-ul înainte ca pierderile să atingă restul contului. Research complet: docs/NOISY_ENGINE_RESEARCH.md.</Note>
           </SubSection>
         </Section>
 
