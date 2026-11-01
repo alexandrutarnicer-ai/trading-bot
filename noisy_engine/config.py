@@ -2,8 +2,8 @@
 
 Valorile implicite vin din research (docs/NOISY_ENGINE_RESEARCH.md): USDJPY, M5, mean reversion la
 EMA20 ± 2×ATR14, SL 1,5×ATR, tinta = EMA20, stop de timp 20 de bare, doar in fereastra lichida.
-Toate limitele sunt OPTIONALE (enabled true/false). Prima versiune ruleaza DOAR in SHADOW
-(trade-uri virtuale, zero ordine) — executia reala vine dupa validarea din shadow.
+Toate limitele sunt OPTIONALE (enabled true/false). Implicit SHADOW (trade-uri virtuale, zero ordine);
+EXECUTIE = ordine reale doar pe DEMO sau pe REAL deblocat explicit in Settings → Trading LIVE.
 """
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CFG_PATH = os.path.join(ROOT, "noisy_engine", "config.json")
 DATA_DIR = os.path.join(ROOT, "data", "noisy_engine")
 
-MODES = ("shadow",)            # „execute” se adauga dupa validarea din shadow (criteriile din research §20)
+MODES = ("shadow", "execute")  # shadow = virtual (implicit); execute = ordine reale (DEMO, sau REAL deblocat in Trading LIVE)
 TIMEFRAMES = {"M1": 1, "M5": 5}  # minute pe bara; M1 = implicit (decizia userului: multe trade-uri / ora)
 MAGIC = 990001                 # rezervat pentru ordinele reale viitoare
 
@@ -29,6 +29,9 @@ DEFAULTS: dict = {
     "poll_seconds": 5,
     "notify_telegram": True,
     "notify_trades": False,          # pe M1 ar fi zeci de mesaje / zi; pornire / blocari / buget se trimit mereu
+    # la Stop / Emergency Stop / buget epuizat in EXECUTIE: "close" = inchide pozitiile Noisy (recomandat:
+    # tinerea medie e de minute, nesupravegheate contrazic ideea de engine controlat) | "keep" = raman cu SL/TP
+    "on_stop": "close",
     # fereastra in care are voie sa INTRE (ora RO). Pozitiile deschise se termina dupa regulile lor
     # (stop de timp) — nimic peste noapte.
     "window": {"start": "10:00", "end": "20:00", "days": [0, 1, 2, 3, 4]},
@@ -92,6 +95,7 @@ def sanitize(cfg: dict) -> dict:
     c["mode"] = c["mode"] if c["mode"] in MODES else "shadow"
     c["symbol"] = str(c.get("symbol") or "USDJPY").upper()
     c["timeframe"] = c["timeframe"] if c.get("timeframe") in TIMEFRAMES else "M1"
+    c["on_stop"] = c["on_stop"] if c.get("on_stop") in ("close", "keep") else "close"
     c["notify_trades"] = bool(c.get("notify_trades", False))
     c["poll_seconds"] = int(_num(c["poll_seconds"], 2, 120, 5))
     w = c["window"]
