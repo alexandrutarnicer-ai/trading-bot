@@ -114,5 +114,24 @@ check("lunea urmatoare → da", DC.due(mon + timedelta(days=7)))
 check("API pornit luni 18:00 (catch-up) → da",
       DC.due(datetime(2026, 11, 9, 18, 0)))
 
+print("\n[4] Sincronizare PC <-> laptop: fiecare masina compacteaza doar datele engine-urilor ei")
+calls = []
+_pl, _pf = DC.prune_ledger, DC.prune_ai_filter_logs
+DC.prune_ledger = lambda **k: calls.append("ledger") or {"councils": 5, "snapshots": 5, "bytes": 10}
+DC.prune_ai_filter_logs = lambda **k: calls.append("filter") or {"verdicts": 3, "bytes": 10, "files": 1}
+r = DC.run_cleanup(apply=False, local_only=True, engines={"ai": False, "bot": False})
+check("masina fara engine-uri (doar UI) → nu atinge ledger.db / ai_filter.jsonl (fisiere sincronizate)",
+      calls == [] and r["ledger"]["councils"] == 0 and r["ai_filter"]["verdicts"] == 0, (calls, r))
+calls.clear()
+r = DC.run_cleanup(apply=False, local_only=True, engines={"ai": True, "bot": False})
+check("doar AI Engine aici → doar ledger-ul", calls == ["ledger"], calls)
+calls.clear()
+r = DC.run_cleanup(apply=False)
+check("rulare manuala (CLI) → tot, ca inainte", calls == ["ledger", "filter"], calls)
+DC.prune_ledger, DC.prune_ai_filter_logs = _pl, _pf
+check("PID inexistent → engine-ul NU ruleaza aici", not DC._engine_running_here(os.path.join(tmp, "nu_exista.pid")))
+open(os.path.join(tmp, "self.pid"), "w").write(str(os.getpid()))
+check("PID viu → ruleaza aici", DC._engine_running_here(os.path.join(tmp, "self.pid")))
+
 print(f"\n{'=' * 60}\nREZULTAT: {PASS} PASS / {FAIL} FAIL")
 sys.exit(1 if FAIL else 0)

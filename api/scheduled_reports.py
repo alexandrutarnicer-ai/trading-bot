@@ -303,7 +303,7 @@ def _scheduler_loop() -> None:
             # Curatare date AI fara trade: luni de la 12:00 (vezi api/data_cleanup.py)
             from api import data_cleanup
             if data_cleanup.due(datetime.now()):
-                rep_ = data_cleanup.run_cleanup(apply=True, now=datetime.now())
+                rep_ = data_cleanup.run_cleanup(apply=True, now=datetime.now(), local_only=True)
                 if rep_["ledger"]["councils"] or rep_["ai_filter"]["verdicts"]:
                     text = data_cleanup.summary_text(rep_)
                     telegram.send_message(text)

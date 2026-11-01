@@ -31,5 +31,11 @@
       "comm": 0.0,
       "role": "principal"
     }
-  ]
+  ],
+  "sizing": {
+    "capital_sync_mt5": true,
+    "capital_usd": null,
+    "fraction": 1.0,
+    "risk_pct": 0.01
+  }
 }
