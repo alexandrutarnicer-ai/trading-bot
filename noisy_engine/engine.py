@@ -196,6 +196,25 @@ def rates_to_bars(rates, offset_s: int | None, point: float, now_ro: datetime | 
     return d[["t", "open", "high", "low", "close", "spread"]].reset_index(drop=True)
 
 
+def friday_block(now_ro: datetime, settings: dict | None = None) -> tuple[datetime, datetime] | None:
+    """Inchiderea de vineri din Setari Globale (ora in fusul aplicatiei) ca interval in ora RO: de la ora
+    configurata vineri pana la sfarsitul zilei. Nicio intrare noua; in EXECUTIE pozitiile Noisy se inchid."""
+    try:
+        from live.global_guard import load_settings
+        fc = (settings or load_settings())["friday_close"]
+        if not fc.get("enabled"):
+            return None
+        from tz_helper import get_configured_tz_name
+        app_tz = ZoneInfo(get_configured_tz_name())
+    except Exception:
+        return None
+    now_app = now_ro.replace(tzinfo=RO).astimezone(app_tz)
+    fri = now_app.date() - timedelta(days=(now_app.weekday() - 4) % 7)
+    start = datetime(fri.year, fri.month, fri.day, int(fc.get("hour", 20)), tzinfo=app_tz)
+    a = start.astimezone(RO).replace(tzinfo=None)
+    return a, datetime(fri.year, fri.month, fri.day) + timedelta(days=1)
+
+
 def news_blocks(symbol: str, events: list[dict], pre: int, post: int) -> list[tuple[datetime, datetime]]:
     """Intervalele (ora RO) in care Noisy nu intra: stiri High pe valutele pietei."""
     curs = {symbol[:3].upper(), symbol[3:6].upper()}
@@ -386,6 +405,24 @@ class NoisyEngine:
                                  f"⏱ <b>Noisy EXECUȚIE — {sym} închis la stop de timp</b> #{p.ticket} "
                                  + ("" if done else f"⚠️ EȘUAT: {getattr(r, 'retcode', r)}"))
         positions = X.own(self.mt5, sym)
+        # 1b) break-even pe pozitia REALA: aceeasi faza ca trade-ul virtual pereche (acelasi semnal),
+        # aplicata pe pretul REAL de intrare / tinta (lock% din distanta intrare → tinta)
+        be = cfg.get("break_even") or {}
+        vo = res.get("open")
+        if be.get("enabled") and vo and vo.get("be_phase", 0) >= 2:
+            lock = be["lock2_pct"] if vo["be_phase"] >= 4 else be["lock1_pct"]
+            for p in positions:
+                if str(p.comment)[:16] != X.tag(sym, vo["signal_t"]) or not p.tp:
+                    continue
+                d = 1 if p.type == getattr(self.mt5, "POSITION_TYPE_BUY", 0) else -1
+                want = p.price_open + d * abs(p.tp - p.price_open) * lock / 100.0
+                if (d > 0 and want > (p.sl or 0) + 1e-9) or (d < 0 and (not p.sl or want < p.sl - 1e-9)):
+                    done, r = X.modify_sl(self.mt5, p, want)
+                    self._event_once(f"real-be-{p.ticket}-{vo['be_phase']}",
+                                     f"🔒 <b>Noisy EXECUȚIE — {sym} break-even</b> #{p.ticket}: SL → {want:.3f} ({lock:.0f}% din țintă)"
+                                     + ("" if done else f" ⚠️ EȘUAT: {getattr(r, 'retcode', r)}"),
+                                     notify=cfg.get("notify_trades", False) or not done)
+            positions = X.own(self.mt5, sym)
         # 2) intrare noua
         if signal is None or blocked or positions or tick is None or not tick.ask:
             return
@@ -397,7 +434,8 @@ class NoisyEngine:
         entry = tick.ask if d > 0 else tick.bid
         risk = cfg["strategy"]["sl_atr"] * signal["atr"]
         sl = entry - d * risk
-        tp = entry + d * (abs(signal["ema"] - signal["close"]) + 1e-12)
+        tp_rr = cfg["strategy"].get("tp_rr", 0) or 0
+        tp = entry + d * (tp_rr * risk if tp_rr > 0 else abs(signal["ema"] - signal["close"]) + 1e-12)
         size = self._size(entry, sl)
         if not size["lots"]:
             self._event_once(f"real-nolot-{signal['signal_t']}",
@@ -464,6 +502,10 @@ class NoisyEngine:
         bars = rates_to_bars(rates, self.offset_s, si.point if si else 0.0, now_ro, tf_min)
         events = self._events_news()
         blocks = news_blocks(sym, events, cfg["news"]["pre_min"], cfg["news"]["post_min"]) if cfg["news"]["enabled"] else []
+        fb = friday_block(now_ro)
+        friday_active = bool(fb and fb[0] <= now_ro < fb[1])
+        if fb:
+            blocks = blocks + [fb]
         trades_all = load_trades()
         lock = self.state.get("budget_lock")
         vetoed = set(self.state["vetoed"].get(str(day), []))
@@ -519,9 +561,14 @@ class NoisyEngine:
             self.state.setdefault("exec_since", now_utc.isoformat(timespec="seconds"))
         # buget izolat: in EXECUTIE din dealurile reale MT5 (magic Noisy), in shadow din trade-urile virtuale
         bud = self.budget_real(now_utc) if ex_ok else self.budget(trades_all, op)
+        if ex_ok and friday_active:
+            n_ok, n_bad = X.close_all(self.mt5, sym)
+            if n_ok or n_bad:
+                self._event_once(f"friday-close-{day}", f"📅 Noisy EXECUȚIE — închidere de vineri (Setări Globale): "
+                                 f"{n_ok} poziții închise" + (f", {n_bad} EȘUATE — verifică MT5!" if n_bad else ""))
         if ex_ok:
             try:
-                self._execute(sym, fresh_signal, res, bool(lock) or paused or bool(res.get("lock")), tf_min)
+                self._execute(sym, fresh_signal, res, bool(lock) or paused or bool(res.get("lock")) or friday_active, tf_min)
             except Exception as e:                       # o eroare de executie nu opreste engine-ul
                 self._err(f"executie: {type(e).__name__}: {e}")
         if not lock and bud["remaining"] <= bud["min_remaining"]:
@@ -554,13 +601,15 @@ class NoisyEngine:
             state, reason = "in_position", f"{op['dir']} @ {op['entry']:.3f} ({op['float_R']:+.2f}R)"
         elif res.get("lock"):
             state, reason = res["lock"], "limită zilnică atinsă — reset la miezul nopții"
+        elif friday_active:
+            state, reason = "risk_locked", "închidere de vineri (Setări Globale) — fără intrări până luni"
         elif global_block:
             state, reason = "risk_locked", global_block
         elif not in_win:
             state, reason = "outside_window", f"intră doar {cfg['window']['start']}–{cfg['window']['end']} (ora RO)"
         else:
             state, reason = "running", "aștept semnal"
-        today = [t for t in trades_all if t.get("day") == str(day)]
+        today = [t for t in trades_all if t.get("day") == str(day) and t.get("tf", "M5") == cfg["timeframe"]]
         real_pos = []
         if ex_ok or cfg["mode"] == "execute":
             try:

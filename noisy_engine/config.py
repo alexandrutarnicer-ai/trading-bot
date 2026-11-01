@@ -52,11 +52,32 @@ DEFAULTS: dict = {
         "min_atr_over_cost": 5.0,     # ATR ≥ 5× costul dus-intors (pe M1; M5 testat cu 15), altfel miscarea e prea mica
         "slip_frac": 0.25,            # slippage presupus: 25% din spread la intrare si la iesire
         "comm_price": 0.0,            # comision in unitati de pret (0 = contul actual)
+        # R:R configurabil: 0 = tinta = revenirea la EMA20 (testat, implicit; ~1,6R in medie);
+        # > 0 = tinta fixa la tp_rr × risc (ex. 2.0 = 2R). Backtest 12 luni: tintele fixe NU au ajutat.
+        "tp_rr": 0.0,
+    },
+    # Break-Even — ACEEASI regula si aceiasi parametri ca in Custom Engine (engine/simulator.py), procente
+    # din distanta intrare → tinta. Faza 1: pretul atinge trigger% si se intoarce → SL la lock1%.
+    # Faza 2 (optionala): retragere in zona lock1–zone%, din nou trigger% si intoarcere → SL la lock2%.
+    # OPRIT implicit — backtest 12 luni: nu a crescut profitul (vezi docs/NOISY_ENGINE_RESEARCH.md).
+    "break_even": {"enabled": False, "trigger_pct": 80, "lock1_pct": 30,
+                   "phase2_enabled": True, "phase2_zone_pct": 40, "lock2_pct": 50},
+    # Profil PER TIMEFRAME: la comutarea M1 ⇄ M5 limitele si filtrul cost/ATR se schimba singure (valorile
+    # testate pe fiecare). `limits` / `strategy.min_atr_over_cost` de mai jos = profilul timeframe-ului ACTIV.
+    "tf_profiles": {
+        "M1": {"limits": {"max_trades_day": {"enabled": True, "value": 60},
+                          "max_losses_day": {"enabled": True, "value": 25},
+                          "max_consec_losses": {"enabled": True, "value": 8}},
+               "min_atr_over_cost": 5.0},
+        "M5": {"limits": {"max_trades_day": {"enabled": True, "value": 6},
+                          "max_losses_day": {"enabled": True, "value": 4},
+                          "max_consec_losses": {"enabled": True, "value": 3}},
+               "min_atr_over_cost": 15.0},
     },
     "news": {"enabled": True, "pre_min": 5, "post_min": 15},   # stiri High pe valutele pietei
-    "limits": {                                              # toate OPTIONALE, resetate zilnic (ora RO)
-        # M1: ~25–30 de trade-uri / zi in fereastra 10–20 (~3 / ora). Limitele taie doar zilele extreme
-        # (backtest 12 luni: drawdown −130R → −117R). Pe M5 valorile testate erau 6 / 4 / 3.
+    # limitele ACTIVE (toate OPTIONALE, resetate zilnic, ora RO) — derivate din tf_profiles[timeframe].
+    # M1: ~25–30 trade-uri / zi (limitele taie doar zilele extreme, DD −130R → −117R); M5: 6 / 4 / 3.
+    "limits": {
         "max_trades_day": {"enabled": True, "value": 60},
         "max_losses_day": {"enabled": True, "value": 25},
         "max_consec_losses": {"enabled": True, "value": 8},
@@ -123,13 +144,32 @@ def sanitize(cfg: dict) -> dict:
     s["min_atr_over_cost"] = _num(s["min_atr_over_cost"], 0, 200, 5)
     s["slip_frac"] = _num(s["slip_frac"], 0, 5, 0.25)
     s["comm_price"] = _num(s["comm_price"], 0, 1e6, 0.0)
+    s["tp_rr"] = _num(s.get("tp_rr"), 0, 20, 0.0)
+    for k in ("be_trigger_R", "be_lock_R"):          # chei vechi (prototip) — inlocuite de break_even
+        s.pop(k, None)
+    be = c["break_even"]
+    be["enabled"] = bool(be.get("enabled", False))
+    be["phase2_enabled"] = bool(be.get("phase2_enabled", True))
+    be["trigger_pct"] = _num(be.get("trigger_pct"), 50, 99, 80)          # aceleasi limite ca in Custom Engine
+    be["lock1_pct"] = _num(be.get("lock1_pct"), 5, 60, 30)
+    be["phase2_zone_pct"] = _num(be.get("phase2_zone_pct"), 20, 70, 40)
+    be["lock2_pct"] = _num(be.get("lock2_pct"), 30, 80, 50)
     n = c["news"]
     n["enabled"] = bool(n["enabled"])
     n["pre_min"] = int(_num(n["pre_min"], 0, 240, 5))
     n["post_min"] = int(_num(n["post_min"], 0, 240, 15))
-    for k in ("max_trades_day", "max_losses_day", "max_consec_losses"):
-        lim = c["limits"].get(k) or {}
-        c["limits"][k] = {"enabled": bool(lim.get("enabled", True)), "value": int(_num(lim.get("value"), 1, 1000, 1))}
+    # profilele per timeframe; config vechi (doar `limits`, fara profile) → devine profilul timeframe-ului lui
+    profs = c["tf_profiles"]
+    if "limits" in (cfg or {}) and "tf_profiles" not in (cfg or {}):
+        profs[c["timeframe"]]["limits"] = _merge(profs[c["timeframe"]]["limits"], cfg["limits"])
+    for tf, pr in profs.items():
+        for k in ("max_trades_day", "max_losses_day", "max_consec_losses"):
+            lim = pr["limits"].get(k) or {}
+            pr["limits"][k] = {"enabled": bool(lim.get("enabled", True)), "value": int(_num(lim.get("value"), 1, 1000, 1))}
+        pr["min_atr_over_cost"] = _num(pr.get("min_atr_over_cost"), 0, 200, 5 if tf == "M1" else 15)
+    act = profs[c["timeframe"]]
+    c["limits"] = copy.deepcopy(act["limits"])
+    s["min_atr_over_cost"] = act["min_atr_over_cost"]
     b = c["budget"]
     b["capital"] = _num(b["capital"], 1, 1e6, 40.0)
     b["min_remaining"] = _num(b["min_remaining"], 0, b["capital"], min(30.0, b["capital"]))

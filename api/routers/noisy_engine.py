@@ -94,6 +94,24 @@ def _tg(text: str) -> None:
         pass
 
 
+def _today_for(tf: str) -> dict:
+    """Trade-urile de azi (ora RO) ale timeframe-ului dat: contoarele pentru limite + R / $."""
+    from zoneinfo import ZoneInfo
+    day = datetime.now(ZoneInfo("Europe/Bucharest")).date().isoformat()
+    tr = [t for t in load_trades() if t.get("day") == day and t.get("tf", "M5") == tf]
+    losses = sum(1 for t in tr if t["R"] < 0)
+    consec = 0
+    for t in reversed(tr):
+        if t["R"] < 0:
+            consec += 1
+        else:
+            break
+    return {"timeframe": tf,
+            "counters": {"trades": len(tr), "losses": losses, "consec_losses": consec, "flips_hour": 0},
+            "today": {"trades": len(tr), "R": round(sum(t["R"] for t in tr), 3),
+                      "pnl_money": round(sum(t.get("pnl_money") or 0 for t in tr), 2)}}
+
+
 @router.get("/status")
 def noisy_status():
     pid = _read_pid()
@@ -108,6 +126,10 @@ def noisy_status():
         st["state_label"] = STATES["stopped"] + (f" – {stop}" if stop else "")
         st["scorecard"] = scorecard(load_trades())
         st.setdefault("symbol", cfg["symbol"])
+    # contoarele zilei pe timeframe-ul ACTIV: daca engine-ul e oprit sau timeframe-ul tocmai s-a schimbat
+    # (status.json inca de pe celalalt), se recalculeaza din jurnal — cardul „azi” ramane corect la M1 ⇄ M5
+    if not running or st.get("timeframe") != cfg["timeframe"]:
+        st.update(_today_for(cfg["timeframe"]))
     state = _read(STATE_FILE, {})
     st["budget_lock"] = state.get("budget_lock")
     st["paused"] = bool(_read(CONTROL_FILE, {}).get("paused"))

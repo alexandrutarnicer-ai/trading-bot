@@ -93,6 +93,16 @@ def close(mt5, pos) -> tuple[bool, object]:
     return _send(mt5, req, info)
 
 
+def modify_sl(mt5, pos, sl: float) -> tuple[bool, object]:
+    """Muta SL-ul unei pozitii Noisy (break-even); tinta ramane neschimbata."""
+    info = mt5.symbol_info(pos.symbol)
+    if info is None:
+        return False, "info indisponibil"
+    res = mt5.order_send({"action": mt5.TRADE_ACTION_SLTP, "position": pos.ticket, "symbol": pos.symbol,
+                          "sl": round(sl, info.digits), "tp": pos.tp, "magic": MAGIC})
+    return res is not None and res.retcode == getattr(mt5, "TRADE_RETCODE_DONE", 10009), res
+
+
 def close_all(mt5, symbol: str | None = None) -> tuple[int, int]:
     """Închide TOATE pozițiile Noisy (Stop / Emergency Stop / buget). Întoarce (închise, eșuate)."""
     ok = bad = 0
