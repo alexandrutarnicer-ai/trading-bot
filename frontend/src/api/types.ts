@@ -37,7 +37,7 @@ export interface Mt5EquityCurveResponse {
 export interface Mt5TradeStats {
   connected: boolean;
   total_trades: number;
-  by_source?: { bot: number; ai: number; manual: number };
+  by_source?: { bot: number; ai: number; manual: number; daily?: number; noisy?: number };
   wins: number;
   losses: number;
   trades_today: number;
@@ -1059,4 +1059,45 @@ export interface NoisyStatus {
   config?: NoisyConfig;
   execution?: { active: boolean; reason: string };
   real_positions?: { ticket: number; type: string; volume: number; price: number; sl: number; tp: number; profit: number }[];
+}
+
+// ── Dashboard global: piete active pe toate engine-urile (/dashboard/markets) ──
+export type MarketEngineId = LifecycleEngineId;   // custom | ai | daily | noisy
+export type MarketState = "in_position" | "active" | "observe" | "idle" | "blocked" | "stopped";
+export interface MarketStats {
+  trades: number; wins: number; losses: number; win_rate: number | null;
+  pnl: number; net: number; costs: number;
+  pnl_today: number; pnl_yesterday: number; trades_today: number;
+}
+export interface MarketEngine {
+  symbol: string; engine: MarketEngineId; ref: string; session_key?: string;
+  direction: string | null; tf: string | null;
+  mode: "live" | "obs" | "shadow" | "execute";
+  status: MarketState; status_label: string; reason: string;
+  positions: number; signals_today: number;
+  virtual_today?: { trades: number; R: number };
+  window?: string | null; phase?: string;
+}
+export interface MarketCardData {
+  symbol: string; engines: MarketEngine[]; engine_ids: MarketEngineId[];
+  status: MarketState; status_label: string;
+  positions: number; pending: number; signals_today: number; direction: string | null;
+  stats: MarketStats | null;
+  stats_by_engine: Partial<Record<MarketEngineId, MarketStats>> | null;
+  stats_other: MarketStats | null;
+}
+export interface DashboardMarkets {
+  computed_at: string;
+  markets: MarketCardData[];
+  history_only: { symbol: string; sources: Record<string, number>; stats: MarketStats }[];
+  counts: Record<MarketState, number>;
+  global_block: string | null;
+  engines: Record<MarketEngineId, boolean>;
+  mt5_connected: boolean;
+  errors: Record<string, string>;
+}
+export interface GlobalSignal {
+  time: string; engine: MarketEngineId; symbol: string; direction: string; strategy: string;
+  status: "pending" | "executed" | "rejected" | "expired" | "observe" | "virtual" | "other";
+  status_label: string; id: string; ref: string; detail: string;
 }
