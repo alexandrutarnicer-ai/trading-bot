@@ -130,6 +130,26 @@ def _ledger_snapshot_to_index() -> bool:
     return True
 
 
+def _stage_ledger() -> None:
+    """AI Engine OPRIT → fisierul real (dupa checkpoint WAL), deci git ramane curat. AI Engine
+    PORNIT → copie consistenta in index; fisierul viu ramane „modificat” in git (normal: motorul
+    scrie in el; datele trimise sunt cele de acum)."""
+    src = os.path.join(ROOT, LEDGER_REL)
+    if not os.path.exists(src):
+        return
+    if not _pid_alive(ENGINES["AI Engine"][1][0]):
+        try:
+            con = sqlite3.connect(src)
+            con.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            con.close()
+            git("add", "-f", "--", LEDGER_REL)
+            return
+        except Exception:
+            pass                                  # fallback: copia consistenta
+    _ledger_snapshot_to_index()
+    say("ledger.db: copie trimisa; ramane afisat ca modificat in git cat timp AI Engine ruleaza (normal)")
+
+
 def commit_local(here: dict[str, bool]) -> bool:
     for name, (_, _, data) in ENGINES.items():
         if not here[name]:
@@ -138,7 +158,7 @@ def commit_local(here: dict[str, bool]) -> bool:
         if files:
             git("add", "-f", "--", *files)
         if name == "AI Engine":
-            _ledger_snapshot_to_index()
+            _stage_ledger()
     cfg = [f for f in CONFIG_FILES if git("status", "--porcelain", "--", f)]
     if cfg:
         git("add", "--", *cfg)
@@ -192,8 +212,11 @@ def merge_remote(br: str) -> None:
                        capture_output=True, text=True, encoding="utf-8", errors="replace")
     if r.returncode != 0:
         git("merge", "--abort", check=False)
-        raise Stop("Integrarea cu GitHub a dat conflict (merge anulat, nimic pierdut):\n"
-                   + (r.stdout + r.stderr).strip())
+        out = (r.stdout + r.stderr).strip()
+        if "unable to unlink" in out or "Permission denied" in out:
+            raise Stop("Un fisier de date e tinut deschis (ex. dashboard-ul citeste ledger-ul chiar acum) - "
+                       "nimic pierdut; mai ruleaza o data sync_data.bat (sau inchide dashboard-ul si reia).\n" + out)
+        raise Stop("Integrarea cu GitHub a dat conflict (merge anulat, nimic pierdut):\n" + out)
 
 
 def prune_backups(now: datetime | None = None, keep_days: int = BACKUP_KEEP_DAYS) -> int:

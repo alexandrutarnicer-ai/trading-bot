@@ -95,6 +95,21 @@ files = set(sh(REMOTE, "ls-tree", "-r", "--name-only", "alex-live").splitlines()
 check("pe GitHub: outcomes + session22 + ledger", {"data/live_signals/session1/outcomes.csv",
       "data/live_signals/session22/signals.csv", "data/ai/ledger.db"} <= files, files)
 check("jurnalele / PID-urile NU se urca", not any(f.endswith((".log", ".pid")) for f in files), files)
+check("AI oprit -> ledger.db trimis ca fisier real, git curat", sh(LAPTOP, "status", "--porcelain", "--", "data/ai/ledger.db") == "",
+      sh(LAPTOP, "status", "--porcelain", "--", "data/ai/ledger.db"))
+
+print("1b. AI Engine PORNIT (PID viu): copie consistenta, fisierul viu neatins")
+wr(LAPTOP, "data/ai/ai_engine.pid", str(os.getpid()))
+con = sqlite3.connect(db); con.execute("PRAGMA journal_mode=WAL"); con.execute("INSERT INTO d VALUES (4)"); con.commit()
+err = run(LAPTOP)
+con.close()
+tmpdb = os.path.join(TMP, "remote_ledger.db")
+subprocess.run(["git", "-C", REMOTE, "cat-file", "blob", "alex-live:data/ai/ledger.db"], stdout=open(tmpdb, "wb"), check=True)
+_c = sqlite3.connect(tmpdb)
+n4 = _c.execute("SELECT COUNT(*) FROM d").fetchone()[0]
+_c.close()
+check("AI pornit -> copia de pe GitHub are si randul nou (4)", err is None and n4 == 4, (err, n4))
+os.remove(os.path.join(LAPTOP, "data", "ai", "ai_engine.pid"))
 
 print("2. PC doar analizeaza: copie VECHE session22 + jurnale vechi (Custom a rulat aici acum o luna)")
 wr(PC, "data/live_signals/session1/generator.log", "vechi\n", age_days=30)
@@ -106,8 +121,10 @@ err = run(PC)
 check("PC: sync fara eroare", err is None, err)
 check("PC a primit datele laptopului", rd(PC, "data/live_signals/session22/signals.csv") == "id\nSOFI1\n"
       and rd(PC, "data/live_signals/session1/outcomes.csv") == "id\nS1\nS2\n")
-rows = sqlite3.connect(os.path.join(PC, "data", "ai", "ledger.db")).execute("SELECT COUNT(*) FROM d").fetchone()[0]
-check("ledger AI complet pe PC (inclusiv ce era in WAL)", rows == 3, rows)
+_c = sqlite3.connect(os.path.join(PC, "data", "ai", "ledger.db"))
+rows = _c.execute("SELECT COUNT(*) FROM d").fetchone()[0]
+_c.close()
+check("ledger AI complet pe PC (inclusiv ce era in WAL)", rows == 4, rows)
 files = set(sh(REMOTE, "ls-tree", "-r", "--name-only", "alex-live").splitlines())
 check("copiile vechi ale PC-ului NU au fost urcate (session21 absent pe GitHub)",
       "data/live_signals/session21/signals.csv" not in files)
