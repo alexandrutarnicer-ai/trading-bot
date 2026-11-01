@@ -13,6 +13,7 @@ niciodata copii vechi peste datele reale ale celuilalt:
   • Custom Engine → live_signals/session*/{signals,outcomes}.csv + ai_filter.jsonl, paused_sessions.json
   • AI Engine     → ai/ledger.db (copie CONSISTENTA prin backup SQLite, sigura si cu motorul pornit) + ai_outcomes.csv
   • Daily Engine  → daily_engine/{trades.jsonl,state.json}
+  • Noisy Engine  → noisy_engine/{trades.jsonl,state.json}
   • mereu: configurarile modificate din UI (Setari Globale, profil, config AI / Daily)
 NU se sincronizeaza: state.pkl / loguri / PID-uri / cheile API / deblocarea LIVE (per dispozitiv;
 pozitiile deschise se reconciliaza din MT5).
@@ -49,9 +50,11 @@ ENGINES = {
     "AI Engine":     (["data/ai/engine.log"], ["data/ai/ai_engine.pid"], ["data/ai/ai_outcomes.csv"]),
     "Daily Engine":  (["data/daily_engine/engine.log"], ["data/daily_engine/daily_engine.pid"],
                       ["data/daily_engine/trades.jsonl", "data/daily_engine/state.json"]),
+    "Noisy Engine":  (["data/noisy_engine/engine.log"], ["data/noisy_engine/noisy_engine.pid"],
+                      ["data/noisy_engine/trades.jsonl", "data/noisy_engine/state.json"]),
 }
 CONFIG_FILES = ["data/global_settings.json", "data/profiles/standard.json",
-                "ai_engine/config.json", "daily_engine/config.json"]
+                "ai_engine/config.json", "daily_engine/config.json", "noisy_engine/config.json"]
 PROTECTED_BRANCHES = ("main", "vlad-live")
 
 
