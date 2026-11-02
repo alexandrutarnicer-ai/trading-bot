@@ -271,6 +271,8 @@ export interface BacktestResult {
   per_symbol: Record<string, { trades: number; win_rate: number; expectancy: number }>;
   direction_stats?: Record<string, { trades: number; wins: number; losses: number; win_rate: number; expectancy: number }>;
   robustness?: RobustnessResult | null;
+  /** validitatea rezultatului: R imposibil (contract nereprezentat), date vechi, ce NU se simuleaza */
+  validity?: { valid: boolean; warnings: string[]; not_simulated: string[] } | null;
   be_lock_count?: number;
   be_lock2_count?: number;
   flag_stats?: { trades: number; win_rate: number; expectancy: number };

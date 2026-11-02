@@ -305,7 +305,24 @@ function ResultsGrid({ r }: { r: BacktestResult }) {
 
   return (
     <div className="space-y-2">
+      {r.validity && !r.validity.valid && (
+        <div className="rounded-lg border border-loss/50 bg-loss/10 px-3 py-2 text-xs text-loss font-semibold">
+          ⛔ {r.validity.warnings[0]}
+        </div>
+      )}
       {r.robustness && <RobustnessBanner rob={r.robustness} />}
+      {r.validity && (r.validity.warnings.length > (r.validity.valid ? 0 : 1) || r.validity.not_simulated.length > 0) && (
+        <details className="rounded-lg border border-surface-border bg-surface px-3 py-1.5 text-[11px] text-slate-400">
+          <summary className="cursor-pointer text-slate-300">
+            Realism față de live{r.validity.warnings.length - (r.validity.valid ? 0 : 1) > 0
+              ? ` · ${r.validity.warnings.length - (r.validity.valid ? 0 : 1)} atenționări` : ""}
+          </summary>
+          <ul className="list-disc pl-5 mt-1 space-y-0.5">
+            {r.validity.warnings.slice(r.validity.valid ? 0 : 1).map(w => <li key={w} className="text-yellow-300/90">{w}</li>)}
+          </ul>
+          <div className="mt-1">Nu se simulează: {r.validity.not_simulated.join(" · ")}.</div>
+        </details>
+      )}
       <div className="grid grid-cols-4 gap-2">
         {cells.map(c => (
           <ResultCell key={c.label} label={c.label} value={c.value} color={c.color} />

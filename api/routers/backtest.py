@@ -359,6 +359,14 @@ def _run_backtest_job(
         except Exception:
             _log.warning("[M0] evaluate_trades a esuat pentru job %s", job_id, exc_info=True)
 
+        # Validitatea rezultatului (R imposibil / date vechi / ce nu se simuleaza) — fail-open, nu schimba simularea
+        validity = None
+        try:
+            from api.backtest_validity import backtest_validity
+            validity = backtest_validity(df_t["R"].tolist(), session_cfg["markets"], data_to_actual)
+        except Exception:
+            _log.warning("[validity] esuat pentru job %s", job_id, exc_info=True)
+
         # Task 4: Analiza pierderi per zi a saptamanii si per ora
         _WD_NAMES = ["Luni", "Marți", "Miercuri", "Joi", "Vineri", "Sâmbătă", "Duminică"]
         weekday_stats: dict = {}
@@ -417,6 +425,7 @@ def _run_backtest_job(
                 "per_symbol":       per_symbol,
                 "direction_stats":  direction_stats,
                 "robustness":       robustness,
+                "validity":         validity,
                 "markets":          session_cfg["markets"],
                 "skipped_markets":  skipped_markets,
                 "session_id":       session_cfg.get("id", ""),
