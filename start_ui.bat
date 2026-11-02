@@ -32,6 +32,21 @@ if errorlevel 1 (
 echo  [OK] Node.js gasit.
 echo.
 
+:: Setup facut? (dependentele frontend + pachetele Python) - altfel ferestrele ar cadea fara explicatie
+if not exist "%ROOT%frontend\node_modules\vite\package.json" (
+    echo  [EROARE] Dependentele nu sunt instalate. Ruleaza intai setup.bat ^(o singura data^).
+    pause
+    exit /b 1
+)
+py -c "import fastapi, uvicorn, pandas, MetaTrader5" >nul 2>&1
+if errorlevel 1 (
+    echo  [EROARE] Pachetele Python lipsesc. Ruleaza setup.bat ^(repara instalarea^).
+    pause
+    exit /b 1
+)
+echo  [OK] Setup verificat.
+echo.
+
 :: Opreste procese vechi
 echo  [0/3] Opresc instante vechi...
 taskkill /FI "WINDOWTITLE eq TradingBotAPI" /F /T 2>nul
@@ -74,7 +89,7 @@ echo   API:        http://localhost:8000
 echo ============================================================
 echo.
 echo  Lasa ferestrele TradingBotAPI si TradingBotUI deschise.
-echo  Aceasta fereastra (TradingBot-Start) se poate inchide.
+echo  Aceasta fereastra (TradingBot-Start) se poate inchide. Oprire: stop_ui.bat
 echo.
 pause
 endlocal

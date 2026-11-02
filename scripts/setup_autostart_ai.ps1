@@ -41,7 +41,7 @@ if ($PyLauncher) {
 }
 if (-not $PythonExe) {
     Write-Host "[EROARE] Python nu a fost gasit." -ForegroundColor Red
-    Write-Host "Ruleaza setup_ai_engine.bat pentru a instala Python." -ForegroundColor Red
+    Write-Host "Ruleaza setup.bat pentru a instala Python." -ForegroundColor Red
     Read-Host "Apasa Enter pentru iesire"
     exit 1
 }
@@ -61,7 +61,7 @@ if (-not $ollamaExe) {
 if ($ollamaExe) {
     Write-Host "  Ollama  : $ollamaExe" -ForegroundColor Green
 } else {
-    Write-Host "  Ollama  : NEGASIT - ruleaza setup_ai_engine.bat mai intai." -ForegroundColor Yellow
+    Write-Host "  Ollama  : NEGASIT - ruleaza setup.bat --with-ai mai intai." -ForegroundColor Yellow
     Write-Host "            Motorul AI are nevoie de Ollama ca sursa default." -ForegroundColor Yellow
     $ollamaInput = Read-Host "Introdu calea catre ollama.exe (Enter pentru a folosi 'ollama' din PATH)"
     if ($ollamaInput -and (Test-Path $ollamaInput)) {
