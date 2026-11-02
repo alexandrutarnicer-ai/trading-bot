@@ -89,6 +89,13 @@ DEFAULTS: dict = {
     # points live) — de aceea tipicul vine din tick-urile live, nu din bare.
     "spread": {"mode": "auto", "manual_points": 9.0, "max_mode": "auto", "max_mult": 1.5, "max_points": 15.0},
     "news": {"enabled": True, "pre_min": 5, "post_min": 15},   # stiri High pe valutele pietei
+    # TRADE-URI SUPRAPUSE — OPTIONAL, OPRIT implicit (= o pozitie odata, comportamentul testat). Pornit: pana la
+    # max_open pozitii simultane pe piata Noisy, cu min_interval_min intre doua intrari; same_direction = poate
+    # adauga in aceeasi directie; opposite_direction = poate deschide si contra (hedging; oprit implicit).
+    # Ierarhie (cea mai stricta castiga): Setari Globale (capital, circuit breaker, stiri, vineri, pozitii simultane
+    # pe piata, risc pe trade) > buget Noisy (riscul TUTUROR pozitiilor deschise + cel nou nu poate cobori bugetul sub
+    # prag) > limitele zilnice (max trade-uri = intrari, pierderi, serie) > max_open > interval minim > directie.
+    "overlap": {"enabled": False, "max_open": 3, "min_interval_min": 5, "same_direction": True, "opposite_direction": False},
     # limitele ACTIVE (toate OPTIONALE, resetate zilnic, ora RO) — derivate din tf_profiles[timeframe].
     # M1: ~25–30 trade-uri / zi (limitele taie doar zilele extreme, DD −130R → −117R); M5: 6 / 4 / 3.
     "limits": {
@@ -268,6 +275,12 @@ def sanitize(cfg: dict) -> dict:
     be["lock1_pct"] = _num(be.get("lock1_pct"), 5, 60, 30)
     be["phase2_zone_pct"] = _num(be.get("phase2_zone_pct"), 20, 70, 40)
     be["lock2_pct"] = _num(be.get("lock2_pct"), 30, 80, 50)
+    ov = c["overlap"]
+    ov["enabled"] = bool(ov.get("enabled", False))
+    ov["max_open"] = int(_num(ov.get("max_open"), 2, 10, 3))
+    ov["min_interval_min"] = _num(ov.get("min_interval_min"), 0, 240, 5)
+    ov["same_direction"] = bool(ov.get("same_direction", True))
+    ov["opposite_direction"] = bool(ov.get("opposite_direction", False))
     n = c["news"]
     n["enabled"] = bool(n["enabled"])
     n["pre_min"] = int(_num(n["pre_min"], 0, 240, 5))

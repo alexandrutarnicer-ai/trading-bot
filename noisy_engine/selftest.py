@@ -521,6 +521,88 @@ n0 = len(m.sent)
 eng_be._execute("USDJPY", {"dir": "LONG", "signal_t": "2026-11-02T16:00:00", "close": 149.9, "ema": 150.0, "atr": 0.02}, {}, False, 1)
 req2 = m.sent[n0] if len(m.sent) > n0 else {}
 check("R:R fix in executie: tinta = intrare + 2 × riscul", req2 and abs((req2["tp"] - req2["price"]) / (req2["price"] - req2["sl"]) - 2.0) < 0.05, req2)
+
+print("6c. Trade-uri SUPRAPUSE (optional, oprit implicit)")
+check("implicit OPRIT (o pozitie odata = comportamentul testat)", CFG["overlap"]["enabled"] is False)
+ov_seq = [150.0] * 40 + [149.80, 149.78, 149.76, 149.74, 149.72, 149.70] + [149.95] * 6
+ov_b = make_bars(ov_seq)
+
+
+def ov_cfg(**kw):
+    c = raw(CFG)
+    c["timeframe"] = "M5"
+    c["overlap"].update(enabled=True, max_open=3, min_interval_min=0, same_direction=True, opposite_direction=False)
+    c["overlap"].update(kw)
+    return c
+
+
+def max_concurrent(trades):
+    # aceeasi bara: intrarea (la deschidere) inaintea iesirii (in timpul barei) → ambele pozitii tinute in bara aceea
+    ev = sorted([(t["entry_t"], 1) for t in trades] + [(t["exit_t"], -1) for t in trades], key=lambda x: (x[0], -x[1]))
+    cur = best = 0
+    for _, d_ in ev:
+        cur += d_
+        best = max(best, cur)
+    return best
+
+
+off = S.run_day(ov_b, DAY, {**raw(CFG), "timeframe": "M5"})
+on = S.run_day(ov_b, DAY, ov_cfg())
+check("oprit: niciodata doua pozitii simultan", max_concurrent(off["trades"]) <= 1, off["trades"])
+check("pornit: mai multe trade-uri, suprapuse, max 3 simultan", len(on["trades"]) > len(off["trades"])
+      and 2 <= max_concurrent(on["trades"]) <= 3, [(t["entry_t"][11:16], t["exit_t"][11:16]) for t in on["trades"]])
+on2 = S.run_day(ov_b, DAY, ov_cfg(max_open=2))
+check("max_open 2 → niciodata peste 2 simultan", max_concurrent(on2["trades"]) <= 2)
+gap = S.run_day(ov_b, DAY, ov_cfg(min_interval_min=15))
+ents = sorted(datetime.fromisoformat(t["signal_t"]) for t in gap["trades"])
+check("interval minim 15 min intre intrari (+ motivul 'interval' raportat)",
+      all((b_ - a_).total_seconds() >= 900 for a_, b_ in zip(ents, ents[1:])) and gap["reject_counts"].get("interval"),
+      (ents, gap["reject_counts"]))
+nod = S.run_day(ov_b, DAY, ov_cfg(same_direction=False))
+check("aceeasi directie interzisa → fara suprapuneri LONG+LONG (motiv 'directie')",
+      max_concurrent(nod["trades"]) <= 1 and nod["reject_counts"].get("directie"), nod["reject_counts"])
+lim2 = ov_cfg()
+lim2["limits"]["max_trades_day"] = {"enabled": True, "value": 2}
+check("limita zilnica = INTRARI (2) chiar cu pozitii deschise", len(S.run_day(ov_b, DAY, lim2)["trades"]) <= 2
+      and S.run_day(ov_b, DAY, lim2)["counters"]["entries"] <= 2)
+pend_seq = make_bars(ov_seq[:43])
+po = S.run_day(pend_seq, DAY, ov_cfg())
+check("res.opens = toate pozitiile deschise; res.open = cea mai recenta", len(po["opens"]) >= 1 and po["open"] == po["opens"][-1], po["opens"])
+
+tmp = tempfile.mkdtemp()
+for k in ("STATUS_FILE", "STATE_FILE", "CONTROL_FILE", "TRADES_FILE"):
+    setattr(E, k, os.path.join(tmp, os.path.basename(getattr(E, k))))
+C.CFG_PATH = os.path.join(tmp, "config.json")
+fake_res = {"opens": [{"entry": 150.0, "sl": 149.97, "sl_now": 149.97, "float_R": 0.0, "risk": 0.03}],
+            "pending": {"close": 149.9, "atr": 0.02, "dir": "LONG", "signal_t": "x"}}
+g_eng = E.NoisyEngine(ExecMT5(demo=True), news_fetch=lambda: [], guard=lambda s: (True, ""))
+g_eng.cfg = C.sanitize({**ov_cfg(), "mode": "shadow"})
+import live.global_guard as GG  # noqa: E402
+_ls = GG.load_settings
+GG.load_settings = lambda: {**_ls(), "max_concurrent_per_market": {"enabled": True, "max": 1}}
+ok_g, why_g = g_eng._overlap_guard(fake_res, [])
+check("Setari Globale (max 1 pozitie / piata) au prioritate peste max_open 3 — si pe pozitiile virtuale",
+      not ok_g and why_g.startswith("GLOBAL"), why_g)
+GG.load_settings = lambda: {**_ls(), "max_concurrent_per_market": {"enabled": False, "max": 1}}
+check("fara regula globala → permis (buget suficient)", g_eng._overlap_guard(fake_res, [])[0])
+g_eng.cfg["budget"] = {"capital": 40.0, "min_remaining": 39.9}
+ok_b, why_b = g_eng._overlap_guard(fake_res, [])
+check("buget: riscul pozitiilor deschise + cel nou sub prag → respins", not ok_b and why_b.startswith("BUGET"), why_b)
+GG.load_settings = _ls
+# executie DEMO: pana la max_open pozitii reale, apoi nimic
+mx = ExecMT5(demo=True)
+ex_eng = E.NoisyEngine(mx, news_fetch=lambda: [], guard=lambda s: (True, ""))
+ex_eng.cfg = C.sanitize({**ov_cfg(max_open=2), "mode": "execute"})
+for k_, st_t in enumerate(("2026-11-02T16:00:00", "2026-11-02T16:05:00", "2026-11-02T16:10:00")):
+    ex_eng._execute("USDJPY", {"dir": "LONG", "signal_t": st_t, "close": 149.9, "ema": 150.0, "atr": 0.02}, {}, False, 5)
+check("EXECUTIE cu suprapunere (max 2): 2 ordine reale, al 3-lea refuzat", len(mx.positions) == 2 and len(mx.sent) == 2,
+      [p_.comment for p_ in mx.positions])
+mx1 = ExecMT5(demo=True)
+ex1 = E.NoisyEngine(mx1, news_fetch=lambda: [], guard=lambda s: (True, ""))
+ex1.cfg = C.sanitize({**raw(CFG), "mode": "execute"})
+for st_t in ("2026-11-02T16:00:00", "2026-11-02T16:05:00"):
+    ex1._execute("USDJPY", {"dir": "LONG", "signal_t": st_t, "close": 149.9, "ema": 150.0, "atr": 0.02}, {}, False, 5)
+check("EXECUTIE fara suprapunere: tot o pozitie odata (ca inainte)", len(mx1.positions) == 1)
 shutil.rmtree(tmp, ignore_errors=True)
 from api import engine_lifecycle as L  # noqa: E402
 check("Noisy e in lifecycle FARA autostart", "noisy" in L.ENGINES and L.ENGINES["noisy"].get("task") is None)

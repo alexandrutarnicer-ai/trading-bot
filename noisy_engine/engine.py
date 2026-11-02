@@ -302,6 +302,36 @@ class NoisyEngine:
                              f"🔁 <b>Noisy Engine — piața schimbată</b>: {old} → {sym}")
         self.state["symbol"] = sym
 
+    def _overlap_guard(self, res: dict, trades: list[dict]) -> tuple[bool, str]:
+        """Doar cu trade-uri SUPRAPUSE: regulile globale si bugetul au prioritate peste max_open al engine-ului.
+        (1) Setari Globale → pozitii simultane pe piata: si pozitiile VIRTUALE (shadow) se numara (in executie
+            global_guard.check_open numara deja pozitiile reale de pe cont);
+        (2) buget: riscul (la SL) al TUTUROR pozitiilor deschise + al celei noi nu poate cobori bugetul sub prag."""
+        opens = res.get("opens") or []
+        pend = res.get("pending") or {}
+        try:
+            from live.global_guard import load_settings
+            mc = load_settings()["max_concurrent_per_market"]
+            if mc.get("enabled") and self.cfg["mode"] != "execute" and len(opens) >= int(mc.get("max", 1)):
+                return False, f"GLOBAL: max {mc.get('max')} poziții simultane pe piață (Setări Globale) — {len(opens)} deschise"
+        except Exception:
+            pass
+        bud = self.budget(trades, opens)
+        risk_open = 0.0
+        for q in opens:
+            sz = self._size(q["entry"], q["sl"])
+            risk_open += abs(q["entry"] - q["sl_now"] if q.get("sl_now") is not None else q["entry"] - q["sl"]) * (sz.get("value_per_price") or 0.0)
+        new_risk = 0.0
+        if pend.get("atr"):
+            dist = self.cfg["strategy"]["sl_atr"] * pend["atr"]
+            sz = self._size(pend["close"], pend["close"] - dist)
+            new_risk = dist * (sz.get("value_per_price") or 0.0)
+        left = bud["remaining"] - risk_open - new_risk
+        if left < bud["min_remaining"]:
+            return False, (f"BUGET: risc deschis {risk_open:.2f}$ + nou {new_risk:.2f}$ ar coborî bugetul ({bud['remaining']:.2f}$) "
+                           f"sub prag ({bud['min_remaining']:.2f}$)")
+        return True, ""
+
     def _err(self, msg: str) -> None:
         log.warning(msg)
         self.errors = (self.errors + [f"{datetime.now(RO):%d.%m %H:%M} {msg}"])[-10:]
@@ -424,14 +454,15 @@ class NoisyEngine:
             return None
         return round((tr["R"] * tr["risk"]) * v, 2)
 
-    def budget(self, trades: list[dict], open_pos: dict | None) -> dict:
+    def budget(self, trades: list[dict], open_pos) -> dict:
+        """Buget shadow: realizat (trade-uri virtuale) + flotantul TUTUROR pozitiilor deschise (lista sau una)."""
         b = self.cfg["budget"]
         since = self.state.get("budget_reset_at")
         realized = sum(t.get("pnl_money") or 0.0 for t in trades if not since or t["exit_t"] >= since)
         floating = 0.0
-        if open_pos:
-            sz = self._size(open_pos["entry"], open_pos["sl"])
-            floating = (open_pos["float_R"] * open_pos["risk"]) * (sz.get("value_per_price") or 0.0)
+        for q in (open_pos if isinstance(open_pos, list) else [open_pos] if open_pos else []):
+            sz = self._size(q["entry"], q["sl"])
+            floating += (q["float_R"] * q["risk"]) * (sz.get("value_per_price") or 0.0)
         remaining = b["capital"] + realized + floating
         return {"capital": b["capital"], "min_remaining": b["min_remaining"], "realized": round(realized, 2),
                 "floating": round(floating, 2), "remaining": round(remaining, 2),
@@ -463,7 +494,8 @@ class NoisyEngine:
                 "locked": self.state.get("budget_lock"), "since": since}
 
     def _execute(self, sym: str, signal: dict | None, res: dict, blocked: bool, tf_min: int) -> None:
-        """Semnal nou → ordin la piata cu SL + tinta atasate; stop de timp → inchidere; o pozitie odata."""
+        """Semnal nou → ordin la piata cu SL + tinta atasate; stop de timp → inchidere; o pozitie odata (sau pana la
+        overlap.max_open cand trade-urile suprapuse sunt activate — semnalul a trecut deja prin aceleasi reguli)."""
         cfg = self.cfg
         tick = self.mt5.symbol_info_tick(sym)
         positions = X.own(self.mt5, sym)
@@ -479,23 +511,24 @@ class NoisyEngine:
         # 1b) break-even pe pozitia REALA: aceeasi faza ca trade-ul virtual pereche (acelasi semnal),
         # aplicata pe pretul REAL de intrare / tinta (lock% din distanta intrare → tinta)
         be = cfg.get("break_even") or {}
-        vo = res.get("open")
-        if be.get("enabled") and vo and vo.get("be_phase", 0) >= 2:
-            lock = be["lock2_pct"] if vo["be_phase"] >= 4 else be["lock1_pct"]
-            for p in positions:
-                if str(p.comment)[:16] != X.tag(sym, vo["signal_t"]) or not p.tp:
-                    continue
-                d = 1 if p.type == getattr(self.mt5, "POSITION_TYPE_BUY", 0) else -1
-                want = p.price_open + d * abs(p.tp - p.price_open) * lock / 100.0
-                if (d > 0 and want > (p.sl or 0) + 1e-9) or (d < 0 and (not p.sl or want < p.sl - 1e-9)):
-                    done, r = X.modify_sl(self.mt5, p, want)
-                    self._event_once(f"real-be-{p.ticket}-{vo['be_phase']}",
-                                     f"🔒 <b>Noisy EXECUȚIE — {sym} break-even</b> #{p.ticket}: SL → {want:.3f} ({lock:.0f}% din țintă)"
-                                     + ("" if done else f" ⚠️ EȘUAT: {getattr(r, 'retcode', r)}"),
-                                     notify=cfg.get("notify_trades", False) or not done)
-            positions = X.own(self.mt5, sym)
+        for vo in (res.get("opens") or ([res["open"]] if res.get("open") else [])):
+            if be.get("enabled") and vo and vo.get("be_phase", 0) >= 2:
+                lock = be["lock2_pct"] if vo["be_phase"] >= 4 else be["lock1_pct"]
+                for p in positions:
+                    if str(p.comment)[:16] != X.tag(sym, vo["signal_t"]) or not p.tp:
+                        continue
+                    d = 1 if p.type == getattr(self.mt5, "POSITION_TYPE_BUY", 0) else -1
+                    want = p.price_open + d * abs(p.tp - p.price_open) * lock / 100.0
+                    if (d > 0 and want > (p.sl or 0) + 1e-9) or (d < 0 and (not p.sl or want < p.sl - 1e-9)):
+                        done, r = X.modify_sl(self.mt5, p, want)
+                        self._event_once(f"real-be-{p.ticket}-{vo['be_phase']}",
+                                         f"🔒 <b>Noisy EXECUȚIE — {sym} break-even</b> #{p.ticket}: SL → {want:.3f} ({lock:.0f}% din țintă)"
+                                         + ("" if done else f" ⚠️ EȘUAT: {getattr(r, 'retcode', r)}"),
+                                         notify=cfg.get("notify_trades", False) or not done)
+                positions = X.own(self.mt5, sym)
         # 2) intrare noua
-        if signal is None or blocked or positions or tick is None or not tick.ask:
+        max_open = cfg["overlap"]["max_open"] if cfg["overlap"]["enabled"] else 1
+        if signal is None or blocked or len(positions) >= max_open or tick is None or not tick.ask:
             return
         if signal["signal_t"] in self.state.setdefault("placed", []):
             return
@@ -600,6 +633,8 @@ class NoisyEngine:
             ok, why = self._global_check(sym, events, now_utc)
             if ok:
                 ok, why = self._live_spread_ok(sym)
+            if ok and cfg["overlap"]["enabled"]:
+                ok, why = self._overlap_guard(res, trades_all)
             if not ok:
                 self.state["vetoed"].setdefault(str(day), []).append(pend["signal_t"])
                 global_block = why
@@ -641,17 +676,19 @@ class NoisyEngine:
                              + (f" ≈ {row['pnl_money']:+.2f}$" if row["pnl_money"] is not None else "") + " (virtual)",
                              notify=cfg.get("notify_trades", False))
         op = res.get("open")
-        if op:
-            self._event_once(f"entry-{op['id']}",
-                             f"🧪 <b>Noisy SHADOW — {sym} {op['dir']}</b> @ {op['entry']:.3f}\n"
-                             f"SL {op['sl']:.3f} · țintă {op['tp']:.3f} · stop de timp {cfg['strategy']['time_stop_bars'] * tf_min} min (virtual)",
+        opens = res.get("opens") or ([op] if op else [])
+        for q in opens:
+            self._event_once(f"entry-{q['id']}",
+                             f"🧪 <b>Noisy SHADOW — {sym} {q['dir']}</b> @ {q['entry']:.3f}\n"
+                             f"SL {q['sl']:.3f} · țintă {q['tp']:.3f} · stop de timp {cfg['strategy']['time_stop_bars'] * tf_min} min (virtual)"
+                             + (f" · {len(opens)} deschise" if len(opens) > 1 else ""),
                              notify=cfg.get("notify_trades", False))
         # executie reala (DEMO / REAL deblocat) — modul shadow nu atinge executorul
         ex_ok, ex_why = self.exec_state()
         if ex_ok:
             self.state.setdefault("exec_since", now_utc.isoformat(timespec="seconds"))
         # buget izolat: in EXECUTIE din dealurile reale MT5 (magic Noisy), in shadow din trade-urile virtuale
-        bud = self.budget_real(now_utc) if ex_ok else self.budget(trades_all, op)
+        bud = self.budget_real(now_utc) if ex_ok else self.budget(trades_all, opens)
         if ex_ok and friday_active:
             n_ok, n_bad = X.close_all(self.mt5, sym)
             if n_ok or n_bad:
@@ -689,7 +726,7 @@ class NoisyEngine:
         elif paused:
             state, reason = "paused", "pus pe pauză din UI — fără intrări noi"
         elif op:
-            state, reason = "in_position", f"{op['dir']} @ {op['entry']:.3f} ({op['float_R']:+.2f}R)"
+            state, reason = "in_position", " · ".join(f"{q['dir']} @ {q['entry']:.3f} ({q['float_R']:+.2f}R)" for q in opens)
         elif res.get("lock"):
             state, reason = res["lock"], "limită zilnică atinsă — reset la miezul nopții"
         elif friday_active:
@@ -718,6 +755,7 @@ class NoisyEngine:
         status.update(execution={"active": ex_ok, "reason": ex_why}, real_positions=real_pos)
         status.update(spread=self.spread_info, rejects_today=res.get("reject_counts") or {},
                       rejected_recent=(res.get("rejected") or [])[-20:])
+        status.update(opens=opens)
         status.update(state=state, state_label=STATES[state], reason=reason, open=op, pending=res.get("pending"),
                       last=res.get("last"), counters=res["counters"], budget=bud,
                       today={"trades": len(today), "R": round(sum(t["R"] for t in today), 3),

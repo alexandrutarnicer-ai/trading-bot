@@ -289,14 +289,21 @@ function Today({ st }: { st?: NoisyStatus }) {
 }
 
 function Market({ st }: { st?: NoisyStatus }) {
-  const o = st?.open, p = st?.pending, last = st?.last;
+  const p = st?.pending, last = st?.last;
+  const opens = st?.opens ?? (st?.open ? [st.open] : []);
   return (
     <div className="rounded-xl border border-surface-border bg-surface-card p-4 space-y-2 text-xs">
       <div className="text-[11px] uppercase tracking-wider text-slate-500">Piață și poziție (virtual)</div>
-      {o ? (
-        <div className="text-white">
-          <b className={o.dir === "LONG" ? "text-profit" : "text-loss"}>{o.dir}</b> @ {o.entry.toFixed(3)} · SL {o.sl.toFixed(3)} · țintă {o.tp.toFixed(3)} ·{" "}
-          <span className={o.float_R >= 0 ? "text-profit" : "text-loss"}>{fmtR(o.float_R)}</span> · {o.bars_held * (st?.tf_min ?? 1)} min
+      {opens.length ? (
+        <div className="space-y-0.5">
+          {opens.length > 1 && <div className="text-[10px] text-slate-500">{opens.length} trade-uri deschise (suprapuse)</div>}
+          {opens.map(o => (
+            <div key={o.id} className="text-white">
+              <b className={o.dir === "LONG" ? "text-profit" : "text-loss"}>{o.dir}</b> @ {o.entry.toFixed(3)} · SL {o.sl.toFixed(3)} · țintă {o.tp.toFixed(3)} ·{" "}
+              <span className={o.float_R >= 0 ? "text-profit" : "text-loss"}>{fmtR(o.float_R)}</span> · {o.bars_held * (st?.tf_min ?? 1)} min
+            </div>
+          ))}
+          {p && <div className="text-amber-300">+ semnal {p.dir} la {p.signal_t.slice(11, 16)} — intrare la bara următoare</div>}
         </div>
       ) : p ? (
         <div className="text-amber-300">Semnal {p.dir} la {p.signal_t.slice(11, 16)} — intrare la deschiderea barei următoare</div>
@@ -415,6 +422,50 @@ function MarketEditor({ d, set, current, busy }: { d: NoisyConfig; set: (fn: (x:
         <div className="text-[10px] text-yellow-300/90">Strategia, limitele și pragul cost/ATR au fost testate doar pe USDJPY — altă piață = variantă netestată (ideal: shadow + backtest cu scripts/research_noisy/noisy_backtest.py --spread-points).</div>
       )}
       <div className="text-[10px] text-slate-500">Schimbarea se aplică după Salvează (fără restart); e refuzată cât timp Noisy are o poziție deschisă. Spread-ul manual revine pe Auto la schimbarea pieței.</div>
+    </div>
+  );
+}
+
+/** Trade-uri suprapuse: OPTIONAL, oprit implicit; ierarhia protectiilor explicata (globalul castiga). */
+function OverlapConfig({ d, set }: { d: NoisyConfig; set: (fn: (x: NoisyConfig) => void) => void }) {
+  const ov = d.overlap;
+  const num = (v: string) => (v === "" ? 0 : Number(v));
+  const risk = d.sizing.risk_pct * d.budget.capital;
+  return (
+    <div className="space-y-1.5 pt-2">
+      <div className="text-slate-400 font-semibold">Trade-uri suprapuse</div>
+      <label className="flex items-center gap-2">
+        <input type="checkbox" checked={ov.enabled} onChange={e => set(c => { c.overlap.enabled = e.target.checked; })} />
+        Permite mai multe trade-uri deschise simultan <span className="text-slate-500">(oprit implicit = o poziție odată, varianta testată)</span>
+      </label>
+      {ov.enabled && (
+        <div className="space-y-1.5 pl-2 border-l-2 border-surface-border">
+          <div className="flex items-center gap-2 flex-wrap">
+            Max deschise simultan
+            <input type="number" min={2} max={10} value={ov.max_open} onChange={e => set(c => { c.overlap.max_open = num(e.target.value); })}
+              className="w-14 bg-surface border border-surface-border rounded px-2 py-0.5" />
+            · minim
+            <input type="number" min={0} max={240} value={ov.min_interval_min} onChange={e => set(c => { c.overlap.min_interval_min = num(e.target.value); })}
+              className="w-14 bg-surface border border-surface-border rounded px-2 py-0.5" /> min între intrări
+          </div>
+          <label className="flex items-center gap-2">
+            <input type="checkbox" checked={ov.same_direction} onChange={e => set(c => { c.overlap.same_direction = e.target.checked; })} />
+            poate adăuga în aceeași direcție
+          </label>
+          <label className="flex items-center gap-2">
+            <input type="checkbox" checked={ov.opposite_direction} onChange={e => set(c => { c.overlap.opposite_direction = e.target.checked; })} />
+            poate deschide și în direcția opusă <span className="text-slate-500">(hedging — se anulează parțial, costul se plătește de două ori)</span>
+          </label>
+          <div className="text-[10px] text-yellow-300/90 rounded border border-yellow-500/30 bg-yellow-500/5 px-2 py-1 space-y-0.5">
+            <div>Risc deschis maxim ≈ {ov.max_open} × {risk.toFixed(2)} $ = <b>{(ov.max_open * risk).toFixed(2)} $</b> din bugetul de {d.budget.capital} $
+              (plus lotul minim, care la buget mic depășește de obicei riscul țintă).</div>
+            <div>Ordinea regulilor (cea mai strictă câștigă): Setări Globale (capital, circuit breaker, știri, vineri, poziții simultane pe piață,
+              risc pe trade) → bugetul Noisy (riscul tuturor pozițiilor deschise + cel nou nu poate coborî sub prag) → limitele zilnice
+              (max trade-uri = intrări, pierderi, serie) → max deschise → interval minim → direcție.</div>
+            <div>Netestat în backtest: pozițiile suprapuse pe același dezechilibru tind să piardă împreună.</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -580,6 +631,7 @@ function Config({ cfg, sp, atr, busy = false }: { cfg?: NoisyConfig; sp?: NoisyS
             <span className="text-slate-500">(lotul minim 0,01 domină la buget mic)</span>
           </div>
           <div className="text-[10px] text-slate-500">Protecțiile globale (capital, circuit breaker, știri, închidere de vineri, risc maxim pe trade, poziții simultane) se aplică peste acestea și nu pot fi ocolite.</div>
+          <OverlapConfig d={d} set={set} />
           <div className="text-slate-400 font-semibold pt-2">Țintă (R:R)</div>
           <div className="flex items-center gap-2 flex-wrap">
             <button onClick={() => set(c => { c.strategy.tp_rr = 0; })}
