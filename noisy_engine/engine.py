@@ -113,11 +113,9 @@ def _read_json(path: str, default):
 
 
 def _write_json(path: str, data) -> None:
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False, default=str)
-    os.replace(tmp, path)
+    """Atomic + rezistent la blocarile Windows (safe_io). status.json = doar afisare → o blocare nu mai pica iteratia."""
+    from safe_io import write_json_atomic
+    write_json_atomic(path, data, critical=os.path.basename(path) != "status.json")
 
 
 def _notify(cfg: dict, text: str) -> None:
