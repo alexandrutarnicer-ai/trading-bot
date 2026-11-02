@@ -348,8 +348,11 @@ export function GuidePage() {
 
           <SubSection title="Pornire rapidă">
             <div className="bg-surface rounded-lg border border-surface-border p-3 font-mono text-xs text-slate-300 space-y-1">
-              <div><span className="text-slate-600"># Dashboard (API + UI + browser):</span></div>
+              <div><span className="text-slate-600"># Prima instalare / reparare (o singură dată, sigur de rulat din nou):</span></div>
+              <div className="text-white">setup.bat            <span className="text-slate-600"># --with-ai = și Ollama + modelul AI · --check = doar verifică</span></div>
+              <div className="mt-2"><span className="text-slate-600"># Dashboard (API + UI + browser) — de fiecare dată; restart = din nou:</span></div>
               <div className="text-white">start_ui.bat</div>
+              <div className="text-white">stop_ui.bat          <span className="text-slate-600"># oprește dashboard-ul (engine-urile rămân pornite)</span></div>
               <div className="text-slate-600 mt-2"># Engine-urile — din cardurile de pe Dashboard (Start/Stop) sau manual:</div>
               <div>python live/run_all.py        <span className="text-slate-600"># Custom Engine</span></div>
               <div>python -m ai_engine           <span className="text-slate-600"># AI Engine (cere Ollama pornit)</span></div>
@@ -433,6 +436,7 @@ export function GuidePage() {
               <KV k="Oprit" v="engine-ul (sau sesiunea) nu rulează" />
               <KV k="Trades / WR / P&L" v="din MT5, toate engine-urile pe acea piață (sau doar engine-ul ales în filtrul de sursă); trade-urile virtuale Daily / Noisy sunt separate, în R" />
               <KV k="Click pe card" v="Tranzacțiile și Semnalele de dedesubt arată doar piața aleasă, de la toate engine-urile; ✕ = înapoi la toate" />
+              <KV k="Ascunde piețele nefolosite" v="ascunde piețele pe care niciun engine PORNIT nu le folosește acum: engine oprit, piață dezactivată sau sesiune pusă MANUAL pe pauză. Observația, shadow, „în afara programului” și blocările automate (știri, limite, buget) contează ca folosite. O piață cu poziții / ordine deschise rămâne mereu vizibilă. Cu filtrul de sursă ales, contează doar engine-ul ales. Bifa se păstrează" />
             </div>
             <Note>Sub carduri apar piețele cu tranzacții dar fără niciun engine configurat acum (ex. o piață scoasă din AI) —
               ca totalurile să se lege: carduri + aceste piețe = Total Trades din Statistici.</Note>
@@ -618,6 +622,18 @@ export function GuidePage() {
                 Metrică relevantă pentru validare este <strong>Test expectancy</strong> pe date nevăzute.
               </Warn>
             </div>
+          </SubSection>
+
+          <SubSection title="Realismul rezultatului (față de live)">
+            <div className="space-y-1 text-xs">
+              <KV k="⛔ REZULTAT INVALID" v="trade-uri cu |R| peste 8 — contractul pieței nu e reprezentat corect în backtest (ex. XRPUSD după schimbarea contractului la broker: 1 lot = 1 XRP, lot minim 100). Nu folosi cifrele" />
+              <KV k="Date vechi" v="datele CSV se opresc de mai mult de 14 zile — descarcă date noi înainte să compari cu live-ul" />
+              <KV k="Costuri FX" v="spread-ul presupus e cel brut; pe contul Standard spread-ul live are un markup (~0,8 pip)" />
+              <KV k="Nu se simulează" v="Filtrul AI pre-trade, Setările Globale, protecția la știri, pauzele / oprirea engine-ului, slippage-ul" />
+            </div>
+            <Note>Comparația cu tranzacțiile reale (27.07 – 01.11): semnalele backtestului = cele live (91% din trade-urile comune au
+              același rezultat, la același preț), costurile backtestului sunt ușor pesimiste, iar volumul live e ~26% din backtest în
+              principal din cauza Filtrului AI. Detalii: docs/BACKTEST_VS_LIVE.md.</Note>
           </SubSection>
 
           <SubSection title="Verdict de robustețe (M0)">
@@ -1476,7 +1492,8 @@ export function GuidePage() {
             <div className="space-y-1 text-xs">
               <KV k="Scop" v="FRECVENȚĂ (multe trade-uri), nu profit: backtestul pe M1 e ~0 după costuri (−0,01R/trade). M5 rămâne opțiune (~4/zi, +0,08R)" />
               <KV k="Pornire" v="DOAR manuală, cu confirmare (Risk level: HIGH). Fără autostart, nu e repornit de watchdog" />
-              <KV k="Fereastră" v="10:00–20:00 RO, luni–vineri (configurabil); niciodată 22–00 (rollover)" />
+              <KV k="Ferestre" v="unul sau mai multe intervale (ex. 10:00–13:00 + 16:00–22:00), ora RO, zilele bifate; fără suprapuneri (se verifică la salvare); un interval poate trece de miezul nopții (aparține zilei în care începe), dar nicio intrare care ar rămâne deschisă după 00:00. Implicit 10:00–20:00 (varianta testată)" />
+              <KV k="Edit Market" v="piața se alege din lista reală MT5 (căutare); vezi spread-ul live, lotul minim, marja; schimbarea e refuzată cât timp există o poziție deschisă. Doar USDJPY a fost testat" />
               <KV k="Limite (opționale)" v="max 60 trade-uri / zi, max 25 pierderi / zi, max 8 la rând → blocat până a doua zi" />
               <KV k="Buget izolat" v="P&L-ul Noisy (în Execuție: din MT5, magic 990001), NU equity-ul contului; sub prag → „Stopped – Budget Limit” până la reset manual" />
               <KV k="Protecții" v="Setările Globale (capital, circuit breaker, știri, risc maxim) se aplică și nu pot fi ocolite; plus știri High pe USD/JPY și spread live" />
@@ -1484,6 +1501,26 @@ export function GuidePage() {
               <KV k="M1 ⇄ M5" v="limitele au valori separate pe fiecare timeframe (M1: 60 / 25 / 8 · M5: 6 / 4 / 3); la comutare contoarele zilei se recalculează pe timeframe-ul ales" />
               <KV k="Setări Globale" v="se aplică toate (capital, circuit breaker, știri, închidere de vineri, risc maxim, poziții simultane); filtrul AI pre-trade e doar al Custom Engine" />
             </div>
+          </SubSection>
+          <SubSection title="Spread și motivul fiecărui semnal respins" defaultOpen={false}>
+            <div className="space-y-1 text-xs">
+              <KV k="Unitate" v="points MT5 (coloana „Spread” din Market Watch); pagina arată și pips și prețul. USDJPY: 1 point = 0,001 = 0,1 pips" />
+              <KV k="Spread tipic (cost)" v="Auto = mediana spread-ului live din tick-urile MT5, înghețată pe zi la deschiderea ferestrei · Manual = valoarea ta" />
+              <KV k="Spread maxim" v="Auto = N × tipic (implicit 1,5×) · Manual = points (0 = fără limită); peste el semnalul e respins" />
+              <KV k="Filtrul cost/ATR" v="intră doar când mișcarea (ATR) e de cel puțin N ori costul (M1: 5×, M5: 15×). Un spread tipic mare = puține sau zero trade-uri — intenționat" />
+              <KV k="De ce nu intră?" v="fiecare semnal respins apare în panoul pieței și în jurnal cu motivul și cifrele (cost/ATR, spread, știri, limite, interval, suprapuse, direcție…)" />
+            </div>
+            <Warn>Pe contul Standard spread-ul live al USDJPY e ~9 points (istoricul MT5 arată doar ~1 point brut). Cu 9 points, pe M1
+              filtrul cost/ATR respinge aproape tot (ATR mediu ~20 points); de aceea, după ridicarea spread-ului, Noisy nu mai intra.
+              Backtest la spread real: M1 ~0,6 trade-uri / zi, M5 −0,045R / trade.</Warn>
+          </SubSection>
+          <SubSection title="Trade-uri suprapuse (opțional, oprit implicit)" defaultOpen={false}>
+            <div className="space-y-1 text-xs">
+              <KV k="Oprit (implicit)" v="o poziție odată — varianta testată" />
+              <KV k="Pornit" v="max deschise simultan (2–10), interval minim între intrări (minute), aceeași direcție da / nu, direcție opusă (hedging) da / nu" />
+              <KV k="Ordinea regulilor" v="Setări Globale (inclusiv poziții simultane pe piață, numărate și pe pozițiile virtuale) → bugetul Noisy (riscul tuturor pozițiilor + cel nou) → limitele zilnice (max trade-uri = intrări) → max deschise → interval → direcție" />
+            </div>
+            <Note>Backtest 12 luni (M5, spread real): numărul de trade-uri se dublează, expectancy-ul nu se schimbă, drawdown-ul se dublează.</Note>
           </SubSection>
           <SubSection title="Break-Even și R:R (opționale, dezactivate implicit)" defaultOpen={false}>
             <div className="space-y-1 text-xs">
@@ -1542,6 +1579,7 @@ export function GuidePage() {
               <KV k="Conținut lunar" v="Complet: performanța Custom / AI / Daily + TOTAL, comparație (profit, risc, drawdown, consistență), condiții de piață, evenimente, weekend, probleme, analiză AI consultativă" />
               <KV k="Conținut săptămânal" v="Esențial: partea de trading identică (performanță + comparație); piața într-un rând (trend / range pe piață), știrile High (următoarele 5), gap-uri de weekend și probleme grave DOAR dacă au existat, analiză AI în 3 puncte" />
               <KV k="Lipsuri" v="O sursă indisponibilă (MT5, calendar, AI) e marcată explicit — raportul se trimite oricum" />
+              <KV k="MT5 încă nepregătit" v="în primele minute după pornire (sau cât timp terminalul nu e logat) raportul NU pleacă gol: se AMÂNĂ automat până MT5 e gata (notificare „amânat”), maxim 3h; apoi se trimite cu MT5 marcat „indisponibil — NU înseamnă zero tranzacții”" />
               <KV k="Unde se setează" v="Settings → Rapoarte programate (ore, AI, mașina care trimite, trimitere manuală)" />
             </div>
             <Note>Lasă „Trimite de pe această mașină” activ doar pe mașina care rulează engine-urile — altfel primești rapoarte duble.
