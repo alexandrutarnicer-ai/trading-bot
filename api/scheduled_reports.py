@@ -32,6 +32,14 @@ from api import telegram
 from api.notifications import log_notification
 
 _last_daily:  date | None = None
+_STARTED = time.monotonic()
+# Raport generat in primele minute dupa pornirea API-ului / a terminalului = istoric MT5 inca necitit
+# (cont neautentificat) → raport GOL. Incident 2026-11-02: raportul lunar pe octombrie (recuperat la
+# pornirea laptopului, dupa ce duminica 1.11 09:00 fusese ratat) a plecat fara date, desi MT5 are 67
+# de tranzactii in octombrie. Acum: gratie la pornire + raportul ASTEAPTA pana MT5 e gata.
+STARTUP_GRACE_S = 180
+REPORT_DEFER_MAX_S = 3 * 3600          # dupa 3h de asteptare se trimite oricum, cu MT5 marcat indisponibil
+_deferred: dict[str, float] = {}       # tip raport → momentul primei amanari (monotonic)
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CONFIG_FILE = os.path.join(_ROOT, "data", "reports_config.json")
@@ -142,10 +150,45 @@ _STRATEGY_LABELS = {"pullback": "Pullback", "inside_bar": "Inside Bar",
                     "flag": "Flag", "smart_news": "Știri"}
 
 
-def _mt5_trades_between(start: datetime, end: datetime) -> list[dict] | None:
-    """Tranzactiile inchise in [start, end) (ora aplicatiei) din MT5. None = MT5 indisponibil."""
+def _mt5_ready() -> tuple[bool, str]:
     try:
         from api import mt5_pool
+        return mt5_pool.history_status()
+    except Exception as e:
+        return False, str(e)
+
+
+def report_ready(kind: str, now: datetime, mono: float | None = None, ready=None) -> bool:
+    """Raportul `kind` poate fi generat ACUM? Nu in primele STARTUP_GRACE_S dupa pornirea API-ului si
+    nu cat timp istoricul MT5 nu e de incredere — atunci se amana (marcajul de „trimis” NU se scrie,
+    se reincearca la minutul urmator). Dupa REPORT_DEFER_MAX_S (sau la sfarsitul zilei pentru zilnic /
+    saptamanal, care nu se recupereaza a doua zi) se trimite oricum: raportul spune explicit ca MT5 e
+    indisponibil, nu pretinde „nicio tranzactie”."""
+    mono = time.monotonic() if mono is None else mono
+    if mono - _STARTED < STARTUP_GRACE_S:
+        return False
+    ok, why = (ready or _mt5_ready)()
+    if ok:
+        _deferred.pop(kind, None)
+        return True
+    first = _deferred.setdefault(kind, mono)
+    if first == mono:
+        log_notification(f"⏳ Raportul {kind} amânat: {why} — reîncerc automat (max {REPORT_DEFER_MAX_S // 3600}h).")
+    end_of_day = kind in ("daily", "weekly") and (now.hour, now.minute) >= (23, 55)
+    if mono - first >= REPORT_DEFER_MAX_S or end_of_day:
+        _deferred.pop(kind, None)
+        return True
+    return False
+
+
+def _mt5_trades_between(start: datetime, end: datetime) -> list[dict] | None:
+    """Tranzactiile inchise in [start, end) (ora aplicatiei) din MT5. None = MT5 indisponibil
+    (inclusiv cont neautentificat / istoric necitit — NU se confunda cu „nicio tranzactie”)."""
+    try:
+        from api import mt5_pool
+        ok, _why = mt5_pool.history_status()
+        if not ok:
+            return None
         days = max(2, (now_local() - start).days + 2)
         return [t for t in mt5_pool.get_closed_trades(days)
                 if t.get("close_time") is not None and start <= t["close_time"] < end]
@@ -179,7 +222,10 @@ def _mt5_trades(date_from: date, date_to: date) -> list[dict] | None:
     """
     try:
         from api import mt5_pool
-        days = max(2, (date.today() - date_from).days + 2)
+        ok, _why = mt5_pool.history_status()
+        if not ok:
+            return None
+        days = max(2, (now_local().date() - date_from).days + 2)
         return [t for t in mt5_pool.get_closed_trades(days)
                 if t.get("close_time") is not None
                 and date_from <= t["close_time"].date() < date_to]
@@ -291,15 +337,16 @@ def _scheduler_loop() -> None:
             cfg = load_reports_config()
             if cfg.get("enabled_on_this_machine", True):
                 dh, dm = _hm(cfg["daily_time"])
-                if (now.hour, now.minute) >= (dh, dm) and (_last_daily is None or _last_daily < today):
+                if ((now.hour, now.minute) >= (dh, dm) and (_last_daily is None or _last_daily < today)
+                        and report_ready("daily", now)):
                     _last_daily = today
                     send_daily_report(today)
                 st = _state()
-                if weekly_due(now, cfg, st):
+                if weekly_due(now, cfg, st) and report_ready("weekly", now):
                     st["weekly_sent"] = today.isoformat()
                     _save_state(st)                 # marcaj INAINTE de trimitere: fara dubluri la restart
                     send_period_report("weekly", now)
-                if monthly_due(now, cfg, st):
+                if monthly_due(now, cfg, st) and report_ready("monthly", now):
                     st["monthly_sent"] = monthly_window(now)[0].strftime("%Y-%m")
                     _save_state(st)
                     send_period_report("monthly", now)

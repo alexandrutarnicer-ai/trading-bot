@@ -13,7 +13,11 @@ Regula (mean reversion, M5):
   O singura pozitie odata; dupa iesire, pauza (cooldown).
   Break-Even OPTIONAL (cfg["break_even"]) = aceeasi regula ca Custom Engine (engine/simulator.py).
 Costul: max(spread bara de intrare, spread median, spread_floor) + comision + 2×slip×spread median (unitati de pret).
-spread_floor = spread-ul median masurat pe tick-uri (spread-ul barelor MT5 e minimul din bara).
+spread_floor = spread-ul TIPIC (unitati de pret) rezolvat de config.resolve_spread din sectiunea `spread`
+(auto = masurat din tick-urile MT5 live, sau manual); spread-ul barelor MT5 e minimul din bara (si fara markup-ul
+contului Standard), deci nu poate fi folosit singur. spread_max = spread-ul MAXIM acceptat (0 = fara limita).
+Diagnoza: fiecare semnal (deviatie > dev×ATR in fereastra) respins de un filtru apare in res["rejected"] cu motivul
+si cifrele — nu schimba nimic din logica (doar observa).
 """
 from __future__ import annotations
 
@@ -22,7 +26,7 @@ from datetime import date, datetime, timedelta
 import numpy as np
 import pandas as pd
 
-from noisy_engine.config import hm_to_min
+from noisy_engine.config import TIMEFRAMES, hm_to_min, in_intervals
 
 SPREAD_MED_BARS = 288          # 24h de bare M5
 
@@ -46,11 +50,8 @@ def indicators(df: pd.DataFrame, p: dict) -> pd.DataFrame:
 
 
 def _in_window(t: datetime, w: dict) -> bool:
-    if t.weekday() not in w["days"]:
-        return False
-    m = t.hour * 60 + t.minute
-    s, e = hm_to_min(w["start"]), hm_to_min(w["end"])
-    return s <= m < e if s <= e else (m >= s or m < e)
+    """In fereastra de intrare: unul din intervale (config.in_intervals), zi bifata."""
+    return in_intervals(t, w)
 
 
 def _blocked(t: datetime, intervals) -> bool:
@@ -110,8 +111,11 @@ def run_day(bars: pd.DataFrame, day: date, cfg: dict, *, news_blocks=None, vetoe
     vetoed: set de momente de semnal (t al barei de semnal) respinse de protectiile globale la
             momentul lor — pastrate de engine ca recalcularea sa ramana identica.
     no_new_entries: blocare externa (buget epuizat / pauza) — fara intrari noi.
-    Intoarce: trades (inchise azi), open (pozitia virtuala deschisa), pending (semnal care asteapta
-    bara urmatoare), counters, lock (motivul blocarii zilei) si ultimele valori ale indicatorilor.
+    Intoarce: trades (inchise azi), open (cea mai recenta pozitie virtuala deschisa), opens (TOATE pozitiile
+    deschise), pending (semnal care asteapta bara urmatoare), counters, lock (motivul blocarii zilei) si ultimele
+    valori ale indicatorilor.
+    Trade-uri SUPRAPUSE (cfg["overlap"], OPTIONAL, oprit implicit): pana la max_open pozitii simultane, cu un interval
+    minim intre intrari si reguli de directie. Oprit → max_open = 1 = exact logica de dinainte (o pozitie odata).
     """
     p, lim, w = cfg["strategy"], cfg["limits"], cfg["window"]
     be = cfg.get("break_even") or {"enabled": False}
@@ -131,11 +135,35 @@ def run_day(bars: pd.DataFrame, day: date, cfg: dict, *, news_blocks=None, vetoe
     if not idx:
         return res
     vetoed = vetoed or set()
-    pos = None
+    tf_min = TIMEFRAMES.get(cfg.get("timeframe"), 5)
+    midnight = datetime(day.year, day.month, day.day) + timedelta(days=1)
+    ov = cfg.get("overlap") or {}
+    ov_on = bool(ov.get("enabled"))
+    max_open = int(ov.get("max_open", 1)) if ov_on else 1
+    min_gap = timedelta(minutes=float(ov.get("min_interval_min", 0))) if ov_on else timedelta(0)
+    positions: list[dict] = []
+    entries = 0                                   # intrari de azi (limita max_trades_day = intrari, nu iesiri)
+    last_sig_t: datetime | None = None
     next_ok = idx[0]
     losses = consec = 0
     flips: list[datetime] = []
     last_dir = 0
+
+    rejected: list[dict] = []
+    rcount: dict[str, int] = {}
+
+    def raw_dir(i: int) -> int:
+        if not (np.isfinite(atr[i]) and atr[i] > 0):
+            return 0
+        return 1 if c[i] < ema[i] - p["dev_atr"] * atr[i] else (-1 if c[i] > ema[i] + p["dev_atr"] * atr[i] else 0)
+
+    def reject(i: int, reason: str, detail: str = "", d: int | None = None) -> None:
+        """Doar OBSERVA: semnalul care ar fi existat pe bara i si filtrul care l-a oprit (nu schimba logica)."""
+        d = raw_dir(i) if d is None else d
+        if not d or not _in_window(t[i], w):
+            return
+        rcount[reason] = rcount.get(reason, 0) + 1
+        rejected.append({"t": t[i].isoformat(), "dir": "LONG" if d > 0 else "SHORT", "reason": reason, "detail": detail})
 
     def cost_at(i_entry: int, i_sig: int) -> float:
         med = spm[i_sig] if np.isfinite(spm[i_sig]) else sp[i_sig]
@@ -146,11 +174,18 @@ def run_day(bars: pd.DataFrame, day: date, cfg: dict, *, news_blocks=None, vetoe
                        "dev_atr": float((c[i] - ema[i]) / atr[i]) if np.isfinite(atr[i]) and atr[i] > 0 else None,
                        "spread": float(sp[i]), "spread_med": float(spm[i]) if np.isfinite(spm[i]) else None,
                        "er": float(er[i]) if np.isfinite(er[i]) else None}
-        # 1) pozitia deschisa: iesire pe bara i
-        if pos is not None and i >= pos["entry_i"]:
+        # 1) pozitiile deschise: iesire pe bara i (in ordinea intrarii)
+        exited, still = False, []
+        for pos in positions:
+            if i < pos["entry_i"]:
+                still.append(pos)
+                continue
             d = pos["dir"]
             exit_p, reason = step_exit(pos, i, h[i], l[i], c[i], p["time_stop_bars"], be)
-            if exit_p is not None:
+            if exit_p is None:
+                still.append(pos)
+            else:
+                exited = True
                 gross = d * (exit_p - pos["entry"])
                 net = gross - pos["cost"]
                 tr_ = {"id": pos["id"], "dir": "LONG" if d > 0 else "SHORT", "signal_t": pos["signal_t"],
@@ -165,45 +200,85 @@ def run_day(bars: pd.DataFrame, day: date, cfg: dict, *, news_blocks=None, vetoe
                     consec += 1
                 else:
                     consec = 0
-                next_ok = i + 1 + (p["cooldown_after_sl_bars"] if reason == "SL" else p["cooldown_bars"])
-                pos = None
+                next_ok = max(next_ok, i + 1 + (p["cooldown_after_sl_bars"] if reason == "SL" else p["cooldown_bars"]))
+        had_open = bool(positions)
+        positions = still
+        if exited:
             continue                                  # nicio intrare noua pe bara unei iesiri
-        if pos is not None:
+        if len(positions) >= max_open:
+            if ov_on:
+                reject(i, "suprapuse", f"{len(positions)}/{max_open} trade-uri deschise")
             continue
-        # 2) limitele zilei
-        if lim["max_trades_day"]["enabled"] and res["counters"]["trades"] >= lim["max_trades_day"]["value"]:
+        if had_open and not ov_on:
+            continue
+        # 2) limitele zilei (max trade-uri = INTRARI; fara suprapunere = identic cu iesirile, nimic deschis aici)
+        if lim["max_trades_day"]["enabled"] and entries >= lim["max_trades_day"]["value"]:
             res["lock"] = res["lock"] or "trade_limit"
+            reject(i, "limita_trade", f"{entries}/{lim['max_trades_day']['value']} trade-uri azi")
             continue
         if lim["max_losses_day"]["enabled"] and losses >= lim["max_losses_day"]["value"]:
             res["lock"] = res["lock"] or "loss_limit"
+            reject(i, "limita_pierderi", f"{losses}/{lim['max_losses_day']['value']} pierderi azi")
             continue
         if lim["max_consec_losses"]["enabled"] and consec >= lim["max_consec_losses"]["value"]:
             res["lock"] = res["lock"] or "loss_streak"
+            reject(i, "serie_pierderi", f"{consec} pierderi la rând")
             continue
-        if i < next_ok or no_new_entries:
+        if no_new_entries:
+            reject(i, "blocat", "pauză / buget epuizat")
+            continue
+        if i < next_ok:
+            reject(i, "cooldown", "pauză după ieșire")
             continue
         # 3) filtre obligatorii
         if not (np.isfinite(atr[i]) and atr[i] > 0) or not _in_window(t[i], w):
             continue
         if _blocked(t[i], news_blocks):
+            reject(i, "stiri", "fereastră de știri")
+            continue
+        # o intrare de acum ar ramane deschisa peste miezul noptii (stopul de timp) → nu: ziua se reconstruieste pe
+        # zi calendaristica, pozitia s-ar pierde la 00:00. Relevant doar pentru intervale care ating miezul noptii.
+        if t[i] + timedelta(minutes=tf_min * (p["time_stop_bars"] + 2)) >= midnight:
+            reject(i, "miezul_noptii", f"stopul de timp ({p['time_stop_bars']} bare) ar trece de 00:00")
             continue
         med = spm[i] if np.isfinite(spm[i]) else sp[i]
-        if p["spread_max_mult"] > 0 and med > 0 and sp[i] > p["spread_max_mult"] * med:
+        if p.get("spread_max", 0) > 0 and sp[i] > p["spread_max"] + 1e-12:
+            reject(i, "spread", f"spread {sp[i]:.5g} > maxim {p['spread_max']:.5g}")
+            continue
+        if p.get("spread_max_mult", 0) > 0 and med > 0 and sp[i] > p["spread_max_mult"] * med:   # config vechi / research
+            reject(i, "spread", f"spread {sp[i]:.5g} > {p['spread_max_mult']}× median {med:.5g}")
             continue
         cost_est = med + p["comm_price"] + 2 * p["slip_frac"] * med
         if p["min_atr_over_cost"] > 0 and cost_est > 0 and atr[i] < p["min_atr_over_cost"] * cost_est:
+            reject(i, "cost_atr", f"ATR {atr[i]:.5g} < {p['min_atr_over_cost']:g}× cost {cost_est:.5g} "
+                                  f"(= {p['min_atr_over_cost'] * cost_est:.5g}); costul = {100 * cost_est / atr[i]:.0f}% din ATR")
             continue
         # 4) semnal
         d = 1 if c[i] < ema[i] - p["dev_atr"] * atr[i] else (-1 if c[i] > ema[i] + p["dev_atr"] * atr[i] else 0)
         if d == 0:
             continue
         if p["trend_filter"] and np.isfinite(er[i]) and er[i] >= p["er_trend"]:
+            reject(i, "trend", f"efficiency ratio {er[i]:.2f} ≥ {p['er_trend']}", d)
             continue
         if p["max_flips_per_hour"] > 0:
             recent = [x for x in flips if x > t[i] - timedelta(hours=1)]
             if last_dir and d != last_dir and len(recent) >= p["max_flips_per_hour"]:
+                reject(i, "flip_flop", f"{len(recent)} schimbări de direcție în ultima oră", d)
                 continue
+        if positions and ov_on:
+            dirs = {q["dir"] for q in positions}
+            if d in dirs and not ov.get("same_direction", True):
+                reject(i, "directie", "deja există un trade deschis în aceeași direcție", d)
+                continue
+            if -d in dirs and not ov.get("opposite_direction", False):
+                reject(i, "directie", "trade deschis în direcția opusă (hedging nepermis)", d)
+                continue
+        if ov_on and last_sig_t is not None and t[i] - last_sig_t < min_gap:
+            reject(i, "interval", f"{(t[i] - last_sig_t).total_seconds() / 60:.0f} min de la intrarea precedentă "
+                                  f"< {ov.get('min_interval_min')} min", d)
+            continue
         if t[i].isoformat() in vetoed:
+            reject(i, "veto", "respins la momentul lui (protecții globale / spread live)", d)
             continue
         if last_dir and d != last_dir:
             flips.append(t[i])
@@ -215,6 +290,8 @@ def run_day(bars: pd.DataFrame, day: date, cfg: dict, *, news_blocks=None, vetoe
         e = o[i + 1]
         risk = p["sl_atr"] * atr[i]
         tp_dist = p["tp_rr"] * risk if p.get("tp_rr", 0) > 0 else abs(ema[i] - c[i]) + 1e-12
+        entries += 1
+        last_sig_t = t[i]
         pos = {"id": f"{t[i]:%Y%m%d-%H%M}", "dir": d, "sig_i": i, "entry_i": i + 1, "signal_t": t[i].isoformat(),
                "entry_t": t[i + 1].isoformat(), "entry": float(e), "sl": float(e - d * risk), "sl0": float(e - d * risk),
                "tp": float(e + d * tp_dist), "risk": float(risk), "cost": float(cost_at(i + 1, i))}
@@ -223,13 +300,18 @@ def run_day(bars: pd.DataFrame, day: date, cfg: dict, *, news_blocks=None, vetoe
             pos["be_lv"] = {k: float(e + d * tp_dist * be[f] / 100.0) for k, f in
                             (("trig", "trigger_pct"), ("lock1", "lock1_pct"), ("zone", "phase2_zone_pct"), ("lock2", "lock2_pct"))}
             pos["be_phase"] = 0
-    res["counters"].update(losses=losses, consec_losses=consec,
+        positions.append(pos)
+    res["rejected"], res["reject_counts"] = rejected[-200:], rcount
+    res["counters"].update(losses=losses, consec_losses=consec, entries=entries, open=len(positions),
                            flips_hour=len([x for x in flips if t[-1] - timedelta(hours=1) < x]))
-    if pos is not None:
+
+    def _out(pos: dict) -> dict:
         d = pos["dir"]
-        res["open"] = {**{k: v for k, v in pos.items() if k not in ("sig_i", "entry_i", "sl0", "be_lv")},
-                       "sl": pos["sl0"], "sl_now": pos["sl"], "be_phase": pos.get("be_phase", 0),
-                       "dir": "LONG" if d > 0 else "SHORT", "last": float(c[-1]),
-                       "float_R": (d * (c[-1] - pos["entry"]) - pos["cost"]) / pos["risk"],
-                       "bars_held": len(df) - pos["entry_i"]}
+        return {**{k: v for k, v in pos.items() if k not in ("sig_i", "entry_i", "sl0", "be_lv")},
+                "sl": pos["sl0"], "sl_now": pos["sl"], "be_phase": pos.get("be_phase", 0),
+                "dir": "LONG" if d > 0 else "SHORT", "last": float(c[-1]),
+                "float_R": (d * (c[-1] - pos["entry"]) - pos["cost"]) / pos["risk"],
+                "bars_held": len(df) - pos["entry_i"]}
+    res["opens"] = [_out(q) for q in positions]
+    res["open"] = res["opens"][-1] if res["opens"] else None
     return res

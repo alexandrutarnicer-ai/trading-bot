@@ -101,8 +101,9 @@ SPREAD_DEFAULTS = {
     # Crypto — spreads in TICKS (pip_size mic, trebuie mai multi ticks)
     # BTCUSD: pip=0.01, spread real ~$12 = 1200 ticks → 12.0 in pips (pip=1.0 pt BTC dupa PIP_SIZE?)
     "BTCUSD": 12.0,
-    # XRPUSD: pip=0.00001, spread real ~0.0003 price = 30 ticks (era 1.0 = practic 0 → backteste optimiste!)
-    "XRPUSD": 30.0,
+    # XRPUSD: pip=0.00001; spread-ul REAL masurat 2026-11-02 = 21–28 points de 0.0001 ≈ 0.0025 = 250 „pips” de 0.00001
+    # (vechiul 30 = 0.0003 era de ~8 ori prea mic, valoare din contractul anterior)
+    "XRPUSD": 250.0,
     # ETHUSD: similar cu BTC
     "ETHUSD": 5.0,
 }
@@ -359,6 +360,14 @@ def _run_backtest_job(
         except Exception:
             _log.warning("[M0] evaluate_trades a esuat pentru job %s", job_id, exc_info=True)
 
+        # Validitatea rezultatului (R imposibil / date vechi / ce nu se simuleaza) — fail-open, nu schimba simularea
+        validity = None
+        try:
+            from api.backtest_validity import backtest_validity
+            validity = backtest_validity(df_t["R"].tolist(), session_cfg["markets"], data_to_actual)
+        except Exception:
+            _log.warning("[validity] esuat pentru job %s", job_id, exc_info=True)
+
         # Task 4: Analiza pierderi per zi a saptamanii si per ora
         _WD_NAMES = ["Luni", "Marți", "Miercuri", "Joi", "Vineri", "Sâmbătă", "Duminică"]
         weekday_stats: dict = {}
@@ -417,6 +426,7 @@ def _run_backtest_job(
                 "per_symbol":       per_symbol,
                 "direction_stats":  direction_stats,
                 "robustness":       robustness,
+                "validity":         validity,
                 "markets":          session_cfg["markets"],
                 "skipped_markets":  skipped_markets,
                 "session_id":       session_cfg.get("id", ""),

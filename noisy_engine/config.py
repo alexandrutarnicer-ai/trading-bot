@@ -32,9 +32,11 @@ DEFAULTS: dict = {
     # la Stop / Emergency Stop / buget epuizat in EXECUTIE: "close" = inchide pozitiile Noisy (recomandat:
     # tinerea medie e de minute, nesupravegheate contrazic ideea de engine controlat) | "keep" = raman cu SL/TP
     "on_stop": "close",
-    # fereastra in care are voie sa INTRE (ora RO). Pozitiile deschise se termina dupa regulile lor
-    # (stop de timp) — nimic peste noapte.
-    "window": {"start": "10:00", "end": "20:00", "days": [0, 1, 2, 3, 4]},
+    # fereastra in care are voie sa INTRE (ora RO): unul sau mai multe INTERVALE (ex. 10:00–13:00 si 16:00–22:00)
+    # in zilele bifate. Un interval poate trece peste miezul noptii (22:00–02:00 = ziua in care INCEPE). Pozitiile
+    # deschise se termina dupa regulile lor (stop de timp); nicio intrare care ar ramane deschisa peste miezul noptii.
+    # `start` / `end` = primul interval (compatibilitate cu cititorii vechi); sursa de adevar = `intervals`.
+    "window": {"intervals": [{"start": "10:00", "end": "20:00"}], "days": [0, 1, 2, 3, 4], "start": "10:00", "end": "20:00"},
     "strategy": {
         "ema": 20, "atr": 14,
         "dev_atr": 2.0,               # intrare cand inchiderea e la > 2×ATR de EMA20 (contra miscarii)
@@ -47,8 +49,10 @@ DEFAULTS: dict = {
         "max_flips_per_hour": 3,      # > 3 schimbari de directie intr-o ora → fara intrari pana la ora urmatoare
         "trend_filter": False,        # OPTIONAL: nu intra cand piata e in trend (efficiency ratio)
         "er_bars": 20, "er_trend": 0.35,
-        "spread_floor": 0.001,        # spread-ul median REAL (tick-uri) — USDJPY 1 punct; barele MT5 au minimul (0)
-        "spread_max_mult": 1.5,       # spread-ul LIVE (tick) la semnal ≤ 1,5× spread_floor, altfel semnalul e respins
+        # spread_floor / spread_max = DERIVATE (unitati de pret) din sectiunea `spread` de mai jos, prin
+        # resolve_spread (engine + backtest). Valorile de aici sunt doar rezerva cand nu se cunoaste `point`.
+        "spread_floor": 0.001,
+        "spread_max": 0.0,
         "min_atr_over_cost": 5.0,     # ATR ≥ 5× costul dus-intors (pe M1; M5 testat cu 15), altfel miscarea e prea mica
         "slip_frac": 0.25,            # slippage presupus: 25% din spread la intrare si la iesire
         "comm_price": 0.0,            # comision in unitati de pret (0 = contul actual)
@@ -74,7 +78,24 @@ DEFAULTS: dict = {
                           "max_consec_losses": {"enabled": True, "value": 3}},
                "min_atr_over_cost": 15.0},
     },
+    # SPREAD — in POINTS MT5 (coloana „Spread” din Market Watch; USDJPY: 1 point = 0,001 = 0,1 pips).
+    # Doua valori DISTINCTE (inainte, `spread_floor` facea tot: cost + limita + filtrul cost/ATR):
+    #   tipic  = costul presupus al unui trade (intra si in filtrul „ATR ≥ N × cost”)
+    #            auto   = mediana spread-ului LIVE masurat de engine din tick-urile MT5 (inghetata pe zi,
+    #                     la prima iteratie din fereastra — recalcularea zilei ramane identica)
+    #            manual = manual_points
+    #   maxim  = spread-ul LIVE peste care semnalul e respins: auto = max_mult × tipic; manual = max_points
+    # Atentie: istoricul MT5 (barele) are spread-ul BRUT, fara markup-ul contului Standard (USDJPY 1 vs 9
+    # points live) — de aceea tipicul vine din tick-urile live, nu din bare.
+    "spread": {"mode": "auto", "manual_points": 9.0, "max_mode": "auto", "max_mult": 1.5, "max_points": 15.0},
     "news": {"enabled": True, "pre_min": 5, "post_min": 15},   # stiri High pe valutele pietei
+    # TRADE-URI SUPRAPUSE — OPTIONAL, OPRIT implicit (= o pozitie odata, comportamentul testat). Pornit: pana la
+    # max_open pozitii simultane pe piata Noisy, cu min_interval_min intre doua intrari; same_direction = poate
+    # adauga in aceeasi directie; opposite_direction = poate deschide si contra (hedging; oprit implicit).
+    # Ierarhie (cea mai stricta castiga): Setari Globale (capital, circuit breaker, stiri, vineri, pozitii simultane
+    # pe piata, risc pe trade) > buget Noisy (riscul TUTUROR pozitiilor deschise + cel nou nu poate cobori bugetul sub
+    # prag) > limitele zilnice (max trade-uri = intrari, pierderi, serie) > max_open > interval minim > directie.
+    "overlap": {"enabled": False, "max_open": 3, "min_interval_min": 5, "same_direction": True, "opposite_direction": False},
     # limitele ACTIVE (toate OPTIONALE, resetate zilnic, ora RO) — derivate din tf_profiles[timeframe].
     # M1: ~25–30 trade-uri / zi (limitele taie doar zilele extreme, DD −130R → −117R); M5: 6 / 4 / 3.
     "limits": {
@@ -103,6 +124,94 @@ def hm_to_min(s: str) -> int:
     return int(h) * 60 + int(m)
 
 
+def _fmt_hm(mins: int) -> str:
+    return f"{mins // 60 % 24:02d}:{mins % 60:02d}"
+
+
+def _segments(a: int, b: int) -> list[tuple[int, int]]:
+    """Intervalul [a, b) in minute pe [0, 1440); peste miezul noptii (a > b) → doua bucati."""
+    return [(a, b)] if a < b else [(a, 1440), (0, b)]
+
+
+def validate_intervals(intervals) -> list[str]:
+    """Erorile unei liste de intervale (pentru API — userul afla de ce nu se salveaza). [] = valida."""
+    errs: list[str] = []
+    if not isinstance(intervals, list) or not intervals:
+        return ["cel puțin un interval orar este obligatoriu"]
+    segs = []
+    for n, it in enumerate(intervals, 1):
+        try:
+            a, b = hm_to_min(it["start"]), hm_to_min(it["end"])
+        except Exception:
+            errs.append(f"intervalul {n}: oră invalidă (format HH:MM)")
+            continue
+        if not (0 <= a < 1440 and 0 <= b < 1440):
+            errs.append(f"intervalul {n}: oră în afara 00:00–23:59")
+            continue
+        if a == b:
+            errs.append(f"intervalul {n}: început = sfârșit ({it['start']}) — durată zero")
+            continue
+        segs += [(x, y, n) for x, y in _segments(a, b)]
+    for i, (a1, b1, n1) in enumerate(segs):
+        for a2, b2, n2 in segs[i + 1:]:
+            if n1 != n2 and a1 < b2 and a2 < b1:
+                errs.append(f"intervalele {n1} și {n2} se suprapun")
+    return sorted(set(errs))
+
+
+def normalize_intervals(intervals) -> list[dict]:
+    """Varianta TOLERANTA (la incarcare): ignora intervalele invalide, uneste suprapunerile, sorteaza dupa
+    inceput; lista goala → 10:00–20:00 (implicitul testat). Intervalele peste miezul noptii raman intregi."""
+    out: list[tuple[int, int]] = []
+    for it in intervals if isinstance(intervals, list) else []:
+        try:
+            a, b = hm_to_min(it["start"]) % 1440, hm_to_min(it["end"]) % 1440
+        except Exception:
+            continue
+        if a != b:
+            out.append((a, b))
+    if not out:
+        return [{"start": "10:00", "end": "20:00"}]
+    # uneste suprapunerile (pe minute, inclusiv peste miezul noptii)
+    cover = [False] * 1440
+    for a, b in out:
+        for x, y in _segments(a, b):
+            for m in range(x, y):
+                cover[m] = True
+    if all(cover):
+        return [{"start": "00:00", "end": "23:59"}]          # toata ziua (00:00–00:00 ar fi durata zero)
+    starts = [m for m in range(1440) if cover[m] and not cover[m - 1]]
+    res = []
+    for a in starts:
+        b = a
+        while cover[b % 1440]:
+            b += 1
+        res.append((a, b % 1440))
+    res.sort()
+    return [{"start": _fmt_hm(a), "end": _fmt_hm(b)} for a, b in res]
+
+
+def in_intervals(t, w: dict) -> bool:
+    """t (datetime RO) e intr-unul din intervalele ferestrei, intr-o zi bifata. Pentru un interval peste miezul
+    noptii, partea de dupa 00:00 apartine zilei in care a INCEPUT intervalul."""
+    m = t.hour * 60 + t.minute
+    wd = t.weekday()
+    days = w["days"]
+    for it in w.get("intervals") or [{"start": w["start"], "end": w["end"]}]:
+        a, b = hm_to_min(it["start"]), hm_to_min(it["end"])
+        if a < b:
+            if a <= m < b and wd in days:
+                return True
+        else:
+            if (m >= a and wd in days) or (m < b and (wd - 1) % 7 in days):
+                return True
+    return False
+
+
+def intervals_label(w: dict) -> str:
+    return ", ".join(f"{it['start']}–{it['end']}" for it in w.get("intervals") or [])
+
+
 def _num(v, lo, hi, default):
     try:
         v = float(v)
@@ -120,12 +229,11 @@ def sanitize(cfg: dict) -> dict:
     c["notify_trades"] = bool(c.get("notify_trades", False))
     c["poll_seconds"] = int(_num(c["poll_seconds"], 2, 120, 5))
     w = c["window"]
-    for k, d in (("start", "10:00"), ("end", "20:00")):
-        try:
-            mins = hm_to_min(w[k])
-            w[k] = f"{mins // 60 % 24:02d}:{mins % 60:02d}"
-        except Exception:
-            w[k] = d
+    raw_w = (cfg or {}).get("window") or {}
+    if "intervals" not in raw_w and ("start" in raw_w or "end" in raw_w):        # config vechi: un singur interval
+        w["intervals"] = [{"start": raw_w.get("start", "10:00"), "end": raw_w.get("end", "20:00")}]
+    w["intervals"] = normalize_intervals(w.get("intervals"))
+    w["start"], w["end"] = w["intervals"][0]["start"], w["intervals"][0]["end"]
     w["days"] = sorted({int(x) for x in w.get("days", []) if str(x).isdigit() and 0 <= int(x) <= 6}) or [0, 1, 2, 3, 4]
     s, d = c["strategy"], DEFAULTS["strategy"]
     s["ema"] = int(_num(s["ema"], 5, 200, 20))
@@ -140,7 +248,20 @@ def sanitize(cfg: dict) -> dict:
     s["er_bars"] = int(_num(s["er_bars"], 5, 200, 20))
     s["er_trend"] = _num(s["er_trend"], 0.05, 1, 0.35)
     s["spread_floor"] = _num(s.get("spread_floor"), 0, 1e6, 0.001)
-    s["spread_max_mult"] = _num(s["spread_max_mult"], 0, 20, 1.5)
+    s["spread_max"] = _num(s.get("spread_max"), 0, 1e6, 0.0)
+    legacy = (cfg or {}).get("strategy") or {}
+    sp = c["spread"]
+    if "spread" not in (cfg or {}) and ("spread_floor" in legacy or "spread_max_mult" in legacy):
+        # config vechi (spread_floor in PRET + multiplicator) → mod manual, aceleasi valori; convertit in
+        # points la prima rezolvare (cand `point` e cunoscut) — comportament identic cu inainte
+        sp.update(mode="manual", manual_points=None, legacy_floor_price=_num(legacy.get("spread_floor"), 0, 1e6, 0.001),
+                  max_mode="auto", max_mult=_num(legacy.get("spread_max_mult"), 0, 20, 1.5))
+    s.pop("spread_max_mult", None)                      # inlocuit de spread.max_* (rezolvat in strategy.spread_max)
+    sp["mode"] = sp.get("mode") if sp.get("mode") in ("auto", "manual") else "auto"
+    sp["max_mode"] = sp.get("max_mode") if sp.get("max_mode") in ("auto", "manual") else "auto"
+    sp["manual_points"] = None if sp.get("manual_points") is None else _num(sp["manual_points"], 0, 1e6, 9.0)
+    sp["max_mult"] = _num(sp.get("max_mult"), 0, 20, 1.5)
+    sp["max_points"] = _num(sp.get("max_points"), 0, 1e7, 15.0)
     s["min_atr_over_cost"] = _num(s["min_atr_over_cost"], 0, 200, 5)
     s["slip_frac"] = _num(s["slip_frac"], 0, 5, 0.25)
     s["comm_price"] = _num(s["comm_price"], 0, 1e6, 0.0)
@@ -154,6 +275,12 @@ def sanitize(cfg: dict) -> dict:
     be["lock1_pct"] = _num(be.get("lock1_pct"), 5, 60, 30)
     be["phase2_zone_pct"] = _num(be.get("phase2_zone_pct"), 20, 70, 40)
     be["lock2_pct"] = _num(be.get("lock2_pct"), 30, 80, 50)
+    ov = c["overlap"]
+    ov["enabled"] = bool(ov.get("enabled", False))
+    ov["max_open"] = int(_num(ov.get("max_open"), 2, 10, 3))
+    ov["min_interval_min"] = _num(ov.get("min_interval_min"), 0, 240, 5)
+    ov["same_direction"] = bool(ov.get("same_direction", True))
+    ov["opposite_direction"] = bool(ov.get("opposite_direction", False))
     n = c["news"]
     n["enabled"] = bool(n["enabled"])
     n["pre_min"] = int(_num(n["pre_min"], 0, 240, 5))
@@ -167,14 +294,52 @@ def sanitize(cfg: dict) -> dict:
             lim = pr["limits"].get(k) or {}
             pr["limits"][k] = {"enabled": bool(lim.get("enabled", True)), "value": int(_num(lim.get("value"), 1, 1000, 1))}
         pr["min_atr_over_cost"] = _num(pr.get("min_atr_over_cost"), 0, 200, 5 if tf == "M1" else 15)
+        # filtrul cost/ATR comutabil din UI (ex. OPRIT pe perioada de proba in shadow); pragul se PASTREAZA, ca la
+        # reactivare sa revina exact valoarea testata. Oprit → strategy.min_atr_over_cost = 0 (fara filtru)
+        pr["cost_filter_enabled"] = bool(pr.get("cost_filter_enabled", True))
     act = profs[c["timeframe"]]
     c["limits"] = copy.deepcopy(act["limits"])
-    s["min_atr_over_cost"] = act["min_atr_over_cost"]
+    s["min_atr_over_cost"] = act["min_atr_over_cost"] if act["cost_filter_enabled"] else 0.0
     b = c["budget"]
     b["capital"] = _num(b["capital"], 1, 1e6, 40.0)
     b["min_remaining"] = _num(b["min_remaining"], 0, b["capital"], min(30.0, b["capital"]))
     c["sizing"]["risk_pct"] = _num(c["sizing"].get("risk_pct"), 0.0005, 0.05, 0.01)
     return c
+
+
+def pip_points(digits: int | None) -> int:
+    """Points intr-un pip: FX cu 3 / 5 zecimale → 10 (USDJPY 0,01 = 10 points); altfel 1 (indici, cripto)."""
+    return 10 if digits in (3, 5) else 1
+
+
+def resolve_spread(cfg: dict, point: float | None, auto_points: float | None = None, digits: int | None = None) -> dict:
+    """Rezolva sectiunea `spread` (points) → strategy.spread_floor / spread_max (PRET) — in loc. Intoarce ce se
+    afiseaza: valorile in points / pips / pret si SURSA fiecareia (auto MT5 / manual / rezerva)."""
+    sp, s = cfg["spread"], cfg["strategy"]
+    if not point:
+        return {"mode": sp["mode"], "source": "point necunoscut — valorile de rezerva", "typical_price": s["spread_floor"],
+                "max_price": s["spread_max"]}
+    if sp["mode"] == "manual":
+        pts = sp.get("manual_points")
+        if pts is None and sp.get("legacy_floor_price") is not None:
+            pts = round(sp["legacy_floor_price"] / point, 3)
+        src = "manual"
+    else:
+        pts, src = auto_points, "auto (MT5 live)"
+    if pts is None or pts <= 0:
+        pts, src = (s["spread_floor"] / point if s["spread_floor"] else None), "rezervă (încă fără tick-uri MT5)"
+    typical = (pts or 0.0) * point
+    if sp["max_mode"] == "manual":
+        max_pts, max_src = sp["max_points"], "manual"
+    else:
+        max_pts, max_src = sp["max_mult"] * (pts or 0.0), f"auto ({sp['max_mult']:g}× tipic)"
+    s["spread_floor"] = typical
+    s["spread_max"] = max_pts * point
+    pp = pip_points(digits)
+    return {"mode": sp["mode"], "max_mode": sp["max_mode"], "source": src, "max_source": max_src, "point": point,
+            "digits": digits, "pip_points": pp, "typical_points": round(pts or 0.0, 2), "typical_price": round(typical, 8),
+            "typical_pips": round((pts or 0.0) / pp, 3), "max_points": round(max_pts, 2), "max_price": round(max_pts * point, 8),
+            "max_pips": round(max_pts / pp, 3)}
 
 
 def load_config() -> dict:

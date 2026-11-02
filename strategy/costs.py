@@ -31,8 +31,51 @@ _INDEX_TICK = {
 _CRYPTO_TICK = {
     "BTCUSD": 0.01,   # tick_value_usd (USD per tick per lot)
     "ETHUSD": 0.01,
-    "XRPUSD": 0.01,   # 1 lot = 1000 XRP, tick=0.00001, tick_val=0.01 USD
+    # XRPUSD — contractul ACTUAL la ICMarketsEU (schimbat in 2026): 1 lot = 1 XRP, tick 0.0001 (tick_value 0.0001 USD),
+    # lot minim 100, pas 1. pip_size ramane 0.00001 (strategy/signals.py — folosit si LIVE la buffer-ul SL, neatins),
+    # deci valoarea unui „pip” de 0.00001 pentru 1 lot (1 XRP) = 0.00001 USD. Vechiul 0.01 = 1 lot de 1000 XRP.
+    "XRPUSD": 0.00001,
 }
+
+# Modelul de lot al brokerului per simbol: (volum minim, pas). Implicit (0.01, 0.01) = formula de dinainte, BYTE-
+# identica pentru forex / indici / BTC (baseline-urile neschimbate). XRPUSD: 100 XRP minim, pas 1 XRP.
+LOT_SPECS = {
+    "XRPUSD": (100.0, 1.0),
+}
+# Comisionul din config e cel FOREX (USD pe lot de 100.000). Pe simbolurile la care „lotul” e 1 unitate si contul
+# Standard nu are comision, aplicarea lui pe mii de loturi distrugea rezultatul (XRPUSD: R de −7445).
+COMMISSION_PER_LOT_OVERRIDE = {
+    "XRPUSD": 0.0,
+}
+# Levierul real per simbol (marja). Implicit = levierul general al backtestului. XRPUSD: 1:2 la ICMarketsEU
+# (marja la lotul minim de 100 ≈ 62$). BTCUSD are tot 1:2 real, dar e lasat pe levierul general ca baseline-ul S3
+# aprobat sa ramana neschimbat (documentat).
+LEVERAGE_OVERRIDE = {
+    "XRPUSD": 2.0,
+}
+
+
+def lot_spec(symbol):
+    return LOT_SPECS.get(symbol, (0.01, 0.01))
+
+
+def round_lots(symbol, raw):
+    """Lotul aliniat la pasul brokerului (floor). Implicit = np.floor(raw / 0.01) * 0.01 (expresia de dinainte)."""
+    import numpy as np
+    _min, step = lot_spec(symbol)
+    return np.floor(raw / step) * step
+
+
+def min_lot(symbol):
+    return lot_spec(symbol)[0]
+
+
+def commission_per_lot(symbol, default):
+    return COMMISSION_PER_LOT_OVERRIDE.get(symbol, default)
+
+
+def leverage_for(symbol, default):
+    return LEVERAGE_OVERRIDE.get(symbol, default)
 
 # Swap real din MT5 (swap_long, tratate ca USD per lot per noapte).
 # Forex: valorile existente validate pe backtest.
@@ -48,6 +91,8 @@ SWAP_PER_LOT_NIGHT = {
     "US500":  1.735, "US30": 11.812, "US2000": 0.671,
     "UK100":  2.459, "GER40": 4.528, "DE40": 4.528,
     "XAUUSD": 54.015,
+    # XRPUSD: swap_long −20%/an din notional (swap_mode 5, MT5) → la ~1,25 USD/XRP ≈ 0,0007 USD per XRP (lot) per noapte
+    "XRPUSD": 0.0007,
 }
 
 

@@ -1,6 +1,6 @@
 # install_winget.ps1
 # Instaleaza winget (Windows Package Manager) daca lipseste.
-# Apelat automat din setupFirst.bat.
+# Apelat automat din setup.bat.
 
 $progressPreference = 'silentlyContinue'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12

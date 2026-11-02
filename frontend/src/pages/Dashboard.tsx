@@ -219,7 +219,10 @@ export function Dashboard() {
   // indicele saptamanal, Top 5, graficul si lista de tranzactii folosesc aceeasi sursa.
   const [source, setSource] = useState<SourceFilter>("all");
   const [selectedMarket, setSelectedMarket] = useState<string | null>(null);
-  const [hideStopped, setHideStopped] = useState(false);
+  // „Ascunde pietele nefolosite” — persistat; o piata e folosita daca un engine PORNIT o are activa si
+  // nepusa manual pe pauza (observatia / shadow conteaza), sau daca are pozitii / ordine deschise
+  const [hideUnused, setHideUnused] = useState(() => localStorage.getItem("dash.hideUnused") === "1");
+  useEffect(() => { localStorage.setItem("dash.hideUnused", hideUnused ? "1" : "0"); }, [hideUnused]);
   const [now, setNow] = useState(Date.now());
   const [feedView, setFeedView] = useState<FeedView>("trades");
   const qc = useQueryClient();
@@ -239,12 +242,20 @@ export function Dashboard() {
   // cu statisticile MT5 ale acelui engine pe piata (aceleasi definitii).
   const srcEngine: MarketEngineId | null =
     source === "bot" ? "custom" : source === "ai" || source === "daily" || source === "noisy" ? source : null;
-  const markets: MarketCardData[] = (marketsData?.markets ?? [])
+  const scoped: MarketCardData[] = (marketsData?.markets ?? [])
     .filter(m => !srcEngine || m.engine_ids.includes(srcEngine))
-    .filter(m => !hideStopped || m.status !== "stopped")
-    .map(m => srcEngine ? { ...m, stats: m.stats_by_engine?.[srcEngine] ?? null,
-                            engines: m.engines.filter(e => e.engine === srcEngine) } : m);
-  const counts = marketsData?.counts;
+    .map(m => {
+      if (!srcEngine) return m;
+      const engines = m.engines.filter(e => e.engine === srcEngine);
+      // cu o sursa aleasa, „folosita” = folosita de ACEL engine (nu de oricare de pe piata)
+      return { ...m, stats: m.stats_by_engine?.[srcEngine] ?? null, engines,
+               in_use: engines.some(e => e.in_use) };
+    });
+  const markets = scoped.filter(m => !hideUnused || m.in_use);
+  const hiddenCount = scoped.length - markets.length;
+  // contoarele din antet = pietele AFISATE (dupa filtrul de sursa si „ascunde nefolosite”)
+  const counts = marketsData ? markets.reduce((acc, m) => ({ ...acc, [m.status]: (acc[m.status] ?? 0) + 1 }),
+                                              {} as Partial<Record<MarketCardData["status"], number>>) : null;
   const histOnly = marketsData?.history_only ?? [];
 
   function refresh() {
@@ -372,9 +383,10 @@ export function Dashboard() {
                   {marketsData.engines[id] ? "pornit" : "oprit"}</span>}
               </span>
             ))}
-            <label className="flex items-center gap-1 cursor-pointer">
-              <input type="checkbox" checked={hideStopped} onChange={e => setHideStopped(e.target.checked)} />
-              ascunde piețele oprite
+            <label className="flex items-center gap-1 cursor-pointer"
+              title="Nefolosită = niciun engine PORNIT nu o are activă (engine oprit, piață dezactivată sau sesiune pusă manual pe pauză) și nu are poziții / ordine deschise. Observația și shadow contează ca folosite.">
+              <input type="checkbox" checked={hideUnused} onChange={e => setHideUnused(e.target.checked)} />
+              ascunde piețele nefolosite{hideUnused && hiddenCount > 0 ? ` (${hiddenCount} ascunse)` : ""}
             </label>
           </div>
         </div>
@@ -403,7 +415,9 @@ export function Dashboard() {
               <MarketCard key={m.symbol} m={m} selected={m.symbol === selectedMarket}
                 onClick={() => setSelectedMarket(s => (s === m.symbol ? null : m.symbol))} />
             ))}
-            {!markets.length && <div className="text-xs text-slate-500 col-span-full py-4">Nicio piață configurată pentru filtrul ales.</div>}
+            {!markets.length && <div className="text-xs text-slate-500 col-span-full py-4">
+              {hiddenCount ? `Toate cele ${hiddenCount} piețe sunt nefolosite acum (engine oprit / pauză) — debifează „ascunde piețele nefolosite”.`
+                           : "Nicio piață configurată pentru filtrul ales."}</div>}
           </div>
         )}
         {!srcEngine && histOnly.length > 0 && (

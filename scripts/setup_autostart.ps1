@@ -36,7 +36,7 @@ if ($PyLauncher) {
 }
 if (-not $PythonExe) {
     Write-Host "[EROARE] Python nu a fost gasit." -ForegroundColor Red
-    Write-Host "Ruleaza setupFirst.bat pentru a instala Python." -ForegroundColor Red
+    Write-Host "Ruleaza setup.bat pentru a instala Python." -ForegroundColor Red
     Read-Host "Apasa Enter pentru iesire"
     exit 1
 }

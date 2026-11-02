@@ -127,7 +127,7 @@ export function EnginePerformanceSection({ engine }: { engine: EngineKey }) {
              { label: "Stare", value: noisy?.state_label ?? "—" }];
     chips = [`${noisy?.config?.symbol ?? "USDJPY"} ${noisy?.config?.timeframe ?? "M1"}`,
              noisy?.mode === "execute" ? "EXECUȚIE" : "SHADOW",
-             noisy?.config ? `${noisy.config.window.start}–${noisy.config.window.end}` : ""].filter(Boolean);
+             noisy?.config ? (noisy.config.window.intervals ?? [noisy.config.window]).map(w => `${w.start}–${w.end}`).join(", ") : ""].filter(Boolean);
     note = "Frecvență mare: mean reversion pe o singură piață, fără autostart (pornire doar manuală). Bani reali doar în modul Execuție.";
   } else {
     const sc = daily?.scorecard;

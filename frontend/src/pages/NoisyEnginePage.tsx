@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { AlertTriangle, Loader2, OctagonX, Pause, Play, RotateCcw, Square, Zap } from "lucide-react";
-import { useNoisyAction, useNoisyLogs, useNoisySaveConfig, useNoisyStatus, useNoisyTrades, useTimezone } from "../api/hooks";
-import type { NoisyConfig, NoisyStatus } from "../api/types";
+import { useMt5Markets, useNoisyAction, useNoisyLogs, useNoisyMarketInfo, useNoisySaveConfig, useNoisyStatus, useNoisyTrades,
+  useTimezone } from "../api/hooks";
+import type { NoisyConfig, NoisySpreadInfo, NoisyStatus } from "../api/types";
 
 // Ora RO (fereastra Noisy e definita si testata in ora RO) → ora din alt fus, pentru afisare.
 function roToZone(hm: string, zone: string): string {
@@ -41,6 +42,109 @@ const STATE_CLS: Record<string, string> = {
   error: "bg-loss/15 text-loss border-loss/40",
 };
 const DAYS = ["L", "Ma", "Mi", "J", "V", "S", "D"];
+const REJECT_LABEL: Record<string, string> = {
+  cost_atr: "cost/ATR", spread: "spread", stiri: "știri", trend: "trend", flip_flop: "flip-flop",
+  veto: "protecții globale / spread live", cooldown: "pauză după ieșire", blocat: "pauză / buget",
+  limita_trade: "limita trade-uri", limita_pierderi: "limita pierderi", serie_pierderi: "serie pierderi",
+  interval: "interval minim", suprapuse: "max trade-uri simultane", directie: "direcție nepermisă",
+};
+
+/** Spread: aceeasi valoare in points (unitatea MT5 din Market Watch), pips si pret. */
+function fmtSpread(points: number | null | undefined, sp?: NoisySpreadInfo) {
+  if (points == null) return "—";
+  const pt = sp?.point, pp = sp?.pip_points ?? 1, dg = sp?.digits ?? 5;
+  const price = pt ? (points * pt).toFixed(Math.max(dg, 1)) : "?";
+  return `${+points.toFixed(2)} points` + (pp > 1 ? ` = ${+(points / pp).toFixed(2)} pips` : "") + ` = ${price}`;
+}
+
+function SpreadConfig({ d, set, sp, atr }: { d: NoisyConfig; set: (fn: (x: NoisyConfig) => void) => void; sp?: NoisySpreadInfo;
+                         atr?: number | null }) {
+  const x = d.spread;
+  const num = (v: string) => (v === "" ? 0 : Number(v));
+  const live = sp?.live_points;
+  const typical = x.mode === "manual" ? (x.manual_points ?? sp?.typical_points ?? 0) : (sp?.typical_points ?? live ?? null);
+  const max = x.max_mode === "manual" ? x.max_points : typical == null ? null : x.max_mult * typical;
+  const prof = d.tf_profiles[d.timeframe];
+  const cost = typical == null ? null : typical * (1 + 2 * Number(d.strategy.slip_frac ?? 0.25));
+  const btn = (on: boolean) => `px-2 py-0.5 rounded border ${on ? "border-amber-500/50 text-amber-200" : "border-surface-border text-slate-500"}`;
+  return (
+    <div className="space-y-1.5">
+      <div className="text-slate-400 font-semibold">Spread {d.symbol}
+        <span className="font-normal text-slate-500"> · unitatea = points MT5 (coloana „Spread” din Market Watch){sp?.pip_points && sp.pip_points > 1 ? ` · 1 pip = ${sp.pip_points} points` : ""}</span>
+      </div>
+      <div className="text-[11px] text-slate-400">Acum în MT5: <b className="text-white">{fmtSpread(live, sp)}</b></div>
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="w-28 text-slate-300" title="Costul presupus al unui trade; intră și în filtrul cost/ATR.">Spread tipic (cost)</span>
+        <button className={btn(x.mode === "auto")} onClick={() => set(c => { c.spread.mode = "auto"; })}>Auto (MT5 live)</button>
+        <button className={btn(x.mode === "manual")} onClick={() => set(c => {
+          c.spread.mode = "manual"; c.spread.manual_points = c.spread.manual_points ?? (sp?.typical_points ?? live ?? 0); })}>Manual</button>
+        {x.mode === "manual" && (
+          <span className="flex items-center gap-1">
+            <input type="number" min={0} step={0.5} value={x.manual_points ?? ""} onChange={e => set(c => { c.spread.manual_points = num(e.target.value); })}
+              className="w-20 bg-surface border border-surface-border rounded px-2 py-0.5" /> points
+          </span>
+        )}
+      </div>
+      <div className="text-[10px] text-slate-500 pl-28">
+        = {fmtSpread(typical, sp)} · {x.mode === "auto" ? (sp?.auto_note || "mediana spread-ului live, înghețată pe zi la deschiderea ferestrei") : "valoarea ta (override)"}
+      </div>
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="w-28 text-slate-300" title="Spread-ul LIVE peste care semnalul e respins (verificat la fiecare semnal).">Spread maxim</span>
+        <button className={btn(x.max_mode === "auto")} onClick={() => set(c => { c.spread.max_mode = "auto"; })}>Auto</button>
+        <button className={btn(x.max_mode === "manual")} onClick={() => set(c => {
+          c.spread.max_mode = "manual"; c.spread.max_points = c.spread.max_points || +(max ?? 0).toFixed(1); })}>Manual</button>
+        {x.max_mode === "auto" ? (
+          <span className="flex items-center gap-1">
+            <input type="number" min={1} max={20} step={0.1} value={x.max_mult} onChange={e => set(c => { c.spread.max_mult = num(e.target.value); })}
+              className="w-16 bg-surface border border-surface-border rounded px-2 py-0.5" /> × tipic
+          </span>
+        ) : (
+          <span className="flex items-center gap-1">
+            <input type="number" min={0} step={0.5} value={x.max_points} onChange={e => set(c => { c.spread.max_points = num(e.target.value); })}
+              className="w-20 bg-surface border border-surface-border rounded px-2 py-0.5" /> points <span className="text-slate-500">(0 = fără limită)</span>
+          </span>
+        )}
+      </div>
+      <div className="text-[10px] text-slate-500 pl-28">= {max ? fmtSpread(max, sp) : "fără limită"}</div>
+      {typical != null && max != null && max > 0 && typical > max && (
+        <div className="text-[11px] text-loss">Spread-ul tipic e peste maxim → TOATE semnalele vor fi respinse.</div>
+      )}
+      <div className={`rounded border px-2 py-1.5 space-y-1 ${prof.cost_filter_enabled === false
+          ? "border-loss/40 bg-loss/5" : "border-yellow-500/30 bg-yellow-500/5"}`}>
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-slate-300 font-semibold" title="Intră doar când mișcarea pieței (ATR) e de cel puțin N ori costul unui trade.">
+            Filtru cost/ATR ({d.timeframe})</span>
+          <button className={btn(prof.cost_filter_enabled !== false)}
+            onClick={() => set(c => { c.tf_profiles[c.timeframe].cost_filter_enabled = true; })}>Activ</button>
+          <button className={btn(prof.cost_filter_enabled === false)}
+            onClick={() => set(c => { c.tf_profiles[c.timeframe].cost_filter_enabled = false; })}>Oprit (probă)</button>
+          {prof.cost_filter_enabled !== false && (
+            <span className="flex items-center gap-1">ATR ≥
+              <input type="number" min={1} max={200} step={0.5} value={prof.min_atr_over_cost}
+                onChange={e => set(c => { c.tf_profiles[c.timeframe].min_atr_over_cost = num(e.target.value); })}
+                className="w-14 bg-surface border border-surface-border rounded px-2 py-0.5" /> × cost
+              <span className="text-slate-500">(testat: M1 5, M5 15)</span>
+            </span>
+          )}
+        </div>
+        {prof.cost_filter_enabled === false ? (
+          <div className="text-[10px] text-loss">
+            OPRIT: Noisy intră și când costul (spread) mănâncă mișcarea — util ca să vezi engine-ul lucrând în SHADOW, dar
+            backtestul la spread real e puternic negativ fără filtru (USDJPY M1 −0,44R / trade). Pragul ({prof.min_atr_over_cost}×) se
+            păstrează și revine la reactivare. Nu-l lăsa oprit în EXECUȚIE.
+          </div>
+        ) : cost != null && sp?.point ? (
+          <div className="text-[10px] text-yellow-300/90">
+            Intră doar când ATR ≥ {prof.min_atr_over_cost} × cost ≈ {fmtSpread(prof.min_atr_over_cost * cost, sp)}. Un spread mai mare
+            înseamnă mai puține (sau zero) trade-uri — intenționat: sub acest prag costul mănâncă mișcarea.
+            {atr && sp.point ? <> ATR-ul ultimei bare {d.timeframe}: {fmtSpread(atr / sp.point, sp)} → trade-uri doar cu un spread tipic sub
+              ≈ {fmtSpread(atr / sp.point / (prof.min_atr_over_cost * (1 + 2 * Number(d.strategy.slip_frac ?? 0.25))), sp)}.</> : null}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
 
 const fmtR = (v?: number | null, d = 2) => (v == null ? "—" : `${v >= 0 ? "+" : ""}${v.toFixed(d)}R`);
 const fmt$ = (v?: number | null) => (v == null ? "—" : `${v >= 0 ? "+" : ""}${v.toFixed(2)} $`);
@@ -210,14 +314,21 @@ function Today({ st }: { st?: NoisyStatus }) {
 }
 
 function Market({ st }: { st?: NoisyStatus }) {
-  const o = st?.open, p = st?.pending, last = st?.last;
+  const p = st?.pending, last = st?.last;
+  const opens = st?.opens ?? (st?.open ? [st.open] : []);
   return (
     <div className="rounded-xl border border-surface-border bg-surface-card p-4 space-y-2 text-xs">
       <div className="text-[11px] uppercase tracking-wider text-slate-500">Piață și poziție (virtual)</div>
-      {o ? (
-        <div className="text-white">
-          <b className={o.dir === "LONG" ? "text-profit" : "text-loss"}>{o.dir}</b> @ {o.entry.toFixed(3)} · SL {o.sl.toFixed(3)} · țintă {o.tp.toFixed(3)} ·{" "}
-          <span className={o.float_R >= 0 ? "text-profit" : "text-loss"}>{fmtR(o.float_R)}</span> · {o.bars_held * (st?.tf_min ?? 1)} min
+      {opens.length ? (
+        <div className="space-y-0.5">
+          {opens.length > 1 && <div className="text-[10px] text-slate-500">{opens.length} trade-uri deschise (suprapuse)</div>}
+          {opens.map(o => (
+            <div key={o.id} className="text-white">
+              <b className={o.dir === "LONG" ? "text-profit" : "text-loss"}>{o.dir}</b> @ {o.entry.toFixed(3)} · SL {o.sl.toFixed(3)} · țintă {o.tp.toFixed(3)} ·{" "}
+              <span className={o.float_R >= 0 ? "text-profit" : "text-loss"}>{fmtR(o.float_R)}</span> · {o.bars_held * (st?.tf_min ?? 1)} min
+            </div>
+          ))}
+          {p && <div className="text-amber-300">+ semnal {p.dir} la {p.signal_t.slice(11, 16)} — intrare la bara următoare</div>}
         </div>
       ) : p ? (
         <div className="text-amber-300">Semnal {p.dir} la {p.signal_t.slice(11, 16)} — intrare la deschiderea barei următoare</div>
@@ -234,6 +345,17 @@ function Market({ st }: { st?: NoisyStatus }) {
       {!!st?.real_positions?.length && (
         <div className="text-[11px] text-loss">
           Poziții REALE Noisy: {st.real_positions.map(p => `#${p.ticket} ${p.type} ${p.volume} @ ${p.price.toFixed(3)} (${p.profit >= 0 ? "+" : ""}${p.profit.toFixed(2)} $)`).join(" · ")}
+        </div>
+      )}
+      {!!st?.rejected_recent?.length && (
+        <div className="text-[11px] border-t border-surface-border pt-2 space-y-0.5">
+          <div className="text-slate-500">Semnale respinse azi
+            {st.rejects_today && <> ({Object.entries(st.rejects_today).map(([k, v]) => `${REJECT_LABEL[k] ?? k} ${v}`).join(" · ")})</>}:</div>
+          {st.rejected_recent.slice(-5).reverse().map(r => (
+            <div key={r.t + r.reason} className="text-slate-400">
+              {r.t.slice(11, 16)} {r.dir} — <b className="text-yellow-300/90">{REJECT_LABEL[r.reason] ?? r.reason}</b>: {r.detail}
+            </div>
+          ))}
         </div>
       )}
       {!!st?.news_next?.length && (
@@ -268,11 +390,191 @@ function Score({ st }: { st?: NoisyStatus }) {
   );
 }
 
-function Config({ cfg }: { cfg?: NoisyConfig }) {
+/** Edit Market: o singura piata, aleasa din lista REALA a contului MT5 (cautare dupa nume / descriere). */
+function MarketEditor({ d, set, current, busy }: { d: NoisyConfig; set: (fn: (x: NoisyConfig) => void) => void;
+                                                   current: string; busy: boolean }) {
+  const { data: mk, isLoading } = useMt5Markets();
+  const { data: mi } = useNoisyMarketInfo(d.symbol);
+  const [q, setQ] = useState("");
+  const [open, setOpen] = useState(false);
+  const items = mk?.items ?? (mk?.symbols ?? []).map(n => ({ name: n, description: "", path: "", tradable: true }));
+  const ql = q.trim().toLowerCase();
+  const hits = items.filter(x => !ql || x.name.toLowerCase().includes(ql) || x.description.toLowerCase().includes(ql)).slice(0, 40);
+  const changed = d.symbol !== current;
+  const marginWarn = mi?.ok && mi.margin_min_lot != null && mi.margin_min_lot > d.budget.capital;
+  return (
+    <div className="rounded-lg border border-surface-border bg-surface px-3 py-2 space-y-1.5">
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-slate-400 font-semibold">Edit Market</span>
+        <span className="text-[10px] text-slate-500">o singură piață, din contul MT5 conectat</span>
+      </div>
+      <div className="relative flex items-center gap-2">
+        <input value={open ? q : d.symbol} placeholder="caută simbol sau descriere (ex. JPY, US500, gold)…"
+          onFocus={() => { setOpen(true); setQ(""); }} onBlur={() => setTimeout(() => setOpen(false), 150)}
+          onChange={e => setQ(e.target.value)} disabled={busy}
+          className="w-64 bg-surface-card border border-surface-border rounded px-2 py-1 text-white disabled:opacity-40" />
+        {changed && <span className="text-[11px] text-amber-300">nesalvat: {current} → {d.symbol}</span>}
+        {busy && <span className="text-[10px] text-slate-500">blocat: poziție deschisă</span>}
+        {open && (
+          <div className="absolute top-8 left-0 z-20 w-96 max-h-64 overflow-auto rounded-lg border border-surface-border bg-surface-card shadow-xl">
+            {isLoading && <div className="px-3 py-2 text-slate-500">se încarcă piețele din MT5…</div>}
+            {mk?.error && <div className="px-3 py-2 text-loss">{mk.error}</div>}
+            {hits.map(x => (
+              <button key={x.name} disabled={!x.tradable} onMouseDown={e => e.preventDefault()}
+                onClick={() => { set(c => { c.symbol = x.name; }); setOpen(false); }}
+                className={`w-full text-left px-3 py-1 flex gap-2 hover:bg-surface ${x.name === d.symbol ? "text-amber-200" : "text-slate-200"} disabled:opacity-40`}>
+                <b className="w-24 shrink-0">{x.name}</b>
+                <span className="text-slate-500 truncate">{x.description}{!x.tradable ? " · netranzacționabil" : ""}</span>
+              </button>
+            ))}
+            {!isLoading && !hits.length && <div className="px-3 py-2 text-slate-500">nicio piață găsită</div>}
+          </div>
+        )}
+      </div>
+      {mi && !mi.ok && <div className="text-[11px] text-loss">{mi.detail}</div>}
+      {mi?.ok && (
+        <div className="text-[10px] text-slate-400 grid grid-cols-2 md:grid-cols-3 gap-x-4">
+          <span>{mi.description}</span>
+          <span>spread acum: <b className="text-white">{mi.spread_live_points ?? "—"} points</b>{mi.pip_points && mi.pip_points > 1 && mi.spread_live_pips != null ? ` = ${mi.spread_live_pips} pips` : ""}{mi.spread_live_price != null ? ` = ${mi.spread_live_price}` : ""}</span>
+          <span>point {mi.point} · {mi.digits} zecimale{mi.pip_points && mi.pip_points > 1 ? ` · 1 pip = ${mi.pip_points} points` : ""}</span>
+          <span>lot min {mi.volume_min} (pas {mi.volume_step}) · contract {mi.contract_size}</span>
+          <span className={marginWarn ? "text-loss" : ""}>marja la lotul minim: {mi.margin_min_lot ?? "—"} $</span>
+          <span>{mi.tradable ? "tranzacționabil" : "NEtranzacționabil"} · profit în {mi.currency_profit}</span>
+        </div>
+      )}
+      {marginWarn && <div className="text-[11px] text-loss">Marja lotului minim depășește bugetul Noisy ({d.budget.capital} $).</div>}
+      <div className="text-[10px] text-slate-400">
+        Piețe mai ieftine testate (12 luni, spread live, filtre active):{" "}
+        {[["XAGUSD", "M1 ~1,2/zi ≈0R · marjă 51$"], ["US500", "M1 ~8/zi −0,07R · marjă 38$ · fereastră 16:30–22:45"],
+          ["UK100", "M1 ~0,8/zi −0,08R · marjă 72$ · 10–18"]].map(([sym, txt]) => (
+          <button key={sym} disabled={busy} onClick={() => set(c => { c.symbol = sym; })}
+            className="underline decoration-dotted hover:text-white mr-2 disabled:opacity-40" title={txt}>{sym}</button>
+        ))}
+        <span className="text-slate-500">(click = alege; fereastra o setezi mai jos)</span>
+      </div>
+      {d.symbol !== "USDJPY" && (
+        <div className="text-[10px] text-yellow-300/90">Strategia, limitele și pragul cost/ATR au fost testate doar pe USDJPY — altă piață = variantă netestată (ideal: shadow + backtest cu scripts/research_noisy/noisy_backtest.py --spread-points).</div>
+      )}
+      <div className="text-[10px] text-slate-500">Schimbarea se aplică după Salvează (fără restart); e refuzată cât timp Noisy are o poziție deschisă. Spread-ul manual revine pe Auto la schimbarea pieței.</div>
+    </div>
+  );
+}
+
+/** Trade-uri suprapuse: OPTIONAL, oprit implicit; ierarhia protectiilor explicata (globalul castiga). */
+function OverlapConfig({ d, set }: { d: NoisyConfig; set: (fn: (x: NoisyConfig) => void) => void }) {
+  const ov = d.overlap;
+  const num = (v: string) => (v === "" ? 0 : Number(v));
+  const risk = d.sizing.risk_pct * d.budget.capital;
+  return (
+    <div className="space-y-1.5 pt-2">
+      <div className="text-slate-400 font-semibold">Trade-uri suprapuse</div>
+      <label className="flex items-center gap-2">
+        <input type="checkbox" checked={ov.enabled} onChange={e => set(c => { c.overlap.enabled = e.target.checked; })} />
+        Permite mai multe trade-uri deschise simultan <span className="text-slate-500">(oprit implicit = o poziție odată, varianta testată)</span>
+      </label>
+      {ov.enabled && (
+        <div className="space-y-1.5 pl-2 border-l-2 border-surface-border">
+          <div className="flex items-center gap-2 flex-wrap">
+            Max deschise simultan
+            <input type="number" min={2} max={10} value={ov.max_open} onChange={e => set(c => { c.overlap.max_open = num(e.target.value); })}
+              className="w-14 bg-surface border border-surface-border rounded px-2 py-0.5" />
+            · minim
+            <input type="number" min={0} max={240} value={ov.min_interval_min} onChange={e => set(c => { c.overlap.min_interval_min = num(e.target.value); })}
+              className="w-14 bg-surface border border-surface-border rounded px-2 py-0.5" /> min între intrări
+          </div>
+          <label className="flex items-center gap-2">
+            <input type="checkbox" checked={ov.same_direction} onChange={e => set(c => { c.overlap.same_direction = e.target.checked; })} />
+            poate adăuga în aceeași direcție
+          </label>
+          <label className="flex items-center gap-2">
+            <input type="checkbox" checked={ov.opposite_direction} onChange={e => set(c => { c.overlap.opposite_direction = e.target.checked; })} />
+            poate deschide și în direcția opusă <span className="text-slate-500">(hedging — se anulează parțial, costul se plătește de două ori)</span>
+          </label>
+          <div className="text-[10px] text-yellow-300/90 rounded border border-yellow-500/30 bg-yellow-500/5 px-2 py-1 space-y-0.5">
+            <div>Risc deschis maxim ≈ {ov.max_open} × {risk.toFixed(2)} $ = <b>{(ov.max_open * risk).toFixed(2)} $</b> din bugetul de {d.budget.capital} $
+              (plus lotul minim, care la buget mic depășește de obicei riscul țintă).</div>
+            <div>Ordinea regulilor (cea mai strictă câștigă): Setări Globale (capital, circuit breaker, știri, vineri, poziții simultane pe piață,
+              risc pe trade) → bugetul Noisy (riscul tuturor pozițiilor deschise + cel nou nu poate coborî sub prag) → limitele zilnice
+              (max trade-uri = intrări, pierderi, serie) → max deschise → interval minim → direcție.</div>
+            <div>Netestat în backtest: pozițiile suprapuse pe același dezechilibru tind să piardă împreună.</div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const toMin = (hm: string) => { const [h, m] = hm.split(":").map(Number); return h * 60 + m; };
+
+/** Validare identica cu backend-ul (config.validate_intervals): durata zero, suprapuneri (si peste miezul noptii). */
+function windowErrors(iv: { start: string; end: string }[]): string[] {
+  const errs: string[] = [];
+  if (!iv.length) return ["cel puțin un interval orar este obligatoriu"];
+  const segs: [number, number, number][] = [];
+  iv.forEach((w, n) => {
+    if (!/^\d{2}:\d{2}$/.test(w.start) || !/^\d{2}:\d{2}$/.test(w.end)) { errs.push(`intervalul ${n + 1}: oră invalidă`); return; }
+    const a = toMin(w.start), b = toMin(w.end);
+    if (a === b) { errs.push(`intervalul ${n + 1}: început = sfârșit (durată zero)`); return; }
+    (a < b ? [[a, b]] : [[a, 1440], [0, b]]).forEach(([x, y]) => segs.push([x, y, n + 1]));
+  });
+  segs.forEach(([a1, b1, n1], i) => segs.slice(i + 1).forEach(([a2, b2, n2]) => {
+    if (n1 !== n2 && a1 < b2 && a2 < b1) errs.push(`intervalele ${n1} și ${n2} se suprapun`);
+  }));
+  return [...new Set(errs)];
+}
+
+function WindowsEditor({ d, set, appTz }: { d: NoisyConfig; set: (fn: (x: NoisyConfig) => void) => void; appTz?: string }) {
+  const iv = d.window.intervals ?? [{ start: d.window.start, end: d.window.end }];
+  const errs = windowErrors(iv);
+  const tfMin = d.timeframe === "M5" ? 5 : 1;
+  return (
+    <div className="space-y-1.5">
+      <div className="text-slate-400 font-semibold">Ferestre de intrare (ora RO)</div>
+      {iv.map((w, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <span className="text-slate-500 w-4">{i + 1}.</span>
+          <input type="time" value={w.start} onChange={e => set(c => { c.window.intervals[i].start = e.target.value; })}
+            className="bg-surface border border-surface-border rounded px-2 py-0.5" />
+          <span>–</span>
+          <input type="time" value={w.end} onChange={e => set(c => { c.window.intervals[i].end = e.target.value; })}
+            className="bg-surface border border-surface-border rounded px-2 py-0.5" />
+          {toMin(w.end) < toMin(w.start) && <span className="text-[10px] text-slate-500">peste miezul nopții</span>}
+          {appTz && appTz !== "Europe/Bucharest" && (
+            <span className="text-[10px] text-slate-500">ora DE {roToZone(w.start, appTz)}–{roToZone(w.end, appTz)}</span>
+          )}
+          <button disabled={iv.length <= 1} title={iv.length <= 1 ? "Cel puțin un interval" : "Șterge intervalul"}
+            onClick={() => set(c => { c.window.intervals.splice(i, 1); })}
+            className="ml-auto px-2 rounded border border-surface-border text-slate-500 hover:text-loss disabled:opacity-30">✕</button>
+        </div>
+      ))}
+      <button onClick={() => set(c => {
+        const last = c.window.intervals[c.window.intervals.length - 1];
+        const s0 = Math.min(1380, toMin(last?.end ?? "15:00") + 60);
+        const f = (m: number) => `${String(Math.floor(m / 60) % 24).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+        c.window.intervals.push({ start: f(s0), end: f(Math.min(1439, s0 + 120)) });
+      })} className="px-2 py-0.5 rounded border border-surface-border text-slate-400 hover:text-white">+ Adaugă interval</button>
+      {errs.length > 0 && <div className="text-[11px] text-loss">{errs.join(" · ")} — nu se poate salva.</div>}
+      <div className="flex gap-1">
+        {DAYS.map((x, i) => (
+          <button key={x} onClick={() => set(c => { c.window.days = c.window.days.includes(i) ? c.window.days.filter(y => y !== i) : [...c.window.days, i].sort(); })}
+            className={`px-2 py-0.5 rounded border ${d.window.days.includes(i) ? "border-amber-500/50 text-amber-200" : "border-surface-border text-slate-500"}`}>{x}</button>
+        ))}
+      </div>
+      <div className="text-[10px] text-slate-500">
+        Intră doar în intervalele de mai sus, în zilele bifate (un interval peste miezul nopții aparține zilei în care începe).
+        Poziția deschisă se termină după regulile ei (max {Number(d.strategy.time_stop_bars) * tfMin} min); nicio intrare care ar
+        rămâne deschisă după 00:00. Evită 22–00 (rollover: spread până la 250×). Backtestul a fost făcut pe 10:00–20:00.
+      </div>
+    </div>
+  );
+}
+
+function Config({ cfg, sp, atr, busy = false }: { cfg?: NoisyConfig; sp?: NoisySpreadInfo; atr?: number | null; busy?: boolean }) {
   const save = useNoisySaveConfig();
   const [d, setD] = useState<NoisyConfig | undefined>(cfg);
   const appTz = useTimezone().data?.timezone;   // RO / DE — doar pentru echivalentul afisat al ferestrei
   const [dirty, setDirty] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   useEffect(() => { if (!dirty) setD(cfg); }, [cfg, dirty]);
   if (!d) return null;
   const set = (fn: (x: NoisyConfig) => void) => { const c = structuredClone(d); fn(c); setD(c); setDirty(true); };
@@ -306,30 +608,16 @@ function Config({ cfg }: { cfg?: NoisyConfig }) {
         {dirty && (
           <div className="ml-auto flex gap-2">
             <button onClick={() => { setD(cfg); setDirty(false); }} className="px-3 py-1 rounded border border-surface-border text-slate-400">Renunță</button>
-            <button onClick={() => save.mutate(d, { onSuccess: () => setDirty(false) })}
-              className="px-3 py-1 rounded bg-amber-500/20 text-amber-200 border border-amber-500/40 font-semibold">Salvează</button>
+            <button disabled={windowErrors(d.window.intervals ?? []).length > 0}
+              onClick={() => save.mutate(d, { onSuccess: r => { setDirty(false); setNotice(r._notice ?? null); } })}
+              className="px-3 py-1 rounded bg-amber-500/20 text-amber-200 border border-amber-500/40 font-semibold disabled:opacity-40">Salvează</button>
           </div>
         )}
       </div>
       <div className="grid md:grid-cols-2 gap-4">
         <div className="space-y-2">
-          <div className="text-slate-400 font-semibold">Fereastră de intrare (ora RO)
-            {appTz && appTz !== "Europe/Bucharest" && (
-              <span className="font-normal text-slate-500"> · ora DE: {roToZone(d.window.start, appTz)}–{roToZone(d.window.end, appTz)}</span>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <input type="time" value={d.window.start} onChange={e => set(c => { c.window.start = e.target.value; })} className="bg-surface border border-surface-border rounded px-2 py-0.5" />
-            <span>–</span>
-            <input type="time" value={d.window.end} onChange={e => set(c => { c.window.end = e.target.value; })} className="bg-surface border border-surface-border rounded px-2 py-0.5" />
-          </div>
-          <div className="flex gap-1">
-            {DAYS.map((x, i) => (
-              <button key={x} onClick={() => set(c => { c.window.days = c.window.days.includes(i) ? c.window.days.filter(y => y !== i) : [...c.window.days, i].sort(); })}
-                className={`px-2 py-0.5 rounded border ${d.window.days.includes(i) ? "border-amber-500/50 text-amber-200" : "border-surface-border text-slate-500"}`}>{x}</button>
-            ))}
-          </div>
-          <div className="text-[10px] text-slate-500">În afara ferestrei nu intră; poziția deschisă se termină după regulile ei (max {Number(d.strategy.time_stop_bars) * (d.timeframe === "M5" ? 5 : 1)} min). Exclude 22–00 (rollover, spread până la 250×).</div>
+          <MarketEditor d={d} set={set} current={cfg?.symbol ?? d.symbol} busy={busy} />
+          <WindowsEditor d={d} set={set} appTz={appTz} />
           <div className="text-slate-400 font-semibold pt-2">Timeframe</div>
           <div className="flex gap-2 items-center">
             {(["M1", "M5"] as const).map(tf => (
@@ -352,7 +640,8 @@ function Config({ cfg }: { cfg?: NoisyConfig }) {
             <input type="checkbox" checked={d.notify_trades} onChange={e => set(c => { c.notify_trades = e.target.checked; })} />
             Telegram la fiecare trade <span className="text-slate-500">(pe M1 = zeci de mesaje / zi; pornire, blocări și buget se trimit mereu)</span>
           </label>
-          <div className="text-slate-400 font-semibold pt-2">Știri High pe {d.symbol.slice(0, 3)}/{d.symbol.slice(3, 6)}</div>
+          <div className="pt-2"><SpreadConfig d={d} set={set} sp={sp} atr={atr} /></div>
+          <div className="text-slate-400 font-semibold pt-2">Știri High pe valutele pieței ({d.symbol})</div>
           <label className="flex items-center gap-2">
             <input type="checkbox" checked={d.news.enabled} onChange={e => set(c => { c.news.enabled = e.target.checked; })} />
             fără intrări cu
@@ -376,6 +665,7 @@ function Config({ cfg }: { cfg?: NoisyConfig }) {
             <span className="text-slate-500">(lotul minim 0,01 domină la buget mic)</span>
           </div>
           <div className="text-[10px] text-slate-500">Protecțiile globale (capital, circuit breaker, știri, închidere de vineri, risc maxim pe trade, poziții simultane) se aplică peste acestea și nu pot fi ocolite.</div>
+          <OverlapConfig d={d} set={set} />
           <div className="text-slate-400 font-semibold pt-2">Țintă (R:R)</div>
           <div className="flex items-center gap-2 flex-wrap">
             <button onClick={() => set(c => { c.strategy.tp_rr = 0; })}
@@ -437,9 +727,10 @@ function Config({ cfg }: { cfg?: NoisyConfig }) {
       </div>
       <div className="text-[10px] text-slate-500 border-t border-surface-border pt-2">
         Strategia (testată pe 12 luni): EMA{String(d.strategy.ema)} ± {String(d.strategy.dev_atr)}×ATR{String(d.strategy.atr)} · SL {String(d.strategy.sl_atr)}×ATR · țintă {Number(d.strategy.tp_rr) ? `${d.strategy.tp_rr}R` : "EMA"} · stop de timp {String(d.strategy.time_stop_bars)} bare ·
-        cost/ATR ≥ {String(prof.min_atr_over_cost)} ({d.timeframe}) · spread live ≤ {String(d.strategy.spread_max_mult)}× normal. Parametrii strategiei se schimbă doar în noisy_engine/config.json (orice schimbare = variantă netestată).
+        cost/ATR {prof.cost_filter_enabled === false ? "OPRIT" : `≥ ${prof.min_atr_over_cost}`} ({d.timeframe}). Parametrii strategiei (EMA / ATR / deviație / SL) se schimbă doar în noisy_engine/config.json (orice schimbare = variantă netestată).
       </div>
       {save.isError && <div className="text-loss">{(save.error as Error).message}</div>}
+      {notice && <div className="text-yellow-300">{notice}</div>}
     </div>
   );
 }
@@ -496,7 +787,8 @@ export function NoisyEnginePage() {
         <Market st={st} />
         <Score st={st} />
       </div>
-      <Config cfg={st?.config} />
+      <Config cfg={st?.config} sp={st?.spread} atr={st?.last?.atr}
+        busy={!!st?.running && (!!st?.open || !!st?.real_positions?.length)} />
       <Trades />
       <Logs />
       {!!st?.errors?.length && <pre className="text-[10px] text-loss whitespace-pre-wrap">{st.errors.join("\n")}</pre>}

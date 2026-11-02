@@ -45,7 +45,7 @@ def check(name, cond, detail=""):
 def raw(cfg):
     c = copy.deepcopy(cfg)
     c["strategy"].update(cooldown_bars=0, cooldown_after_sl_bars=0, max_flips_per_hour=0, trend_filter=False,
-                         spread_max_mult=0, min_atr_over_cost=0)
+                         spread_max_mult=0, spread_max=0, min_atr_over_cost=0)
     for k in c["limits"]:
         c["limits"][k]["enabled"] = False
     return c
@@ -64,7 +64,7 @@ DAY = date(2026, 11, 2)
 
 print("1. Configurare")
 check("implicit: USDJPY, shadow, fereastra 10-20 RO", CFG["symbol"] == "USDJPY" and CFG["mode"] == "shadow"
-      and CFG["window"] == {"start": "10:00", "end": "20:00", "days": [0, 1, 2, 3, 4]})
+      and CFG["window"]["intervals"] == [{"start": "10:00", "end": "20:00"}] and CFG["window"]["days"] == [0, 1, 2, 3, 4])
 check("moduri: shadow (implicit) / execute; mod necunoscut → shadow",
       CFG["mode"] == "shadow" and C.sanitize({"mode": "execute"})["mode"] == "execute"
       and C.sanitize({"mode": "live!"})["mode"] == "shadow")
@@ -95,8 +95,43 @@ check("spread_floor: spread-ul barei 0 → costul tot >= spread-ul real",
 
 print("3. Filtre si limite")
 c = raw(CFG)
-c["window"]["start"], c["window"]["end"] = "18:00", "20:00"
+c["window"]["intervals"] = [{"start": "18:00", "end": "20:00"}]
 check("in afara ferestrei → fara intrari", not S.run_day(b, DAY, c)["trades"])
+
+print("3a. Ferestre orare MULTIPLE (10–13 + 16–22), validare, peste miezul noptii")
+check("config vechi {start, end} → un interval (migrare)", C.sanitize({"window": {"start": "09:00", "end": "21:00", "days": [1]}})["window"]
+      ["intervals"] == [{"start": "09:00", "end": "21:00"}])
+w2 = C.sanitize({"window": {"intervals": [{"start": "16:00", "end": "22:00"}, {"start": "10:00", "end": "13:00"}]}})["window"]
+check("doua intervale, sortate; start/end = primul (compatibilitate)", w2["intervals"] == [{"start": "10:00", "end": "13:00"},
+      {"start": "16:00", "end": "22:00"}] and (w2["start"], w2["end"]) == ("10:00", "13:00"), w2)
+mon = datetime(2026, 11, 2)
+check("in fereastra: 11:00 da, 14:00 nu, 17:00 da, 22:00 nu (sfarsit exclusiv)",
+      [S._in_window(mon.replace(hour=h), w2) for h in (11, 14, 17, 22)] == [True, False, True, False])
+check("validare: suprapunere → eroare explicita", C.validate_intervals([{"start": "10:00", "end": "13:00"}, {"start": "12:00", "end": "22:00"}])
+      == ["intervalele 1 și 2 se suprapun"])
+check("validare: niciun interval / durata zero / ora invalida → erori",
+      C.validate_intervals([]) and C.validate_intervals([{"start": "10:00", "end": "10:00"}]) and C.validate_intervals([{"start": "25:00", "end": "26:00"}]))
+check("validare: doua intervale disjuncte (inclusiv peste miezul noptii) → ok",
+      C.validate_intervals([{"start": "22:00", "end": "02:00"}, {"start": "10:00", "end": "13:00"}]) == [])
+check("la incarcare (tolerant): suprapunerile se unesc, invalidele se ignora, lista goala → 10–20",
+      C.normalize_intervals([{"start": "10:00", "end": "13:00"}, {"start": "12:00", "end": "14:00"}, {"start": "x"}])
+      == [{"start": "10:00", "end": "14:00"}] and C.normalize_intervals([]) == [{"start": "10:00", "end": "20:00"}])
+wn = {"intervals": [{"start": "22:00", "end": "02:00"}], "days": [4]}
+check("peste miezul noptii: vineri 23:00 da, sambata 01:00 da (ziua in care incepe), vineri 01:00 nu",
+      [S._in_window(datetime(2026, 11, 6, 23), wn), S._in_window(datetime(2026, 11, 7, 1), wn), S._in_window(datetime(2026, 11, 6, 1), wn)]
+      == [True, True, False])
+# acelasi semnal (bara 40 = 12:20 ziua de test) in / in afara intervalelor
+c = raw(CFG)
+c["window"]["intervals"] = [{"start": "10:00", "end": "12:00"}, {"start": "12:15", "end": "13:00"}]
+check("semnal in al DOILEA interval → trade", S.run_day(b, DAY, c)["trades"])
+c["window"]["intervals"] = [{"start": "10:00", "end": "12:00"}, {"start": "16:00", "end": "22:00"}]
+check("semnal intre intervale → fara trade", not S.run_day(b, DAY, c)["trades"])
+late = make_bars(drop + [149.82] + [150.0] * 3, start=datetime(2026, 11, 2, 20, 0))      # semnal ~23:20
+c["window"]["intervals"] = [{"start": "22:00", "end": "02:00"}]
+c["timeframe"] = "M5"                                     # bare de 5 min: stopul de timp = 20 × 5 min
+r_late = S.run_day(late, DAY, c)
+check("intrare care ar ramane deschisa peste 00:00 → respinsa (motiv miezul_noptii), nu pierduta",
+      not r_late["trades"] and not r_late["open"] and r_late["reject_counts"].get("miezul_noptii"), r_late["reject_counts"])
 blocks = [(datetime(2026, 11, 2, 12, 0), datetime(2026, 11, 2, 13, 0))]
 check("in fereastra de stiri → fara intrari", not S.run_day(b, DAY, raw(CFG), news_blocks=blocks)["trades"])
 vt = b.t[40].isoformat()
@@ -262,6 +297,101 @@ check("pauza din UI → Paused", eng.iteration(now)["state"] == "paused")
 _write(E.CONTROL_FILE, {"paused": False})
 shutil.rmtree(tmp, ignore_errors=True)
 
+print("5b. Spread: unitati, auto / manual, maxim, diagnoza respingerilor (incident 2.11)")
+info = C.resolve_spread(C.sanitize({}), 0.001, 9.0, 3)
+check("USDJPY: 9 points = 0,009 pret = 0,9 pips (1 pip = 10 points)", info["typical_points"] == 9.0
+      and abs(info["typical_price"] - 0.009) < 1e-12 and info["typical_pips"] == 0.9 and info["pip_points"] == 10, info)
+check("maxim auto = 1,5 × tipic = 13,5 points", info["max_points"] == 13.5 and info["max_source"].startswith("auto"), info)
+cm = C.sanitize({"spread": {"mode": "manual", "manual_points": 12, "max_mode": "manual", "max_points": 20}})
+im = C.resolve_spread(cm, 0.001, 9.0, 3)
+check("manual: valoarea userului (12) castiga peste auto (9); maxim manual 20 points",
+      im["typical_points"] == 12 and im["source"] == "manual" and abs(cm["strategy"]["spread_max"] - 0.020) < 1e-12, im)
+leg = C.sanitize({"strategy": {"spread_floor": 0.01, "spread_max_mult": 1.0}})
+il = C.resolve_spread(leg, 0.001, 9.0, 3)
+check("config VECHI (spread_floor 0,01 + 1,0×) → manual 10 points, maxim 10 points (comportament identic)",
+      il["typical_points"] == 10.0 and il["max_points"] == 10.0 and leg["spread"]["mode"] == "manual", il)
+check("indice (digits 2): 1 pip = 1 point", C.resolve_spread(C.sanitize({}), 0.01, 50, 2)["pip_points"] == 1)
+check("fara point (simbol necunoscut) → valorile de rezerva, fara exceptie",
+      "rezerva" in C.resolve_spread(C.sanitize({}), None, None, None)["source"].replace("ă", "a"))
+# incidentul: tipic 10 points pe M1 → filtrul cost/ATR respinge TOT, acum vizibil cu cifrele
+bars_m1 = make_bars(drop + [149.82] + [150.0] * 3, spread=0.001)
+cfg_inc = raw(CFG)
+cfg_inc["strategy"]["min_atr_over_cost"] = 5.0
+cfg_inc["strategy"]["spread_floor"] = 0.010
+r_inc = S.run_day(bars_m1, DAY, cfg_inc)
+check("spread tipic 0,010 + cost/ATR ≥ 5 → niciun trade (cauza „nu mai plaseaza trade-uri”)", not r_inc["trades"], r_inc["trades"][:1])
+rj = [x for x in r_inc["rejected"] if x["reason"] == "cost_atr"]
+check("… si respingerea e RAPORTATA: motiv cost_atr + ATR / cost / prag in detaliu",
+      rj and "ATR" in rj[0]["detail"] and "cost" in rj[0]["detail"] and r_inc["reject_counts"].get("cost_atr"), r_inc["rejected"][:2])
+off = C.sanitize({"tf_profiles": {"M1": {"cost_filter_enabled": False, "min_atr_over_cost": 7}}})
+check("filtrul cost/ATR OPRIT din UI → strategy.min_atr_over_cost = 0, pragul (7) PASTRAT pentru reactivare",
+      off["strategy"]["min_atr_over_cost"] == 0 and off["tf_profiles"]["M1"]["min_atr_over_cost"] == 7)
+on = C.sanitize({"tf_profiles": {"M1": {"cost_filter_enabled": True, "min_atr_over_cost": 7}}})
+check("reactivat → pragul revine exact (7); implicit activ", on["strategy"]["min_atr_over_cost"] == 7
+      and CFG["tf_profiles"]["M1"]["cost_filter_enabled"] is True)
+cfg_off = raw(CFG)
+cfg_off["strategy"]["spread_floor"], cfg_off["strategy"]["min_atr_over_cost"] = 0.010, off["strategy"]["min_atr_over_cost"]
+check("acelasi scenariu din incident cu filtrul OPRIT → intra (proba in shadow)", S.run_day(bars_m1, DAY, cfg_off)["trades"])
+cfg_ok = raw(CFG)
+cfg_ok["strategy"]["min_atr_over_cost"] = 5.0
+check("acelasi semnal cu spread 0,001 → trade (filtrul nu blocheaza cand costul e mic)", S.run_day(bars_m1, DAY, cfg_ok)["trades"])
+cfg_sp = raw(CFG)
+cfg_sp["strategy"]["spread_floor"], cfg_sp["strategy"]["spread_max"] = 0.010, 0.005
+r_sp = S.run_day(bars_m1, DAY, cfg_sp)
+check("spread tipic peste maxim → respins cu motivul 'spread'", not r_sp["trades"] and r_sp["reject_counts"].get("spread"), r_sp["reject_counts"])
+check("diagnoza nu schimba trade-urile (aceleasi cu / fara filtre care nu se declanseaza)",
+      [t["id"] for t in S.run_day(b, DAY, raw(CFG))["trades"]] == [t["id"] for t in r["trades"]])
+
+tmp = tempfile.mkdtemp()
+for k in ("STATUS_FILE", "STATE_FILE", "CONTROL_FILE", "TRADES_FILE"):
+    setattr(E, k, os.path.join(tmp, os.path.basename(getattr(E, k))))
+C.CFG_PATH = os.path.join(tmp, "config.json")
+
+
+class SpreadMT5(FakeMT5):
+    def __init__(self, spread):
+        super().__init__()
+        self.spread = spread
+
+    def symbol_info_tick(self, s):
+        return SimpleNamespace(time=int(now.timestamp()) + srv, bid=150.0, ask=150.0 + self.spread)
+
+    def symbol_info(self, s):
+        return SimpleNamespace(point=0.001, digits=3, trade_tick_value=0.66, trade_tick_size=0.001, volume_min=0.01,
+                               volume_step=0.01, volume_max=100.0)
+
+
+rates_pend = rates[:len(drop)]                         # ultima bara inchisa = semnalul → pending
+fm2 = SpreadMT5(0.020)                                  # spread live 20 points
+fm2.copy_rates_from_pos = lambda *a: rates_pend
+_c2 = {**raw(CFG), "spread": {"mode": "manual", "manual_points": 9, "max_mode": "manual", "max_points": 15}}
+_c2["tf_profiles"] = copy.deepcopy(CFG["tf_profiles"])
+_c2["tf_profiles"]["M1"]["min_atr_over_cost"] = 0          # izoleaza verificarea spread-ului LIVE
+C.save_config(_c2)
+eng2 = E.NoisyEngine(fm2, news_fetch=lambda: [], guard=lambda s: (True, ""))
+st2 = eng2.iteration(now)
+check("status.spread: tipic manual 9 points, maxim 15 points, live 20 points", st2["spread"]["typical_points"] == 9
+      and st2["spread"]["max_points"] == 15 and st2["spread"]["live_points"] == 20.0, st2.get("spread"))
+check("spread LIVE peste maxim → semnal respins, motivul in points (nu 'blocat global')",
+      "SPREAD live" in (st2.get("reason") or "") and "20.0 points" in st2["reason"] and "15.0 points" in st2["reason"], st2.get("reason"))
+logtxt = "\n".join(eng2.state["events"])
+check("respingerea are cheie de eveniment unica (o singura notificare)", any(k.startswith("veto-") for k in eng2.state["events"]))
+# auto: inghetat pe zi la prima iteratie din fereastra; repornirea foloseste aceeasi valoare
+os.remove(E.STATE_FILE)
+fm3 = SpreadMT5(0.009)
+fm3.copy_rates_from_pos = lambda *a: rates
+C.save_config(raw(CFG))
+eng3 = E.NoisyEngine(fm3, news_fetch=lambda: [], guard=lambda s: (True, ""))
+s3 = eng3.iteration(now)
+ref = eng3.state.get("spread_ref")
+check("auto: spread tipic = tick-ul live (9 points), inghetat pentru azi", ref and ref["points"] == 9.0 and s3["spread"]["source"].startswith("auto"), ref)
+fm3.spread = 0.030                                      # spread-ul se largeste in timpul zilei
+eng3b = E.NoisyEngine(fm3, news_fetch=lambda: [], guard=lambda s: (True, ""))   # „restart”
+s3b = eng3b.iteration(now)
+check("restart / spread largit in timpul zilei → tipicul de azi ramane 9 (recalcularea zilei identica)",
+      s3b["spread"]["typical_points"] == 9.0, s3b["spread"])
+shutil.rmtree(tmp, ignore_errors=True)
+
 print("6. Siguranta codului")
 src = "".join(open(os.path.join(ROOT, "noisy_engine", f), encoding="utf-8").read()
               for f in os.listdir(os.path.join(ROOT, "noisy_engine")) if f.endswith(".py") and f != "selftest.py")
@@ -400,6 +530,88 @@ n0 = len(m.sent)
 eng_be._execute("USDJPY", {"dir": "LONG", "signal_t": "2026-11-02T16:00:00", "close": 149.9, "ema": 150.0, "atr": 0.02}, {}, False, 1)
 req2 = m.sent[n0] if len(m.sent) > n0 else {}
 check("R:R fix in executie: tinta = intrare + 2 × riscul", req2 and abs((req2["tp"] - req2["price"]) / (req2["price"] - req2["sl"]) - 2.0) < 0.05, req2)
+
+print("6c. Trade-uri SUPRAPUSE (optional, oprit implicit)")
+check("implicit OPRIT (o pozitie odata = comportamentul testat)", CFG["overlap"]["enabled"] is False)
+ov_seq = [150.0] * 40 + [149.80, 149.78, 149.76, 149.74, 149.72, 149.70] + [149.95] * 6
+ov_b = make_bars(ov_seq)
+
+
+def ov_cfg(**kw):
+    c = raw(CFG)
+    c["timeframe"] = "M5"
+    c["overlap"].update(enabled=True, max_open=3, min_interval_min=0, same_direction=True, opposite_direction=False)
+    c["overlap"].update(kw)
+    return c
+
+
+def max_concurrent(trades):
+    # aceeasi bara: intrarea (la deschidere) inaintea iesirii (in timpul barei) → ambele pozitii tinute in bara aceea
+    ev = sorted([(t["entry_t"], 1) for t in trades] + [(t["exit_t"], -1) for t in trades], key=lambda x: (x[0], -x[1]))
+    cur = best = 0
+    for _, d_ in ev:
+        cur += d_
+        best = max(best, cur)
+    return best
+
+
+off = S.run_day(ov_b, DAY, {**raw(CFG), "timeframe": "M5"})
+on = S.run_day(ov_b, DAY, ov_cfg())
+check("oprit: niciodata doua pozitii simultan", max_concurrent(off["trades"]) <= 1, off["trades"])
+check("pornit: mai multe trade-uri, suprapuse, max 3 simultan", len(on["trades"]) > len(off["trades"])
+      and 2 <= max_concurrent(on["trades"]) <= 3, [(t["entry_t"][11:16], t["exit_t"][11:16]) for t in on["trades"]])
+on2 = S.run_day(ov_b, DAY, ov_cfg(max_open=2))
+check("max_open 2 → niciodata peste 2 simultan", max_concurrent(on2["trades"]) <= 2)
+gap = S.run_day(ov_b, DAY, ov_cfg(min_interval_min=15))
+ents = sorted(datetime.fromisoformat(t["signal_t"]) for t in gap["trades"])
+check("interval minim 15 min intre intrari (+ motivul 'interval' raportat)",
+      all((b_ - a_).total_seconds() >= 900 for a_, b_ in zip(ents, ents[1:])) and gap["reject_counts"].get("interval"),
+      (ents, gap["reject_counts"]))
+nod = S.run_day(ov_b, DAY, ov_cfg(same_direction=False))
+check("aceeasi directie interzisa → fara suprapuneri LONG+LONG (motiv 'directie')",
+      max_concurrent(nod["trades"]) <= 1 and nod["reject_counts"].get("directie"), nod["reject_counts"])
+lim2 = ov_cfg()
+lim2["limits"]["max_trades_day"] = {"enabled": True, "value": 2}
+check("limita zilnica = INTRARI (2) chiar cu pozitii deschise", len(S.run_day(ov_b, DAY, lim2)["trades"]) <= 2
+      and S.run_day(ov_b, DAY, lim2)["counters"]["entries"] <= 2)
+pend_seq = make_bars(ov_seq[:43])
+po = S.run_day(pend_seq, DAY, ov_cfg())
+check("res.opens = toate pozitiile deschise; res.open = cea mai recenta", len(po["opens"]) >= 1 and po["open"] == po["opens"][-1], po["opens"])
+
+tmp = tempfile.mkdtemp()
+for k in ("STATUS_FILE", "STATE_FILE", "CONTROL_FILE", "TRADES_FILE"):
+    setattr(E, k, os.path.join(tmp, os.path.basename(getattr(E, k))))
+C.CFG_PATH = os.path.join(tmp, "config.json")
+fake_res = {"opens": [{"entry": 150.0, "sl": 149.97, "sl_now": 149.97, "float_R": 0.0, "risk": 0.03}],
+            "pending": {"close": 149.9, "atr": 0.02, "dir": "LONG", "signal_t": "x"}}
+g_eng = E.NoisyEngine(ExecMT5(demo=True), news_fetch=lambda: [], guard=lambda s: (True, ""))
+g_eng.cfg = C.sanitize({**ov_cfg(), "mode": "shadow"})
+import live.global_guard as GG  # noqa: E402
+_ls = GG.load_settings
+GG.load_settings = lambda: {**_ls(), "max_concurrent_per_market": {"enabled": True, "max": 1}}
+ok_g, why_g = g_eng._overlap_guard(fake_res, [])
+check("Setari Globale (max 1 pozitie / piata) au prioritate peste max_open 3 — si pe pozitiile virtuale",
+      not ok_g and why_g.startswith("GLOBAL"), why_g)
+GG.load_settings = lambda: {**_ls(), "max_concurrent_per_market": {"enabled": False, "max": 1}}
+check("fara regula globala → permis (buget suficient)", g_eng._overlap_guard(fake_res, [])[0])
+g_eng.cfg["budget"] = {"capital": 40.0, "min_remaining": 39.9}
+ok_b, why_b = g_eng._overlap_guard(fake_res, [])
+check("buget: riscul pozitiilor deschise + cel nou sub prag → respins", not ok_b and why_b.startswith("BUGET"), why_b)
+GG.load_settings = _ls
+# executie DEMO: pana la max_open pozitii reale, apoi nimic
+mx = ExecMT5(demo=True)
+ex_eng = E.NoisyEngine(mx, news_fetch=lambda: [], guard=lambda s: (True, ""))
+ex_eng.cfg = C.sanitize({**ov_cfg(max_open=2), "mode": "execute"})
+for k_, st_t in enumerate(("2026-11-02T16:00:00", "2026-11-02T16:05:00", "2026-11-02T16:10:00")):
+    ex_eng._execute("USDJPY", {"dir": "LONG", "signal_t": st_t, "close": 149.9, "ema": 150.0, "atr": 0.02}, {}, False, 5)
+check("EXECUTIE cu suprapunere (max 2): 2 ordine reale, al 3-lea refuzat", len(mx.positions) == 2 and len(mx.sent) == 2,
+      [p_.comment for p_ in mx.positions])
+mx1 = ExecMT5(demo=True)
+ex1 = E.NoisyEngine(mx1, news_fetch=lambda: [], guard=lambda s: (True, ""))
+ex1.cfg = C.sanitize({**raw(CFG), "mode": "execute"})
+for st_t in ("2026-11-02T16:00:00", "2026-11-02T16:05:00"):
+    ex1._execute("USDJPY", {"dir": "LONG", "signal_t": st_t, "close": 149.9, "ema": 150.0, "atr": 0.02}, {}, False, 5)
+check("EXECUTIE fara suprapunere: tot o pozitie odata (ca inainte)", len(mx1.positions) == 1)
 shutil.rmtree(tmp, ignore_errors=True)
 from api import engine_lifecycle as L  # noqa: E402
 check("Noisy e in lifecycle FARA autostart", "noisy" in L.ENGINES and L.ENGINES["noisy"].get("task") is None)

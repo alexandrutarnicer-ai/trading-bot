@@ -271,6 +271,8 @@ export interface BacktestResult {
   per_symbol: Record<string, { trades: number; win_rate: number; expectancy: number }>;
   direction_stats?: Record<string, { trades: number; wins: number; losses: number; win_rate: number; expectancy: number }>;
   robustness?: RobustnessResult | null;
+  /** validitatea rezultatului: R imposibil (contract nereprezentat), date vechi, ce NU se simuleaza */
+  validity?: { valid: boolean; warnings: string[]; not_simulated: string[] } | null;
   be_lock_count?: number;
   be_lock2_count?: number;
   flag_stats?: { trades: number; win_rate: number; expectancy: number };
@@ -1013,16 +1015,22 @@ export interface NoisyConfig {
   on_stop: "close" | "keep";
   poll_seconds: number;
   notify_telegram: boolean;
-  window: { start: string; end: string; days: number[] };
+  /** intervale orare (ora RO), sursa de adevar; start/end = primul interval (compatibilitate) */
+  window: { intervals: { start: string; end: string }[]; start: string; end: string; days: number[] };
   strategy: Record<string, number | boolean>;
   news: { enabled: boolean; pre_min: number; post_min: number };
+  /** spread in POINTS MT5: tipic (cost) auto/manual + maxim acceptat auto (× tipic) / manual */
+  spread: { mode: "auto" | "manual"; manual_points: number | null; max_mode: "auto" | "manual";
+            max_mult: number; max_points: number; legacy_floor_price?: number };
   limits: { max_trades_day: NoisyLimit; max_losses_day: NoisyLimit; max_consec_losses: NoisyLimit };
   tf_profiles: Record<"M1" | "M5", { limits: { max_trades_day: NoisyLimit; max_losses_day: NoisyLimit; max_consec_losses: NoisyLimit };
-                                     min_atr_over_cost: number }>;
+                                     min_atr_over_cost: number; cost_filter_enabled: boolean }>;
   break_even: { enabled: boolean; trigger_pct: number; lock1_pct: number; phase2_enabled: boolean;
                 phase2_zone_pct: number; lock2_pct: number };
   budget: { capital: number; min_remaining: number };
   sizing: { risk_pct: number };
+  /** trade-uri suprapuse — OPTIONAL, oprit implicit */
+  overlap: { enabled: boolean; max_open: number; min_interval_min: number; same_direction: boolean; opposite_direction: boolean };
 }
 export interface NoisyTrade {
   id: string; symbol: string; day: string; dir: "LONG" | "SHORT";
@@ -1049,6 +1057,7 @@ export interface NoisyStatus {
   paused?: boolean;
   heartbeat?: string;
   open?: { id: string; dir: string; entry: number; sl: number; tp: number; float_R: number; bars_held: number; entry_t: string } | null;
+  opens?: { id: string; dir: string; entry: number; sl: number; tp: number; float_R: number; bars_held: number; entry_t: string }[];
   pending?: { dir: string; signal_t: string } | null;
   last?: { t: string; close: number; ema: number; atr: number | null; dev_atr: number | null; spread: number; er: number | null } | null;
   counters?: { trades: number; losses: number; consec_losses: number; flips_hour: number };
@@ -1062,6 +1071,23 @@ export interface NoisyStatus {
   config?: NoisyConfig;
   execution?: { active: boolean; reason: string };
   real_positions?: { ticket: number; type: string; volume: number; price: number; sl: number; tp: number; profit: number }[];
+  spread?: NoisySpreadInfo;
+  rejects_today?: Record<string, number>;
+  rejected_recent?: { t: string; dir: string; reason: string; detail: string }[];
+}
+export interface NoisyMarketInfo {
+  ok: boolean; symbol: string; detail?: string; description?: string;
+  point?: number; digits?: number; pip_points?: number;
+  spread_live_points?: number | null; spread_live_price?: number | null; spread_live_pips?: number | null;
+  contract_size?: number | null; volume_min?: number; volume_step?: number; margin_min_lot?: number | null;
+  tradable?: boolean; currency_profit?: string;
+}
+export interface NoisySpreadInfo {
+  mode: "auto" | "manual"; max_mode?: "auto" | "manual"; source: string; max_source?: string;
+  point?: number; digits?: number; pip_points?: number;
+  typical_points?: number; typical_price?: number; typical_pips?: number;
+  max_points?: number; max_price?: number; max_pips?: number;
+  live_points?: number | null; auto_note?: string;
 }
 
 // ── Dashboard global: piete active pe toate engine-urile (/dashboard/markets) ──
@@ -1080,6 +1106,8 @@ export interface MarketEngine {
   positions: number; signals_today: number;
   virtual_today?: { trades: number; R: number };
   window?: string | null; phase?: string;
+  /** engine pornit + piata activa + nepusa manual pe pauza (sau cu pozitii deschise) */
+  in_use: boolean; manual_pause?: boolean;
 }
 export interface MarketCardData {
   symbol: string; engines: MarketEngine[]; engine_ids: MarketEngineId[];
@@ -1088,12 +1116,14 @@ export interface MarketCardData {
   stats: MarketStats | null;
   stats_by_engine: Partial<Record<MarketEngineId, MarketStats>> | null;
   stats_other: MarketStats | null;
+  /** cel putin un engine foloseste piata acum, sau exista pozitii / ordine pe ea */
+  in_use: boolean;
 }
 export interface DashboardMarkets {
   computed_at: string;
   markets: MarketCardData[];
   history_only: { symbol: string; sources: Record<string, number>; stats: MarketStats }[];
-  counts: Record<MarketState, number>;
+  counts: Record<MarketState, number> & { unused?: number };
   global_block: string | null;
   engines: Record<MarketEngineId, boolean>;
   mt5_connected: boolean;

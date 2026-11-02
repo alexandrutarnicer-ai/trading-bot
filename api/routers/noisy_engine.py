@@ -11,6 +11,7 @@ mod SHADOW (implicit) sau EXECUTIE (DEMO / REAL deblocat in Trading LIVE).
   GET  /noisy/trades          — trade-urile virtuale (cele mai noi primele)
   GET/PUT /noisy/config       — configurarea (hot-reload)
   GET  /noisy/logs            — ultimele N linii din engine.log
+  GET  /noisy/market-info     — specificatiile pietei din MT5 (point / digits / spread live / lot / marja), doar citire
 NU are autostart si NU e repornit de watchdog (decizia userului: pornire doar manuala).
 """
 import json
@@ -24,7 +25,8 @@ from fastapi import APIRouter, HTTPException
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, ROOT)
 
-from noisy_engine.config import CFG_PATH, DATA_DIR, load_config, save_config, save_default_config  # noqa: E402
+from noisy_engine.config import (CFG_PATH, DATA_DIR, load_config, pip_points, resolve_spread, save_config,  # noqa: E402
+                                 save_default_config, validate_intervals)
 from noisy_engine.engine import CONTROL_FILE, STATE_FILE, STATES, load_trades, scorecard  # noqa: E402
 
 router = APIRouter(prefix="/noisy", tags=["noisy_engine"])
@@ -112,6 +114,52 @@ def _today_for(tf: str) -> dict:
                       "pnl_money": round(sum(t.get("pnl_money") or 0 for t in tr), 2)}}
 
 
+def market_info(symbol: str) -> dict:
+    """Specificatiile pietei din MT5 (prin pool-ul API-ului, doar CITIRE): point, digits, spread live in points /
+    pips / pret, contract, lot min / pas, marja la lotul minim, tranzactionabil. ok=False cu motivul daca lipseste."""
+    symbol = str(symbol or "").strip().upper()
+    if not symbol:
+        return {"ok": False, "symbol": symbol, "detail": "simbol gol"}
+    from api import mt5_pool
+    with mt5_pool._LOCK:
+        try:
+            mt5 = mt5_pool._ensure_mt5()
+        except mt5_pool.Mt5Unavailable as e:
+            return {"ok": False, "symbol": symbol, "detail": f"MT5 indisponibil: {e}"}
+        if not mt5.symbol_select(symbol, True):
+            return {"ok": False, "symbol": symbol, "detail": f"simbolul {symbol} nu există în contul MT5 curent"}
+        info = mt5.symbol_info(symbol)
+        tick = mt5.symbol_info_tick(symbol)
+        if info is None:
+            return {"ok": False, "symbol": symbol, "detail": "symbol_info indisponibil"}
+        point, digits = float(info.point or 0), int(info.digits or 0)
+        live = (tick.ask - tick.bid) / point if tick is not None and tick.ask and tick.bid and point else None
+        margin = None
+        try:
+            if tick is not None and tick.ask:
+                margin = mt5.order_calc_margin(mt5.ORDER_TYPE_BUY, symbol, info.volume_min, tick.ask)
+        except Exception:
+            margin = None
+        pp = pip_points(digits)
+        full = getattr(mt5, "SYMBOL_TRADE_MODE_FULL", 4)
+        return {"ok": True, "symbol": symbol, "description": getattr(info, "description", ""),
+                "point": point, "digits": digits, "pip_points": pp,
+                "spread_live_points": None if live is None else round(live, 2),
+                "spread_live_price": None if live is None else round(live * point, 8),
+                "spread_live_pips": None if live is None else round(live / pp, 3),
+                "spread_fixed": bool(getattr(info, "spread_float", True) is False),
+                "contract_size": getattr(info, "trade_contract_size", None),
+                "volume_min": info.volume_min, "volume_step": info.volume_step,
+                "margin_min_lot": None if margin is None else round(margin, 2),
+                "tradable": getattr(info, "trade_mode", full) == full,
+                "currency_profit": getattr(info, "currency_profit", "")}
+
+
+@router.get("/market-info")
+def noisy_market_info(symbol: str | None = None):
+    return market_info(symbol or load_config()["symbol"])
+
+
 @router.get("/status")
 def noisy_status():
     pid = _read_pid()
@@ -135,7 +183,18 @@ def noisy_status():
     st["paused"] = bool(_read(CONTROL_FILE, {}).get("paused"))
     st["backtest_ref"] = BACKTEST_REF_BY_TF.get(cfg.get("timeframe", "M1"), BACKTEST_REF_BY_TF["M1"])
     st.setdefault("mode", cfg["mode"])
-    st["config"] = cfg
+    if not running or not st.get("spread"):
+        # engine oprit: aceleasi valori pe care le-ar folosi (auto = spread-ul live de acum), ca UI-ul sa arate
+        # unitatile corecte si inainte de Start
+        try:
+            mi = market_info(cfg["symbol"])
+            if mi.get("ok"):
+                st["spread"] = resolve_spread(cfg, mi["point"], mi["spread_live_points"], mi["digits"])
+                st["spread"].update(live_points=mi["spread_live_points"],
+                                    auto_note="estimare din tick-ul de acum (engine oprit)" if cfg["spread"]["mode"] == "auto" else "")
+        except Exception:
+            pass
+    st["config"] = load_config()          # neatinsa de resolve_spread (valorile derivate nu se salveaza)
     return st
 
 
@@ -251,9 +310,37 @@ def noisy_config():
 
 @router.put("/config")
 def noisy_config_save(body: dict):
-    """Merge partial peste configurarea curenta (hot-reload la iteratia urmatoare)."""
+    """Merge partial peste configurarea curenta (hot-reload la iteratia urmatoare). Validare STRICTA a
+    intervalelor orare (la incarcare sunt doar corectate tacut; aici userul afla de ce nu se salveaza)."""
+    body = body or {}
+    win = body.get("window") or {}
+    if "intervals" in win:
+        errs = validate_intervals(win["intervals"])
+        if errs:
+            raise HTTPException(400, "Fereastră invalidă: " + "; ".join(errs))
+        win.pop("start", None)
+        win.pop("end", None)                       # derivate din intervals (primul interval)
     cur = load_config()
-    before = cur["mode"]
+    before, old_sym = cur["mode"], cur["symbol"]           # inainte de merge (merge modifica `cur` in loc)
+    notice = None
+    new_sym = str(body.get("symbol") or cur["symbol"]).strip().upper()
+    if new_sym != cur["symbol"]:
+        mi = market_info(new_sym)
+        if not mi.get("ok"):
+            raise HTTPException(400, f"Piață invalidă: {mi.get('detail')}")
+        if not mi.get("tradable"):
+            raise HTTPException(400, f"{new_sym} nu e tranzacționabil în contul MT5 curent (dezactivat / doar închidere)")
+        st = _read(STATUS_FILE, {})
+        pid = _read_pid()
+        if pid is not None and _pid_alive(pid) and (st.get("open") or st.get("real_positions")):
+            raise HTTPException(409, f"{cur['symbol']} are o poziție deschisă (virtuală sau reală) — schimbă piața după "
+                                     "ieșirea ei sau oprește engine-ul.")
+        body["symbol"] = new_sym
+        sp = body.get("spread") or {}
+        if (sp.get("mode") or cur["spread"]["mode"]) == "manual" or (sp.get("max_mode") or cur["spread"]["max_mode"]) == "manual":
+            body["spread"] = {**sp, "mode": "auto", "max_mode": "auto"}
+            notice = (f"Spread-ul era manual pentru {old_sym} — trecut pe AUTO pentru {new_sym} (points-urile diferă "
+                      f"între piețe; acum {mi.get('spread_live_points')} points live).")
 
     def merge(a, b):
         for k, v in b.items():
@@ -263,11 +350,14 @@ def noisy_config_save(body: dict):
                 a[k] = v
         return a
     clean = save_config(merge(cur, body or {}))
+    if clean["symbol"] != old_sym:
+        _tg(f"🔁 <b>Noisy Engine — piața schimbată</b>: {old_sym} → {clean['symbol']}\n"
+            "Backtestul / pragurile au fost testate doar pe USDJPY — noua piață = variantă netestată.")
     if clean["mode"] != before:
         _tg("🟢 <b>Noisy Engine — mod EXECUȚIE</b>\nOrdine reale de la următorul semnal (DEMO, sau REAL dacă e "
             "deblocat în Settings → Trading LIVE → Noisy Engine)." if clean["mode"] == "execute" else
             "🧪 <b>Noisy Engine — mod SHADOW</b>\nFără ordine noi; trade-uri virtuale.")
-    return clean
+    return {**clean, "_notice": notice} if notice else clean
 
 
 @router.get("/logs")
