@@ -83,7 +83,9 @@ def main() -> None:
     assert mt5.initialize()
     cfg = load_config()
     if a.tf:
-        cfg["timeframe"] = a.tf
+        # re-derivat: limitele + pragul cost/ATR = profilul timeframe-ului ales (inainte --tf M5 pastra pragurile M1)
+        from noisy_engine.config import sanitize
+        cfg = sanitize({**cfg, "timeframe": a.tf})
     si = mt5.symbol_info(cfg["symbol"])
     if a.spread_points is not None:
         cfg["spread"]["mode"] = "auto"

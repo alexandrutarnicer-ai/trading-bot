@@ -437,7 +437,7 @@ costul FX de ~9 ori.
 
 | Variantă | Trade-uri / zi | R / trade |
 |---|---|---|
-| M5, filtrele Noisy | 1,7 | −0,045 |
+| M5, filtrele Noisy (profil M5: cost/ATR 15×) | 0,08 | −0,245 (20 trade-uri) |
 | M5, fără filtre | 5,1 | −0,096 |
 | M1, filtrele Noisy | 0,6 | +0,086 (151 trade-uri — nesemnificativ) |
 | M1, fără filtre | ~25 | −0,44 |
@@ -454,6 +454,35 @@ costul FX de ~9 ori.
 - ferestre orare multiple;
 - Edit Market;
 - trade-uri suprapuse opționale.
+
+*Corecție (aceeași zi):* o primă variantă raporta „M5 cu filtre: 1,7 / zi, −0,045R”. Valoarea venea dintr-o eroare a
+scriptului: `--tf M5` păstra pragurile profilului M1 (5×). Scriptul e reparat (re-derivă profilul timeframe-ului ales).
+
+### Piețe mai ieftine pentru Noisy (screening + backtest 12 luni, spread LIVE, 2026-11-02)
+
+Screening-ul (cost = spread live + 2 × 25% slippage, raportat la ATR-ul M5 din fereastra lichidă):
+- indicii sunt de 4–10× mai ieftini decât FX-ul (US30 2%, DE40 3%, USTEC 4%, XAUUSD 4%, US500 7% din ATR);
+- FX-ul pe contul Standard ajunge la 26–70% (USDJPY 26%).
+
+Filtru de accesibilitate: marja la lotul minim ≤ ~75$ (contul ~206$ e partajat cu celelalte engine-uri). Asta exclude
+US30 (262$), XAUUSD (198$), DE40 / USTEC (~145$).
+
+| Piață (fereastra RO) | Marja lot min | Spread live | M1 cu filtre | M5 cu filtre | M1 fără filtre |
+|---|---|---|---|---|---|
+| **XAGUSD** (10–20) | 51$ | 22 pts | **1,2 / zi, +0,011R**, DD −29R | 0,23 / zi, +0,196R (60 tr.) | −0,40R |
+| **US500** (16:30–22:45) | 38$ | 30 pts | **7,8 / zi, −0,072R** (t −2,6), DD −165R | 0,31 / zi, +0,097R (80 tr.) | −0,16R |
+| **UK100** (10–18) | 72$ | 90 pts | 0,8 / zi, −0,082R, DD −32R | 0,02 / zi | −0,40R |
+| USDJPY (10–20), referință | 33$ | 9 pts | 0,6 / zi, +0,086R | 0,08 / zi, −0,245R | −0,44R |
+| STOXX50 / F40 (10–18) | 35–45$ | 100–120 pts | 0,2–0,26 / zi, −0,09 … −0,14R | ~0 | −0,36 … −0,44R |
+
+Recomandare:
+1. **XAGUSD M1** — cel mai bun echilibru: ~1 trade / zi, ~0R, marjă mică.
+2. **US500 M1** — frecvență mare (~8 / zi), accesibil, dar negativ semnificativ (−0,07R). Doar pentru test de
+   frecvență în shadow.
+3. **UK100 M1** — rar, ~0.
+
+Pe M5 (XAGUSD / US500) rezultatele sunt pozitive, dar pe 60–80 de trade-uri, deci nesemnificative. Niciuna nu are un
+edge dovedit. Fără filtrul cost/ATR toate sunt puternic negative.
 
 Shadow real (harness izolat, 481 de iterații): config reală → 42 de semnale respinse azi, toate pe cost/ATR. Concluzia
 rămâne: **USDJPY M1 nu are edge la costul real al acestui cont**. Decizia (piață mai ieftină / M5 / prag cost/ATR) e a

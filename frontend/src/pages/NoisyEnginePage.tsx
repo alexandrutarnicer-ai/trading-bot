@@ -443,6 +443,15 @@ function MarketEditor({ d, set, current, busy }: { d: NoisyConfig; set: (fn: (x:
         </div>
       )}
       {marginWarn && <div className="text-[11px] text-loss">Marja lotului minim depășește bugetul Noisy ({d.budget.capital} $).</div>}
+      <div className="text-[10px] text-slate-400">
+        Piețe mai ieftine testate (12 luni, spread live, filtre active):{" "}
+        {[["XAGUSD", "M1 ~1,2/zi ≈0R · marjă 51$"], ["US500", "M1 ~8/zi −0,07R · marjă 38$ · fereastră 16:30–22:45"],
+          ["UK100", "M1 ~0,8/zi −0,08R · marjă 72$ · 10–18"]].map(([sym, txt]) => (
+          <button key={sym} disabled={busy} onClick={() => set(c => { c.symbol = sym; })}
+            className="underline decoration-dotted hover:text-white mr-2 disabled:opacity-40" title={txt}>{sym}</button>
+        ))}
+        <span className="text-slate-500">(click = alege; fereastra o setezi mai jos)</span>
+      </div>
       {d.symbol !== "USDJPY" && (
         <div className="text-[10px] text-yellow-300/90">Strategia, limitele și pragul cost/ATR au fost testate doar pe USDJPY — altă piață = variantă netestată (ideal: shadow + backtest cu scripts/research_noisy/noisy_backtest.py --spread-points).</div>
       )}
