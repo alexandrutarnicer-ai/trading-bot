@@ -1080,6 +1080,8 @@ export interface MarketEngine {
   positions: number; signals_today: number;
   virtual_today?: { trades: number; R: number };
   window?: string | null; phase?: string;
+  /** engine pornit + piata activa + nepusa manual pe pauza (sau cu pozitii deschise) */
+  in_use: boolean; manual_pause?: boolean;
 }
 export interface MarketCardData {
   symbol: string; engines: MarketEngine[]; engine_ids: MarketEngineId[];
@@ -1088,12 +1090,14 @@ export interface MarketCardData {
   stats: MarketStats | null;
   stats_by_engine: Partial<Record<MarketEngineId, MarketStats>> | null;
   stats_other: MarketStats | null;
+  /** cel putin un engine foloseste piata acum, sau exista pozitii / ordine pe ea */
+  in_use: boolean;
 }
 export interface DashboardMarkets {
   computed_at: string;
   markets: MarketCardData[];
   history_only: { symbol: string; sources: Record<string, number>; stats: MarketStats }[];
-  counts: Record<MarketState, number>;
+  counts: Record<MarketState, number> & { unused?: number };
   global_block: string | null;
   engines: Record<MarketEngineId, boolean>;
   mt5_connected: boolean;

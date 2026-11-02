@@ -113,7 +113,7 @@ def engine_entries(inp: dict, now: datetime) -> list[dict]:
         if not c.get("running") or not s.get("running"):
             e.update(status="stopped", reason="Custom Engine oprit" if not c.get("running") else "sesiunea nu rulează")
         elif s.get("paused"):
-            e.update(status="blocked", reason="pauză manuală")
+            e.update(status="blocked", reason="pauză manuală", manual_pause=True)
         elif s.get("news_paused"):
             e.update(status="blocked", reason="protecție știri")
         elif not s.get("execute"):
@@ -196,6 +196,8 @@ def engine_entries(inp: dict, now: datetime) -> list[dict]:
         label = n.get("state_label") or state or "—"
         if not n.get("running"):
             e.update(status="stopped", reason="Noisy Engine oprit")
+        elif state == "paused":
+            e.update(status="blocked", reason=label, manual_pause=True)
         elif state in _NOISY_BLOCKED:
             e.update(status="blocked", reason=f"{label}" + (f": {n['reason']}" if n.get("reason") else ""))
         elif state == "outside_window":
@@ -209,7 +211,17 @@ def engine_entries(inp: dict, now: datetime) -> list[dict]:
         out.append(e)
     for e in out:
         e["status_label"] = STATUS_LABEL[e["status"]]
+        e["in_use"] = entry_in_use(e)
     return out
+
+
+def entry_in_use(e: dict) -> bool:
+    """Piata e FOLOSITA de acest engine: engine pornit + piata activa (nu dezactivata) + nepusa manual pe
+    pauza — inclusiv observatie / shadow / in afara programului / blocata temporar de o protectie automata
+    (engine-ul o urmareste). Expunerea deschisa (pozitii) o face mereu folosita."""
+    if e.get("positions"):
+        return True
+    return e["status"] != "stopped" and not e.get("manual_pause")
 
 
 def _stats(trades: list[dict], today: str, yesterday: str) -> dict:
@@ -253,9 +265,13 @@ def build(inp: dict, now: datetime) -> dict:
         m["engines"].sort(key=lambda e: ENGINES.index(e["engine"]))
         m["engine_ids"] = list(dict.fromkeys(e["engine"] for e in m["engines"]))
         m["status"] = next(s for s in STATUS_ORDER if any(e["status"] == s for e in m["engines"]))
+        # folosita = cel putin un engine o foloseste ACUM, sau exista expunere deschisa pe ea (orice sursa)
+        m["in_use"] = any(e["in_use"] for e in m["engines"])
         m["status_label"] = STATUS_LABEL[m["status"]]
         m["positions"] = sum(1 for p in inp.get("positions") or [] if p.get("symbol") == sym)
         m["pending"] = sum(1 for p in inp.get("pending") or [] if p.get("symbol") == sym)
+        if m["positions"] or m["pending"]:
+            m["in_use"] = True
         m["signals_today"] = sum(e["signals_today"] for e in m["engines"])
         dirs = {e.get("direction") for e in m["engines"] if e["status"] != "stopped"} - {None}
         m["direction"] = "BOTH" if (len(dirs) > 1 or "BOTH" in dirs) else (next(iter(dirs)) if dirs else None)
@@ -285,6 +301,7 @@ def build(inp: dict, now: datetime) -> dict:
     order = {s: i for i, s in enumerate(STATUS_ORDER)}
     ms = sorted(markets.values(), key=lambda m: (order[m["status"]], -len(m["engine_ids"]), m["symbol"]))
     counts = {s: sum(1 for m in ms if m["status"] == s) for s in STATUS_ORDER}
+    counts["unused"] = sum(1 for m in ms if not m["in_use"])
     return {"computed_at": now.isoformat(timespec="seconds"), "markets": ms, "history_only": history_only,
             "counts": counts, "global_block": inp.get("global_block"),
             "engines": {eid: bool((inp.get(eid) or {}).get("running")) for eid in ENGINES},
