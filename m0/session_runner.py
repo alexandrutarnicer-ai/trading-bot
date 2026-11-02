@@ -49,7 +49,7 @@ SPREAD_DEFAULTS = {
     # Indici
     "GER40": 1.0, "US30": 2.0, "US500": 0.5, "XAUUSD": 0.3,
     # Crypto — spreads in TICKS
-    "BTCUSD": 12.0, "XRPUSD": 30.0, "ETHUSD": 5.0,
+    "BTCUSD": 12.0, "XRPUSD": 250.0, "ETHUSD": 5.0,      # XRPUSD: spread real 0.0025 (2026-11-02)
 }
 
 # Simboluri cu pip value mare — au nevoie de balanta de start mai mare ca sa

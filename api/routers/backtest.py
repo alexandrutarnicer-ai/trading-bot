@@ -101,8 +101,9 @@ SPREAD_DEFAULTS = {
     # Crypto — spreads in TICKS (pip_size mic, trebuie mai multi ticks)
     # BTCUSD: pip=0.01, spread real ~$12 = 1200 ticks → 12.0 in pips (pip=1.0 pt BTC dupa PIP_SIZE?)
     "BTCUSD": 12.0,
-    # XRPUSD: pip=0.00001, spread real ~0.0003 price = 30 ticks (era 1.0 = practic 0 → backteste optimiste!)
-    "XRPUSD": 30.0,
+    # XRPUSD: pip=0.00001; spread-ul REAL masurat 2026-11-02 = 21–28 points de 0.0001 ≈ 0.0025 = 250 „pips” de 0.00001
+    # (vechiul 30 = 0.0003 era de ~8 ori prea mic, valoare din contractul anterior)
+    "XRPUSD": 250.0,
     # ETHUSD: similar cu BTC
     "ETHUSD": 5.0,
 }
