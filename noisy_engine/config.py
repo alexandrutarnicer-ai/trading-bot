@@ -32,9 +32,11 @@ DEFAULTS: dict = {
     # la Stop / Emergency Stop / buget epuizat in EXECUTIE: "close" = inchide pozitiile Noisy (recomandat:
     # tinerea medie e de minute, nesupravegheate contrazic ideea de engine controlat) | "keep" = raman cu SL/TP
     "on_stop": "close",
-    # fereastra in care are voie sa INTRE (ora RO). Pozitiile deschise se termina dupa regulile lor
-    # (stop de timp) — nimic peste noapte.
-    "window": {"start": "10:00", "end": "20:00", "days": [0, 1, 2, 3, 4]},
+    # fereastra in care are voie sa INTRE (ora RO): unul sau mai multe INTERVALE (ex. 10:00–13:00 si 16:00–22:00)
+    # in zilele bifate. Un interval poate trece peste miezul noptii (22:00–02:00 = ziua in care INCEPE). Pozitiile
+    # deschise se termina dupa regulile lor (stop de timp); nicio intrare care ar ramane deschisa peste miezul noptii.
+    # `start` / `end` = primul interval (compatibilitate cu cititorii vechi); sursa de adevar = `intervals`.
+    "window": {"intervals": [{"start": "10:00", "end": "20:00"}], "days": [0, 1, 2, 3, 4], "start": "10:00", "end": "20:00"},
     "strategy": {
         "ema": 20, "atr": 14,
         "dev_atr": 2.0,               # intrare cand inchiderea e la > 2×ATR de EMA20 (contra miscarii)
@@ -115,6 +117,94 @@ def hm_to_min(s: str) -> int:
     return int(h) * 60 + int(m)
 
 
+def _fmt_hm(mins: int) -> str:
+    return f"{mins // 60 % 24:02d}:{mins % 60:02d}"
+
+
+def _segments(a: int, b: int) -> list[tuple[int, int]]:
+    """Intervalul [a, b) in minute pe [0, 1440); peste miezul noptii (a > b) → doua bucati."""
+    return [(a, b)] if a < b else [(a, 1440), (0, b)]
+
+
+def validate_intervals(intervals) -> list[str]:
+    """Erorile unei liste de intervale (pentru API — userul afla de ce nu se salveaza). [] = valida."""
+    errs: list[str] = []
+    if not isinstance(intervals, list) or not intervals:
+        return ["cel puțin un interval orar este obligatoriu"]
+    segs = []
+    for n, it in enumerate(intervals, 1):
+        try:
+            a, b = hm_to_min(it["start"]), hm_to_min(it["end"])
+        except Exception:
+            errs.append(f"intervalul {n}: oră invalidă (format HH:MM)")
+            continue
+        if not (0 <= a < 1440 and 0 <= b < 1440):
+            errs.append(f"intervalul {n}: oră în afara 00:00–23:59")
+            continue
+        if a == b:
+            errs.append(f"intervalul {n}: început = sfârșit ({it['start']}) — durată zero")
+            continue
+        segs += [(x, y, n) for x, y in _segments(a, b)]
+    for i, (a1, b1, n1) in enumerate(segs):
+        for a2, b2, n2 in segs[i + 1:]:
+            if n1 != n2 and a1 < b2 and a2 < b1:
+                errs.append(f"intervalele {n1} și {n2} se suprapun")
+    return sorted(set(errs))
+
+
+def normalize_intervals(intervals) -> list[dict]:
+    """Varianta TOLERANTA (la incarcare): ignora intervalele invalide, uneste suprapunerile, sorteaza dupa
+    inceput; lista goala → 10:00–20:00 (implicitul testat). Intervalele peste miezul noptii raman intregi."""
+    out: list[tuple[int, int]] = []
+    for it in intervals if isinstance(intervals, list) else []:
+        try:
+            a, b = hm_to_min(it["start"]) % 1440, hm_to_min(it["end"]) % 1440
+        except Exception:
+            continue
+        if a != b:
+            out.append((a, b))
+    if not out:
+        return [{"start": "10:00", "end": "20:00"}]
+    # uneste suprapunerile (pe minute, inclusiv peste miezul noptii)
+    cover = [False] * 1440
+    for a, b in out:
+        for x, y in _segments(a, b):
+            for m in range(x, y):
+                cover[m] = True
+    if all(cover):
+        return [{"start": "00:00", "end": "23:59"}]          # toata ziua (00:00–00:00 ar fi durata zero)
+    starts = [m for m in range(1440) if cover[m] and not cover[m - 1]]
+    res = []
+    for a in starts:
+        b = a
+        while cover[b % 1440]:
+            b += 1
+        res.append((a, b % 1440))
+    res.sort()
+    return [{"start": _fmt_hm(a), "end": _fmt_hm(b)} for a, b in res]
+
+
+def in_intervals(t, w: dict) -> bool:
+    """t (datetime RO) e intr-unul din intervalele ferestrei, intr-o zi bifata. Pentru un interval peste miezul
+    noptii, partea de dupa 00:00 apartine zilei in care a INCEPUT intervalul."""
+    m = t.hour * 60 + t.minute
+    wd = t.weekday()
+    days = w["days"]
+    for it in w.get("intervals") or [{"start": w["start"], "end": w["end"]}]:
+        a, b = hm_to_min(it["start"]), hm_to_min(it["end"])
+        if a < b:
+            if a <= m < b and wd in days:
+                return True
+        else:
+            if (m >= a and wd in days) or (m < b and (wd - 1) % 7 in days):
+                return True
+    return False
+
+
+def intervals_label(w: dict) -> str:
+    return ", ".join(f"{it['start']}–{it['end']}" for it in w.get("intervals") or [])
+
+
 def _num(v, lo, hi, default):
     try:
         v = float(v)
@@ -132,12 +222,11 @@ def sanitize(cfg: dict) -> dict:
     c["notify_trades"] = bool(c.get("notify_trades", False))
     c["poll_seconds"] = int(_num(c["poll_seconds"], 2, 120, 5))
     w = c["window"]
-    for k, d in (("start", "10:00"), ("end", "20:00")):
-        try:
-            mins = hm_to_min(w[k])
-            w[k] = f"{mins // 60 % 24:02d}:{mins % 60:02d}"
-        except Exception:
-            w[k] = d
+    raw_w = (cfg or {}).get("window") or {}
+    if "intervals" not in raw_w and ("start" in raw_w or "end" in raw_w):        # config vechi: un singur interval
+        w["intervals"] = [{"start": raw_w.get("start", "10:00"), "end": raw_w.get("end", "20:00")}]
+    w["intervals"] = normalize_intervals(w.get("intervals"))
+    w["start"], w["end"] = w["intervals"][0]["start"], w["intervals"][0]["end"]
     w["days"] = sorted({int(x) for x in w.get("days", []) if str(x).isdigit() and 0 <= int(x) <= 6}) or [0, 1, 2, 3, 4]
     s, d = c["strategy"], DEFAULTS["strategy"]
     s["ema"] = int(_num(s["ema"], 5, 200, 20))

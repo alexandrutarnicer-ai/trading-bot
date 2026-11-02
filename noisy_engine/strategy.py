@@ -26,7 +26,7 @@ from datetime import date, datetime, timedelta
 import numpy as np
 import pandas as pd
 
-from noisy_engine.config import hm_to_min
+from noisy_engine.config import TIMEFRAMES, hm_to_min, in_intervals
 
 SPREAD_MED_BARS = 288          # 24h de bare M5
 
@@ -50,11 +50,8 @@ def indicators(df: pd.DataFrame, p: dict) -> pd.DataFrame:
 
 
 def _in_window(t: datetime, w: dict) -> bool:
-    if t.weekday() not in w["days"]:
-        return False
-    m = t.hour * 60 + t.minute
-    s, e = hm_to_min(w["start"]), hm_to_min(w["end"])
-    return s <= m < e if s <= e else (m >= s or m < e)
+    """In fereastra de intrare: unul din intervale (config.in_intervals), zi bifata."""
+    return in_intervals(t, w)
 
 
 def _blocked(t: datetime, intervals) -> bool:
@@ -135,6 +132,8 @@ def run_day(bars: pd.DataFrame, day: date, cfg: dict, *, news_blocks=None, vetoe
     if not idx:
         return res
     vetoed = vetoed or set()
+    tf_min = TIMEFRAMES.get(cfg.get("timeframe"), 5)
+    midnight = datetime(day.year, day.month, day.day) + timedelta(days=1)
     pos = None
     next_ok = idx[0]
     losses = consec = 0
@@ -214,6 +213,11 @@ def run_day(bars: pd.DataFrame, day: date, cfg: dict, *, news_blocks=None, vetoe
             continue
         if _blocked(t[i], news_blocks):
             reject(i, "stiri", "fereastră de știri")
+            continue
+        # o intrare de acum ar ramane deschisa peste miezul noptii (stopul de timp) → nu: ziua se reconstruieste pe
+        # zi calendaristica, pozitia s-ar pierde la 00:00. Relevant doar pentru intervale care ating miezul noptii.
+        if t[i] + timedelta(minutes=tf_min * (p["time_stop_bars"] + 2)) >= midnight:
+            reject(i, "miezul_noptii", f"stopul de timp ({p['time_stop_bars']} bare) ar trece de 00:00")
             continue
         med = spm[i] if np.isfinite(spm[i]) else sp[i]
         if p.get("spread_max", 0) > 0 and sp[i] > p["spread_max"] + 1e-12:

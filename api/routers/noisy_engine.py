@@ -26,7 +26,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 sys.path.insert(0, ROOT)
 
 from noisy_engine.config import (CFG_PATH, DATA_DIR, load_config, pip_points, resolve_spread, save_config,  # noqa: E402
-                                 save_default_config)
+                                 save_default_config, validate_intervals)
 from noisy_engine.engine import CONTROL_FILE, STATE_FILE, STATES, load_trades, scorecard  # noqa: E402
 
 router = APIRouter(prefix="/noisy", tags=["noisy_engine"])
@@ -310,7 +310,16 @@ def noisy_config():
 
 @router.put("/config")
 def noisy_config_save(body: dict):
-    """Merge partial peste configurarea curenta (hot-reload la iteratia urmatoare)."""
+    """Merge partial peste configurarea curenta (hot-reload la iteratia urmatoare). Validare STRICTA a
+    intervalelor orare (la incarcare sunt doar corectate tacut; aici userul afla de ce nu se salveaza)."""
+    body = body or {}
+    win = body.get("window") or {}
+    if "intervals" in win:
+        errs = validate_intervals(win["intervals"])
+        if errs:
+            raise HTTPException(400, "Fereastră invalidă: " + "; ".join(errs))
+        win.pop("start", None)
+        win.pop("end", None)                       # derivate din intervals (primul interval)
     cur = load_config()
     before = cur["mode"]
 

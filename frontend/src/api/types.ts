@@ -1013,7 +1013,8 @@ export interface NoisyConfig {
   on_stop: "close" | "keep";
   poll_seconds: number;
   notify_telegram: boolean;
-  window: { start: string; end: string; days: number[] };
+  /** intervale orare (ora RO), sursa de adevar; start/end = primul interval (compatibilitate) */
+  window: { intervals: { start: string; end: string }[]; start: string; end: string; days: number[] };
   strategy: Record<string, number | boolean>;
   news: { enabled: boolean; pre_min: number; post_min: number };
   /** spread in POINTS MT5: tipic (cost) auto/manual + maxim acceptat auto (× tipic) / manual */

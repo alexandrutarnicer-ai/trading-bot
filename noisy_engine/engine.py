@@ -31,7 +31,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from noisy_engine.config import DATA_DIR, TIMEFRAMES, load_config, resolve_spread, save_default_config  # noqa: E402
+from noisy_engine.config import (DATA_DIR, TIMEFRAMES, intervals_label, load_config, resolve_spread,  # noqa: E402
+                                 save_default_config)
 from noisy_engine.strategy import run_day  # noqa: E402
 import position_sizing as ps  # noqa: E402
 from noisy_engine import executor as X  # noqa: E402
@@ -658,7 +659,7 @@ class NoisyEngine:
         elif global_block:
             state, reason = "risk_locked", global_block
         elif not in_win:
-            state, reason = "outside_window", f"intră doar {cfg['window']['start']}–{cfg['window']['end']} (ora RO)"
+            state, reason = "outside_window", f"intră doar {intervals_label(cfg['window'])} (ora RO)"
         else:
             state, reason = "running", "aștept semnal"
             rc = res.get("reject_counts") or {}
@@ -713,7 +714,7 @@ def _run() -> None:
     mode_txt = "EXECUȚIE (ordine reale, dacă contul o permite)" if cfg["mode"] == "execute" else "SHADOW (trade-uri virtuale)"
     log.info(f"Noisy Engine pornit — {cfg['symbol']} {cfg['timeframe']}, mod {mode_txt}")
     _notify(cfg, f"🧪 <b>Noisy Engine pornit</b> — {cfg['symbol']} {cfg['timeframe']}, mod {mode_txt}\n"
-                 f"Fereastră {cfg['window']['start']}–{cfg['window']['end']} RO · buget {cfg['budget']['capital']:.0f}$ "
+                 f"Fereastră {intervals_label(cfg['window'])} RO · buget {cfg['budget']['capital']:.0f}$ "
                  f"(prag {cfg['budget']['min_remaining']:.0f}$)")
     while not eng.connect():
         _write_json(STATUS_FILE, {"running": True, "state": "error", "state_label": STATES["error"],
