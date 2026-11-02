@@ -425,3 +425,36 @@ python scripts/research_noisy/edge_test.py         # COST=A|B, TF=M1|M5
 python scripts/research_noisy/candidate_check.py   # t-stat, bootstrap, trimestre, sensibilitate costuri
 COUNCIL_ALL_GEMINI=1 python scripts/research_noisy/council_consult.py   # Trading Council (consultativ)
 ```
+
+## 21. Actualizare 2026-11-02 — spread-ul REAL al contului și ce s-a schimbat în engine
+
+**Spread-ul măsurat pe contul real (Standard, ICMarketsEU):** istoricul MT5 (tick-uri + bare) are spread-ul BRUT,
+iar cotația executabilă (`symbol_info_tick`) include markup-ul contului Standard. USDJPY: istoric ~1 point (0,001),
+live 8–10 points (0,008–0,010). Indicii și cripto nu au markup. Studiul inițial (spread_floor 0,001) a subestimat deci
+costul FX de ~9 ori.
+
+**Backtest 12 luni USDJPY la spread real** (`noisy_backtest.py --spread-points 9`):
+
+| Variantă | Trade-uri / zi | R / trade |
+|---|---|---|
+| M5, filtrele Noisy | 1,7 | −0,045 |
+| M5, fără filtre | 5,1 | −0,096 |
+| M1, filtrele Noisy | 0,6 | +0,086 (151 trade-uri — nesemnificativ) |
+| M1, fără filtre | ~25 | −0,44 |
+| M5, fără filtre, suprapuneri max 3 / 5 min | 9,9 | −0,092 (DD dublat: −149R → −298R) |
+
+**De ce „nu mai plasa trade-uri” după ridicarea spread-ului:**
+- `spread_floor` era în același timp costul presupus, limita de spread și baza filtrului `ATR ≥ N × cost`.
+- La 0,01, pe M1 (ATR median ~0,020) n-a trecut nicio bară în ultimele ~2 săptămâni.
+- Respingerea era tacită.
+
+**Ce s-a schimbat în engine:**
+- secțiunea `spread` separă tipicul (auto din tick-urile live, înghețat pe zi / manual) de maxim, în points;
+- fiecare semnal respins e raportat cu motivul și cifrele;
+- ferestre orare multiple;
+- Edit Market;
+- trade-uri suprapuse opționale.
+
+Shadow real (harness izolat, 481 de iterații): config reală → 42 de semnale respinse azi, toate pe cost/ATR. Concluzia
+rămâne: **USDJPY M1 nu are edge la costul real al acestui cont**. Decizia (piață mai ieftină / M5 / prag cost/ATR) e a
+utilizatorului.
