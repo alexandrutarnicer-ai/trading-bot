@@ -737,6 +737,8 @@ class NoisyEngine:
             state, reason = "outside_window", f"intră doar {intervals_label(cfg['window'])} (ora RO)"
         else:
             state, reason = "running", "aștept semnal"
+            if not cfg["tf_profiles"][cfg["timeframe"]].get("cost_filter_enabled", True):
+                reason += " · filtrul cost/ATR OPRIT (probă — intră și când costul mănâncă mișcarea)"
             rc = res.get("reject_counts") or {}
             if rc:
                 top = ", ".join(f"{k} {v}" for k, v in sorted(rc.items(), key=lambda kv: -kv[1])[:3])

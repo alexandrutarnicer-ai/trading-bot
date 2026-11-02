@@ -1024,7 +1024,7 @@ export interface NoisyConfig {
             max_mult: number; max_points: number; legacy_floor_price?: number };
   limits: { max_trades_day: NoisyLimit; max_losses_day: NoisyLimit; max_consec_losses: NoisyLimit };
   tf_profiles: Record<"M1" | "M5", { limits: { max_trades_day: NoisyLimit; max_losses_day: NoisyLimit; max_consec_losses: NoisyLimit };
-                                     min_atr_over_cost: number }>;
+                                     min_atr_over_cost: number; cost_filter_enabled: boolean }>;
   break_even: { enabled: boolean; trigger_pct: number; lock1_pct: number; phase2_enabled: boolean;
                 phase2_zone_pct: number; lock2_pct: number };
   budget: { capital: number; min_remaining: number };
