@@ -1070,6 +1070,13 @@ export interface NoisyStatus {
   rejects_today?: Record<string, number>;
   rejected_recent?: { t: string; dir: string; reason: string; detail: string }[];
 }
+export interface NoisyMarketInfo {
+  ok: boolean; symbol: string; detail?: string; description?: string;
+  point?: number; digits?: number; pip_points?: number;
+  spread_live_points?: number | null; spread_live_price?: number | null; spread_live_pips?: number | null;
+  contract_size?: number | null; volume_min?: number; volume_step?: number; margin_min_lot?: number | null;
+  tradable?: boolean; currency_profit?: string;
+}
 export interface NoisySpreadInfo {
   mode: "auto" | "manual"; max_mode?: "auto" | "manual"; source: string; max_source?: string;
   point?: number; digits?: number; pip_points?: number;
