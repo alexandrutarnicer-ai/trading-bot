@@ -138,7 +138,11 @@ def _fetch_closed_trades_raw(mt5, days: int) -> list[dict]:
     """
     date_to = datetime.now() + timedelta(days=1)
     date_from = date_to - timedelta(days=days + 1)
-    deals = mt5.history_deals_get(date_from, date_to) or []
+    deals = mt5.history_deals_get(date_from, date_to)
+    if deals is None:
+        # None = EROARE (terminal / cont indisponibil), NU „nicio tranzactie”: inainte `or []` le
+        # confunda → raportul lunar pe octombrie a plecat gol la pornirea laptopului (2026-11-02)
+        raise Mt5Unavailable(f"istoricul MT5 nu a putut fi citit: {mt5.last_error()}")
     orders = mt5.history_orders_get(date_from, date_to) or []
     order_by_ticket = {o.ticket: o for o in orders}
 
@@ -279,10 +283,35 @@ def get_closed_trades(days: int) -> list[dict]:
             trades = _trades_cache[1]
         else:
             mt5 = _ensure_mt5()
+            if mt5.account_info() is None:
+                # terminal pornit dar contul inca neautentificat (ex. imediat dupa login in Windows):
+                # istoricul ar fi gol → NU il cache-uim ca „zero tranzactii”
+                raise Mt5Unavailable("niciun cont MT5 autentificat (terminalul inca se conecteaza)")
             trades = _fetch_closed_trades_raw(mt5, _FETCH_DAYS)
             _trades_cache = (now + _TRADES_TTL, trades)
     cutoff = datetime.now() - timedelta(days=days + 1)
     return [t for t in trades if t["close_time"] and t["close_time"] >= cutoff]
+
+
+def history_status() -> tuple[bool, str]:
+    """Istoricul MT5 e de incredere ACUM? (terminal viu + conectat la broker + cont autentificat).
+    Folosit de rapoartele programate inainte de a trimite: un raport generat in primele secunde dupa
+    pornirea terminalului iesea GOL (cont neautentificat inca), nu „fara tranzactii”."""
+    try:
+        with _LOCK:
+            mt5 = _ensure_mt5()
+            ti = mt5.terminal_info()
+            if ti is None:
+                return False, "terminal MT5 indisponibil"
+            if not getattr(ti, "connected", True):
+                return False, "terminalul MT5 nu e conectat la serverul brokerului"
+            if mt5.account_info() is None:
+                return False, "niciun cont MT5 autentificat"
+            return True, ""
+    except Mt5Unavailable as e:
+        return False, str(e)
+    except Exception as e:
+        return False, f"{type(e).__name__}: {e}"
 
 
 # ── Status cont ──────────────────────────────────────────────────────────────

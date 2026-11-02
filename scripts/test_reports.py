@@ -156,5 +156,79 @@ from api.notifications import is_important_notification as imp  # noqa: E402
 check(imp("📆 <b>Raport Săptămânal</b> — x") and imp("🗓️ <b>Raport Lunar</b> — x") and imp("📅 Raport Zilnic — x"),
       "rapoartele sunt importante (trimise si in modul liniste)")
 
+print("6. Incident 2.11: raportul lunar recuperat la pornire a plecat GOL (MT5 inca neautentificat)")
+import time as _time  # noqa: E402
+nov2 = datetime(2026, 11, 2, 9, 30)
+m0 = S._STARTED
+S._deferred.clear()
+check(not S.report_ready("monthly", nov2, mono=m0 + 30, ready=lambda: (True, "")),
+      "primele minute dupa pornirea API-ului -> NU genereaza (gratie la pornire)")
+S._deferred.clear()
+_logged = []
+S.log_notification = lambda t: _logged.append(t)
+check(not S.report_ready("monthly", nov2, mono=m0 + 400, ready=lambda: (False, "niciun cont MT5 autentificat")),
+      "MT5 neautentificat -> raport AMANAT (nu se trimite gol)")
+check(len(_logged) == 1 and "amânat" in _logged[0], "amanarea e notificata o singura data", _logged)
+check(not S.report_ready("monthly", nov2, mono=m0 + 460, ready=lambda: (False, "x")) and len(_logged) == 1,
+      "a doua incercare -> tot amanat, fara notificare dubla")
+check(S.report_ready("monthly", nov2, mono=m0 + 520, ready=lambda: (True, "")), "MT5 gata -> se genereaza")
+S._deferred.clear()
+S.report_ready("monthly", nov2, mono=m0 + 400, ready=lambda: (False, "x"))
+check(S.report_ready("monthly", nov2, mono=m0 + 400 + S.REPORT_DEFER_MAX_S, ready=lambda: (False, "x")),
+      "MT5 indisponibil > 3h -> se trimite, cu MT5 marcat indisponibil (nu ramane netrimis la nesfarsit)")
+S._deferred.clear()
+S.report_ready("weekly", datetime(2026, 11, 6, 23, 31), mono=m0 + 400, ready=lambda: (False, "x"))
+check(S.report_ready("weekly", datetime(2026, 11, 6, 23, 56), mono=m0 + 1900, ready=lambda: (False, "x")),
+      "saptamanal: la 23:55 vineri se trimite oricum (nu se recupereaza sambata)")
+S._deferred.clear()
+
+# _mt5_trades_between: indisponibil (cont neautentificat) = None, NU [] („nicio tranzactie”)
+_orig_hs, _orig_gct = P.history_status, P.get_closed_trades
+P.history_status = lambda: (False, "niciun cont MT5 autentificat")
+P.get_closed_trades = lambda days: []
+check(S._mt5_trades_between(datetime(2026, 10, 1), datetime(2026, 11, 1)) is None,
+      "istoric neincarcat -> None (raportul spune 'MT5 indisponibil', nu 'nicio tranzactie')")
+oct_trades = [dict(tr("bot", 1.0, 1), close_time=datetime(2026, 10, d, 12)) for d in (1, 15, 31)]
+oct_trades += [dict(tr("ai", -1.0, 1), close_time=datetime(2026, 11, 1, 0, 0)),    # 1 nov 00:00 → luna urmatoare
+               dict(tr("ai", -1.0, 1), close_time=datetime(2026, 9, 30, 23, 59))]  # 30 sep → luna trecuta
+P.history_status = lambda: (True, "")
+P.get_closed_trades = lambda days: oct_trades
+got = S._mt5_trades_between(*S.monthly_window(nov2))
+check(got is not None and len(got) == 3, "octombrie: [1 oct 00:00, 1 nov 00:00) — capetele corecte (3 din 5)", got and len(got))
+txt = "\n".join(B.build_period_report("monthly", *S.monthly_window(nov2), nov2, None, with_ai=False))
+check("NU înseamnă zero tranzacții" in txt, "mesajul de MT5 indisponibil nu poate fi confundat cu luna goala")
+P.get_closed_trades = lambda days: []
+got = S._mt5_trades_between(*S.monthly_window(nov2))
+txt = "\n".join(B.build_period_report("monthly", *S.monthly_window(nov2), nov2, got, with_ai=False))
+check(got == [] and "nicio tranzacție" in txt, "luna REAL fara tranzactii (MT5 gata) -> raport valid 'nicio tranzactie'")
+
+# fluxul automat cap-coada (scheduler): MT5 neautentificat → nimic trimis, marcaj nescris; apoi gata → trimis o data
+sent, state = [], {}
+S._state, S._save_state = (lambda: dict(state)), (lambda st: (state.clear(), state.update(st)))
+S.send_period_report = lambda kind, now=None: sent.append(kind) or ""
+S.load_reports_config = lambda: dict(S.DEFAULT_CONFIG, daily_time="23:59")
+readiness = [(False, "niciun cont")]
+S._mt5_ready = lambda: readiness[0]
+S._STARTED = _time.monotonic() - 1000
+S._deferred.clear()
+
+
+def tick(now):
+    cfg = S.load_reports_config()
+    st = S._state()
+    if S.monthly_due(now, cfg, st) and S.report_ready("monthly", now):
+        st["monthly_sent"] = S.monthly_window(now)[0].strftime("%Y-%m")
+        S._save_state(st)
+        S.send_period_report("monthly", now)
+
+
+tick(nov2)
+check(sent == [] and "monthly_sent" not in state, "pornire cu MT5 neautentificat: nimic trimis, marcaj NEscris")
+readiness[0] = (True, "")
+tick(datetime(2026, 11, 2, 9, 31))
+tick(datetime(2026, 11, 2, 9, 32))
+check(sent == ["monthly"] and state.get("monthly_sent") == "2026-10", "MT5 gata -> raportul pe octombrie trimis O DATA", (sent, state))
+P.history_status, P.get_closed_trades = _orig_hs, _orig_gct
+
 print(f"\nREZULTAT: {PASS} PASS / {FAIL} FAIL")
 sys.exit(1 if FAIL else 0)

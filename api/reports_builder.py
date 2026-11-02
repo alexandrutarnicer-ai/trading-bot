@@ -89,7 +89,9 @@ def noisy_shadow(start: datetime, end: datetime) -> dict:
 
 def performance_section(trades: list[dict] | None, start, end, cur: str) -> tuple[str, dict]:
     if trades is None:
-        return "📊 <b>Performanță</b>\n⚠️ MT5 indisponibil — performanța nu a putut fi calculată.", {}
+        return ("📊 <b>Performanță</b>\n⚠️ MT5 indisponibil (terminal oprit / cont neautentificat) — performanța NU a "
+                "putut fi calculată; asta NU înseamnă zero tranzacții. Retrimite manual raportul din Settings → "
+                "Rapoarte programate după ce MT5 se conectează."), {}
     by = {k: [t for t in trades if t.get("source") == src] for k, src, _ in _ENGINES}
     stats = {k: engine_stats(v) for k, v in by.items()}
     engines_all = by["custom"] + by["ai"] + by["daily"] + by["noisy"]
