@@ -45,7 +45,7 @@ def check(name, cond, detail=""):
 def raw(cfg):
     c = copy.deepcopy(cfg)
     c["strategy"].update(cooldown_bars=0, cooldown_after_sl_bars=0, max_flips_per_hour=0, trend_filter=False,
-                         spread_max_mult=0, min_atr_over_cost=0)
+                         spread_max_mult=0, spread_max=0, min_atr_over_cost=0)
     for k in c["limits"]:
         c["limits"][k]["enabled"] = False
     return c
@@ -260,6 +260,92 @@ _write(E.CONTROL_FILE, {"paused": True})
 C.save_config(raw(CFG))
 check("pauza din UI → Paused", eng.iteration(now)["state"] == "paused")
 _write(E.CONTROL_FILE, {"paused": False})
+shutil.rmtree(tmp, ignore_errors=True)
+
+print("5b. Spread: unitati, auto / manual, maxim, diagnoza respingerilor (incident 2.11)")
+info = C.resolve_spread(C.sanitize({}), 0.001, 9.0, 3)
+check("USDJPY: 9 points = 0,009 pret = 0,9 pips (1 pip = 10 points)", info["typical_points"] == 9.0
+      and abs(info["typical_price"] - 0.009) < 1e-12 and info["typical_pips"] == 0.9 and info["pip_points"] == 10, info)
+check("maxim auto = 1,5 × tipic = 13,5 points", info["max_points"] == 13.5 and info["max_source"].startswith("auto"), info)
+cm = C.sanitize({"spread": {"mode": "manual", "manual_points": 12, "max_mode": "manual", "max_points": 20}})
+im = C.resolve_spread(cm, 0.001, 9.0, 3)
+check("manual: valoarea userului (12) castiga peste auto (9); maxim manual 20 points",
+      im["typical_points"] == 12 and im["source"] == "manual" and abs(cm["strategy"]["spread_max"] - 0.020) < 1e-12, im)
+leg = C.sanitize({"strategy": {"spread_floor": 0.01, "spread_max_mult": 1.0}})
+il = C.resolve_spread(leg, 0.001, 9.0, 3)
+check("config VECHI (spread_floor 0,01 + 1,0×) → manual 10 points, maxim 10 points (comportament identic)",
+      il["typical_points"] == 10.0 and il["max_points"] == 10.0 and leg["spread"]["mode"] == "manual", il)
+check("indice (digits 2): 1 pip = 1 point", C.resolve_spread(C.sanitize({}), 0.01, 50, 2)["pip_points"] == 1)
+check("fara point (simbol necunoscut) → valorile de rezerva, fara exceptie",
+      "rezerva" in C.resolve_spread(C.sanitize({}), None, None, None)["source"].replace("ă", "a"))
+# incidentul: tipic 10 points pe M1 → filtrul cost/ATR respinge TOT, acum vizibil cu cifrele
+bars_m1 = make_bars(drop + [149.82] + [150.0] * 3, spread=0.001)
+cfg_inc = raw(CFG)
+cfg_inc["strategy"]["min_atr_over_cost"] = 5.0
+cfg_inc["strategy"]["spread_floor"] = 0.010
+r_inc = S.run_day(bars_m1, DAY, cfg_inc)
+check("spread tipic 0,010 + cost/ATR ≥ 5 → niciun trade (cauza „nu mai plaseaza trade-uri”)", not r_inc["trades"], r_inc["trades"][:1])
+rj = [x for x in r_inc["rejected"] if x["reason"] == "cost_atr"]
+check("… si respingerea e RAPORTATA: motiv cost_atr + ATR / cost / prag in detaliu",
+      rj and "ATR" in rj[0]["detail"] and "cost" in rj[0]["detail"] and r_inc["reject_counts"].get("cost_atr"), r_inc["rejected"][:2])
+cfg_ok = raw(CFG)
+cfg_ok["strategy"]["min_atr_over_cost"] = 5.0
+check("acelasi semnal cu spread 0,001 → trade (filtrul nu blocheaza cand costul e mic)", S.run_day(bars_m1, DAY, cfg_ok)["trades"])
+cfg_sp = raw(CFG)
+cfg_sp["strategy"]["spread_floor"], cfg_sp["strategy"]["spread_max"] = 0.010, 0.005
+r_sp = S.run_day(bars_m1, DAY, cfg_sp)
+check("spread tipic peste maxim → respins cu motivul 'spread'", not r_sp["trades"] and r_sp["reject_counts"].get("spread"), r_sp["reject_counts"])
+check("diagnoza nu schimba trade-urile (aceleasi cu / fara filtre care nu se declanseaza)",
+      [t["id"] for t in S.run_day(b, DAY, raw(CFG))["trades"]] == [t["id"] for t in r["trades"]])
+
+tmp = tempfile.mkdtemp()
+for k in ("STATUS_FILE", "STATE_FILE", "CONTROL_FILE", "TRADES_FILE"):
+    setattr(E, k, os.path.join(tmp, os.path.basename(getattr(E, k))))
+C.CFG_PATH = os.path.join(tmp, "config.json")
+
+
+class SpreadMT5(FakeMT5):
+    def __init__(self, spread):
+        super().__init__()
+        self.spread = spread
+
+    def symbol_info_tick(self, s):
+        return SimpleNamespace(time=int(now.timestamp()) + srv, bid=150.0, ask=150.0 + self.spread)
+
+    def symbol_info(self, s):
+        return SimpleNamespace(point=0.001, digits=3, trade_tick_value=0.66, trade_tick_size=0.001, volume_min=0.01,
+                               volume_step=0.01, volume_max=100.0)
+
+
+rates_pend = rates[:len(drop)]                         # ultima bara inchisa = semnalul → pending
+fm2 = SpreadMT5(0.020)                                  # spread live 20 points
+fm2.copy_rates_from_pos = lambda *a: rates_pend
+_c2 = {**raw(CFG), "spread": {"mode": "manual", "manual_points": 9, "max_mode": "manual", "max_points": 15}}
+_c2["tf_profiles"] = copy.deepcopy(CFG["tf_profiles"])
+_c2["tf_profiles"]["M1"]["min_atr_over_cost"] = 0          # izoleaza verificarea spread-ului LIVE
+C.save_config(_c2)
+eng2 = E.NoisyEngine(fm2, news_fetch=lambda: [], guard=lambda s: (True, ""))
+st2 = eng2.iteration(now)
+check("status.spread: tipic manual 9 points, maxim 15 points, live 20 points", st2["spread"]["typical_points"] == 9
+      and st2["spread"]["max_points"] == 15 and st2["spread"]["live_points"] == 20.0, st2.get("spread"))
+check("spread LIVE peste maxim → semnal respins, motivul in points (nu 'blocat global')",
+      "SPREAD live" in (st2.get("reason") or "") and "20.0 points" in st2["reason"] and "15.0 points" in st2["reason"], st2.get("reason"))
+logtxt = "\n".join(eng2.state["events"])
+check("respingerea are cheie de eveniment unica (o singura notificare)", any(k.startswith("veto-") for k in eng2.state["events"]))
+# auto: inghetat pe zi la prima iteratie din fereastra; repornirea foloseste aceeasi valoare
+os.remove(E.STATE_FILE)
+fm3 = SpreadMT5(0.009)
+fm3.copy_rates_from_pos = lambda *a: rates
+C.save_config(raw(CFG))
+eng3 = E.NoisyEngine(fm3, news_fetch=lambda: [], guard=lambda s: (True, ""))
+s3 = eng3.iteration(now)
+ref = eng3.state.get("spread_ref")
+check("auto: spread tipic = tick-ul live (9 points), inghetat pentru azi", ref and ref["points"] == 9.0 and s3["spread"]["source"].startswith("auto"), ref)
+fm3.spread = 0.030                                      # spread-ul se largeste in timpul zilei
+eng3b = E.NoisyEngine(fm3, news_fetch=lambda: [], guard=lambda s: (True, ""))   # „restart”
+s3b = eng3b.iteration(now)
+check("restart / spread largit in timpul zilei → tipicul de azi ramane 9 (recalcularea zilei identica)",
+      s3b["spread"]["typical_points"] == 9.0, s3b["spread"])
 shutil.rmtree(tmp, ignore_errors=True)
 
 print("6. Siguranta codului")

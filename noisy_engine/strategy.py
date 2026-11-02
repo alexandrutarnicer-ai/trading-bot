@@ -13,7 +13,11 @@ Regula (mean reversion, M5):
   O singura pozitie odata; dupa iesire, pauza (cooldown).
   Break-Even OPTIONAL (cfg["break_even"]) = aceeasi regula ca Custom Engine (engine/simulator.py).
 Costul: max(spread bara de intrare, spread median, spread_floor) + comision + 2×slip×spread median (unitati de pret).
-spread_floor = spread-ul median masurat pe tick-uri (spread-ul barelor MT5 e minimul din bara).
+spread_floor = spread-ul TIPIC (unitati de pret) rezolvat de config.resolve_spread din sectiunea `spread`
+(auto = masurat din tick-urile MT5 live, sau manual); spread-ul barelor MT5 e minimul din bara (si fara markup-ul
+contului Standard), deci nu poate fi folosit singur. spread_max = spread-ul MAXIM acceptat (0 = fara limita).
+Diagnoza: fiecare semnal (deviatie > dev×ATR in fereastra) respins de un filtru apare in res["rejected"] cu motivul
+si cifrele — nu schimba nimic din logica (doar observa).
 """
 from __future__ import annotations
 
@@ -137,6 +141,22 @@ def run_day(bars: pd.DataFrame, day: date, cfg: dict, *, news_blocks=None, vetoe
     flips: list[datetime] = []
     last_dir = 0
 
+    rejected: list[dict] = []
+    rcount: dict[str, int] = {}
+
+    def raw_dir(i: int) -> int:
+        if not (np.isfinite(atr[i]) and atr[i] > 0):
+            return 0
+        return 1 if c[i] < ema[i] - p["dev_atr"] * atr[i] else (-1 if c[i] > ema[i] + p["dev_atr"] * atr[i] else 0)
+
+    def reject(i: int, reason: str, detail: str = "", d: int | None = None) -> None:
+        """Doar OBSERVA: semnalul care ar fi existat pe bara i si filtrul care l-a oprit (nu schimba logica)."""
+        d = raw_dir(i) if d is None else d
+        if not d or not _in_window(t[i], w):
+            return
+        rcount[reason] = rcount.get(reason, 0) + 1
+        rejected.append({"t": t[i].isoformat(), "dir": "LONG" if d > 0 else "SHORT", "reason": reason, "detail": detail})
+
     def cost_at(i_entry: int, i_sig: int) -> float:
         med = spm[i_sig] if np.isfinite(spm[i_sig]) else sp[i_sig]
         return max(sp[i_entry], med) + p["comm_price"] + 2 * p["slip_frac"] * med
@@ -173,37 +193,54 @@ def run_day(bars: pd.DataFrame, day: date, cfg: dict, *, news_blocks=None, vetoe
         # 2) limitele zilei
         if lim["max_trades_day"]["enabled"] and res["counters"]["trades"] >= lim["max_trades_day"]["value"]:
             res["lock"] = res["lock"] or "trade_limit"
+            reject(i, "limita_trade", f"{res['counters']['trades']}/{lim['max_trades_day']['value']} trade-uri azi")
             continue
         if lim["max_losses_day"]["enabled"] and losses >= lim["max_losses_day"]["value"]:
             res["lock"] = res["lock"] or "loss_limit"
+            reject(i, "limita_pierderi", f"{losses}/{lim['max_losses_day']['value']} pierderi azi")
             continue
         if lim["max_consec_losses"]["enabled"] and consec >= lim["max_consec_losses"]["value"]:
             res["lock"] = res["lock"] or "loss_streak"
+            reject(i, "serie_pierderi", f"{consec} pierderi la rând")
             continue
-        if i < next_ok or no_new_entries:
+        if no_new_entries:
+            reject(i, "blocat", "pauză / buget epuizat")
+            continue
+        if i < next_ok:
+            reject(i, "cooldown", "pauză după ieșire")
             continue
         # 3) filtre obligatorii
         if not (np.isfinite(atr[i]) and atr[i] > 0) or not _in_window(t[i], w):
             continue
         if _blocked(t[i], news_blocks):
+            reject(i, "stiri", "fereastră de știri")
             continue
         med = spm[i] if np.isfinite(spm[i]) else sp[i]
-        if p["spread_max_mult"] > 0 and med > 0 and sp[i] > p["spread_max_mult"] * med:
+        if p.get("spread_max", 0) > 0 and sp[i] > p["spread_max"] + 1e-12:
+            reject(i, "spread", f"spread {sp[i]:.5g} > maxim {p['spread_max']:.5g}")
+            continue
+        if p.get("spread_max_mult", 0) > 0 and med > 0 and sp[i] > p["spread_max_mult"] * med:   # config vechi / research
+            reject(i, "spread", f"spread {sp[i]:.5g} > {p['spread_max_mult']}× median {med:.5g}")
             continue
         cost_est = med + p["comm_price"] + 2 * p["slip_frac"] * med
         if p["min_atr_over_cost"] > 0 and cost_est > 0 and atr[i] < p["min_atr_over_cost"] * cost_est:
+            reject(i, "cost_atr", f"ATR {atr[i]:.5g} < {p['min_atr_over_cost']:g}× cost {cost_est:.5g} "
+                                  f"(= {p['min_atr_over_cost'] * cost_est:.5g}); costul = {100 * cost_est / atr[i]:.0f}% din ATR")
             continue
         # 4) semnal
         d = 1 if c[i] < ema[i] - p["dev_atr"] * atr[i] else (-1 if c[i] > ema[i] + p["dev_atr"] * atr[i] else 0)
         if d == 0:
             continue
         if p["trend_filter"] and np.isfinite(er[i]) and er[i] >= p["er_trend"]:
+            reject(i, "trend", f"efficiency ratio {er[i]:.2f} ≥ {p['er_trend']}", d)
             continue
         if p["max_flips_per_hour"] > 0:
             recent = [x for x in flips if x > t[i] - timedelta(hours=1)]
             if last_dir and d != last_dir and len(recent) >= p["max_flips_per_hour"]:
+                reject(i, "flip_flop", f"{len(recent)} schimbări de direcție în ultima oră", d)
                 continue
         if t[i].isoformat() in vetoed:
+            reject(i, "veto", "respins la momentul lui (protecții globale / spread live)", d)
             continue
         if last_dir and d != last_dir:
             flips.append(t[i])
@@ -223,6 +260,7 @@ def run_day(bars: pd.DataFrame, day: date, cfg: dict, *, news_blocks=None, vetoe
             pos["be_lv"] = {k: float(e + d * tp_dist * be[f] / 100.0) for k, f in
                             (("trig", "trigger_pct"), ("lock1", "lock1_pct"), ("zone", "phase2_zone_pct"), ("lock2", "lock2_pct"))}
             pos["be_phase"] = 0
+    res["rejected"], res["reject_counts"] = rejected[-200:], rcount
     res["counters"].update(losses=losses, consec_losses=consec,
                            flips_hour=len([x for x in flips if t[-1] - timedelta(hours=1) < x]))
     if pos is not None:

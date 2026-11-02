@@ -47,8 +47,10 @@ DEFAULTS: dict = {
         "max_flips_per_hour": 3,      # > 3 schimbari de directie intr-o ora → fara intrari pana la ora urmatoare
         "trend_filter": False,        # OPTIONAL: nu intra cand piata e in trend (efficiency ratio)
         "er_bars": 20, "er_trend": 0.35,
-        "spread_floor": 0.001,        # spread-ul median REAL (tick-uri) — USDJPY 1 punct; barele MT5 au minimul (0)
-        "spread_max_mult": 1.5,       # spread-ul LIVE (tick) la semnal ≤ 1,5× spread_floor, altfel semnalul e respins
+        # spread_floor / spread_max = DERIVATE (unitati de pret) din sectiunea `spread` de mai jos, prin
+        # resolve_spread (engine + backtest). Valorile de aici sunt doar rezerva cand nu se cunoaste `point`.
+        "spread_floor": 0.001,
+        "spread_max": 0.0,
         "min_atr_over_cost": 5.0,     # ATR ≥ 5× costul dus-intors (pe M1; M5 testat cu 15), altfel miscarea e prea mica
         "slip_frac": 0.25,            # slippage presupus: 25% din spread la intrare si la iesire
         "comm_price": 0.0,            # comision in unitati de pret (0 = contul actual)
@@ -74,6 +76,16 @@ DEFAULTS: dict = {
                           "max_consec_losses": {"enabled": True, "value": 3}},
                "min_atr_over_cost": 15.0},
     },
+    # SPREAD — in POINTS MT5 (coloana „Spread” din Market Watch; USDJPY: 1 point = 0,001 = 0,1 pips).
+    # Doua valori DISTINCTE (inainte, `spread_floor` facea tot: cost + limita + filtrul cost/ATR):
+    #   tipic  = costul presupus al unui trade (intra si in filtrul „ATR ≥ N × cost”)
+    #            auto   = mediana spread-ului LIVE masurat de engine din tick-urile MT5 (inghetata pe zi,
+    #                     la prima iteratie din fereastra — recalcularea zilei ramane identica)
+    #            manual = manual_points
+    #   maxim  = spread-ul LIVE peste care semnalul e respins: auto = max_mult × tipic; manual = max_points
+    # Atentie: istoricul MT5 (barele) are spread-ul BRUT, fara markup-ul contului Standard (USDJPY 1 vs 9
+    # points live) — de aceea tipicul vine din tick-urile live, nu din bare.
+    "spread": {"mode": "auto", "manual_points": 9.0, "max_mode": "auto", "max_mult": 1.5, "max_points": 15.0},
     "news": {"enabled": True, "pre_min": 5, "post_min": 15},   # stiri High pe valutele pietei
     # limitele ACTIVE (toate OPTIONALE, resetate zilnic, ora RO) — derivate din tf_profiles[timeframe].
     # M1: ~25–30 trade-uri / zi (limitele taie doar zilele extreme, DD −130R → −117R); M5: 6 / 4 / 3.
@@ -140,7 +152,20 @@ def sanitize(cfg: dict) -> dict:
     s["er_bars"] = int(_num(s["er_bars"], 5, 200, 20))
     s["er_trend"] = _num(s["er_trend"], 0.05, 1, 0.35)
     s["spread_floor"] = _num(s.get("spread_floor"), 0, 1e6, 0.001)
-    s["spread_max_mult"] = _num(s["spread_max_mult"], 0, 20, 1.5)
+    s["spread_max"] = _num(s.get("spread_max"), 0, 1e6, 0.0)
+    legacy = (cfg or {}).get("strategy") or {}
+    sp = c["spread"]
+    if "spread" not in (cfg or {}) and ("spread_floor" in legacy or "spread_max_mult" in legacy):
+        # config vechi (spread_floor in PRET + multiplicator) → mod manual, aceleasi valori; convertit in
+        # points la prima rezolvare (cand `point` e cunoscut) — comportament identic cu inainte
+        sp.update(mode="manual", manual_points=None, legacy_floor_price=_num(legacy.get("spread_floor"), 0, 1e6, 0.001),
+                  max_mode="auto", max_mult=_num(legacy.get("spread_max_mult"), 0, 20, 1.5))
+    s.pop("spread_max_mult", None)                      # inlocuit de spread.max_* (rezolvat in strategy.spread_max)
+    sp["mode"] = sp.get("mode") if sp.get("mode") in ("auto", "manual") else "auto"
+    sp["max_mode"] = sp.get("max_mode") if sp.get("max_mode") in ("auto", "manual") else "auto"
+    sp["manual_points"] = None if sp.get("manual_points") is None else _num(sp["manual_points"], 0, 1e6, 9.0)
+    sp["max_mult"] = _num(sp.get("max_mult"), 0, 20, 1.5)
+    sp["max_points"] = _num(sp.get("max_points"), 0, 1e7, 15.0)
     s["min_atr_over_cost"] = _num(s["min_atr_over_cost"], 0, 200, 5)
     s["slip_frac"] = _num(s["slip_frac"], 0, 5, 0.25)
     s["comm_price"] = _num(s["comm_price"], 0, 1e6, 0.0)
@@ -175,6 +200,41 @@ def sanitize(cfg: dict) -> dict:
     b["min_remaining"] = _num(b["min_remaining"], 0, b["capital"], min(30.0, b["capital"]))
     c["sizing"]["risk_pct"] = _num(c["sizing"].get("risk_pct"), 0.0005, 0.05, 0.01)
     return c
+
+
+def pip_points(digits: int | None) -> int:
+    """Points intr-un pip: FX cu 3 / 5 zecimale → 10 (USDJPY 0,01 = 10 points); altfel 1 (indici, cripto)."""
+    return 10 if digits in (3, 5) else 1
+
+
+def resolve_spread(cfg: dict, point: float | None, auto_points: float | None = None, digits: int | None = None) -> dict:
+    """Rezolva sectiunea `spread` (points) → strategy.spread_floor / spread_max (PRET) — in loc. Intoarce ce se
+    afiseaza: valorile in points / pips / pret si SURSA fiecareia (auto MT5 / manual / rezerva)."""
+    sp, s = cfg["spread"], cfg["strategy"]
+    if not point:
+        return {"mode": sp["mode"], "source": "point necunoscut — valorile de rezerva", "typical_price": s["spread_floor"],
+                "max_price": s["spread_max"]}
+    if sp["mode"] == "manual":
+        pts = sp.get("manual_points")
+        if pts is None and sp.get("legacy_floor_price") is not None:
+            pts = round(sp["legacy_floor_price"] / point, 3)
+        src = "manual"
+    else:
+        pts, src = auto_points, "auto (MT5 live)"
+    if pts is None or pts <= 0:
+        pts, src = (s["spread_floor"] / point if s["spread_floor"] else None), "rezervă (încă fără tick-uri MT5)"
+    typical = (pts or 0.0) * point
+    if sp["max_mode"] == "manual":
+        max_pts, max_src = sp["max_points"], "manual"
+    else:
+        max_pts, max_src = sp["max_mult"] * (pts or 0.0), f"auto ({sp['max_mult']:g}× tipic)"
+    s["spread_floor"] = typical
+    s["spread_max"] = max_pts * point
+    pp = pip_points(digits)
+    return {"mode": sp["mode"], "max_mode": sp["max_mode"], "source": src, "max_source": max_src, "point": point,
+            "digits": digits, "pip_points": pp, "typical_points": round(pts or 0.0, 2), "typical_price": round(typical, 8),
+            "typical_pips": round((pts or 0.0) / pp, 3), "max_points": round(max_pts, 2), "max_price": round(max_pts * point, 8),
+            "max_pips": round(max_pts / pp, 3)}
 
 
 def load_config() -> dict:
