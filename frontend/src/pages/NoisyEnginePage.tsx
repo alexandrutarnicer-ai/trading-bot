@@ -666,6 +666,18 @@ function Config({ cfg, sp, atr, busy = false }: { cfg?: NoisyConfig; sp?: NoisyS
           </div>
           <div className="text-[10px] text-slate-500">Protecțiile globale (capital, circuit breaker, știri, închidere de vineri, risc maxim pe trade, poziții simultane) se aplică peste acestea și nu pot fi ocolite.</div>
           <OverlapConfig d={d} set={set} />
+          <div className="text-slate-400 font-semibold pt-2">Stop de timp</div>
+          <div className="flex items-center gap-2 flex-wrap">
+            închide trade-ul după
+            <input type="number" min={2} max={200} step={1} value={Number(d.strategy.time_stop_bars)}
+              onChange={e => set(c => { c.strategy.time_stop_bars = Math.round(num(e.target.value)); })}
+              className="w-16 bg-surface border border-surface-border rounded px-2 py-0.5" /> bare
+            <span className="text-slate-500">= {Number(d.strategy.time_stop_bars) * (d.timeframe === "M5" ? 5 : 1)} min pe {d.timeframe}
+              {" "}(dacă nu a atins SL / ținta; implicit 20)</span>
+          </div>
+          <div className="text-[10px] text-slate-500">Backtest US500 M1 (12 luni): 10 / 20 / 40 / 60 / 120 min dau practic același rezultat
+            (−0,09 … −0,085R) — majoritatea trade-urilor ating SL / ținta în ~10 min; un stop mai lung doar ține pozițiile mai mult
+            și scade puțin frecvența. Se aplică și în Execuție (închidere la timp) și la regula „nicio poziție peste 00:00”.</div>
           <div className="text-slate-400 font-semibold pt-2">Țintă (R:R)</div>
           <div className="flex items-center gap-2 flex-wrap">
             <button onClick={() => set(c => { c.strategy.tp_rr = 0; })}

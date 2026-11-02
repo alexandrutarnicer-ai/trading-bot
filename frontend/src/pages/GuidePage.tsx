@@ -1508,6 +1508,7 @@ export function GuidePage() {
               <KV k="Spread tipic (cost)" v="Auto = mediana spread-ului live din tick-urile MT5, înghețată pe zi la deschiderea ferestrei · Manual = valoarea ta" />
               <KV k="Spread maxim" v="Auto = N × tipic (implicit 1,5×) · Manual = points (0 = fără limită); peste el semnalul e respins" />
               <KV k="Filtrul cost/ATR" v="intră doar când mișcarea (ATR) e de cel puțin N ori costul (M1: 5×, M5: 15×). Un spread tipic mare = puține sau zero trade-uri — intenționat" />
+              <KV k="Stop de timp" v="editabil în Configurare (bare; pe M1 1 bară = 1 minut, implicit 20). Pe US500 M1 durata 10–120 min nu schimbă rezultatul" />
               <KV k="Activ / Oprit (probă)" v="comutatorul din Configurare → Spread, separat pe M1 și M5; pragul e editabil. OPRIT = Noisy intră și când costul mănâncă mișcarea — bun ca să vezi engine-ul lucrând în SHADOW, NU pentru Execuție. La reactivare revine pragul de dinainte" />
               <KV k="De ce nu intră?" v="fiecare semnal respins apare în panoul pieței și în jurnal cu motivul și cifrele (cost/ATR, spread, știri, limite, interval, suprapuse, direcție…)" />
             </div>

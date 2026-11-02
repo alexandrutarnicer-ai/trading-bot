@@ -89,6 +89,14 @@ check("continuarea caderii → SL", r3["trades"] and r3["trades"][0]["reason"] =
 flat = make_bars(drop + [149.80] * 30, wiggle=0.0001)
 r4 = S.run_day(flat, DAY, raw(CFG))
 check("fara SL/TP in 20 de bare → iesire la timp", r4["trades"] and r4["trades"][0]["reason"] == "timp", r4["trades"][:1])
+c_ts = raw(CFG)
+c_ts["strategy"]["time_stop_bars"] = 5
+r4b = S.run_day(flat, DAY, c_ts)
+check("stop de timp configurabil (5 bare) → iesire la timp dupa 5 bare, nu 20",
+      r4b["trades"] and r4b["trades"][0]["reason"] == "timp" and r4b["trades"][0]["bars"] < r4["trades"][0]["bars"],
+      (r4b["trades"][:1], r4["trades"][:1]))
+check("stop de timp limitat la 2–200 bare la incarcare", C.sanitize({"strategy": {"time_stop_bars": 1}})["strategy"]["time_stop_bars"] == 2
+      and C.sanitize({"strategy": {"time_stop_bars": 999}})["strategy"]["time_stop_bars"] == 200)
 check("cost inclus: R net < R brut", tr and tr["R"] < tr["gross_R"])
 check("spread_floor: spread-ul barei 0 → costul tot >= spread-ul real",
       S.run_day(make_bars(drop + [149.82] + [150.0] * 3, spread=0.0), DAY, raw(CFG))["trades"][0]["cost"] >= 0.001)
