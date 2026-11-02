@@ -153,5 +153,47 @@ tc = dict(tr("EURUSD", "bot", 5), commission=-0.5, swap=-0.2)
 s2 = M._stats([tc], "2026-11-02", "2026-11-01")
 check("P&L brut 5, costuri -0.7, net 4.3 (ca _perf)", (s2["pnl"], s2["costs"], s2["net"]) == (5, -0.7, 4.3), s2)
 
+print("7. „Ascunde pietele nefolosite” — piata folosita = engine PORNIT + activa + nepusa manual pe pauza")
+ALL4 = dict(custom={"running": True, "sessions": [sess(1, "EURUSD"), sess(2, "AUDJPY", paused=True),
+                                                   sess(4, "GER40", execute=False), sess(9, "XAUUSD", running=False)]},
+            ai={"running": True, "mode": "demo", "markets": ["CHFJPY"]},
+            daily={"running": True, "mode": "shadow", "markets": [{"symbol": "US500", "enabled": True},
+                                                                   {"symbol": "GBPUSD", "enabled": False}],
+                   "status_markets": [{"symbol": "US500", "phase": "waiting_open"}]},
+            noisy={"running": True, "mode": "shadow", "symbol": "USDJPY", "timeframe": "M1", "state": "outside_window"})
+d = M.build(base(**ALL4), MON)
+use = {m["symbol"]: m["in_use"] for m in d["markets"]}
+check("doar Custom activ → folosita", use["EURUSD"])
+check("doar AI → folosita", use["CHFJPY"])
+check("doar Daily shadow, inainte de fereastra → folosita (engine-ul o urmareste)", use["US500"])
+check("doar Noisy, in afara ferestrei → folosita", use["USDJPY"])
+check("Custom observatie (execute=False) → folosita (semnale analizate)", use["GER40"])
+check("Custom PAUZA manuala → NEfolosita (era 'Blocat', nu se ascundea — bug-ul raportat)", use["AUDJPY"] is False)
+check("sesiune care nu ruleaza → nefolosita", use["XAUUSD"] is False)
+check("Daily: piata dezactivata → nefolosita", use["GBPUSD"] is False)
+check("contorul 'unused' din raspuns", d["counts"]["unused"] == 3, d["counts"])
+d = M.build(base(**ALL4, positions=[{"symbol": "AUDJPY", "source": "bot"}]), MON)
+check("pauza manuala DAR cu pozitie deschisa → ramane vizibila", mk(d, "AUDJPY")["in_use"])
+d = M.build(base(**ALL4, pending=[{"symbol": "XAUUSD", "source": "manual"}]), MON)
+check("ordin pending (orice sursa) pe piata → vizibila", mk(d, "XAUUSD")["in_use"])
+# engine oprit: pietele lui devin nefolosite, cele partajate cu un engine pornit raman
+both = dict(custom={"running": False, "sessions": [sess(15, "GBPUSD"), sess(1, "EURUSD")]},
+            ai={"running": True, "mode": "demo", "markets": ["GBPUSD"]})
+d = M.build(base(**both), MON)
+check("Custom OPRIT: EURUSD (doar Custom) → nefolosita", mk(d, "EURUSD")["in_use"] is False)
+check("aceeasi piata pe Custom oprit + AI pornit → folosita", mk(d, "GBPUSD")["in_use"])
+gb = mk(d, "GBPUSD")
+check("filtrul de sursa Custom pe GBPUSD: intrarea Custom e nefolosita (frontend o ascunde)",
+      [e["in_use"] for e in gb["engines"] if e["engine"] == "custom"] == [False])
+d = M.build(base(noisy={"running": True, "mode": "shadow", "symbol": "USDJPY", "timeframe": "M1", "state": "paused"}), MON)
+check("Noisy pus pe pauza din UI → nefolosit", mk(d, "USDJPY")["in_use"] is False)
+d = M.build(base(noisy={"running": True, "mode": "shadow", "symbol": "USDJPY", "timeframe": "M1", "state": "budget_locked"}), MON)
+check("Noisy blocat de buget (protectie automata) → folosit (vizibil, cu motivul)", mk(d, "USDJPY")["in_use"])
+d = M.build(base(custom={"running": True, "sessions": [sess(1, "EURUSD", news_paused=True)]}), MON)
+check("pauza automata la stiri → folosita (temporar)", mk(d, "EURUSD")["in_use"])
+d = M.build(base(custom={"running": False, "sessions": []}, trades=[tr("AUDUSD", "ai", 1.0)]), MON)
+check("piata complet nefolosita (doar istoric) → nu e card, doar in history_only",
+      not d["markets"] and d["history_only"][0]["symbol"] == "AUDUSD")
+
 print(f"\n{'TOATE TESTELE AU TRECUT' if not FAIL else f'{FAIL} TESTE ESUATE'}")
 sys.exit(1 if FAIL else 0)
