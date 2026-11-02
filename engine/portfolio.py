@@ -5,7 +5,8 @@ from engine.simulator import simulate_trade
 from strategy.signals import pip_size, count_optional, reward_R
 from strategy.structure import detect_setup
 from strategy.patterns import detect_flag, detect_inside_bar
-from strategy.costs import swap_cost, pip_value_usd, notional_usd
+from strategy.costs import (swap_cost, pip_value_usd, notional_usd, round_lots, min_lot, commission_per_lot,
+                            leverage_for)
 
 
 def run_portfolio(data, cfg, params, verbose=True):
@@ -149,7 +150,7 @@ def run_portfolio(data, cfg, params, verbose=True):
                 trig = (d == 1 and row["high"] >= p["entry"]) or \
                        (d == -1 and row["low"]  <= p["entry"])
                 if trig:
-                    margin = notional_usd(s, p["entry"], p["lots"]) / leverage
+                    margin = notional_usd(s, p["entry"], p["lots"]) / leverage_for(s, leverage)
                     used   = sum(open_margin.values())
                     if balance - used < margin:
                         skipped_margin += 1
@@ -157,7 +158,7 @@ def run_portfolio(data, cfg, params, verbose=True):
                     else:
                         pv  = p["pv"]
                         spr = spread_pips.get(s, 1.0) * pip
-                        res = simulate_trade(df, jj, p, spr, pip, pv, comm, s, be_cfg=be_cfg)
+                        res = simulate_trade(df, jj, p, spr, pip, pv, commission_per_lot(s, comm), s, be_cfg=be_cfg)
                         sc  = swap_cost(s, res["time"], res["exit_time"], p["lots"])
                         res["swap"]       = round(sc, 3)
                         res["pnl_usd"]    = round(res["pnl_usd"] - sc, 2)
@@ -247,8 +248,8 @@ def run_portfolio(data, cfg, params, verbose=True):
                 rp    = rp_all if n_opt >= 2 else rp_base
                 risk_usd = balance * rp
                 pv    = pip_value_usd(s, entry, usdjpy_at(t))
-                lots  = np.floor(risk_usd / ((risk_dist / pip) * pv) / 0.01) * 0.01
-                if lots >= 0.01:
+                lots  = round_lots(s, risk_usd / ((risk_dist / pip) * pv))
+                if lots >= min_lot(s):
                     pendings[s].append({
                         "dir": direction, "entry": entry, "sl": sl, "tp": tp,
                         "lots": lots, "R": R, "invalidate": ext, "armed_at": jj,
@@ -282,8 +283,8 @@ def run_portfolio(data, cfg, params, verbose=True):
                     f_tp  = f_entry + direction * f_risk * f_R
                     f_ru  = balance * f_rp
                     pv_f  = pip_value_usd(s, f_entry, usdjpy_at(t))
-                    f_lot = np.floor(f_ru / ((f_risk / pip) * pv_f) / 0.01) * 0.01
-                    if f_lot >= 0.01:
+                    f_lot = round_lots(s, f_ru / ((f_risk / pip) * pv_f))
+                    if f_lot >= min_lot(s):
                         pendings[s].append({
                             "dir": direction, "entry": f_entry, "sl": f_sl, "tp": f_tp,
                             "lots": f_lot, "R": f_R, "invalidate": sl_lv,
@@ -309,8 +310,8 @@ def run_portfolio(data, cfg, params, verbose=True):
                     ib_tp  = ib_entry + direction * ib_risk * ib_R
                     ib_ru  = balance * ib_rp
                     pv_ib  = pip_value_usd(s, ib_entry, usdjpy_at(t))
-                    ib_lot = np.floor(ib_ru / ((ib_risk / pip) * pv_ib) / 0.01) * 0.01
-                    if ib_lot >= 0.01:
+                    ib_lot = round_lots(s, ib_ru / ((ib_risk / pip) * pv_ib))
+                    if ib_lot >= min_lot(s):
                         pendings[s].append({
                             "dir": direction, "entry": ib_entry, "sl": ib_sl, "tp": ib_tp,
                             "lots": ib_lot, "R": ib_R, "invalidate": sl_lv,

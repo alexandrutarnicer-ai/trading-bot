@@ -3,8 +3,9 @@ Validarea unui rezultat de backtest (Custom Engine) — ce poate face cifrele NE
 M0. Functie PURA (nu schimba nimic din simulare / baseline-uri), testata in scripts/test_backtest_validity.py.
 
 Provenienta (analiza Backtest vs Live, 2026-11-02):
-  - XRPUSD: contractul s-a schimbat la broker (1 lot = 1 XRP, lot minim 100, pas 1); modelul de lot al motorului de backtest
-    nu il poate reprezenta → R-uri imposibile (−26R, −7445R). Un rezultat cu |R| mult peste tinta maxima e INVALID, nu „slab”.
+  - XRPUSD: contractul s-a schimbat la broker (1 lot = 1 XRP, lot minim 100, pas 1) → R-uri imposibile (−26R, −7445R)
+    pana la fix-ul din strategy/costs.py (LOT_SPECS / comision / swap / levier per simbol). Garda ramane: orice simbol nou cu
+    un contract nereprezentat produce |R| mult peste tinta maxima → INVALID, nu „slab”.
   - CSV-urile de backtest erau din iunie–august: perioada recenta (cea care se compara cu live-ul) lipsea.
   - Contul Standard ICMarkets: spread-ul live pe FX include un markup (~0,8 pip) peste spread-ul brut din istoricul MT5.
   - Backtestul NU simuleaza: Filtrul AI pre-trade (116 din 179 de trade-uri „ratate” de live in perioada 27.07–01.11),
