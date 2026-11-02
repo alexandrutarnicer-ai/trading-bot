@@ -357,6 +357,71 @@ function Score({ st }: { st?: NoisyStatus }) {
   );
 }
 
+const toMin = (hm: string) => { const [h, m] = hm.split(":").map(Number); return h * 60 + m; };
+
+/** Validare identica cu backend-ul (config.validate_intervals): durata zero, suprapuneri (si peste miezul noptii). */
+function windowErrors(iv: { start: string; end: string }[]): string[] {
+  const errs: string[] = [];
+  if (!iv.length) return ["cel puțin un interval orar este obligatoriu"];
+  const segs: [number, number, number][] = [];
+  iv.forEach((w, n) => {
+    if (!/^\d{2}:\d{2}$/.test(w.start) || !/^\d{2}:\d{2}$/.test(w.end)) { errs.push(`intervalul ${n + 1}: oră invalidă`); return; }
+    const a = toMin(w.start), b = toMin(w.end);
+    if (a === b) { errs.push(`intervalul ${n + 1}: început = sfârșit (durată zero)`); return; }
+    (a < b ? [[a, b]] : [[a, 1440], [0, b]]).forEach(([x, y]) => segs.push([x, y, n + 1]));
+  });
+  segs.forEach(([a1, b1, n1], i) => segs.slice(i + 1).forEach(([a2, b2, n2]) => {
+    if (n1 !== n2 && a1 < b2 && a2 < b1) errs.push(`intervalele ${n1} și ${n2} se suprapun`);
+  }));
+  return [...new Set(errs)];
+}
+
+function WindowsEditor({ d, set, appTz }: { d: NoisyConfig; set: (fn: (x: NoisyConfig) => void) => void; appTz?: string }) {
+  const iv = d.window.intervals ?? [{ start: d.window.start, end: d.window.end }];
+  const errs = windowErrors(iv);
+  const tfMin = d.timeframe === "M5" ? 5 : 1;
+  return (
+    <div className="space-y-1.5">
+      <div className="text-slate-400 font-semibold">Ferestre de intrare (ora RO)</div>
+      {iv.map((w, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <span className="text-slate-500 w-4">{i + 1}.</span>
+          <input type="time" value={w.start} onChange={e => set(c => { c.window.intervals[i].start = e.target.value; })}
+            className="bg-surface border border-surface-border rounded px-2 py-0.5" />
+          <span>–</span>
+          <input type="time" value={w.end} onChange={e => set(c => { c.window.intervals[i].end = e.target.value; })}
+            className="bg-surface border border-surface-border rounded px-2 py-0.5" />
+          {toMin(w.end) < toMin(w.start) && <span className="text-[10px] text-slate-500">peste miezul nopții</span>}
+          {appTz && appTz !== "Europe/Bucharest" && (
+            <span className="text-[10px] text-slate-500">ora DE {roToZone(w.start, appTz)}–{roToZone(w.end, appTz)}</span>
+          )}
+          <button disabled={iv.length <= 1} title={iv.length <= 1 ? "Cel puțin un interval" : "Șterge intervalul"}
+            onClick={() => set(c => { c.window.intervals.splice(i, 1); })}
+            className="ml-auto px-2 rounded border border-surface-border text-slate-500 hover:text-loss disabled:opacity-30">✕</button>
+        </div>
+      ))}
+      <button onClick={() => set(c => {
+        const last = c.window.intervals[c.window.intervals.length - 1];
+        const s0 = Math.min(1380, toMin(last?.end ?? "15:00") + 60);
+        const f = (m: number) => `${String(Math.floor(m / 60) % 24).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+        c.window.intervals.push({ start: f(s0), end: f(Math.min(1439, s0 + 120)) });
+      })} className="px-2 py-0.5 rounded border border-surface-border text-slate-400 hover:text-white">+ Adaugă interval</button>
+      {errs.length > 0 && <div className="text-[11px] text-loss">{errs.join(" · ")} — nu se poate salva.</div>}
+      <div className="flex gap-1">
+        {DAYS.map((x, i) => (
+          <button key={x} onClick={() => set(c => { c.window.days = c.window.days.includes(i) ? c.window.days.filter(y => y !== i) : [...c.window.days, i].sort(); })}
+            className={`px-2 py-0.5 rounded border ${d.window.days.includes(i) ? "border-amber-500/50 text-amber-200" : "border-surface-border text-slate-500"}`}>{x}</button>
+        ))}
+      </div>
+      <div className="text-[10px] text-slate-500">
+        Intră doar în intervalele de mai sus, în zilele bifate (un interval peste miezul nopții aparține zilei în care începe).
+        Poziția deschisă se termină după regulile ei (max {Number(d.strategy.time_stop_bars) * tfMin} min); nicio intrare care ar
+        rămâne deschisă după 00:00. Evită 22–00 (rollover: spread până la 250×). Backtestul a fost făcut pe 10:00–20:00.
+      </div>
+    </div>
+  );
+}
+
 function Config({ cfg, sp, atr }: { cfg?: NoisyConfig; sp?: NoisySpreadInfo; atr?: number | null }) {
   const save = useNoisySaveConfig();
   const [d, setD] = useState<NoisyConfig | undefined>(cfg);
@@ -395,30 +460,15 @@ function Config({ cfg, sp, atr }: { cfg?: NoisyConfig; sp?: NoisySpreadInfo; atr
         {dirty && (
           <div className="ml-auto flex gap-2">
             <button onClick={() => { setD(cfg); setDirty(false); }} className="px-3 py-1 rounded border border-surface-border text-slate-400">Renunță</button>
-            <button onClick={() => save.mutate(d, { onSuccess: () => setDirty(false) })}
-              className="px-3 py-1 rounded bg-amber-500/20 text-amber-200 border border-amber-500/40 font-semibold">Salvează</button>
+            <button disabled={windowErrors(d.window.intervals ?? []).length > 0}
+              onClick={() => save.mutate(d, { onSuccess: () => setDirty(false) })}
+              className="px-3 py-1 rounded bg-amber-500/20 text-amber-200 border border-amber-500/40 font-semibold disabled:opacity-40">Salvează</button>
           </div>
         )}
       </div>
       <div className="grid md:grid-cols-2 gap-4">
         <div className="space-y-2">
-          <div className="text-slate-400 font-semibold">Fereastră de intrare (ora RO)
-            {appTz && appTz !== "Europe/Bucharest" && (
-              <span className="font-normal text-slate-500"> · ora DE: {roToZone(d.window.start, appTz)}–{roToZone(d.window.end, appTz)}</span>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <input type="time" value={d.window.start} onChange={e => set(c => { c.window.start = e.target.value; })} className="bg-surface border border-surface-border rounded px-2 py-0.5" />
-            <span>–</span>
-            <input type="time" value={d.window.end} onChange={e => set(c => { c.window.end = e.target.value; })} className="bg-surface border border-surface-border rounded px-2 py-0.5" />
-          </div>
-          <div className="flex gap-1">
-            {DAYS.map((x, i) => (
-              <button key={x} onClick={() => set(c => { c.window.days = c.window.days.includes(i) ? c.window.days.filter(y => y !== i) : [...c.window.days, i].sort(); })}
-                className={`px-2 py-0.5 rounded border ${d.window.days.includes(i) ? "border-amber-500/50 text-amber-200" : "border-surface-border text-slate-500"}`}>{x}</button>
-            ))}
-          </div>
-          <div className="text-[10px] text-slate-500">În afara ferestrei nu intră; poziția deschisă se termină după regulile ei (max {Number(d.strategy.time_stop_bars) * (d.timeframe === "M5" ? 5 : 1)} min). Exclude 22–00 (rollover, spread până la 250×).</div>
+          <WindowsEditor d={d} set={set} appTz={appTz} />
           <div className="text-slate-400 font-semibold pt-2">Timeframe</div>
           <div className="flex gap-2 items-center">
             {(["M1", "M5"] as const).map(tf => (

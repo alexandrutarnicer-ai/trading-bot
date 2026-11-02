@@ -64,7 +64,7 @@ DAY = date(2026, 11, 2)
 
 print("1. Configurare")
 check("implicit: USDJPY, shadow, fereastra 10-20 RO", CFG["symbol"] == "USDJPY" and CFG["mode"] == "shadow"
-      and CFG["window"] == {"start": "10:00", "end": "20:00", "days": [0, 1, 2, 3, 4]})
+      and CFG["window"]["intervals"] == [{"start": "10:00", "end": "20:00"}] and CFG["window"]["days"] == [0, 1, 2, 3, 4])
 check("moduri: shadow (implicit) / execute; mod necunoscut → shadow",
       CFG["mode"] == "shadow" and C.sanitize({"mode": "execute"})["mode"] == "execute"
       and C.sanitize({"mode": "live!"})["mode"] == "shadow")
@@ -95,8 +95,43 @@ check("spread_floor: spread-ul barei 0 → costul tot >= spread-ul real",
 
 print("3. Filtre si limite")
 c = raw(CFG)
-c["window"]["start"], c["window"]["end"] = "18:00", "20:00"
+c["window"]["intervals"] = [{"start": "18:00", "end": "20:00"}]
 check("in afara ferestrei → fara intrari", not S.run_day(b, DAY, c)["trades"])
+
+print("3a. Ferestre orare MULTIPLE (10–13 + 16–22), validare, peste miezul noptii")
+check("config vechi {start, end} → un interval (migrare)", C.sanitize({"window": {"start": "09:00", "end": "21:00", "days": [1]}})["window"]
+      ["intervals"] == [{"start": "09:00", "end": "21:00"}])
+w2 = C.sanitize({"window": {"intervals": [{"start": "16:00", "end": "22:00"}, {"start": "10:00", "end": "13:00"}]}})["window"]
+check("doua intervale, sortate; start/end = primul (compatibilitate)", w2["intervals"] == [{"start": "10:00", "end": "13:00"},
+      {"start": "16:00", "end": "22:00"}] and (w2["start"], w2["end"]) == ("10:00", "13:00"), w2)
+mon = datetime(2026, 11, 2)
+check("in fereastra: 11:00 da, 14:00 nu, 17:00 da, 22:00 nu (sfarsit exclusiv)",
+      [S._in_window(mon.replace(hour=h), w2) for h in (11, 14, 17, 22)] == [True, False, True, False])
+check("validare: suprapunere → eroare explicita", C.validate_intervals([{"start": "10:00", "end": "13:00"}, {"start": "12:00", "end": "22:00"}])
+      == ["intervalele 1 și 2 se suprapun"])
+check("validare: niciun interval / durata zero / ora invalida → erori",
+      C.validate_intervals([]) and C.validate_intervals([{"start": "10:00", "end": "10:00"}]) and C.validate_intervals([{"start": "25:00", "end": "26:00"}]))
+check("validare: doua intervale disjuncte (inclusiv peste miezul noptii) → ok",
+      C.validate_intervals([{"start": "22:00", "end": "02:00"}, {"start": "10:00", "end": "13:00"}]) == [])
+check("la incarcare (tolerant): suprapunerile se unesc, invalidele se ignora, lista goala → 10–20",
+      C.normalize_intervals([{"start": "10:00", "end": "13:00"}, {"start": "12:00", "end": "14:00"}, {"start": "x"}])
+      == [{"start": "10:00", "end": "14:00"}] and C.normalize_intervals([]) == [{"start": "10:00", "end": "20:00"}])
+wn = {"intervals": [{"start": "22:00", "end": "02:00"}], "days": [4]}
+check("peste miezul noptii: vineri 23:00 da, sambata 01:00 da (ziua in care incepe), vineri 01:00 nu",
+      [S._in_window(datetime(2026, 11, 6, 23), wn), S._in_window(datetime(2026, 11, 7, 1), wn), S._in_window(datetime(2026, 11, 6, 1), wn)]
+      == [True, True, False])
+# acelasi semnal (bara 40 = 12:20 ziua de test) in / in afara intervalelor
+c = raw(CFG)
+c["window"]["intervals"] = [{"start": "10:00", "end": "12:00"}, {"start": "12:15", "end": "13:00"}]
+check("semnal in al DOILEA interval → trade", S.run_day(b, DAY, c)["trades"])
+c["window"]["intervals"] = [{"start": "10:00", "end": "12:00"}, {"start": "16:00", "end": "22:00"}]
+check("semnal intre intervale → fara trade", not S.run_day(b, DAY, c)["trades"])
+late = make_bars(drop + [149.82] + [150.0] * 3, start=datetime(2026, 11, 2, 20, 0))      # semnal ~23:20
+c["window"]["intervals"] = [{"start": "22:00", "end": "02:00"}]
+c["timeframe"] = "M5"                                     # bare de 5 min: stopul de timp = 20 × 5 min
+r_late = S.run_day(late, DAY, c)
+check("intrare care ar ramane deschisa peste 00:00 → respinsa (motiv miezul_noptii), nu pierduta",
+      not r_late["trades"] and not r_late["open"] and r_late["reject_counts"].get("miezul_noptii"), r_late["reject_counts"])
 blocks = [(datetime(2026, 11, 2, 12, 0), datetime(2026, 11, 2, 13, 0))]
 check("in fereastra de stiri → fara intrari", not S.run_day(b, DAY, raw(CFG), news_blocks=blocks)["trades"])
 vt = b.t[40].isoformat()
