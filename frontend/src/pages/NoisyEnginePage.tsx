@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { AlertTriangle, Loader2, OctagonX, Pause, Play, RotateCcw, Square, Zap } from "lucide-react";
-import { useNoisyAction, useNoisyLogs, useNoisySaveConfig, useNoisyStatus, useNoisyTrades, useTimezone } from "../api/hooks";
+import { useMt5Markets, useNoisyAction, useNoisyLogs, useNoisyMarketInfo, useNoisySaveConfig, useNoisyStatus, useNoisyTrades,
+  useTimezone } from "../api/hooks";
 import type { NoisyConfig, NoisySpreadInfo, NoisyStatus } from "../api/types";
 
 // Ora RO (fereastra Noisy e definita si testata in ora RO) → ora din alt fus, pentru afisare.
@@ -357,6 +358,67 @@ function Score({ st }: { st?: NoisyStatus }) {
   );
 }
 
+/** Edit Market: o singura piata, aleasa din lista REALA a contului MT5 (cautare dupa nume / descriere). */
+function MarketEditor({ d, set, current, busy }: { d: NoisyConfig; set: (fn: (x: NoisyConfig) => void) => void;
+                                                   current: string; busy: boolean }) {
+  const { data: mk, isLoading } = useMt5Markets();
+  const { data: mi } = useNoisyMarketInfo(d.symbol);
+  const [q, setQ] = useState("");
+  const [open, setOpen] = useState(false);
+  const items = mk?.items ?? (mk?.symbols ?? []).map(n => ({ name: n, description: "", path: "", tradable: true }));
+  const ql = q.trim().toLowerCase();
+  const hits = items.filter(x => !ql || x.name.toLowerCase().includes(ql) || x.description.toLowerCase().includes(ql)).slice(0, 40);
+  const changed = d.symbol !== current;
+  const marginWarn = mi?.ok && mi.margin_min_lot != null && mi.margin_min_lot > d.budget.capital;
+  return (
+    <div className="rounded-lg border border-surface-border bg-surface px-3 py-2 space-y-1.5">
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-slate-400 font-semibold">Edit Market</span>
+        <span className="text-[10px] text-slate-500">o singură piață, din contul MT5 conectat</span>
+      </div>
+      <div className="relative flex items-center gap-2">
+        <input value={open ? q : d.symbol} placeholder="caută simbol sau descriere (ex. JPY, US500, gold)…"
+          onFocus={() => { setOpen(true); setQ(""); }} onBlur={() => setTimeout(() => setOpen(false), 150)}
+          onChange={e => setQ(e.target.value)} disabled={busy}
+          className="w-64 bg-surface-card border border-surface-border rounded px-2 py-1 text-white disabled:opacity-40" />
+        {changed && <span className="text-[11px] text-amber-300">nesalvat: {current} → {d.symbol}</span>}
+        {busy && <span className="text-[10px] text-slate-500">blocat: poziție deschisă</span>}
+        {open && (
+          <div className="absolute top-8 left-0 z-20 w-96 max-h-64 overflow-auto rounded-lg border border-surface-border bg-surface-card shadow-xl">
+            {isLoading && <div className="px-3 py-2 text-slate-500">se încarcă piețele din MT5…</div>}
+            {mk?.error && <div className="px-3 py-2 text-loss">{mk.error}</div>}
+            {hits.map(x => (
+              <button key={x.name} disabled={!x.tradable} onMouseDown={e => e.preventDefault()}
+                onClick={() => { set(c => { c.symbol = x.name; }); setOpen(false); }}
+                className={`w-full text-left px-3 py-1 flex gap-2 hover:bg-surface ${x.name === d.symbol ? "text-amber-200" : "text-slate-200"} disabled:opacity-40`}>
+                <b className="w-24 shrink-0">{x.name}</b>
+                <span className="text-slate-500 truncate">{x.description}{!x.tradable ? " · netranzacționabil" : ""}</span>
+              </button>
+            ))}
+            {!isLoading && !hits.length && <div className="px-3 py-2 text-slate-500">nicio piață găsită</div>}
+          </div>
+        )}
+      </div>
+      {mi && !mi.ok && <div className="text-[11px] text-loss">{mi.detail}</div>}
+      {mi?.ok && (
+        <div className="text-[10px] text-slate-400 grid grid-cols-2 md:grid-cols-3 gap-x-4">
+          <span>{mi.description}</span>
+          <span>spread acum: <b className="text-white">{mi.spread_live_points ?? "—"} points</b>{mi.pip_points && mi.pip_points > 1 && mi.spread_live_pips != null ? ` = ${mi.spread_live_pips} pips` : ""}{mi.spread_live_price != null ? ` = ${mi.spread_live_price}` : ""}</span>
+          <span>point {mi.point} · {mi.digits} zecimale{mi.pip_points && mi.pip_points > 1 ? ` · 1 pip = ${mi.pip_points} points` : ""}</span>
+          <span>lot min {mi.volume_min} (pas {mi.volume_step}) · contract {mi.contract_size}</span>
+          <span className={marginWarn ? "text-loss" : ""}>marja la lotul minim: {mi.margin_min_lot ?? "—"} $</span>
+          <span>{mi.tradable ? "tranzacționabil" : "NEtranzacționabil"} · profit în {mi.currency_profit}</span>
+        </div>
+      )}
+      {marginWarn && <div className="text-[11px] text-loss">Marja lotului minim depășește bugetul Noisy ({d.budget.capital} $).</div>}
+      {d.symbol !== "USDJPY" && (
+        <div className="text-[10px] text-yellow-300/90">Strategia, limitele și pragul cost/ATR au fost testate doar pe USDJPY — altă piață = variantă netestată (ideal: shadow + backtest cu scripts/research_noisy/noisy_backtest.py --spread-points).</div>
+      )}
+      <div className="text-[10px] text-slate-500">Schimbarea se aplică după Salvează (fără restart); e refuzată cât timp Noisy are o poziție deschisă. Spread-ul manual revine pe Auto la schimbarea pieței.</div>
+    </div>
+  );
+}
+
 const toMin = (hm: string) => { const [h, m] = hm.split(":").map(Number); return h * 60 + m; };
 
 /** Validare identica cu backend-ul (config.validate_intervals): durata zero, suprapuneri (si peste miezul noptii). */
@@ -422,11 +484,12 @@ function WindowsEditor({ d, set, appTz }: { d: NoisyConfig; set: (fn: (x: NoisyC
   );
 }
 
-function Config({ cfg, sp, atr }: { cfg?: NoisyConfig; sp?: NoisySpreadInfo; atr?: number | null }) {
+function Config({ cfg, sp, atr, busy = false }: { cfg?: NoisyConfig; sp?: NoisySpreadInfo; atr?: number | null; busy?: boolean }) {
   const save = useNoisySaveConfig();
   const [d, setD] = useState<NoisyConfig | undefined>(cfg);
   const appTz = useTimezone().data?.timezone;   // RO / DE — doar pentru echivalentul afisat al ferestrei
   const [dirty, setDirty] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   useEffect(() => { if (!dirty) setD(cfg); }, [cfg, dirty]);
   if (!d) return null;
   const set = (fn: (x: NoisyConfig) => void) => { const c = structuredClone(d); fn(c); setD(c); setDirty(true); };
@@ -461,13 +524,14 @@ function Config({ cfg, sp, atr }: { cfg?: NoisyConfig; sp?: NoisySpreadInfo; atr
           <div className="ml-auto flex gap-2">
             <button onClick={() => { setD(cfg); setDirty(false); }} className="px-3 py-1 rounded border border-surface-border text-slate-400">Renunță</button>
             <button disabled={windowErrors(d.window.intervals ?? []).length > 0}
-              onClick={() => save.mutate(d, { onSuccess: () => setDirty(false) })}
+              onClick={() => save.mutate(d, { onSuccess: r => { setDirty(false); setNotice(r._notice ?? null); } })}
               className="px-3 py-1 rounded bg-amber-500/20 text-amber-200 border border-amber-500/40 font-semibold disabled:opacity-40">Salvează</button>
           </div>
         )}
       </div>
       <div className="grid md:grid-cols-2 gap-4">
         <div className="space-y-2">
+          <MarketEditor d={d} set={set} current={cfg?.symbol ?? d.symbol} busy={busy} />
           <WindowsEditor d={d} set={set} appTz={appTz} />
           <div className="text-slate-400 font-semibold pt-2">Timeframe</div>
           <div className="flex gap-2 items-center">
@@ -492,7 +556,7 @@ function Config({ cfg, sp, atr }: { cfg?: NoisyConfig; sp?: NoisySpreadInfo; atr
             Telegram la fiecare trade <span className="text-slate-500">(pe M1 = zeci de mesaje / zi; pornire, blocări și buget se trimit mereu)</span>
           </label>
           <div className="pt-2"><SpreadConfig d={d} set={set} sp={sp} atr={atr} /></div>
-          <div className="text-slate-400 font-semibold pt-2">Știri High pe {d.symbol.slice(0, 3)}/{d.symbol.slice(3, 6)}</div>
+          <div className="text-slate-400 font-semibold pt-2">Știri High pe valutele pieței ({d.symbol})</div>
           <label className="flex items-center gap-2">
             <input type="checkbox" checked={d.news.enabled} onChange={e => set(c => { c.news.enabled = e.target.checked; })} />
             fără intrări cu
@@ -580,6 +644,7 @@ function Config({ cfg, sp, atr }: { cfg?: NoisyConfig; sp?: NoisySpreadInfo; atr
         cost/ATR ≥ {String(prof.min_atr_over_cost)} ({d.timeframe}). Parametrii strategiei (EMA / ATR / deviație / SL) se schimbă doar în noisy_engine/config.json (orice schimbare = variantă netestată).
       </div>
       {save.isError && <div className="text-loss">{(save.error as Error).message}</div>}
+      {notice && <div className="text-yellow-300">{notice}</div>}
     </div>
   );
 }
@@ -636,7 +701,8 @@ export function NoisyEnginePage() {
         <Market st={st} />
         <Score st={st} />
       </div>
-      <Config cfg={st?.config} sp={st?.spread} atr={st?.last?.atr} />
+      <Config cfg={st?.config} sp={st?.spread} atr={st?.last?.atr}
+        busy={!!st?.running && (!!st?.open || !!st?.real_positions?.length)} />
       <Trades />
       <Logs />
       {!!st?.errors?.length && <pre className="text-[10px] text-loss whitespace-pre-wrap">{st.errors.join("\n")}</pre>}

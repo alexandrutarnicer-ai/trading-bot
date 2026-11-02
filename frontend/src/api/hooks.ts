@@ -955,7 +955,7 @@ export const useDailySetMode = () => {
 };
 
 // ── Noisy Engine ─────────────────────────────────────────────────────────────
-import type { NoisyStatus, NoisyTrade, NoisyConfig } from "./types";
+import type { NoisyStatus, NoisyTrade, NoisyConfig, NoisyMarketInfo } from "./types";
 
 export const useNoisyStatus = () =>
   useQuery<NoisyStatus>({
@@ -994,11 +994,22 @@ export const useNoisyAction = () => {
   });
 };
 
+/** Specificatiile pietei din MT5 (point / digits / spread live / lot min / marja) — doar citire */
+export const useNoisyMarketInfo = (symbol: string | undefined) =>
+  useQuery<NoisyMarketInfo>({
+    queryKey: ["noisy-market-info", symbol],
+    queryFn:  () => apiFetch(`/noisy/market-info?symbol=${encodeURIComponent(symbol ?? "")}`),
+    enabled: !!symbol,
+    staleTime: 10_000,
+    refetchInterval: 15_000,
+    refetchIntervalInBackground: false,
+  });
+
 export const useNoisySaveConfig = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: Partial<NoisyConfig>) =>
-      apiFetch<NoisyConfig>("/noisy/config", { method: "PUT", body }),
+      apiFetch<NoisyConfig & { _notice?: string }>("/noisy/config", { method: "PUT", body }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["noisy-status"] }),
   });
 };

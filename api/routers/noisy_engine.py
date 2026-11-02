@@ -321,7 +321,26 @@ def noisy_config_save(body: dict):
         win.pop("start", None)
         win.pop("end", None)                       # derivate din intervals (primul interval)
     cur = load_config()
-    before = cur["mode"]
+    before, old_sym = cur["mode"], cur["symbol"]           # inainte de merge (merge modifica `cur` in loc)
+    notice = None
+    new_sym = str(body.get("symbol") or cur["symbol"]).strip().upper()
+    if new_sym != cur["symbol"]:
+        mi = market_info(new_sym)
+        if not mi.get("ok"):
+            raise HTTPException(400, f"Piață invalidă: {mi.get('detail')}")
+        if not mi.get("tradable"):
+            raise HTTPException(400, f"{new_sym} nu e tranzacționabil în contul MT5 curent (dezactivat / doar închidere)")
+        st = _read(STATUS_FILE, {})
+        pid = _read_pid()
+        if pid is not None and _pid_alive(pid) and (st.get("open") or st.get("real_positions")):
+            raise HTTPException(409, f"{cur['symbol']} are o poziție deschisă (virtuală sau reală) — schimbă piața după "
+                                     "ieșirea ei sau oprește engine-ul.")
+        body["symbol"] = new_sym
+        sp = body.get("spread") or {}
+        if (sp.get("mode") or cur["spread"]["mode"]) == "manual" or (sp.get("max_mode") or cur["spread"]["max_mode"]) == "manual":
+            body["spread"] = {**sp, "mode": "auto", "max_mode": "auto"}
+            notice = (f"Spread-ul era manual pentru {old_sym} — trecut pe AUTO pentru {new_sym} (points-urile diferă "
+                      f"între piețe; acum {mi.get('spread_live_points')} points live).")
 
     def merge(a, b):
         for k, v in b.items():
@@ -331,11 +350,14 @@ def noisy_config_save(body: dict):
                 a[k] = v
         return a
     clean = save_config(merge(cur, body or {}))
+    if clean["symbol"] != old_sym:
+        _tg(f"🔁 <b>Noisy Engine — piața schimbată</b>: {old_sym} → {clean['symbol']}\n"
+            "Backtestul / pragurile au fost testate doar pe USDJPY — noua piață = variantă netestată.")
     if clean["mode"] != before:
         _tg("🟢 <b>Noisy Engine — mod EXECUȚIE</b>\nOrdine reale de la următorul semnal (DEMO, sau REAL dacă e "
             "deblocat în Settings → Trading LIVE → Noisy Engine)." if clean["mode"] == "execute" else
             "🧪 <b>Noisy Engine — mod SHADOW</b>\nFără ordine noi; trade-uri virtuale.")
-    return clean
+    return {**clean, "_notice": notice} if notice else clean
 
 
 @router.get("/logs")

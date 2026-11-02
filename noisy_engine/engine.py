@@ -216,9 +216,25 @@ def friday_block(now_ro: datetime, settings: dict | None = None) -> tuple[dateti
     return a, datetime(fri.year, fri.month, fri.day) + timedelta(days=1)
 
 
+def symbol_currencies(symbol: str) -> set[str]:
+    """Valutele pietei pentru stiri: harta comuna (live.news_guard.SYMBOL_CURRENCIES — acopera si indici / metale,
+    ex. US500 → USD, GER40 → EUR); pereche FX necunoscuta → primele 3 + urmatoarele 3 litere."""
+    sym = str(symbol).upper()
+    try:
+        from live.news_guard import SYMBOL_CURRENCIES
+        if sym in SYMBOL_CURRENCIES:
+            return set(SYMBOL_CURRENCIES[sym])
+        base = sym.split(".")[0]
+        if base in SYMBOL_CURRENCIES:
+            return set(SYMBOL_CURRENCIES[base])
+    except Exception:
+        pass
+    return {sym[:3], sym[3:6]} if len(sym) >= 6 and sym[:6].isalpha() else set()
+
+
 def news_blocks(symbol: str, events: list[dict], pre: int, post: int) -> list[tuple[datetime, datetime]]:
     """Intervalele (ora RO) in care Noisy nu intra: stiri High pe valutele pietei."""
-    curs = {symbol[:3].upper(), symbol[3:6].upper()}
+    curs = symbol_currencies(symbol)
     out = []
     for e in events or []:
         if str(e.get("impact", "")).lower() != "high" or str(e.get("currency", "")).upper() not in curs:
@@ -264,6 +280,27 @@ class NoisyEngine:
             self.account = {"login": a.login, "server": a.server, "is_demo": getattr(a, "trade_mode", None) == 0}
         self.mt5.symbol_select(self.cfg["symbol"], True)
         return True
+
+    PER_SYMBOL = ("checked", "vetoed", "recorded", "placed", "rejects_logged", "spread_ref")
+
+    def _switch_symbol(self, sym: str) -> None:
+        """Piata schimbata din UI: starea per semnal (ID-uri pe timestamp, fara simbol) e ARHIVATA pe piata veche
+        si restaurata pentru cea noua — altfel un semnal USDJPY de la 10:23 ar „ascunde” unul US500 de la 10:23,
+        iar revenirea pe piata veche in aceeasi zi ar dubla trade-urile in jurnal. Bugetul ramane comun."""
+        old = self.state.get("symbol")
+        if old == sym:
+            return
+        if old:
+            arch = self.state.setdefault("per_symbol", {})
+            arch[old] = {k: self.state.get(k) for k in self.PER_SYMBOL}
+            restored = arch.pop(sym, {}) or {}
+            for k in self.PER_SYMBOL:
+                self.state[k] = restored.get(k) if restored.get(k) is not None else ({} if k == "vetoed" else None if k == "spread_ref" else [])
+            self._spread_samples = []
+            log.info(f"Noisy: piața schimbată {old} → {sym} (starea per semnal arhivată / restaurată)")
+            self._event_once(f"symbol-{old}-{sym}-{datetime.now(RO):%Y%m%d%H%M}",
+                             f"🔁 <b>Noisy Engine — piața schimbată</b>: {old} → {sym}")
+        self.state["symbol"] = sym
 
     def _err(self, msg: str) -> None:
         log.warning(msg)
@@ -518,6 +555,7 @@ class NoisyEngine:
             return st
         now_ro = now_utc.astimezone(RO).replace(tzinfo=None)
         day = now_ro.date()
+        self._switch_symbol(sym)
         paused = bool(_read_json(CONTROL_FILE, {}).get("paused"))
         self._refresh_offset(sym, now_utc)
         status = {"running": True, "mode": cfg["mode"], "symbol": sym, "timeframe": cfg["timeframe"],
