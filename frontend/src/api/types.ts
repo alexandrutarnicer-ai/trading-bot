@@ -1016,6 +1016,9 @@ export interface NoisyConfig {
   window: { start: string; end: string; days: number[] };
   strategy: Record<string, number | boolean>;
   news: { enabled: boolean; pre_min: number; post_min: number };
+  /** spread in POINTS MT5: tipic (cost) auto/manual + maxim acceptat auto (× tipic) / manual */
+  spread: { mode: "auto" | "manual"; manual_points: number | null; max_mode: "auto" | "manual";
+            max_mult: number; max_points: number; legacy_floor_price?: number };
   limits: { max_trades_day: NoisyLimit; max_losses_day: NoisyLimit; max_consec_losses: NoisyLimit };
   tf_profiles: Record<"M1" | "M5", { limits: { max_trades_day: NoisyLimit; max_losses_day: NoisyLimit; max_consec_losses: NoisyLimit };
                                      min_atr_over_cost: number }>;
@@ -1062,6 +1065,16 @@ export interface NoisyStatus {
   config?: NoisyConfig;
   execution?: { active: boolean; reason: string };
   real_positions?: { ticket: number; type: string; volume: number; price: number; sl: number; tp: number; profit: number }[];
+  spread?: NoisySpreadInfo;
+  rejects_today?: Record<string, number>;
+  rejected_recent?: { t: string; dir: string; reason: string; detail: string }[];
+}
+export interface NoisySpreadInfo {
+  mode: "auto" | "manual"; max_mode?: "auto" | "manual"; source: string; max_source?: string;
+  point?: number; digits?: number; pip_points?: number;
+  typical_points?: number; typical_price?: number; typical_pips?: number;
+  max_points?: number; max_price?: number; max_pips?: number;
+  live_points?: number | null; auto_note?: string;
 }
 
 // ── Dashboard global: piete active pe toate engine-urile (/dashboard/markets) ──

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { AlertTriangle, Loader2, OctagonX, Pause, Play, RotateCcw, Square, Zap } from "lucide-react";
 import { useNoisyAction, useNoisyLogs, useNoisySaveConfig, useNoisyStatus, useNoisyTrades, useTimezone } from "../api/hooks";
-import type { NoisyConfig, NoisyStatus } from "../api/types";
+import type { NoisyConfig, NoisySpreadInfo, NoisyStatus } from "../api/types";
 
 // Ora RO (fereastra Noisy e definita si testata in ora RO) → ora din alt fus, pentru afisare.
 function roToZone(hm: string, zone: string): string {
@@ -41,6 +41,84 @@ const STATE_CLS: Record<string, string> = {
   error: "bg-loss/15 text-loss border-loss/40",
 };
 const DAYS = ["L", "Ma", "Mi", "J", "V", "S", "D"];
+const REJECT_LABEL: Record<string, string> = {
+  cost_atr: "cost/ATR", spread: "spread", stiri: "știri", trend: "trend", flip_flop: "flip-flop",
+  veto: "protecții globale / spread live", cooldown: "pauză după ieșire", blocat: "pauză / buget",
+  limita_trade: "limita trade-uri", limita_pierderi: "limita pierderi", serie_pierderi: "serie pierderi",
+  interval: "interval minim", suprapuse: "max trade-uri simultane", directie: "direcție nepermisă",
+};
+
+/** Spread: aceeasi valoare in points (unitatea MT5 din Market Watch), pips si pret. */
+function fmtSpread(points: number | null | undefined, sp?: NoisySpreadInfo) {
+  if (points == null) return "—";
+  const pt = sp?.point, pp = sp?.pip_points ?? 1, dg = sp?.digits ?? 5;
+  const price = pt ? (points * pt).toFixed(Math.max(dg, 1)) : "?";
+  return `${+points.toFixed(2)} points` + (pp > 1 ? ` = ${+(points / pp).toFixed(2)} pips` : "") + ` = ${price}`;
+}
+
+function SpreadConfig({ d, set, sp, atr }: { d: NoisyConfig; set: (fn: (x: NoisyConfig) => void) => void; sp?: NoisySpreadInfo;
+                         atr?: number | null }) {
+  const x = d.spread;
+  const num = (v: string) => (v === "" ? 0 : Number(v));
+  const live = sp?.live_points;
+  const typical = x.mode === "manual" ? (x.manual_points ?? sp?.typical_points ?? 0) : (sp?.typical_points ?? live ?? null);
+  const max = x.max_mode === "manual" ? x.max_points : typical == null ? null : x.max_mult * typical;
+  const prof = d.tf_profiles[d.timeframe];
+  const cost = typical == null ? null : typical * (1 + 2 * Number(d.strategy.slip_frac ?? 0.25));
+  const btn = (on: boolean) => `px-2 py-0.5 rounded border ${on ? "border-amber-500/50 text-amber-200" : "border-surface-border text-slate-500"}`;
+  return (
+    <div className="space-y-1.5">
+      <div className="text-slate-400 font-semibold">Spread {d.symbol}
+        <span className="font-normal text-slate-500"> · unitatea = points MT5 (coloana „Spread” din Market Watch){sp?.pip_points && sp.pip_points > 1 ? ` · 1 pip = ${sp.pip_points} points` : ""}</span>
+      </div>
+      <div className="text-[11px] text-slate-400">Acum în MT5: <b className="text-white">{fmtSpread(live, sp)}</b></div>
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="w-28 text-slate-300" title="Costul presupus al unui trade; intră și în filtrul cost/ATR.">Spread tipic (cost)</span>
+        <button className={btn(x.mode === "auto")} onClick={() => set(c => { c.spread.mode = "auto"; })}>Auto (MT5 live)</button>
+        <button className={btn(x.mode === "manual")} onClick={() => set(c => {
+          c.spread.mode = "manual"; c.spread.manual_points = c.spread.manual_points ?? (sp?.typical_points ?? live ?? 0); })}>Manual</button>
+        {x.mode === "manual" && (
+          <span className="flex items-center gap-1">
+            <input type="number" min={0} step={0.5} value={x.manual_points ?? ""} onChange={e => set(c => { c.spread.manual_points = num(e.target.value); })}
+              className="w-20 bg-surface border border-surface-border rounded px-2 py-0.5" /> points
+          </span>
+        )}
+      </div>
+      <div className="text-[10px] text-slate-500 pl-28">
+        = {fmtSpread(typical, sp)} · {x.mode === "auto" ? (sp?.auto_note || "mediana spread-ului live, înghețată pe zi la deschiderea ferestrei") : "valoarea ta (override)"}
+      </div>
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="w-28 text-slate-300" title="Spread-ul LIVE peste care semnalul e respins (verificat la fiecare semnal).">Spread maxim</span>
+        <button className={btn(x.max_mode === "auto")} onClick={() => set(c => { c.spread.max_mode = "auto"; })}>Auto</button>
+        <button className={btn(x.max_mode === "manual")} onClick={() => set(c => {
+          c.spread.max_mode = "manual"; c.spread.max_points = c.spread.max_points || +(max ?? 0).toFixed(1); })}>Manual</button>
+        {x.max_mode === "auto" ? (
+          <span className="flex items-center gap-1">
+            <input type="number" min={1} max={20} step={0.1} value={x.max_mult} onChange={e => set(c => { c.spread.max_mult = num(e.target.value); })}
+              className="w-16 bg-surface border border-surface-border rounded px-2 py-0.5" /> × tipic
+          </span>
+        ) : (
+          <span className="flex items-center gap-1">
+            <input type="number" min={0} step={0.5} value={x.max_points} onChange={e => set(c => { c.spread.max_points = num(e.target.value); })}
+              className="w-20 bg-surface border border-surface-border rounded px-2 py-0.5" /> points <span className="text-slate-500">(0 = fără limită)</span>
+          </span>
+        )}
+      </div>
+      <div className="text-[10px] text-slate-500 pl-28">= {max ? fmtSpread(max, sp) : "fără limită"}</div>
+      {typical != null && max != null && max > 0 && typical > max && (
+        <div className="text-[11px] text-loss">Spread-ul tipic e peste maxim → TOATE semnalele vor fi respinse.</div>
+      )}
+      {cost != null && sp?.point && (
+        <div className="text-[10px] text-yellow-300/90 rounded border border-yellow-500/30 bg-yellow-500/5 px-2 py-1">
+          Filtrul cost/ATR ({d.timeframe}): intră doar când ATR ≥ {prof.min_atr_over_cost} × cost ≈ {fmtSpread(prof.min_atr_over_cost * cost, sp)}.
+          Un spread mai mare înseamnă mai puține (sau zero) trade-uri — e intenționat: sub acest prag costul mănâncă mișcarea.
+          {atr && sp.point ? <> ATR-ul ultimei bare {d.timeframe}: {fmtSpread(atr / sp.point, sp)} → trade-uri doar cu un spread tipic sub
+            ≈ {fmtSpread(atr / sp.point / (prof.min_atr_over_cost * (1 + 2 * Number(d.strategy.slip_frac ?? 0.25))), sp)}.</> : null}
+        </div>
+      )}
+    </div>
+  );
+}
 
 const fmtR = (v?: number | null, d = 2) => (v == null ? "—" : `${v >= 0 ? "+" : ""}${v.toFixed(d)}R`);
 const fmt$ = (v?: number | null) => (v == null ? "—" : `${v >= 0 ? "+" : ""}${v.toFixed(2)} $`);
@@ -236,6 +314,17 @@ function Market({ st }: { st?: NoisyStatus }) {
           Poziții REALE Noisy: {st.real_positions.map(p => `#${p.ticket} ${p.type} ${p.volume} @ ${p.price.toFixed(3)} (${p.profit >= 0 ? "+" : ""}${p.profit.toFixed(2)} $)`).join(" · ")}
         </div>
       )}
+      {!!st?.rejected_recent?.length && (
+        <div className="text-[11px] border-t border-surface-border pt-2 space-y-0.5">
+          <div className="text-slate-500">Semnale respinse azi
+            {st.rejects_today && <> ({Object.entries(st.rejects_today).map(([k, v]) => `${REJECT_LABEL[k] ?? k} ${v}`).join(" · ")})</>}:</div>
+          {st.rejected_recent.slice(-5).reverse().map(r => (
+            <div key={r.t + r.reason} className="text-slate-400">
+              {r.t.slice(11, 16)} {r.dir} — <b className="text-yellow-300/90">{REJECT_LABEL[r.reason] ?? r.reason}</b>: {r.detail}
+            </div>
+          ))}
+        </div>
+      )}
       {!!st?.news_next?.length && (
         <div className="text-[11px] text-slate-500">Știri blocante: {st.news_next.map(([a, b]) => `${a.slice(5, 16).replace("T", " ")}–${b.slice(11, 16)}`).join(" · ")}</div>
       )}
@@ -268,7 +357,7 @@ function Score({ st }: { st?: NoisyStatus }) {
   );
 }
 
-function Config({ cfg }: { cfg?: NoisyConfig }) {
+function Config({ cfg, sp, atr }: { cfg?: NoisyConfig; sp?: NoisySpreadInfo; atr?: number | null }) {
   const save = useNoisySaveConfig();
   const [d, setD] = useState<NoisyConfig | undefined>(cfg);
   const appTz = useTimezone().data?.timezone;   // RO / DE — doar pentru echivalentul afisat al ferestrei
@@ -352,6 +441,7 @@ function Config({ cfg }: { cfg?: NoisyConfig }) {
             <input type="checkbox" checked={d.notify_trades} onChange={e => set(c => { c.notify_trades = e.target.checked; })} />
             Telegram la fiecare trade <span className="text-slate-500">(pe M1 = zeci de mesaje / zi; pornire, blocări și buget se trimit mereu)</span>
           </label>
+          <div className="pt-2"><SpreadConfig d={d} set={set} sp={sp} atr={atr} /></div>
           <div className="text-slate-400 font-semibold pt-2">Știri High pe {d.symbol.slice(0, 3)}/{d.symbol.slice(3, 6)}</div>
           <label className="flex items-center gap-2">
             <input type="checkbox" checked={d.news.enabled} onChange={e => set(c => { c.news.enabled = e.target.checked; })} />
@@ -437,7 +527,7 @@ function Config({ cfg }: { cfg?: NoisyConfig }) {
       </div>
       <div className="text-[10px] text-slate-500 border-t border-surface-border pt-2">
         Strategia (testată pe 12 luni): EMA{String(d.strategy.ema)} ± {String(d.strategy.dev_atr)}×ATR{String(d.strategy.atr)} · SL {String(d.strategy.sl_atr)}×ATR · țintă {Number(d.strategy.tp_rr) ? `${d.strategy.tp_rr}R` : "EMA"} · stop de timp {String(d.strategy.time_stop_bars)} bare ·
-        cost/ATR ≥ {String(prof.min_atr_over_cost)} ({d.timeframe}) · spread live ≤ {String(d.strategy.spread_max_mult)}× normal. Parametrii strategiei se schimbă doar în noisy_engine/config.json (orice schimbare = variantă netestată).
+        cost/ATR ≥ {String(prof.min_atr_over_cost)} ({d.timeframe}). Parametrii strategiei (EMA / ATR / deviație / SL) se schimbă doar în noisy_engine/config.json (orice schimbare = variantă netestată).
       </div>
       {save.isError && <div className="text-loss">{(save.error as Error).message}</div>}
     </div>
@@ -496,7 +586,7 @@ export function NoisyEnginePage() {
         <Market st={st} />
         <Score st={st} />
       </div>
-      <Config cfg={st?.config} />
+      <Config cfg={st?.config} sp={st?.spread} atr={st?.last?.atr} />
       <Trades />
       <Logs />
       {!!st?.errors?.length && <pre className="text-[10px] text-loss whitespace-pre-wrap">{st.errors.join("\n")}</pre>}

@@ -31,7 +31,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from noisy_engine.config import DATA_DIR, TIMEFRAMES, load_config, save_default_config  # noqa: E402
+from noisy_engine.config import DATA_DIR, TIMEFRAMES, load_config, resolve_spread, save_default_config  # noqa: E402
 from noisy_engine.strategy import run_day  # noqa: E402
 import position_sizing as ps  # noqa: E402
 from noisy_engine import executor as X  # noqa: E402
@@ -251,6 +251,8 @@ class NoisyEngine:
         self._news_fetch = news_fetch
         self._guard = guard
         self._news_cache: tuple[float, list] = (0.0, [])
+        self._spread_samples: list[tuple[float, float]] = []   # (epoch, points) — spread-ul LIVE observat
+        self.spread_info: dict = {}
 
     def connect(self) -> bool:
         if not self.mt5.initialize():
@@ -319,18 +321,49 @@ class NoisyEngine:
         except Exception as e:
             return True, f"(verificare globala indisponibila: {e})"
 
+    SPREAD_WINDOW_S = 1800          # mediana spread-ului live pe ultimele 30 min (auto)
+
+    def _sample_spread(self, sym: str, point: float | None) -> float | None:
+        """Inregistreaza spread-ul LIVE (points) al tick-ului curent; intoarce valoarea curenta."""
+        tick = self.mt5.symbol_info_tick(sym)
+        if tick is None or not getattr(tick, "ask", 0) or not getattr(tick, "bid", 0) or not point:
+            return None
+        pts = (tick.ask - tick.bid) / point
+        now = time.time()
+        self._spread_samples = [x for x in self._spread_samples if now - x[0] <= self.SPREAD_WINDOW_S] + [(now, pts)]
+        return pts
+
+    def _auto_spread_points(self, sym: str, day, in_window: bool) -> tuple[float | None, str]:
+        """Spread-ul TIPIC in mod auto: mediana tick-urilor live din ultimele 30 min, INGHETATA pe zi la prima
+        iteratie din fereastra (o valoare pe zi → recalcularea zilei e identica la fiecare iteratie / restart)."""
+        ref = self.state.get("spread_ref") or {}
+        if ref.get("day") == str(day) and ref.get("symbol") == sym:
+            return ref["points"], f"înghețat azi la {ref['at'][11:16]} (mediana a {ref['n']} tick-uri live)"
+        vals = sorted(v for _, v in self._spread_samples)
+        if not vals:
+            return None, "fără tick-uri încă"
+        med = round(vals[len(vals) // 2], 3)
+        if in_window:
+            self.state["spread_ref"] = {"day": str(day), "symbol": sym, "points": med, "n": len(vals),
+                                        "at": datetime.now(RO).isoformat(timespec="seconds")}
+            log.info(f"Noisy {sym}: spread tipic AUTO pentru azi = {med:.1f} points (mediana a {len(vals)} tick-uri live)")
+            return med, f"înghețat azi (mediana a {len(vals)} tick-uri live)"
+        return med, f"provizoriu (mediana a {len(vals)} tick-uri; se îngheață la deschiderea ferestrei)"
+
     def _live_spread_ok(self, sym: str) -> tuple[bool, str]:
-        """Spread-ul REAL (tick) la momentul semnalului: barele MT5 retin doar minimul din bara."""
-        p = self.cfg["strategy"]
-        if p["spread_max_mult"] <= 0 or p["spread_floor"] <= 0:
+        """Spread-ul LIVE (tick) la momentul semnalului vs spread-ul MAXIM (spread.max_*, rezolvat in pret)."""
+        lim = self.cfg["strategy"].get("spread_max", 0.0)
+        if lim <= 0:
             return True, ""
         tick = self.mt5.symbol_info_tick(sym)
         if tick is None or not tick.ask or not tick.bid:
             return True, ""
         live = tick.ask - tick.bid
-        lim = p["spread_max_mult"] * p["spread_floor"]
         if live > lim + 1e-12:
-            return False, f"SPREAD: {live:.5g} > {lim:.5g} ({p['spread_max_mult']}× spread-ul normal)"
+            pt = self.spread_info.get("point") or 0
+            pts = f" = {live / pt:.1f} points" if pt else ""
+            mpts = f" = {lim / pt:.1f} points" if pt else ""
+            return False, f"SPREAD live {live:.5g}{pts} > maxim {lim:.5g}{mpts} ({self.spread_info.get('max_source', '')})"
         return True, ""
 
     def _size(self, entry: float, sl: float) -> dict:
@@ -496,6 +529,14 @@ class NoisyEngine:
             status["server_time_rule"] = "NY+7 (fara tick proaspat)"
         si = self.mt5.symbol_info(sym)
         tf_min = TIMEFRAMES[cfg["timeframe"]]
+        # spread: tick-ul live → tipic (auto, inghetat pe zi / manual) + maxim → strategy.spread_floor / spread_max
+        from noisy_engine.strategy import _in_window as _inw
+        point = getattr(si, "point", None) if si else None
+        live_pts = self._sample_spread(sym, point)
+        auto_pts, auto_note = self._auto_spread_points(sym, day, _inw(now_ro, cfg["window"]))
+        self.spread_info = resolve_spread(cfg, point, auto_pts, getattr(si, "digits", None) if si else None)
+        self.spread_info.update(live_points=None if live_pts is None else round(live_pts, 2),
+                                auto_note=auto_note if cfg["spread"]["mode"] == "auto" else "")
         # toata ziua de azi + istoric pentru indicatori (recalcularea zilei trebuie sa vada si dimineata)
         need = int((now_ro.hour * 60 + now_ro.minute) / tf_min) + 400
         rates = self.mt5.copy_rates_from_pos(sym, getattr(self.mt5, f"TIMEFRAME_{cfg['timeframe']}"), 0, min(need, 3000))
@@ -523,14 +564,25 @@ class NoisyEngine:
             if not ok:
                 self.state["vetoed"].setdefault(str(day), []).append(pend["signal_t"])
                 global_block = why
+                kind = "spread prea mare" if why.startswith("SPREAD") else "protecție globală"
                 self._event_once(f"veto-{pend['signal_t']}",
-                                 f"🛡 <b>Noisy SHADOW — {sym} {pend['dir']} blocat global</b>\n{why}")
+                                 f"🛡 <b>Noisy {'EXECUȚIE' if cfg['mode'] == 'execute' else 'SHADOW'} — {sym} {pend['dir']} "
+                                 f"respins ({kind})</b>\n{why}")
                 res = run_day(bars, day, cfg, news_blocks=blocks, vetoed=vetoed | {pend["signal_t"]},
                               no_new_entries=bool(lock) or paused)
             else:
                 fresh_signal = pend
                 self._event_once(f"sig-{pend['signal_t']}", f"Noisy {sym}: semnal {pend['dir']} la {pend['signal_t'][11:16]} "
                                  f"— intrare la deschiderea barei urmatoare", notify=False)
+        # semnale respinse de filtrele strategiei → jurnal (o data per semnal; fara Telegram — pot fi zeci / zi)
+        logged = self.state.setdefault("rejects_logged", [])
+        for rj in res.get("rejected", []):
+            key = f"{rj['t']}|{rj['reason']}"
+            if key in logged:
+                continue
+            logged.append(key)
+            log.info(f"Noisy {sym}: semnal {rj['dir']} la {rj['t'][11:16]} RESPINS — {rj['reason']}: {rj['detail']}")
+        self.state["rejects_logged"] = logged[-1000:]
         # trade-uri inchise → jurnal (o singura data)
         for tr in res["trades"]:
             if tr["id"] in self.state["recorded"]:
@@ -609,6 +661,12 @@ class NoisyEngine:
             state, reason = "outside_window", f"intră doar {cfg['window']['start']}–{cfg['window']['end']} (ora RO)"
         else:
             state, reason = "running", "aștept semnal"
+            rc = res.get("reject_counts") or {}
+            if rc:
+                top = ", ".join(f"{k} {v}" for k, v in sorted(rc.items(), key=lambda kv: -kv[1])[:3])
+                reason += f" · semnale respinse azi: {top}"
+                if rc.get("cost_atr") and rc["cost_atr"] == sum(rc.values()):
+                    reason += " — costul (spread) e prea mare față de mișcarea pieței (filtrul cost/ATR)"
         today = [t for t in trades_all if t.get("day") == str(day) and t.get("tf", "M5") == cfg["timeframe"]]
         real_pos = []
         if ex_ok or cfg["mode"] == "execute":
@@ -619,6 +677,8 @@ class NoisyEngine:
             except Exception:
                 real_pos = []
         status.update(execution={"active": ex_ok, "reason": ex_why}, real_positions=real_pos)
+        status.update(spread=self.spread_info, rejects_today=res.get("reject_counts") or {},
+                      rejected_recent=(res.get("rejected") or [])[-20:])
         status.update(state=state, state_label=STATES[state], reason=reason, open=op, pending=res.get("pending"),
                       last=res.get("last"), counters=res["counters"], budget=bud,
                       today={"trades": len(today), "R": round(sum(t["R"] for t in today), 3),

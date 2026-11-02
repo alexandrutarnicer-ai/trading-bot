@@ -25,7 +25,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 sys.path.insert(0, ROOT)
 sys.stdout.reconfigure(encoding="utf-8")
 
-from noisy_engine.config import load_config  # noqa: E402
+from noisy_engine.config import load_config, resolve_spread  # noqa: E402
 from noisy_engine.engine import rates_to_bars, scorecard  # noqa: E402
 from noisy_engine.strategy import run_day  # noqa: E402
 
@@ -38,7 +38,7 @@ def raw_cfg(cfg: dict) -> dict:
     c = copy.deepcopy(cfg)
     s = c["strategy"]
     s.update(cooldown_bars=0, cooldown_after_sl_bars=0, max_flips_per_hour=0, trend_filter=False,
-             spread_max_mult=0, min_atr_over_cost=0)
+             spread_max_mult=0, spread_max=0, min_atr_over_cost=0)
     for k in c["limits"]:
         c["limits"][k]["enabled"] = False
     return c
@@ -76,11 +76,19 @@ def main() -> None:
     ap.add_argument("--raw", action="store_true")
     ap.add_argument("--tf", choices=["M1", "M5"], help="suprascrie timeframe-ul din config")
     ap.add_argument("--set", action="append", default=[], help="strategy.cheie=valoare / limits.cheie=valoare (enabled)")
+    ap.add_argument("--spread-points", type=float, default=None,
+                    help="spread TIPIC in points MT5 (ex. 9 = USDJPY live pe contul Standard). Fara el: sectiunea `spread` "
+                         "din config; in mod auto (fara tick-uri live) = rezerva strategy.spread_floor (studiul initial)")
     a = ap.parse_args()
     assert mt5.initialize()
     cfg = load_config()
     if a.tf:
         cfg["timeframe"] = a.tf
+    si = mt5.symbol_info(cfg["symbol"])
+    if a.spread_points is not None:
+        cfg["spread"]["mode"] = "auto"
+    print("spread:", json.dumps(resolve_spread(cfg, si.point if si else None, a.spread_points, si.digits if si else None),
+                                ensure_ascii=False))
     for kv in a.set:
         k, v = kv.split("=")
         sec, key = k.split(".")
