@@ -1027,6 +1027,8 @@ export interface NoisyConfig {
                 phase2_zone_pct: number; lock2_pct: number };
   budget: { capital: number; min_remaining: number };
   sizing: { risk_pct: number };
+  /** trade-uri suprapuse — OPTIONAL, oprit implicit */
+  overlap: { enabled: boolean; max_open: number; min_interval_min: number; same_direction: boolean; opposite_direction: boolean };
 }
 export interface NoisyTrade {
   id: string; symbol: string; day: string; dir: "LONG" | "SHORT";
@@ -1053,6 +1055,7 @@ export interface NoisyStatus {
   paused?: boolean;
   heartbeat?: string;
   open?: { id: string; dir: string; entry: number; sl: number; tp: number; float_R: number; bars_held: number; entry_t: string } | null;
+  opens?: { id: string; dir: string; entry: number; sl: number; tp: number; float_R: number; bars_held: number; entry_t: string }[];
   pending?: { dir: string; signal_t: string } | null;
   last?: { t: string; close: number; ema: number; atr: number | null; dev_atr: number | null; spread: number; er: number | null } | null;
   counters?: { trades: number; losses: number; consec_losses: number; flips_hour: number };
