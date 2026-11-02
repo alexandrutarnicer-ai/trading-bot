@@ -49,8 +49,6 @@
   "capital_usd": 197.14,
   "council_primary_source": null,
   "disabled_triggers": [
-    "breakout_tension",
-    "heartbeat",
     "vol_spike"
   ]
 }

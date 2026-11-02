@@ -1,0 +1,35 @@
+{
+  "events": {
+    "2026-11-02|GBPUSD": [
+      "entry",
+      "closed"
+    ],
+    "2026-11-02|GBPUSD|size": {
+      "lots": 0.03,
+      "risk_money": 1.815,
+      "target_money": 2.0609,
+      "raw_lots": 0.034064,
+      "at_min_lot": false,
+      "capped_max": false,
+      "ratio": 0.881,
+      "reason": null,
+      "currency": "USD",
+      "capital": 206.09
+    },
+    "2026-11-02|US500": [
+      "entry"
+    ],
+    "2026-11-02|US500|size": {
+      "lots": 0.1,
+      "risk_money": 1.565,
+      "target_money": 2.0522,
+      "raw_lots": 0.131131,
+      "at_min_lot": false,
+      "capped_max": false,
+      "ratio": 0.763,
+      "reason": null,
+      "currency": "USD",
+      "capital": 205.22
+    }
+  }
+}
