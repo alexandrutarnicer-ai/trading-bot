@@ -154,3 +154,20 @@ M5, costuri reale, M0. Dimineața: închidere forțată 16:25 RO (nu se suprapun
 
 Recomandare: ambele în **SHADOW** (zero ordine) — US500 după-amiaza ca motor principal, GBPUSD dimineața ca candidat de
 observație. Decizia de ordine reale se ia separat, pe datele shadow.
+
+## 9. Re-intrare în prima oră după deschidere (2026-11-02) — RESPINS
+
+Întrebare: dacă trade-ul zilei s-a închis pe SL (sau ziua a fost „invalidată”) în prima oră după deschiderea Londrei / New York-ului, să mai poată intra alte trade-uri? Script: `scripts/research_daily/orb_reentry.py` (aceleași reguli și costuri ca engine-ul; cu 1 trade/zi reproduce `orb_m5.run` trade cu trade: GBPUSD 3974, US500 2464). Re-intrare = după SL, o nouă rupere a ACELUIAȘI interval de deschidere (oricare margine), doar dacă intrarea e în primele W minute, max K trade-uri/zi, o poziție odată.
+
+| Piață | Variantă | Trade-uri | R/trade | Total R | DD | Verdict |
+|---|---|---|---|---|---|---|
+| GBPUSD | **Acum (1/zi)** | 3974 | **+0,075** | **+297,6** | −139 | OBSERVE |
+| GBPUSD | re-intrare 60 min, max 2 | 5793 | +0,027 | +156,1 | −192 | DEMOTE |
+| GBPUSD | re-intrare 60 min, max 3 | 6265 | +0,015 | +96,9 | −233 | DEMOTE |
+| US500 | **Acum (1/zi)** | 2464 | **+0,059** | **+145,8** | −55 | **KEEP** |
+| US500 | re-intrare 60 min, max 2 | 2931 | +0,049 | +143,2 | −61 | OBSERVE |
+| US500 | re-intrare 60 min, max 3 | 2945 | +0,050 | +147,0 | −61 | OBSERVE |
+
+Trade-urile ÎN PLUS, luate separat: GBPUSD −0,078R/trade (60 min, 1819 trade-uri; test −0,149R), US500 −0,006R (467; antrenare −0,161R, test +0,100R) — fără câștig. Ferestrele 30 / 90 / 120 min: la fel sau mai rău (US500: intrarea e la 10:00, deci în fereastra de 30 min nu există re-intrare). Motiv: după un SL, intervalul de deschidere s-a dovedit „fals” (piață în range), iar ruperea în sens opus eșuează la fel de des; avantajul ORB e în PRIMA rupere.
+
+Zilele „invalidate” pe GBPUSD (prima bară după interval atinge ambele margini, 322 de zile, aproape toate la 08:05): continuând căutarea, 314 trade-uri cu +0,326R — dar antrenare +0,458R / test −0,052R, 2013 aduce singur +57,8R, 2025–2026 negative, N* = 2 → zgomot, nu avantaj; în plus nerealizabil în live (ordinele stop se execută chiar în bara dublă). Decizie: rămâne 1 trade/zi/piață.
