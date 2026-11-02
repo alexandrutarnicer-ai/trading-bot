@@ -109,14 +109,39 @@ function SpreadConfig({ d, set, sp, atr }: { d: NoisyConfig; set: (fn: (x: Noisy
       {typical != null && max != null && max > 0 && typical > max && (
         <div className="text-[11px] text-loss">Spread-ul tipic e peste maxim → TOATE semnalele vor fi respinse.</div>
       )}
-      {cost != null && sp?.point && (
-        <div className="text-[10px] text-yellow-300/90 rounded border border-yellow-500/30 bg-yellow-500/5 px-2 py-1">
-          Filtrul cost/ATR ({d.timeframe}): intră doar când ATR ≥ {prof.min_atr_over_cost} × cost ≈ {fmtSpread(prof.min_atr_over_cost * cost, sp)}.
-          Un spread mai mare înseamnă mai puține (sau zero) trade-uri — e intenționat: sub acest prag costul mănâncă mișcarea.
-          {atr && sp.point ? <> ATR-ul ultimei bare {d.timeframe}: {fmtSpread(atr / sp.point, sp)} → trade-uri doar cu un spread tipic sub
-            ≈ {fmtSpread(atr / sp.point / (prof.min_atr_over_cost * (1 + 2 * Number(d.strategy.slip_frac ?? 0.25))), sp)}.</> : null}
+      <div className={`rounded border px-2 py-1.5 space-y-1 ${prof.cost_filter_enabled === false
+          ? "border-loss/40 bg-loss/5" : "border-yellow-500/30 bg-yellow-500/5"}`}>
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-slate-300 font-semibold" title="Intră doar când mișcarea pieței (ATR) e de cel puțin N ori costul unui trade.">
+            Filtru cost/ATR ({d.timeframe})</span>
+          <button className={btn(prof.cost_filter_enabled !== false)}
+            onClick={() => set(c => { c.tf_profiles[c.timeframe].cost_filter_enabled = true; })}>Activ</button>
+          <button className={btn(prof.cost_filter_enabled === false)}
+            onClick={() => set(c => { c.tf_profiles[c.timeframe].cost_filter_enabled = false; })}>Oprit (probă)</button>
+          {prof.cost_filter_enabled !== false && (
+            <span className="flex items-center gap-1">ATR ≥
+              <input type="number" min={1} max={200} step={0.5} value={prof.min_atr_over_cost}
+                onChange={e => set(c => { c.tf_profiles[c.timeframe].min_atr_over_cost = num(e.target.value); })}
+                className="w-14 bg-surface border border-surface-border rounded px-2 py-0.5" /> × cost
+              <span className="text-slate-500">(testat: M1 5, M5 15)</span>
+            </span>
+          )}
         </div>
-      )}
+        {prof.cost_filter_enabled === false ? (
+          <div className="text-[10px] text-loss">
+            OPRIT: Noisy intră și când costul (spread) mănâncă mișcarea — util ca să vezi engine-ul lucrând în SHADOW, dar
+            backtestul la spread real e puternic negativ fără filtru (USDJPY M1 −0,44R / trade). Pragul ({prof.min_atr_over_cost}×) se
+            păstrează și revine la reactivare. Nu-l lăsa oprit în EXECUȚIE.
+          </div>
+        ) : cost != null && sp?.point ? (
+          <div className="text-[10px] text-yellow-300/90">
+            Intră doar când ATR ≥ {prof.min_atr_over_cost} × cost ≈ {fmtSpread(prof.min_atr_over_cost * cost, sp)}. Un spread mai mare
+            înseamnă mai puține (sau zero) trade-uri — intenționat: sub acest prag costul mănâncă mișcarea.
+            {atr && sp.point ? <> ATR-ul ultimei bare {d.timeframe}: {fmtSpread(atr / sp.point, sp)} → trade-uri doar cu un spread tipic sub
+              ≈ {fmtSpread(atr / sp.point / (prof.min_atr_over_cost * (1 + 2 * Number(d.strategy.slip_frac ?? 0.25))), sp)}.</> : null}
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -693,7 +718,7 @@ function Config({ cfg, sp, atr, busy = false }: { cfg?: NoisyConfig; sp?: NoisyS
       </div>
       <div className="text-[10px] text-slate-500 border-t border-surface-border pt-2">
         Strategia (testată pe 12 luni): EMA{String(d.strategy.ema)} ± {String(d.strategy.dev_atr)}×ATR{String(d.strategy.atr)} · SL {String(d.strategy.sl_atr)}×ATR · țintă {Number(d.strategy.tp_rr) ? `${d.strategy.tp_rr}R` : "EMA"} · stop de timp {String(d.strategy.time_stop_bars)} bare ·
-        cost/ATR ≥ {String(prof.min_atr_over_cost)} ({d.timeframe}). Parametrii strategiei (EMA / ATR / deviație / SL) se schimbă doar în noisy_engine/config.json (orice schimbare = variantă netestată).
+        cost/ATR {prof.cost_filter_enabled === false ? "OPRIT" : `≥ ${prof.min_atr_over_cost}`} ({d.timeframe}). Parametrii strategiei (EMA / ATR / deviație / SL) se schimbă doar în noisy_engine/config.json (orice schimbare = variantă netestată).
       </div>
       {save.isError && <div className="text-loss">{(save.error as Error).message}</div>}
       {notice && <div className="text-yellow-300">{notice}</div>}

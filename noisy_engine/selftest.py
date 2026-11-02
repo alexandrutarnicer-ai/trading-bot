@@ -323,6 +323,15 @@ check("spread tipic 0,010 + cost/ATR ≥ 5 → niciun trade (cauza „nu mai pla
 rj = [x for x in r_inc["rejected"] if x["reason"] == "cost_atr"]
 check("… si respingerea e RAPORTATA: motiv cost_atr + ATR / cost / prag in detaliu",
       rj and "ATR" in rj[0]["detail"] and "cost" in rj[0]["detail"] and r_inc["reject_counts"].get("cost_atr"), r_inc["rejected"][:2])
+off = C.sanitize({"tf_profiles": {"M1": {"cost_filter_enabled": False, "min_atr_over_cost": 7}}})
+check("filtrul cost/ATR OPRIT din UI → strategy.min_atr_over_cost = 0, pragul (7) PASTRAT pentru reactivare",
+      off["strategy"]["min_atr_over_cost"] == 0 and off["tf_profiles"]["M1"]["min_atr_over_cost"] == 7)
+on = C.sanitize({"tf_profiles": {"M1": {"cost_filter_enabled": True, "min_atr_over_cost": 7}}})
+check("reactivat → pragul revine exact (7); implicit activ", on["strategy"]["min_atr_over_cost"] == 7
+      and CFG["tf_profiles"]["M1"]["cost_filter_enabled"] is True)
+cfg_off = raw(CFG)
+cfg_off["strategy"]["spread_floor"], cfg_off["strategy"]["min_atr_over_cost"] = 0.010, off["strategy"]["min_atr_over_cost"]
+check("acelasi scenariu din incident cu filtrul OPRIT → intra (proba in shadow)", S.run_day(bars_m1, DAY, cfg_off)["trades"])
 cfg_ok = raw(CFG)
 cfg_ok["strategy"]["min_atr_over_cost"] = 5.0
 check("acelasi semnal cu spread 0,001 → trade (filtrul nu blocheaza cand costul e mic)", S.run_day(bars_m1, DAY, cfg_ok)["trades"])

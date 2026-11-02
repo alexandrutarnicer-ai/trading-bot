@@ -294,9 +294,12 @@ def sanitize(cfg: dict) -> dict:
             lim = pr["limits"].get(k) or {}
             pr["limits"][k] = {"enabled": bool(lim.get("enabled", True)), "value": int(_num(lim.get("value"), 1, 1000, 1))}
         pr["min_atr_over_cost"] = _num(pr.get("min_atr_over_cost"), 0, 200, 5 if tf == "M1" else 15)
+        # filtrul cost/ATR comutabil din UI (ex. OPRIT pe perioada de proba in shadow); pragul se PASTREAZA, ca la
+        # reactivare sa revina exact valoarea testata. Oprit → strategy.min_atr_over_cost = 0 (fara filtru)
+        pr["cost_filter_enabled"] = bool(pr.get("cost_filter_enabled", True))
     act = profs[c["timeframe"]]
     c["limits"] = copy.deepcopy(act["limits"])
-    s["min_atr_over_cost"] = act["min_atr_over_cost"]
+    s["min_atr_over_cost"] = act["min_atr_over_cost"] if act["cost_filter_enabled"] else 0.0
     b = c["budget"]
     b["capital"] = _num(b["capital"], 1, 1e6, 40.0)
     b["min_remaining"] = _num(b["min_remaining"], 0, b["capital"], min(30.0, b["capital"]))
