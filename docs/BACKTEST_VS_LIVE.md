@@ -92,7 +92,7 @@ de trend. Live-ul a avut același regim, dar a luat doar o parte din trade-uri.
   pe trigger-e, 2026-11-02).
 - **Daily Engine:** shadow abia a început (niciun trade virtual sincronizat încă) → comparația din tab-ul Daily
   (shadow vs backtest) devine utilă după câteva săptămâni.
-- **Noisy Engine:** shadow; backtestul cu spread-ul real (9 points USDJPY) e negativ pe M5 (−0,045R) și rar pe M1 (0,6 /
+- **Noisy Engine:** shadow; backtestul cu spread-ul real (9 points USDJPY) e negativ pe M5 (−0,25R, 0,08 / zi) și rar pe M1 (0,6 /
   zi). Vezi `docs/NOISY_ENGINE_RESEARCH.md`.
 
 ## Ce ar da o concluzie solidă

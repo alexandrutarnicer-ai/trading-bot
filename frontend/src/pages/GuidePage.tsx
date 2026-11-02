@@ -1513,7 +1513,10 @@ export function GuidePage() {
             </div>
             <Warn>Pe contul Standard spread-ul live al USDJPY e ~9 points (istoricul MT5 arată doar ~1 point brut). Cu 9 points, pe M1
               filtrul cost/ATR respinge aproape tot (ATR mediu ~20 points); de aceea, după ridicarea spread-ului, Noisy nu mai intra.
-              Backtest la spread real: M1 ~0,6 trade-uri / zi, M5 −0,045R / trade.</Warn>
+              Backtest la spread real (USDJPY): M1 ~0,6 trade-uri / zi (+0,09R), M5 ~0,1 / zi.</Warn>
+            <Note>Piețe mai ieftine, testate (12 luni, spread live, cu filtre): XAGUSD M1 ~1,2 / zi ≈ 0R (marjă 51$) · US500 M1
+              ~8 / zi −0,07R (marjă 38$) · UK100 M1 ~0,8 / zi −0,08R (marjă 72$). Niciuna nu are edge dovedit; indicii sunt de
+              4–10× mai ieftini decât FX-ul pe contul Standard. Detalii: docs/NOISY_ENGINE_RESEARCH.md §21.</Note>
           </SubSection>
           <SubSection title="Trade-uri suprapuse (opțional, oprit implicit)" defaultOpen={false}>
             <div className="space-y-1 text-xs">
