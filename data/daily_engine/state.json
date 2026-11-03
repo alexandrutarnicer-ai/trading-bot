@@ -17,7 +17,8 @@
       "capital": 206.09
     },
     "2026-11-02|US500": [
-      "entry"
+      "entry",
+      "closed"
     ],
     "2026-11-02|US500|size": {
       "lots": 0.1,
@@ -30,6 +31,22 @@
       "reason": null,
       "currency": "USD",
       "capital": 205.22
+    },
+    "2026-11-03|GBPUSD": [
+      "entry",
+      "closed"
+    ],
+    "2026-11-03|GBPUSD|size": {
+      "lots": 0.02,
+      "risk_money": 1.39,
+      "target_money": 2.0637,
+      "raw_lots": 0.029694,
+      "at_min_lot": false,
+      "capped_max": false,
+      "ratio": 0.674,
+      "reason": null,
+      "currency": "USD",
+      "capital": 206.37
     }
   }
 }

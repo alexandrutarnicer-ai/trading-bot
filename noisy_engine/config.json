@@ -1,21 +1,27 @@
 {
   "mode": "shadow",
-  "symbol": "USDJPY",
+  "symbol": "US500",
   "timeframe": "M1",
   "poll_seconds": 5,
   "notify_telegram": true,
   "notify_trades": false,
   "on_stop": "close",
   "window": {
-    "start": "10:00",
-    "end": "20:00",
+    "intervals": [
+      {
+        "start": "14:00",
+        "end": "22:45"
+      }
+    ],
     "days": [
       0,
       1,
       2,
       3,
       4
-    ]
+    ],
+    "start": "14:00",
+    "end": "22:45"
   },
   "strategy": {
     "ema": 20,
@@ -30,11 +36,11 @@
     "er_bars": 20,
     "er_trend": 0.35,
     "spread_floor": 0.01,
-    "spread_max_mult": 1.0,
-    "min_atr_over_cost": 5.0,
+    "spread_max": 0,
+    "min_atr_over_cost": 3.0,
     "slip_frac": 0.25,
     "comm_price": 0,
-    "tp_rr": 0
+    "tp_rr": 2.0
   },
   "break_even": {
     "enabled": false,
@@ -60,7 +66,8 @@
           "value": 8
         }
       },
-      "min_atr_over_cost": 5.0
+      "min_atr_over_cost": 3.0,
+      "cost_filter_enabled": true
     },
     "M5": {
       "limits": {
@@ -77,13 +84,29 @@
           "value": 3
         }
       },
-      "min_atr_over_cost": 15.0
+      "min_atr_over_cost": 15.0,
+      "cost_filter_enabled": true
     }
+  },
+  "spread": {
+    "mode": "auto",
+    "manual_points": 30.0,
+    "max_mode": "manual",
+    "max_mult": 20,
+    "max_points": 60.0,
+    "legacy_floor_price": 0.01
   },
   "news": {
     "enabled": true,
     "pre_min": 5,
     "post_min": 15
+  },
+  "overlap": {
+    "enabled": false,
+    "max_open": 3,
+    "min_interval_min": 5.0,
+    "same_direction": true,
+    "opposite_direction": false
   },
   "limits": {
     "max_trades_day": {
