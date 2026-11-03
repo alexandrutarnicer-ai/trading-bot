@@ -32,13 +32,39 @@ DEFAULTS: dict = {
         {"symbol": "GBPUSD", "enabled": True, "label": "Dimineata — deschiderea Londrei",
          "tz": "Europe/London", "open": "08:00", "last_bar": "14:25",
          "or_minutes": 5, "entry": "breakout", "rr": None,
-         "slip": 0.00002, "comm": 0.00007, "role": "observatie"},
+         "slip": 0.00002, "comm": 0.00007, "role": "observatie", "reentry": None},
         {"symbol": "US500", "enabled": True, "label": "Dupa-amiaza — deschiderea New York",
          "tz": "America/New_York", "open": "09:30", "last_bar": "15:55",
          "or_minutes": 30, "entry": "direction", "rr": None,
-         "slip": 0.10, "comm": 0.0, "role": "principal"},
+         "slip": 0.10, "comm": 0.0, "role": "principal", "reentry": None},
     ],
 }
+
+
+# Re-intrari in fereastra „fierbinte” (per piata, OPTIONAL — None / enabled=false = un trade pe zi, ca pana acum)
+REENTRY_LIMITS = {"window_min": (15, 240, 60), "max_trades": (2, 10, 3), "max_consec_losses": (0, 10, 2),
+                  "cooldown_bars": (1, 12, 1)}
+
+
+def sanitize_reentry(r) -> dict:
+    out = {"enabled": False, **{k: d for k, (_lo, _hi, d) in REENTRY_LIMITS.items()}}
+    if isinstance(r, dict):
+        out["enabled"] = bool(r.get("enabled", False))
+        for k, (lo, hi, d) in REENTRY_LIMITS.items():
+            try:
+                out[k] = int(max(lo, min(hi, int(r.get(k, d)))))
+            except (TypeError, ValueError):
+                out[k] = d
+    return out
+
+
+def sanitize_rr(v) -> float | None:
+    """R:R fix (TP = rr × risc). None / 0 = fara TP (implicit — pozitia ramane pana la SL sau final de fereastra)."""
+    try:
+        v = float(v) if v not in (None, "", False) else 0.0
+    except (TypeError, ValueError):
+        return None
+    return round(max(0.5, min(10.0, v)), 2) if v > 0 else None
 
 
 def hm_to_min(s: str) -> int:
@@ -75,7 +101,8 @@ def _sanitize(cfg: dict) -> dict:
                 e["or_minutes"] = int(e.get("or_minutes") or 5)
                 if e["or_minutes"] % 5 or not 5 <= e["or_minutes"] <= 120:
                     continue
-                e["rr"] = float(e["rr"]) if e.get("rr") else None
+                e["rr"] = sanitize_rr(e.get("rr"))
+                e["reentry"] = sanitize_reentry(e.get("reentry"))
                 e["slip"] = float(e.get("slip") or 0.0)
                 e["comm"] = float(e.get("comm") or 0.0)
                 e["enabled"] = bool(e.get("enabled", True))

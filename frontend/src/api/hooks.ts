@@ -946,6 +946,25 @@ export const useSizingPreview = (p: { symbol?: string; fraction: number; riskPct
     refetchIntervalInBackground: false,
   });
 
+/** Configurarea Daily (piete: R:R + re-intrari) — citita direct, ca editorul sa mearga si cu engine-ul oprit */
+export const useDailyConfig = () =>
+  useQuery<{ markets: DailyMarketConfig[] }>({
+    queryKey: ["daily-config"],
+    queryFn:  () => apiFetch("/daily/config"),
+    staleTime: 10_000,
+  });
+
+export const useDailySaveMarket = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (m: { symbol: string; rr: number | null; reentry: DailyReentry }) =>
+      apiFetch("/daily/config", { method: "PUT", body: { markets: [m] } }),
+    onSuccess: () => {
+      for (const k of ["daily-config", "daily-status"]) qc.invalidateQueries({ queryKey: [k] });
+    },
+  });
+};
+
 export const useDailySetMode = () => {
   const qc = useQueryClient();
   return useMutation({
@@ -953,6 +972,8 @@ export const useDailySetMode = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["daily-status"] }),
   });
 };
+
+import type { DailyMarketConfig, DailyReentry } from "./types";
 
 // ── Noisy Engine ─────────────────────────────────────────────────────────────
 import type { NoisyStatus, NoisyTrade, NoisyConfig, NoisyMarketInfo } from "./types";

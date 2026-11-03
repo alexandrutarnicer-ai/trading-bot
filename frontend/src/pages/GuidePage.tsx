@@ -1454,6 +1454,20 @@ export function GuidePage() {
             </div>
           </SubSection>
 
+          <SubSection title="Când se plasează ordinele + R:R și re-intrări (opționale)" defaultOpen={false}>
+            <div className="space-y-1 text-xs">
+              <KV k="GBPUSD (Londra)" v="interval de deschidere 08:00–08:05 Londra (10:00–10:05 RO, prima lumânare M5) → de la 08:05 ordine stop pe ambele margini; ieșire la SL sau la 14:30 Londra (16:30 RO)" />
+              <KV k="US500 (New York)" v="interval 09:30–10:00 NY (16:30–17:00 RO, 6 lumânări M5) → la 10:00 NY intrare la piață pe direcția intervalului; ieșire la SL sau la 16:00 NY (23:00 RO)" />
+              <KV k="„Delay o lumânare”" v="primul trade așteaptă deja finalul intervalului (GBPUSD = 1 lumânare de 5 min, US500 = 30 min); la re-intrări pauza după ieșire e configurabilă (implicit 1 lumânare)" />
+              <KV k="R:R (opțional)" v="oprit = fără TP (actual: poziția rămâne până la SL sau finalul ferestrei). Pornit = TP la N × risc (2R / 3R / 4R / altă valoare); în Execuție TP-ul e atașat ordinului real" />
+              <KV k="Re-intrări (opțional)" v="după ce trade-ul se închide, Daily poate intra din nou la o NOUĂ rupere a aceluiași interval, doar în primele N minute de la deschidere (implicit 60), maxim K pe zi (3), un singur trade odată, STOP după 2 pierderi la rând, pauză de 1 lumânare după ieșire" />
+            </div>
+            <Warn>Testate pe 10–14 ani (M5, costuri reale): ținta fixă 2R / 3R / 4R a fost mai slabă decât „fără TP” pe ambele piețe
+              (ORB câștigă din puținele zile de trend mare, pe care TP-ul le taie). Re-intrările adaugă ~1–2 trade-uri / săptămână,
+              dar scad câștigul pe trade (GBPUSD +0,075 → +0,027R; US500 +0,059 → +0,049R). Sunt opționale pentru test în shadow.
+              Frankfurt (DE40) a ieșit cel mai bine (+0,08…0,09R, KEEP, și cu re-intrări), dar marja lotului minim (~145 $) nu încape
+              acum în cont. Detalii: docs/DAILY_ENGINE_PLAN.md §10.</Warn>
+          </SubSection>
           <SubSection title="Shadow → Execuție (ordine reale)">
             <div className="space-y-1 text-xs">
               <KV k="Unde" v="Tab Daily Engine → comutatorul „Mod” (două confirmări; revenirea la Shadow cere o confirmare)" />
