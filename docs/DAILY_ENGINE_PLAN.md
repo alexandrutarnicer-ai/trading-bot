@@ -171,3 +171,56 @@ observație. Decizia de ordine reale se ia separat, pe datele shadow.
 Trade-urile ÎN PLUS, luate separat: GBPUSD −0,078R/trade (60 min, 1819 trade-uri; test −0,149R), US500 −0,006R (467; antrenare −0,161R, test +0,100R) — fără câștig. Ferestrele 30 / 90 / 120 min: la fel sau mai rău (US500: intrarea e la 10:00, deci în fereastra de 30 min nu există re-intrare). Motiv: după un SL, intervalul de deschidere s-a dovedit „fals” (piață în range), iar ruperea în sens opus eșuează la fel de des; avantajul ORB e în PRIMA rupere.
 
 Zilele „invalidate” pe GBPUSD (prima bară după interval atinge ambele margini, 322 de zile, aproape toate la 08:05): continuând căutarea, 314 trade-uri cu +0,326R — dar antrenare +0,458R / test −0,052R, 2013 aduce singur +57,8R, 2025–2026 negative, N* = 2 → zgomot, nu avantaj; în plus nerealizabil în live (ordinele stop se execută chiar în bara dublă). Decizie: rămâne 1 trade/zi/piață.
+
+
+## 10. R:R fix (2R / 3R / 4R), re-intrări configurabile și alte intervale de deschidere (2026-11-03)
+
+Implementare: ambele opțiuni sunt **per piață, oprite implicit** (`rr`, `reentry` în `daily_engine/config.json`; UI: „Opțiuni”
+pe cardul pieței). Cu ele oprite, Daily face exact ce făcea: un trade pe zi, fără TP.
+
+Re-intrare = după ce trade-ul curent se închide, de la lumânarea următoare (pauză configurabilă), o **nouă rupere a aceluiași
+interval de deschidere** (oricare margine). Intrarea e permisă doar în primele `window_min` minute de la deschidere, cu un trade
+deschis odată, maxim `max_trades` pe zi și STOP după `max_consec_losses` pierderi la rând. Funcția e verificată identică cu
+`orb_reentry.py` pe tot istoricul.
+
+Cercetare: `scripts/research_daily/orb_rr_reentry.py`, aceeași funcție ca engine-ul, costuri reale, verdict M0 →
+`data/research_daily/orb_rr_reentry.csv`. Re-intrări = prima oră, max 3 pe zi, stop la 2 pierderi, pauză 1 lumânare.
+
+**Configurația actuală (fără TP, fără re-intrări):**
+
+| Piață | OR | R/trade | Trade-uri/săpt | Verdict |
+|---|---|---|---|---|
+| GBPUSD (Londra, breakout) | 5 | +0,075 | 4,6 | OBSERVE |
+| US500 (New York, direcție) | 30 | +0,059 | 4,4 | KEEP |
+
+**R:R fix**, aceeași piață și același OR:
+
+| Piață | Fără TP | 2R | 3R | 4R |
+|---|---|---|---|---|
+| GBPUSD OR 5 | +0,075 | −0,016 | 0,000 | −0,005 |
+| US500 OR 30 | +0,059 | +0,006 | +0,009 | +0,030 |
+
+**Re-intrări** (fără TP):
+
+| Piață | Fără re-intrări | Re-intrări 60 min, stop la 2 pierderi | 60 min, fără stop | 90 min | 120 min |
+|---|---|---|---|---|---|
+| GBPUSD OR 5 | +0,075 (4,6/săpt) | +0,027 (6,6/săpt) | +0,015 | +0,021 | +0,016 |
+| US500 OR 30 | +0,059 (4,4/săpt) | +0,049 (5,3/săpt) | +0,050 | +0,035 | +0,038 |
+
+**Alte intervale de deschidere (OR 5 / 15 / 30 / 60 min), fără TP:**
+- GBPUSD: +0,075 / +0,004 / +0,026 / +0,009 → OR 5 rămâne cel mai bun.
+- US500: +0,002 / +0,026 / +0,059 / +0,022 → OR 30 rămâne cel mai bun.
+- Cu OR 60, re-intrările nu au efect: fereastra de 60 min se termină odată cu intervalul.
+
+**Frankfurt (DE40, deschidere 09:00 Berlin), nou:**
+- breakout: OR 5 +0,080 (KEEP), cu re-intrări +0,091 (KEEP, 6,2/săpt); OR 30 +0,070 (KEEP);
+- direcție: OR 30 +0,080 (KEEP), cu re-intrări +0,082 (KEEP);
+- singura piață unde re-intrările nu strică;
+- **marja la lotul minim (0,1) e ~145 $**, iar riscul pe SL tipic e ~3–7 $ → nu încape acum în contul de ~206 $ partajat.
+
+**Concluzii:**
+1. Ținta fixă e mai slabă decât „fără TP” pe ambele piețe. ORB câștigă din puținele zile de trend mare, iar TP-ul le taie.
+2. Re-intrările cresc frecvența cu 1–2 trade-uri pe săptămână, dar scad câștigul pe trade. Stopul la 2 pierderi la rând
+   ajută (GBPUSD +0,027 față de +0,015 fără el).
+3. Pentru test în shadow, cea mai puțin dăunătoare variantă e US500 cu re-intrări în prima oră (+0,049R).
+4. DE40 e candidatul cel mai bun pentru Daily când contul permite marja.
