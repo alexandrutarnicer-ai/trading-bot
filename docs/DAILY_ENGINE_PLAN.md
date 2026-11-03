@@ -224,3 +224,38 @@ Cercetare: `scripts/research_daily/orb_rr_reentry.py`, aceeași funcție ca engi
    ajută (GBPUSD +0,027 față de +0,015 fără el).
 3. Pentru test în shadow, cea mai puțin dăunătoare variantă e US500 cu re-intrări în prima oră (+0,049R).
 4. DE40 e candidatul cel mai bun pentru Daily când contul permite marja.
+
+
+## 11. Piața fiecărui slot — schimbabilă din UI, cu costuri automate (2026-11-03)
+
+Daily păstrează pattern-ul cu **două sloturi** (dimineață / după-amiază). Pe fiecare se alege bursa, cu șablonul ei testat:
+
+| Bursă | Ora locală | Interval de deschidere | Mod |
+|---|---|---|---|
+| Londra | 08:00–14:25 | 5 min | breakout |
+| Frankfurt | 09:00–17:25 | 5 min | breakout |
+| New York | 09:30–15:55 | 30 min | direcție |
+
+Peste bursă se alege piața din MT5. Costurile se calculează **automat** din spread:
+- **slippage** = 25% din spread-ul live;
+- **„comision”** = spread-ul live minus spread-ul din istoricul barelor, adică markup-ul contului Standard, pe care istoricul nu
+  îl conține;
+- se pot și suprascrie manual.
+
+„Previzualizează” rulează un backtest rapid pe ~3 ani, din MT5, cu aceeași funcție ca engine-ul.
+
+**Ultimii 3 ani (2023-11 → 2026-11), costuri auto, fără TP, fără re-intrări:**
+
+| Piață / bursă | Trade-uri/săpt | R/trade | Verdict M0 | Marjă lot minim |
+|---|---|---|---|---|
+| **DE40 / Frankfurt** | 4,8 | **+0,141** | KEEP (train +0,16 / test +0,09) | ~145 $ |
+| GBPUSD / Londra | 4,7 | +0,066 | DEMOTE (train +0,28 / **test −0,43**) | ~45 $ |
+| EURUSD / Londra | 4,7 | +0,032 | DEMOTE (test −0,18) | ~37 $ |
+| US500 / New York | 5,0 | +0,029 | DEMOTE (test +0,00) | ~38 $ |
+| XAUUSD / New York | 5,0 | −0,039 | DEMOTE | ~200 $ |
+| US30 / New York | 5,0 | −0,035 | DEMOTE | ~262 $ |
+
+Observații:
+- **GBPUSD s-a degradat puternic în ultimele ~11 luni** (−0,43R pe trade).
+- **US500 e ~0 pe ultimii 3 ani**, față de +0,059 pe tot istoricul.
+- **DE40 e singurul solid și recent**, dar marja nu încape acum în contul de ~206 $ partajat.

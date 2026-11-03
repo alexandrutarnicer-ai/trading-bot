@@ -248,6 +248,7 @@ class DailyEngine:
             self._arm(sym, day)
             return {**info, "phase": "waiting_open", **self._exec_info(sym, day)}
 
+        self.mt5.symbol_select(sym, True)          # piata poate fi schimbata din UI (hot-reload) — selectata mereu
         self._refresh_offset(sym, now_utc)
         if self.server_offset_s is None:
             return {**info, "phase": "waiting_open", "note": "astept un tick proaspat (ora serverului)"}
