@@ -26,7 +26,9 @@ import daily_engine.config as C  # noqa: E402
 
 TMP = tempfile.mkdtemp()
 C.CFG_PATH = os.path.join(TMP, "config.json")
-shutil.copy(os.path.join(ROOT, "daily_engine", "config.json"), C.CFG_PATH)
+import json as _json
+with open(C.CFG_PATH, "w", encoding="utf-8") as _f:          # pornim de la configuratia IMPLICITA (nu de la cea a masinii)
+    _json.dump(C.DEFAULTS, _f)
 from daily_engine import market_tools as T  # noqa: E402
 from daily_engine.strategy import evaluate_day_multi  # noqa: E402
 from api.routers import daily_engine as R  # noqa: E402
