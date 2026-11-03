@@ -71,7 +71,7 @@ def _send(mt5, req: dict, info) -> tuple[bool, object]:
     return False, last
 
 
-def place_market(mt5, symbol: str, side: int, lots: float, sl: float, comment: str) -> tuple[bool, object]:
+def place_market(mt5, symbol: str, side: int, lots: float, sl: float, comment: str, tp: float | None = None) -> tuple[bool, object]:
     info, tick = mt5.symbol_info(symbol), mt5.symbol_info_tick(symbol)
     if info is None or tick is None:
         return False, "tick/info indisponibil"
@@ -80,10 +80,13 @@ def place_market(mt5, symbol: str, side: int, lots: float, sl: float, comment: s
            "type": mt5.ORDER_TYPE_BUY if side == 1 else mt5.ORDER_TYPE_SELL,
            "price": price, "sl": round(sl, info.digits), "deviation": 20, "magic": MAGIC,
            "comment": comment, "type_time": mt5.ORDER_TIME_GTC}
+    if tp:
+        req["tp"] = round(tp, info.digits)
     return _send(mt5, req, info)
 
 
-def place_stop(mt5, symbol: str, side: int, level: float, lots: float, sl: float, comment: str) -> tuple[bool, object]:
+def place_stop(mt5, symbol: str, side: int, level: float, lots: float, sl: float, comment: str,
+               tp: float | None = None) -> tuple[bool, object]:
     info = mt5.symbol_info(symbol)
     if info is None:
         return False, "info indisponibil"
@@ -91,6 +94,8 @@ def place_stop(mt5, symbol: str, side: int, level: float, lots: float, sl: float
            "type": mt5.ORDER_TYPE_BUY_STOP if side == 1 else mt5.ORDER_TYPE_SELL_STOP,
            "price": round(level, info.digits), "sl": round(sl, info.digits), "magic": MAGIC,
            "comment": comment, "type_time": mt5.ORDER_TIME_GTC}     # ICMarketsEU refuză ORDER_TIME_SPECIFIED
+    if tp:
+        req["tp"] = round(tp, info.digits)
     return _send(mt5, req, info)
 
 

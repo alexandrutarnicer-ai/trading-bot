@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { CalendarClock, Loader2, Play, Square, FlaskConical } from "lucide-react";
 import { PositionSizingCard } from "../components/PositionSizingCard";
-import { useDailyStatus, useDailyTrades, useDailyLogs, useDailyStart, useDailyStop, useDailySetMode } from "../api/hooks";
-import type { DailyMarketStatus, DailyScore } from "../api/types";
+import { useDailyConfig, useDailySaveMarket, useDailyStatus, useDailyTrades, useDailyLogs, useDailyStart, useDailyStop,
+  useDailySetMode } from "../api/hooks";
+import type { DailyMarketConfig, DailyMarketStatus, DailyReentry, DailyScore } from "../api/types";
 
 // Daily Engine — motor intraday ORB pe deschiderea Londrei (dimineata) si New York (dupa-amiaza).
 // Mod SHADOW: foloseste preturile reale, inregistreaza trade-uri VIRTUALE, nu plaseaza niciun ordin.
@@ -22,6 +23,92 @@ const PHASE: Record<string, { label: string; cls: string }> = {
 const fmt = (v: number | undefined) => (v == null ? "—" : Math.abs(v) >= 100 ? v.toFixed(2) : v.toFixed(5));
 const fmtR = (v: number | null | undefined) => (v == null ? "—" : `${v > 0 ? "+" : ""}${v.toFixed(2)}R`);
 const rCls = (v: number | null | undefined) => (v == null ? "text-slate-400" : v > 0 ? "text-profit" : v < 0 ? "text-loss" : "text-slate-300");
+
+// Rezultatele cercetarii (scripts/research_daily/orb_rr_reentry.py, ~10–14 ani M5, costuri reale) — afisate langa optiuni
+const RESEARCH: Record<string, { rr: string; re: string }> = {
+  GBPUSD: { rr: "Backtest: fără TP +0,075R/trade; 2R −0,016 · 3R 0,000 · 4R −0,005 — ținta fixă taie trade-urile mari.",
+            re: "Backtest: re-intrări (prima oră, max 3, stop la 2 pierderi) → +0,027R/trade (față de +0,075), 6,6 vs 4,6 trade-uri/săpt. Fără stopul pe pierderi: +0,015R." },
+  US500:  { rr: "Backtest: fără TP +0,059R/trade (KEEP); 2R +0,006 · 3R +0,009 · 4R +0,030 — ținta fixă taie zilele de trend.",
+            re: "Backtest: re-intrări în prima oră → +0,049R/trade (față de +0,059), 5,3 vs 4,4 trade-uri/săpt. Fereastră 90 / 120 min: +0,035 / +0,038R." },
+};
+
+function MarketSettings({ symbol, orMinutes }: { symbol: string; orMinutes?: number }) {
+  const { data } = useDailyConfig();
+  const save = useDailySaveMarket();
+  const cfg = data?.markets?.find((x: DailyMarketConfig) => x.symbol === symbol);
+  const [open, setOpen] = useState(false);
+  const [rr, setRr] = useState<number | null | undefined>(undefined);
+  const [re, setRe] = useState<DailyReentry | undefined>(undefined);
+  if (!cfg) return null;
+  const curRr = rr === undefined ? cfg.rr : rr;
+  const curRe = re ?? cfg.reentry;
+  const dirty = rr !== undefined || re !== undefined;
+  const set = (patch: Partial<DailyReentry>) => setRe({ ...curRe, ...patch });
+  const btn = (on: boolean) => `px-2 py-0.5 rounded border ${on ? "border-cyan-500/50 text-cyan-200" : "border-surface-border text-slate-500"}`;
+  const num = (v: string) => (v === "" ? 0 : Number(v));
+  const info = RESEARCH[symbol];
+  const winBeforeOr = (orMinutes ?? 0) >= curRe.window_min;
+  return (
+    <div className="border-t border-surface-border pt-2 text-[11px] space-y-2">
+      <button onClick={() => setOpen(!open)} className="text-slate-400 hover:text-white">
+        {open ? "▾" : "▸"} Opțiuni: R:R {cfg.rr ? `${cfg.rr}R` : "fără TP"} · re-intrări {cfg.reentry.enabled ? "PORNITE" : "oprite"}
+      </button>
+      {open && (
+        <div className="space-y-2 pl-2 border-l-2 border-surface-border">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-slate-300 w-24">Țintă (R:R)</span>
+            {[null, 2, 3, 4].map(v => (
+              <button key={String(v)} className={btn(curRr === v)} onClick={() => setRr(v)}>{v ? `${v}R` : "fără TP (actual)"}</button>
+            ))}
+            <input type="number" min={0.5} max={10} step={0.5} value={curRr ?? ""} placeholder="alt R"
+              onChange={e => setRr(e.target.value === "" ? null : num(e.target.value))}
+              className="w-16 bg-surface-card border border-surface-border rounded px-2 py-0.5" />
+          </div>
+          {info && <div className="text-[10px] text-slate-500">{info.rr}</div>}
+          <label className="flex items-center gap-2">
+            <input type="checkbox" checked={curRe.enabled} onChange={e => set({ enabled: e.target.checked })} />
+            <span className="text-slate-300">Re-intrări în fereastra fierbinte</span>
+            <span className="text-slate-500">(oprit = un trade pe zi, ca până acum)</span>
+          </label>
+          {curRe.enabled && (
+            <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+              <label className="flex items-center gap-1">fereastră
+                <input type="number" min={15} max={240} step={5} value={curRe.window_min} onChange={e => set({ window_min: num(e.target.value) })}
+                  className="w-14 bg-surface-card border border-surface-border rounded px-1" /> min de la deschidere</label>
+              <label className="flex items-center gap-1">max
+                <input type="number" min={2} max={10} value={curRe.max_trades} onChange={e => set({ max_trades: num(e.target.value) })}
+                  className="w-12 bg-surface-card border border-surface-border rounded px-1" /> trade-uri / zi</label>
+              <label className="flex items-center gap-1">stop după
+                <input type="number" min={0} max={10} value={curRe.max_consec_losses} onChange={e => set({ max_consec_losses: num(e.target.value) })}
+                  className="w-12 bg-surface-card border border-surface-border rounded px-1" /> pierderi la rând <span className="text-slate-500">(0 = fără)</span></label>
+              <label className="flex items-center gap-1">pauză
+                <input type="number" min={1} max={12} value={curRe.cooldown_bars} onChange={e => set({ cooldown_bars: num(e.target.value) })}
+                  className="w-12 bg-surface-card border border-surface-border rounded px-1" /> lumânări M5 după ieșire</label>
+            </div>
+          )}
+          {curRe.enabled && (
+            <div className="text-[10px] text-slate-500">
+              Un singur trade deschis odată. După ce se închide (SL sau TP), noul trade intră doar la o NOUĂ rupere a aceluiași interval de
+              deschidere (oricare margine; preț deja dincolo de margine → intrare imediată), dacă începe în primele {curRe.window_min} min
+              de la deschidere.
+              {winBeforeOr && <span className="text-loss"> Fereastra ({curRe.window_min} min) nu depășește intervalul de deschidere
+                ({orMinutes} min) → re-intrările nu au timp să apară; mărește fereastra.</span>}
+            </div>
+          )}
+          {curRe.enabled && info && <div className="text-[10px] text-yellow-300/90">{info.re}</div>}
+          <div className="flex items-center gap-2">
+            <button disabled={!dirty || save.isPending}
+              onClick={() => save.mutate({ symbol, rr: curRr ?? null, reentry: curRe }, { onSuccess: () => { setRr(undefined); setRe(undefined); } })}
+              className="px-3 py-1 rounded bg-cyan-500/20 text-cyan-200 border border-cyan-500/40 font-semibold disabled:opacity-40">Salvează</button>
+            {dirty && <button onClick={() => { setRr(undefined); setRe(undefined); }} className="px-3 py-1 rounded border border-surface-border text-slate-400">Renunță</button>}
+            <span className="text-[10px] text-slate-500">se aplică din mers; în Execuție TP-ul e atașat ordinului real</span>
+            {save.isError && <span className="text-loss">{(save.error as Error).message}</span>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function MarketCard({ m, score, bt }: {
   m: DailyMarketStatus; score?: DailyScore;
@@ -50,8 +137,18 @@ function MarketCard({ m, score, bt }: {
         <div className="text-slate-300">{m.window_local ?? "—"}</div>
         <div className="text-slate-500">Regulă</div>
         <div className="text-slate-300">
-          interval {m.or_minutes} min · {m.entry_mode === "breakout" ? "ordine stop pe margini" : "intrare pe direcție"} · închidere la final
+          interval {m.or_minutes} min · {m.entry_mode === "breakout" ? "ordine stop pe margini" : "intrare pe direcție"} ·
+          {m.rr ? ` TP ${m.rr}R` : " închidere la final"}{m.reentry?.enabled ? ` · re-intrări ${m.reentry.window_min} min (max ${m.reentry.max_trades})` : ""}
         </div>
+        {(m.trades_today ?? 0) > 1 && (<>
+          <div className="text-slate-500">Trade-uri azi</div>
+          <div className="text-slate-300">{m.trades_today} · <span className={rCls(m.R_today)}>{fmtR(m.R_today)}</span> închise</div>
+        </>)}
+        {m.reentry_stop && (m.trades_today ?? 0) > 1 && (<>
+          <div className="text-slate-500">Re-intrări</div>
+          <div className="text-slate-400">gata: {m.reentry_stop}</div>
+        </>)}
+        {m.reentry_wait && <div className="col-span-2 text-amber-300/80">așteaptă o nouă rupere a intervalului (re-intrarea {(m.k ?? 0) + 1})</div>}
         {m.or_hi != null && (<>
           <div className="text-slate-500">Interval azi</div>
           <div className="text-slate-300">{fmt(m.or_lo)} – {fmt(m.or_hi)}</div>
@@ -76,6 +173,7 @@ function MarketCard({ m, score, bt }: {
         </>)}
         {m.note && <div className="col-span-2 text-amber-400/80">{m.note}</div>}
       </div>
+      <MarketSettings symbol={m.symbol} orMinutes={m.or_minutes} />
 
       <div className="border-t border-surface-border pt-2 grid grid-cols-2 gap-2 text-[11px]">
         <div>

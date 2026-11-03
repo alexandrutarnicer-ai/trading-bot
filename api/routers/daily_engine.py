@@ -157,10 +157,41 @@ def daily_config_save(body: dict):
         raw["mode"] = body["mode"]
     if isinstance(body.get("sizing"), dict):
         raw["sizing"] = {**(raw.get("sizing") or {}), **body["sizing"]}
+    changes = []
+    if isinstance(body.get("markets"), list):
+        # per piata se pot schimba DOAR R:R si re-intrarile (restul regulilor = varianta testata, din config.json)
+        from daily_engine.config import sanitize_reentry, sanitize_rr
+        raw_mk = raw.get("markets") or [dict(m) for m in load_config()["markets"]]
+        by = {m.get("symbol"): m for m in raw_mk}
+        for upd in body["markets"]:
+            m = by.get((upd or {}).get("symbol"))
+            if m is None:
+                raise HTTPException(400, f"piață necunoscută în Daily: {(upd or {}).get('symbol')}")
+            if "rr" in upd:
+                new_rr = sanitize_rr(upd["rr"])
+                if new_rr != m.get("rr"):
+                    changes.append(f"{m['symbol']}: R:R {m.get('rr') or 'fără TP'} → {new_rr or 'fără TP'}")
+                m["rr"] = new_rr
+            if "reentry" in upd:
+                new_re = sanitize_reentry(upd["reentry"])
+                old_on = bool((m.get("reentry") or {}).get("enabled"))
+                if new_re["enabled"] != old_on:
+                    changes.append(f"{m['symbol']}: re-intrări {'PORNITE' if new_re['enabled'] else 'oprite'}"
+                                   + (f" ({new_re['window_min']} min, max {new_re['max_trades']}, stop la "
+                                      f"{new_re['max_consec_losses']} pierderi)" if new_re["enabled"] else ""))
+                m["reentry"] = new_re
+        raw["markets"] = raw_mk
     clean = _sanitize(raw)
     raw["mode"], raw["sizing"] = clean["mode"], clean["sizing"]
     with open(CFG_PATH, "w", encoding="utf-8") as f:
         _json.dump(raw, f, indent=2, ensure_ascii=False)
+    if changes:
+        try:
+            from api.telegram import send_message
+            send_message("⚙️ <b>Daily Engine — configurare</b>\n" + "\n".join(changes)
+                         + "\nSe aplică de la următoarea iterație (fără restart).")
+        except Exception:
+            pass
     if before != raw["mode"]:
         try:
             from api.telegram import send_message

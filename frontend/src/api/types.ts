@@ -862,6 +862,21 @@ export interface DailyMarketStatus {
   R?: number;
   exit?: number;
   exit_min?: number;
+  tp?: number | null;
+  k?: number;                 // indexul trade-ului din zi (0 = primul; >= 1 = re-intrare)
+  trades_today?: number;
+  R_today?: number;
+  reentry_stop?: string;
+  reentry_wait?: boolean;
+  rr?: number | null;
+  reentry?: DailyReentry;
+}
+export interface DailyReentry {
+  enabled: boolean; window_min: number; max_trades: number; max_consec_losses: number; cooldown_bars: number;
+}
+export interface DailyMarketConfig {
+  symbol: string; label?: string; tz: string; open: string; last_bar: string; or_minutes: number;
+  entry: "breakout" | "direction"; rr: number | null; reentry: DailyReentry; enabled: boolean;
 }
 
 export interface DailyScore {
