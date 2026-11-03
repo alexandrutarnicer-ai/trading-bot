@@ -252,7 +252,7 @@ def t_no_orders():
     check("order_send DOAR in daily_engine/executor.py", not bad, bad)
 
 
-def _exec_day(mode, trade_mode=0, live=False, arm_late=False, market="US500"):
+def _exec_day(mode, trade_mode=0, live=False, arm_late=False, market="US500", extra=None):
     """O zi prin motor cu MT5 simulat; intoarce (fake, status final)."""
     tmp = tempfile.mkdtemp()
     for name in ("STATUS_FILE", "STATE_FILE", "TRADES_FILE"):
@@ -260,7 +260,7 @@ def _exec_day(mode, trade_mode=0, live=False, arm_late=False, market="US500"):
     E._notify = lambda cfg, text: None
     import live_guard
     live_guard.live_allowed = lambda comp: live
-    m = next(x for x in DEFAULTS["markets"] if x["symbol"] == market)
+    m = {**next(x for x in DEFAULTS["markets"] if x["symbol"] == market), **(extra or {})}
     cfg = {"mode": mode, "poll_seconds": 15, "notify_telegram": True, "markets": [m],
            "sizing": {"capital_sync_mt5": True, "capital_usd": None, "fraction": 1.0, "risk_pct": 0.01}}
     E.load_config = lambda: cfg
@@ -331,6 +331,141 @@ def t_execution():
     chk(fake.sent and "position" in fake.sent[0] and not fake.positions, "poziție Daily din altă zi → închisă (niciodată overnight)", fake.sent)
 
 
+def t_reentry():
+    print("7. Re-intrari in prima ora + R:R (optionale)")
+    from daily_engine.strategy import evaluate_day_multi
+    from daily_engine.config import sanitize_reentry, sanitize_rr, _sanitize
+    # GBPUSD-like, OR 5 min la 08:00: interval 0.9990–1.0010
+    bars = [(1.0000, 1.0010, 0.9990, 1.0000),      # 08:00 OR
+            (1.0005, 1.0015, 1.0001, 1.0012),      # 08:05 rupere sus -> LONG 1.0010
+            (1.0012, 1.0013, 0.9985, 0.9987),      # 08:10 SL long (pierdere 1)
+            (0.9986, 0.9988, 0.9980, 0.9982),      # 08:15 pret sub margine -> SHORT la open 0.9986
+            (0.9983, 1.0012, 0.9982, 1.0011),      # 08:20 SL short (pierdere 2)
+            (1.0011, 1.0020, 1.0008, 1.0018)] + [(1.0018, 1.0019, 1.0017, 1.0018)] * 10   # 08:25 rupere sus din nou
+    o, h, l, c = (np.array([b[i] for b in bars], float) for i in range(4))
+    mins = 480 + 5 * np.arange(len(bars))
+    kw = dict(open_min=480, or_minutes=5, mode="brk", rr=None, slip=0.0, comm=0.0, day_complete=True)
+    z = np.zeros(len(bars))
+    base = evaluate_day(o, h, l, c, z, mins, **kw)
+    off = evaluate_day_multi(o, h, l, c, z, mins, **kw)
+    check("oprit (implicit) -> identic cu evaluate_day, un singur trade",
+          {k: v for k, v in off.items() if k not in ("trades", "k")} == base and len(off["trades"]) == 1)
+    on = evaluate_day_multi(o, h, l, c, z, mins, **kw, reentry={"enabled": True, "window_min": 60, "max_trades": 3,
+                                                               "max_consec_losses": 2, "cooldown_bars": 1})
+    tr = on["trades"]
+    check("re-intrare dupa SL: al doilea trade SHORT la open-ul barei urmatoare (pret deja sub margine)",
+          len(tr) >= 2 and tr[1]["side"] == -1 and abs(tr[1]["entry"] - 0.9986) < 1e-9 and tr[1]["k"] == 1, tr[:2])
+    check("2 pierderi la rand -> STOP (a treia rupere de la 08:25 nu se mai ia)",
+          len(tr) == 2 and "2 pierderi" in on.get("reentry_stop", ""), (len(tr), on.get("reentry_stop")))
+    no_stop = evaluate_day_multi(o, h, l, c, z, mins, **kw, reentry={"enabled": True, "max_consec_losses": 0, "max_trades": 3})
+    check("fara stop pe pierderi -> al treilea trade (max 3 / zi)", len(no_stop["trades"]) == 3, len(no_stop["trades"]))
+    short_win = evaluate_day_multi(o, h, l, c, z, mins, **kw, reentry={"enabled": True, "window_min": 15})
+    check("fereastra de re-intrare 15 min: rupere la 08:15 -> nu se mai ia", len(short_win["trades"]) == 1
+          and "fereastra" in short_win.get("reentry_stop", ""), short_win.get("reentry_stop"))
+    cool = evaluate_day_multi(o, h, l, c, z, mins, **kw, reentry={"enabled": True, "cooldown_bars": 2, "max_consec_losses": 0})
+    check("pauza de 2 lumanari: bara imediat urmatoare iesirii (08:15) e sarita; la 08:20 ambele margini -> stop",
+          len(cool["trades"]) == 1 and "ambele margini" in cool.get("reentry_stop", ""), cool.get("reentry_stop"))
+    live = evaluate_day_multi(o[:4], h[:4], l[:4], c[:4], z[:4], mins[:4], **{**kw, "day_complete": False},
+                              reentry={"enabled": True})
+    check("in timpul zilei: re-intrarea deschisa = in_position, k = 1", live["phase"] == "in_position" and live["k"] == 1, live)
+    # R:R: TP 1R pe primul trade, apoi re-intrare (continuare) pe aceeasi directie
+    bars_tp = [(1.0000, 1.0010, 0.9990, 1.0000), (1.0005, 1.0015, 1.0001, 1.0012),
+               (1.0012, 1.0031, 1.0011, 1.0029), (1.0029, 1.0030, 1.0025, 1.0027)] + [(1.0027, 1.0028, 1.0026, 1.0027)] * 8
+    o2, h2, l2, c2 = (np.array([b[i] for b in bars_tp], float) for i in range(4))
+    m2 = 480 + 5 * np.arange(len(bars_tp))
+    z2 = np.zeros(len(bars_tp))
+    rr1 = evaluate_day_multi(o2, h2, l2, c2, z2, m2, **{**kw, "rr": 1.0}, reentry={"enabled": True})
+    check("R:R 1R -> primul trade iese pe TP (+1R), apoi re-intrare in aceeasi directie",
+          rr1["trades"][0]["reason"] == "TP" and abs(rr1["trades"][0]["R"] - 1.0) < 1e-9 and len(rr1["trades"]) >= 2
+          and rr1["trades"][1]["side"] == 1, [(t["reason"], round(t["R"], 3)) for t in rr1["trades"]])
+    check("config: re-intrari limitate (fereastra 15-240, max 2-10, pierderi 0-10, pauza 1-12)",
+          sanitize_reentry({"enabled": 1, "window_min": 5, "max_trades": 50, "max_consec_losses": -1, "cooldown_bars": 0})
+          == {"enabled": True, "window_min": 15, "max_trades": 10, "max_consec_losses": 0, "cooldown_bars": 1})
+    check("config: R:R None / 0 = fara TP; 3 acceptat; limitat 0,5-10",
+          sanitize_rr(None) is None and sanitize_rr(0) is None and sanitize_rr("3") == 3.0 and sanitize_rr(99) == 10.0)
+    check("config implicit: re-intrari OPRITE, fara TP pe ambele piete",
+          all(not m["reentry"]["enabled"] and m["rr"] is None for m in _sanitize({"markets": DEFAULTS["markets"]})["markets"]))
+
+    # motorul in SHADOW: doua trade-uri in jurnal, notificari o data, restart fara dubluri
+    tmp = tempfile.mkdtemp()
+    for name in ("STATUS_FILE", "STATE_FILE", "TRADES_FILE"):
+        setattr(E, name, os.path.join(tmp, os.path.basename(getattr(E, name))))
+    sent = []
+    E._notify = lambda cfg, text: sent.append(text)
+    g = {**next(x for x in DEFAULTS["markets"] if x["symbol"] == "GBPUSD"),
+         "reentry": {"enabled": True, "window_min": 60, "max_trades": 3, "max_consec_losses": 2, "cooldown_bars": 1}}
+    cfg = {"mode": "shadow", "poll_seconds": 15, "notify_telegram": True, "markets": [g]}
+    E.load_config = lambda: cfg
+    lon = ZoneInfo("Europe/London")
+    open_l = datetime(2026, 11, 3, 8, 0, tzinfo=lon)
+    n = (hm_to_min(g["last_bar"]) - hm_to_min(g["open"])) // 5 + 1
+    rates = _fake_rates(open_l, n, 7, lambda i: bars[i] if i < len(bars) else bars[-1])
+    fx_info = lambda sym: SimpleNamespace(point=0.00001, volume_min=0.01, volume_step=0.01, volume_max=100.0,
+                                          trade_tick_size=0.00001, trade_tick_value=1.0, digits=5, filling_mode=2)
+    fake = _FakeMt5(rates, 7)
+    fake.symbol_info = fx_info
+    eng = E.DailyEngine(mt5_module=fake)
+    eng.connect()
+    st = None
+    for mn in (6, 16, 31, n * 5 + 6):
+        fake.now = (open_l + timedelta(minutes=mn)).astimezone(timezone.utc)
+        st = eng.iteration(fake.now)
+    tj = E.load_trades()
+    check("SHADOW: doua trade-uri in jurnal (k 0 si 1), al doilea SHORT",
+          [t.get("k") for t in tj] == [0, 1] and tj[1]["side"] == "SHORT", tj)
+    check("notificari: intrare + inchidere pentru fiecare trade, cu #1 / #2", len(sent) == 4 and "#2" in sent[2], len(sent))
+    eng2 = E.DailyEngine(mt5_module=fake)
+    eng2.connect()
+    eng2.iteration(fake.now)
+    check("restart: fara dubluri in jurnal / notificari", len(E.load_trades()) == 2 and len(sent) == 4)
+    mk = st["markets"][0]
+    check("status: trade-uri azi = 2 + configurarea pietei", mk.get("trades_today") == 2 and mk["reentry"]["enabled"], mk.get("trades_today"))
+
+    # EXECUTIE: TP real cand R:R e setat; re-intrare reala doar cu semnal proaspat si fara pozitie
+    fake_x, _ = _exec_day("execute", trade_mode=0, extra={"rr": 2.0})
+    entry = next((r for r in fake_x.sent if r["action"] == fake_x.TRADE_ACTION_DEAL and "position" not in r), {})
+    check("EXECUTIE cu R:R 2: ordinul real are TP = intrare + 2 x risc",
+          entry.get("tp") and abs((entry["tp"] - entry["price"]) / (entry["price"] - entry["sl"]) - 2.0) < 0.01, entry)
+    fake_n, _ = _exec_day("execute", trade_mode=0)
+    entry_n = next((r for r in fake_n.sent if r["action"] == fake_n.TRADE_ACTION_DEAL and "position" not in r), {})
+    check("EXECUTIE fara R:R: fara TP (ca pana acum)", "tp" not in entry_n, entry_n)
+    import pandas as _pd
+    import live_guard
+    live_guard.live_allowed = lambda comp: True
+    cfg["mode"] = "execute"
+    from datetime import date as _d
+    d0 = _d(2026, 11, 3)
+    w_end = datetime(2026, 11, 3, 14, 30, tzinfo=lon)
+    st_k = {"phase": "in_position", "k": 1, "side": -1, "sl": 1.0010, "entry": 0.9986, "entry_min": 495,
+            "or_hi": 1.0010, "or_lo": 0.9990}
+
+    def fresh_engine():
+        fx = _FakeMt5(rates, 7)
+        fx.symbol_info = fx_info
+        fx.symbol_info_tick = lambda sym: SimpleNamespace(time=int(fx.now.timestamp()) + 7 * 3600, ask=0.99856, bid=0.99850)
+        fx.now, fx.px = datetime(2026, 11, 3, 8, 21, tzinfo=lon).astimezone(timezone.utc), 0.9985
+        ex = E.DailyEngine(mt5_module=fx)
+        ex.cfg = cfg
+        ex.state.setdefault("events", {})[f"{d0}|GBPUSD|armed"] = True
+        return fx, ex
+
+    fx, ex = fresh_engine()
+    b = _pd.DataFrame({"mins": [480, 485, 490, 495]})
+    ex._execute(g, d0, st_k, b, datetime(2026, 11, 3, 8, 21, tzinfo=lon), w_end)
+    re_ord = [r for r in fx.sent if r["action"] == fx.TRADE_ACTION_DEAL]
+    check("EXECUTIE re-intrare: ordin la piata SHORT, comment D-GBPUSD-11031, SL = marginea opusa",
+          len(re_ord) == 1 and re_ord[0]["comment"] == "D-GBPUSD-11031" and re_ord[0]["type"] == fx.ORDER_TYPE_SELL
+          and abs(re_ord[0]["sl"] - 1.001) < 1e-9, re_ord)
+    ex._execute(g, d0, st_k, b, datetime(2026, 11, 3, 8, 22, tzinfo=lon), w_end)
+    check("... o singura data (re-iteratia nu dubleaza; pozitia deschisa blocheaza alta intrare)",
+          len([r for r in fx.sent if r["action"] == fx.TRADE_ACTION_DEAL]) == 1)
+    fx2, ex2 = fresh_engine()
+    b_late = _pd.DataFrame({"mins": [480, 485, 490, 495, 500, 505, 510]})
+    ex2._execute(g, d0, st_k, b_late, datetime(2026, 11, 3, 8, 36, tzinfo=lon), w_end)
+    check("semnal de re-intrare VECHI (restart tarziu) -> niciun ordin", not fx2.sent, fx2.sent)
+    cfg["mode"] = "shadow"
+
+
 if __name__ == "__main__":
     t_strategy()
     t_equivalence()
@@ -338,5 +473,6 @@ if __name__ == "__main__":
     t_engine()
     t_no_orders()
     t_execution()
+    t_reentry()
     print(f"\n{PASS} OK, {FAIL} FAIL")
     sys.exit(1 if FAIL else 0)

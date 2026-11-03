@@ -946,6 +946,50 @@ export const useSizingPreview = (p: { symbol?: string; fraction: number; riskPct
     refetchIntervalInBackground: false,
   });
 
+/** Configurarea Daily (piete: R:R + re-intrari) — citita direct, ca editorul sa mearga si cu engine-ul oprit */
+export const useDailyConfig = () =>
+  useQuery<{ markets: DailyMarketConfig[] }>({
+    queryKey: ["daily-config"],
+    queryFn:  () => apiFetch("/daily/config"),
+    staleTime: 10_000,
+  });
+
+export const useDailyPresets = () =>
+  useQuery<{ presets: Record<string, DailyPreset>; slots: string[] }>({
+    queryKey: ["daily-presets"],
+    queryFn:  () => apiFetch("/daily/presets"),
+    staleTime: 3_600_000,
+  });
+
+/** Previzualizarea unei piete noi pentru slot: costuri auto, marja, backtest rapid ~3 ani (nu salveaza nimic) */
+export const useDailyMarketPreview = () =>
+  useMutation({
+    mutationFn: (b: { slot: number; symbol: string; preset: string; costs_mode?: "auto" | "manual"; slip?: number; comm?: number }) =>
+      apiFetch<DailyMarketPreview>("/daily/market-preview", { method: "POST", body: b }),
+  });
+
+export const useDailySaveSlot = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (b: { slot: number; symbol: string; preset: string; costs_mode: "auto" | "manual"; slip?: number; comm?: number }) =>
+      apiFetch("/daily/config", { method: "PUT", body: { markets: [b] } }),
+    onSuccess: () => {
+      for (const k of ["daily-config", "daily-status"]) qc.invalidateQueries({ queryKey: [k] });
+    },
+  });
+};
+
+export const useDailySaveMarket = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (m: { symbol: string; rr: number | null; reentry: DailyReentry }) =>
+      apiFetch("/daily/config", { method: "PUT", body: { markets: [m] } }),
+    onSuccess: () => {
+      for (const k of ["daily-config", "daily-status"]) qc.invalidateQueries({ queryKey: [k] });
+    },
+  });
+};
+
 export const useDailySetMode = () => {
   const qc = useQueryClient();
   return useMutation({
@@ -953,6 +997,8 @@ export const useDailySetMode = () => {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["daily-status"] }),
   });
 };
+
+import type { DailyMarketConfig, DailyMarketPreview, DailyPreset, DailyReentry } from "./types";
 
 // ── Noisy Engine ─────────────────────────────────────────────────────────────
 import type { NoisyStatus, NoisyTrade, NoisyConfig, NoisyMarketInfo } from "./types";

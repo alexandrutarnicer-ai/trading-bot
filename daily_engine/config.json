@@ -18,18 +18,41 @@
       "role": "observatie"
     },
     {
-      "symbol": "US500",
+      "symbol": "DE40",
       "enabled": true,
-      "label": "Dupa-amiaza — deschiderea New York",
-      "tz": "America/New_York",
-      "open": "09:30",
-      "last_bar": "15:55",
-      "or_minutes": 30,
-      "entry": "direction",
+      "label": "Dimineața — Deschiderea Frankfurt (Xetra)",
+      "tz": "Europe/Berlin",
+      "open": "09:00",
+      "last_bar": "17:25",
+      "or_minutes": 5,
+      "entry": "breakout",
       "rr": null,
-      "slip": 0.1,
+      "slip": 0.125,
       "comm": 0.0,
-      "role": "principal"
+      "role": "principal",
+      "reentry": {
+        "enabled": false,
+        "window_min": 60,
+        "max_trades": 3,
+        "max_consec_losses": 2,
+        "cooldown_bars": 1
+      },
+      "preset": "frankfurt",
+      "costs_mode": "auto",
+      "backtest": {
+        "ok": true,
+        "trades": 731,
+        "days": 759,
+        "per_week": 4.8,
+        "expectancy_R": 0.141,
+        "win_rate": 0.29,
+        "total_R": 103.1,
+        "max_dd_R": -25.0,
+        "period": "2023-11 → 2026-11",
+        "verdict": "KEEP",
+        "train_R": 0.162,
+        "test_R": 0.093
+      }
     }
   ],
   "sizing": {

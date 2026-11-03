@@ -112,3 +112,98 @@ def evaluate_day(o, h, l, c, spr, mins, *, open_min: int, or_minutes: int, mode:
         exit_px = float(c[j_exit])
     return {**pos, "phase": "closed", "R": float(res), "reason": reason,
             "exit": exit_px, "exit_min": int(mins[j_exit])}
+
+
+# ── Re-intrari in fereastra „fierbinte” (OPTIONAL, oprit implicit) ──────────────────────────────────────────
+REENTRY_DEFAULTS = {"enabled": False, "window_min": 60, "max_trades": 3, "max_consec_losses": 2, "cooldown_bars": 1}
+
+
+def evaluate_day_multi(o, h, l, c, spr, mins, *, open_min: int, or_minutes: int, mode: str, rr: float | None,
+                       slip: float, comm: float, day_complete: bool, reentry: dict | None = None) -> dict:
+    """Ziua cu RE-INTRARI optionale, peste `evaluate_day` (neatinsa — echivalenta cu backtestul ramane).
+
+    reentry = {enabled, window_min, max_trades, max_consec_losses, cooldown_bars}. Oprit (implicit) → EXACT
+    rezultatul lui evaluate_day (+ lista `trades`). Pornit: dupa ce trade-ul curent se INCHIDE (SL / TP), de la
+    `cooldown_bars` lumanari dupa iesire se cauta o noua rupere a ACELUIASI interval de deschidere (oricare margine;
+    pret deja dincolo de margine → intrare la open-ul barei, ca la ordinele stop). Intrarea e permisa doar daca bara
+    ei incepe in primele `window_min` minute de la deschidere; o singura pozitie odata; maxim `max_trades` / zi;
+    stop dupa `max_consec_losses` pierderi LA RAND (0 = fara). Aceeasi regula ca cercetarea
+    scripts/research_daily/orb_reentry.py (verificat in selftest pe tot istoricul).
+    Intoarce: campurile trade-ului CURENT (sau ultimului) + trades (inchise), k (index trade curent), phase,
+    reentry_stop (motivul pentru care nu mai urmeaza alte intrari)."""
+    first = evaluate_day(o, h, l, c, spr, mins, open_min=open_min, or_minutes=or_minutes, mode=mode, rr=rr,
+                         slip=slip, comm=comm, day_complete=day_complete)
+    re = {**REENTRY_DEFAULTS, **(reentry or {})}
+    if not re["enabled"] or first["phase"] != "closed":
+        return {**first, "k": 0, "trades": [{**first, "k": 0}] if first["phase"] == "closed" else []}
+    o, h, l, c, spr, mins = (np.asarray(x, dtype=float) for x in (o, h, l, c, spr, mins))
+    n = len(o)
+    hi, lo = first["or_hi"], first["or_lo"]
+    trades = [{**first, "k": 0}]
+    consec = 1 if first["R"] < 0 else 0
+    j_exit = int(np.nonzero(mins == first["exit_min"])[0][-1])
+    w_end = open_min + int(re["window_min"])
+    last = trades[-1]
+
+    def done(why: str, phase: str = "closed") -> dict:
+        return {**last, "phase": phase, "k": len(trades) - 1, "trades": trades, "reentry_stop": why}
+
+    while True:
+        if last.get("reason") == "EOD":
+            return done("pozitia a ramas pana la final de fereastra")
+        if len(trades) >= int(re["max_trades"]):
+            return done(f"maxim {re['max_trades']} trade-uri / zi")
+        if re["max_consec_losses"] and consec >= int(re["max_consec_losses"]):
+            return done(f"{consec} pierderi la rand")
+        side = None
+        for i in range(j_exit + max(1, int(re["cooldown_bars"])), n):
+            if mins[i] >= w_end:
+                return done(f"fereastra de re-intrare ({re['window_min']} min) s-a terminat")
+            up, dn = h[i] >= hi, l[i] <= lo
+            if up and dn:
+                return done("ambele margini atinse in aceeasi bara")
+            if up or dn:
+                side = 1 if up else -1
+                lvl = hi if up else lo
+                fill = max(lvl, o[i]) if up else min(lvl, o[i])
+                entry = float(fill + side * (slip + spr[i] / 2))
+                sl, i0 = (lo if up else hi), i
+                break
+        if side is None:
+            if day_complete or (n and mins[n - 1] + 5 >= w_end):
+                return done("fara o noua rupere in fereastra")
+            return {**last, "phase": "waiting_entry", "k": len(trades), "trades": trades, "reentry_wait": True}
+        risk = abs(entry - sl)
+        cost_rt = float(spr[i0] + slip + comm)
+        if risk <= 0 or risk < 2 * cost_rt:
+            return done(f"re-intrare: risc {risk:.5g} < 2x cost {cost_rt:.5g}")
+        tp = entry + side * rr * risk if rr else None
+        pos = {"or_hi": hi, "or_lo": lo, "side": side, "entry": entry, "sl": float(sl), "tp": tp, "risk": risk,
+               "entry_bar": int(i0), "entry_min": int(mins[i0]), "k": len(trades)}
+        res = reason = j = None
+        for j in range(i0, n):
+            hit_sl = (l[j] <= sl) if side == 1 else (h[j] >= sl)
+            if j == i0:                                   # bara de intrare: doar SL (conservator, ca la stop)
+                if hit_sl:
+                    res, reason = -1.0 - (slip + spr[j] / 2) / risk, "SL"
+                    break
+                continue
+            hit_tp = tp is not None and ((h[j] >= tp) if side == 1 else (l[j] <= tp))
+            if hit_sl:
+                res, reason = -1.0 - (slip + spr[j] / 2) / risk, "SL"
+                break
+            if hit_tp:
+                res, reason = rr - (spr[j] / 2) / risk, "TP"
+                break
+        if res is None:
+            if not day_complete:
+                return {**pos, "phase": "in_position", "trades": trades, "last": float(c[-1]),
+                        "open_R": float(side * (c[-1] - entry) / risk)}
+            j = n - 1
+            res, reason = float((side * (c[-1] - entry) - spr[-1] / 2) / risk), "EOD"
+        res -= comm / risk
+        exit_px = float(sl - side * slip) if reason == "SL" else float(tp) if reason == "TP" else float(c[j])
+        last = {**pos, "phase": "closed", "R": float(res), "reason": reason, "exit": exit_px, "exit_min": int(mins[j])}
+        trades.append(last)
+        consec = consec + 1 if res < 0 else 0
+        j_exit = j
