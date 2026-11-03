@@ -954,6 +954,31 @@ export const useDailyConfig = () =>
     staleTime: 10_000,
   });
 
+export const useDailyPresets = () =>
+  useQuery<{ presets: Record<string, DailyPreset>; slots: string[] }>({
+    queryKey: ["daily-presets"],
+    queryFn:  () => apiFetch("/daily/presets"),
+    staleTime: 3_600_000,
+  });
+
+/** Previzualizarea unei piete noi pentru slot: costuri auto, marja, backtest rapid ~3 ani (nu salveaza nimic) */
+export const useDailyMarketPreview = () =>
+  useMutation({
+    mutationFn: (b: { slot: number; symbol: string; preset: string; costs_mode?: "auto" | "manual"; slip?: number; comm?: number }) =>
+      apiFetch<DailyMarketPreview>("/daily/market-preview", { method: "POST", body: b }),
+  });
+
+export const useDailySaveSlot = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (b: { slot: number; symbol: string; preset: string; costs_mode: "auto" | "manual"; slip?: number; comm?: number }) =>
+      apiFetch("/daily/config", { method: "PUT", body: { markets: [b] } }),
+    onSuccess: () => {
+      for (const k of ["daily-config", "daily-status"]) qc.invalidateQueries({ queryKey: [k] });
+    },
+  });
+};
+
 export const useDailySaveMarket = () => {
   const qc = useQueryClient();
   return useMutation({
@@ -973,7 +998,7 @@ export const useDailySetMode = () => {
   });
 };
 
-import type { DailyMarketConfig, DailyReentry } from "./types";
+import type { DailyMarketConfig, DailyMarketPreview, DailyPreset, DailyReentry } from "./types";
 
 // ── Noisy Engine ─────────────────────────────────────────────────────────────
 import type { NoisyStatus, NoisyTrade, NoisyConfig, NoisyMarketInfo } from "./types";

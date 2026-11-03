@@ -32,11 +32,13 @@ DEFAULTS: dict = {
         {"symbol": "GBPUSD", "enabled": True, "label": "Dimineata — deschiderea Londrei",
          "tz": "Europe/London", "open": "08:00", "last_bar": "14:25",
          "or_minutes": 5, "entry": "breakout", "rr": None,
-         "slip": 0.00002, "comm": 0.00007, "role": "observatie", "reentry": None},
+         "slip": 0.00002, "comm": 0.00007, "role": "observatie", "reentry": None,
+         "preset": "london", "costs_mode": "manual"},
         {"symbol": "US500", "enabled": True, "label": "Dupa-amiaza — deschiderea New York",
          "tz": "America/New_York", "open": "09:30", "last_bar": "15:55",
          "or_minutes": 30, "entry": "direction", "rr": None,
-         "slip": 0.10, "comm": 0.0, "role": "principal", "reentry": None},
+         "slip": 0.10, "comm": 0.0, "role": "principal", "reentry": None,
+         "preset": "new_york", "costs_mode": "manual"},
     ],
 }
 
@@ -106,6 +108,7 @@ def _sanitize(cfg: dict) -> dict:
                 e["slip"] = float(e.get("slip") or 0.0)
                 e["comm"] = float(e.get("comm") or 0.0)
                 e["enabled"] = bool(e.get("enabled", True))
+                e["costs_mode"] = e.get("costs_mode") if e.get("costs_mode") in ("auto", "manual") else "manual"
                 clean.append(e)
             except Exception:
                 continue

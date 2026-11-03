@@ -831,7 +831,7 @@ export interface AiProviderModelsResult {
 
 // ── Daily Engine (intraday ORB, mod SHADOW) ──────────────────────────────────
 export type DailyPhase =
-  | "waiting_open" | "forming_or" | "waiting_entry" | "in_position" | "closed"
+  | "waiting_open" | "stopped" | "forming_or" | "waiting_entry" | "in_position" | "closed"
   | "skipped" | "weekend" | "disabled" | "error";
 
 export interface DailyMarketStatus {
@@ -877,6 +877,19 @@ export interface DailyReentry {
 export interface DailyMarketConfig {
   symbol: string; label?: string; tz: string; open: string; last_bar: string; or_minutes: number;
   entry: "breakout" | "direction"; rr: number | null; reentry: DailyReentry; enabled: boolean;
+  preset?: string; costs_mode?: "auto" | "manual"; slip: number; comm: number; backtest?: DailyQuickBacktest | null;
+}
+export interface DailyPreset { label: string; tz: string; open: string; last_bar: string; or_minutes: number; entry: "breakout" | "direction" }
+export interface DailyQuickBacktest {
+  ok: boolean; detail?: string; trades?: number; per_week?: number; expectancy_R?: number; win_rate?: number;
+  total_R?: number; max_dd_R?: number; period?: string; verdict?: string | null; train_R?: number; test_R?: number;
+}
+export interface DailyMarketPreview {
+  market: DailyMarketConfig; description?: string; volume_min: number; margin_min_lot: number | null;
+  costs_mode: "auto" | "manual";
+  costs: { slip: number; comm: number; spread_live: number; spread_hist: number | null; spread_live_points: number;
+           markup_points: number; point: number; digits: number };
+  backtest: DailyQuickBacktest;
 }
 
 export interface DailyScore {
