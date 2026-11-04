@@ -65,7 +65,7 @@ def gen_fills(sig: str, entry_tf: str, trend_tf: str) -> tuple[list[dict], pd.Da
     s = session_cfg(sig, entry_tf, trend_tf)
     cfg = _apply_session_to_cfg(_load_base_cfg(), s)
     df = prepare_symbol_tf(CsvDataSource(DATA), sig, cfg, entry_tf, trend_tf)
-    params = _build_params(s, {sig: df}, 1000.0)
+    params = _build_params(s, {sig: df}, 1e9)    # balanta uriasa: lotul minim nu blocheaza semnale dupa pierderi
     params["spread_pips"] = {sig: SPREAD_PIPS[sig]}
     fills = []
     orig = P.simulate_trade
