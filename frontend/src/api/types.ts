@@ -1162,3 +1162,26 @@ export interface GlobalSignal {
   status: "pending" | "executed" | "rejected" | "expired" | "observe" | "virtual" | "other";
   status_label: string; id: string; ref: string; detail: string;
 }
+
+// ── Backtest legat de configuratia exacta (api/backtest_refresh.py) — Daily + Noisy ─────────────────────────
+export type BacktestAutoStatus = "pending" | "running" | "completed" | "failed" | "outdated" | "interrupted";
+export interface BacktestAuto<R = Record<string, unknown>> {
+  status: BacktestAutoStatus;
+  fingerprint?: string;
+  requested_at?: string; started_at?: string; finished_at?: string;
+  error?: string | null;
+  note?: string;
+  stale_result_summary?: string | null;
+  result?: R | null;
+}
+export interface DailyBacktestResult {
+  ok: boolean; trades?: number; days?: number; per_week?: number; expectancy_R?: number; win_rate?: number;
+  total_R?: number; max_dd_R?: number; period?: string; verdict?: string | null; train_R?: number; test_R?: number;
+  summary?: string; detail?: string;
+}
+export interface DailyBacktestAuto extends BacktestAuto<DailyBacktestResult> { slot: number; symbol?: string }
+// declaration merging: campuri noi pe interfetele existente (pauza per piata + backtest automat)
+export interface DailyMarketStatus { paused?: boolean }
+export interface DailyStatus { backtest_auto?: DailyBacktestAuto[] }
+export interface NoisyStatus { backtest_auto?: BacktestAuto<Record<string, unknown>> }
+export interface DailyMarketConfig { paused?: boolean; paused_at?: string | null }

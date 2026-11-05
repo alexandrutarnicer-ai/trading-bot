@@ -182,6 +182,11 @@ def noisy_status():
     st["budget_lock"] = state.get("budget_lock")
     st["paused"] = bool(_read(CONTROL_FILE, {}).get("paused"))
     st["backtest_ref"] = BACKTEST_REF_BY_TF.get(cfg.get("timeframe", "M1"), BACKTEST_REF_BY_TF["M1"])
+    try:                                          # backtest pe configuratia CURENTA (piata / TF / spread / ferestre ...)
+        from api.backtest_refresh import noisy_ensure
+        st["backtest_auto"] = noisy_ensure(cfg)
+    except Exception as e:                        # noqa: BLE001
+        st["backtest_auto"] = {"status": "failed", "error": f"{type(e).__name__}: {e}"}
     st.setdefault("mode", cfg["mode"])
     if not running or not st.get("spread"):
         # engine oprit: aceleasi valori pe care le-ar folosi (auto = spread-ul live de acum), ca UI-ul sa arate
@@ -350,14 +355,26 @@ def noisy_config_save(body: dict):
                 a[k] = v
         return a
     clean = save_config(merge(cur, body or {}))
+    try:                                           # configuratie noua → backtestul ei porneste in fundal (fingerprint)
+        from api.backtest_refresh import noisy_ensure
+        noisy_ensure(clean)
+    except Exception:
+        pass
     if clean["symbol"] != old_sym:
         _tg(f"🔁 <b>Noisy Engine — piața schimbată</b>: {old_sym} → {clean['symbol']}\n"
-            "Backtestul / pragurile au fost testate doar pe USDJPY — noua piață = variantă netestată.")
+            "Backtestul configurației noi pornește automat (vezi statusul în tab-ul Noisy).")
     if clean["mode"] != before:
         _tg("🟢 <b>Noisy Engine — mod EXECUȚIE</b>\nOrdine reale de la următorul semnal (DEMO, sau REAL dacă e "
             "deblocat în Settings → Trading LIVE → Noisy Engine)." if clean["mode"] == "execute" else
             "🧪 <b>Noisy Engine — mod SHADOW</b>\nFără ordine noi; trade-uri virtuale.")
     return {**clean, "_notice": notice} if notice else clean
+
+
+@router.post("/backtest/refresh")
+def noisy_backtest_refresh():
+    """Reporneste backtestul configuratiei curente (dupa „failed” / la cerere). Nu blocheaza."""
+    from api.backtest_refresh import noisy_ensure
+    return {"backtest_auto": noisy_ensure(load_config(), force=True)}
 
 
 @router.get("/logs")
