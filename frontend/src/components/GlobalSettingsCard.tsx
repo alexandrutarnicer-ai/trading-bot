@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Globe2 } from "lucide-react";
 import { useGlobalSettings, useSaveGlobalSettings } from "../api/hooks";
 import type { GlobalSettings } from "../api/hooks";
+import { SpecialTpParams } from "./SpecialTpCard";
 
 /**
  * Setări Globale — punct unic de control pentru Custom Engine + AI Engine.
@@ -123,6 +124,11 @@ export function GlobalSettingsCard() {
             onChange={e => set("ai_filter", { strict: e.target.checked })} />
           mod Strict (AI indisponibil → ordin blocat)
         </label>
+      </>)}
+
+      {row("special_tp", "Special Take Profit", "doar engine-urile eligibile (Custom)", <>
+        <SpecialTpParams v={draft.special_tp} onChange={patch => set("special_tp", patch)} num={num} />
+        <span className="text-slate-600">pornit aici = câștigă peste setarea din engine; Daily / Noisy / AI rămân excluse (vezi Custom Engine)</span>
       </>)}
 
       <div className="flex items-center gap-3 pt-2 border-t border-surface-border/40">

@@ -807,7 +807,30 @@ export interface GlobalSettings {
   max_concurrent_per_market: { enabled: boolean; max: number };
   ai_filter: { enabled: boolean; level: "permissive" | "balanced" | "strict"; strict: boolean };
   risk_cap: { enabled: boolean; max_risk_pct: number };
+  special_tp: SpecialTpCfg;
 }
+
+// Special Take Profit Mode (profit_lock.py) — blocarea profitului in trepte; Global → Engine, doar engine-uri eligibile
+export interface SpecialTpCfg {
+  enabled: boolean; mode: "special" | "atr_trail"; tp_extension_R: number; sl_offset_R: number; step_R: number; atr_mult: number;
+}
+export interface SpecialTpState {
+  global: SpecialTpCfg;
+  engine_cfg: Record<string, SpecialTpCfg>;
+  effective: Record<string, { cfg: SpecialTpCfg; source: "global" | "engine" | "off" | "not_eligible"; eligible: boolean; reason: string }>;
+  eligible: Record<string, string>; not_eligible: Record<string, string>;
+  research: { engine: string; market: string; current: number; special: number; dd_current: number; dd_special: number }[];
+}
+export const useSpecialTp = () =>
+  useQuery<SpecialTpState>({ queryKey: ["special-tp"], queryFn: () => apiFetch("/settings/special-tp"),
+                             refetchInterval: 60_000, refetchIntervalInBackground: false });
+export const useSaveSpecialTpEngine = () => {
+  const qc = useQueryClient();
+  return useMutation<SpecialTpState, Error, { engine: string; cfg: SpecialTpCfg }>({
+    mutationFn: body => apiFetch("/settings/special-tp/engine", { method: "PUT", body }),
+    onSuccess: data => qc.setQueryData(["special-tp"], data),
+  });
+};
 
 export const useGlobalSettings = () =>
   useQuery<GlobalSettings>({
@@ -821,7 +844,7 @@ export const useSaveGlobalSettings = () => {
   const qc = useQueryClient();
   return useMutation<GlobalSettings, Error, Partial<GlobalSettings>>({
     mutationFn: body => apiFetch("/settings/global", { method: "PUT", body }),
-    onSuccess: data => qc.setQueryData(["global-settings"], data),
+    onSuccess: data => { qc.setQueryData(["global-settings"], data); qc.invalidateQueries({ queryKey: ["special-tp"] }); },
   });
 };
 

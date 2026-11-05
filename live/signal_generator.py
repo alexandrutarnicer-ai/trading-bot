@@ -696,6 +696,128 @@ def _close_position_robust(symbol: str, volume: float, order_type,
     return _mt5_exec.order_send(base_req)
 
 
+# ── Special Take Profit Mode (profit_lock.py) — blocarea profitului in trepte pe pozitiile REALE ──────────────
+# Implicit OPRIT (Setari Globale → special_tp SAU profil → special_tp). Cand e oprit: zero apeluri MT5.
+# Treptele se recalculeaza la INCHIDEREA barei (varful = high / low al barelor inchise de la activare) — exact
+# varianta validata in backtest (scripts/research_tp/tp_granularity.py). SL-ul trimis e MONOTON: se compara mereu cu
+# SL-ul REAL al pozitiei din MT5 (restart / eroare / modificare manuala → niciodata mai putin protector).
+_STP_RUNTIME_CACHE: dict = {"mtime": None, "cfg": None}
+
+
+def _special_tp_engine_cfg() -> dict | None:
+    runtime_file = os.path.join(DATA_DIR, "active_profile_runtime.json")
+    try:
+        mtime = os.path.getmtime(runtime_file)
+    except OSError:
+        return None
+    if _STP_RUNTIME_CACHE["mtime"] != mtime:
+        try:
+            with open(runtime_file, encoding="utf-8") as f:
+                _STP_RUNTIME_CACHE["cfg"] = (json.load(f) or {}).get("special_tp")
+        except Exception:
+            _STP_RUNTIME_CACHE["cfg"] = None
+        _STP_RUNTIME_CACHE["mtime"] = mtime
+    return _STP_RUNTIME_CACHE["cfg"]
+
+
+def _special_tp_effective() -> dict:
+    import profit_lock
+    try:
+        from live import global_guard
+        g = global_guard.load_settings().get("special_tp")
+    except Exception:
+        g = None
+    return profit_lock.effective(g, _special_tp_engine_cfg(), "custom")
+
+
+def _stp_find_position(symbol: str, ticket: int):
+    """Pozitia reala a ordinului (cont hedging: ticket ordin → position_id)."""
+    for po in (_mt5_exec.positions_get(symbol=symbol) or []):
+        if po.ticket == ticket:
+            return po
+    ho = _mt5_exec.history_orders_get(ticket=ticket)
+    pid = getattr(ho[0], "position_id", None) if ho else None
+    if pid:
+        pp = _mt5_exec.positions_get(ticket=pid)
+        if pp:
+            return pp[0]
+    return None
+
+
+def _special_tp_step(p: dict, sig_id: str, symbol: str, d: int, df: pd.DataFrame, ticket, log,
+                     fmt: str = ".5f", session_id: str = "") -> dict | None:
+    """Un pas pe pozitia REALA a semnalului: muta SL / TP la treapta atinsa (sau inchide daca nivelul blocat a fost
+    deja depasit inapoi). Intoarce planul aplicat (pentru log / teste) sau None."""
+    if _mt5_exec is None or not p.get("triggered") or not ticket:
+        return None
+    eff = _special_tp_effective()
+    if not eff["cfg"]["enabled"]:
+        return None
+    import profit_lock as PL
+    entry, sl0, tp0 = float(p["entry"]), float(p["sl"]), p.get("tp")
+    risk = abs(entry - sl0)
+    if not risk or tp0 is None:
+        return None
+    rr = abs(float(tp0) - entry) / risk
+    pos = _stp_find_position(symbol, ticket)
+    if pos is None:                                 # inchisa (SL / TP / manual) — tracking-ul normal o inregistreaza
+        return None
+    closed = df.iloc[:-1]                           # doar bare INCHISE
+    t0 = pd.Timestamp(p.get("triggered_at") or p.get("armed_at"))
+    seg = closed[closed["time"] >= t0]
+    if seg.empty:
+        return None
+    peak = float(seg["high"].max()) if d == 1 else float(seg["low"].min())
+    info, tick = _mt5_exec.symbol_info(symbol), _mt5_exec.symbol_info_tick(symbol)
+    if info is None or tick is None or not tick.bid or not tick.ask:
+        return None
+    atr_R = None
+    if "atr" in closed.columns and len(closed) and pd.notna(closed["atr"].iloc[-1]):
+        atr_R = float(closed["atr"].iloc[-1]) / risk
+    cur_sl = float(pos.sl) if getattr(pos, "sl", 0) else None
+    cur_tp = float(pos.tp) if getattr(pos, "tp", 0) else None
+    plan = PL.plan_modification(side=d, entry=entry, risk=risk, rr=rr, peak_price=peak, current_sl=cur_sl,
+                                current_tp=cur_tp, cfg=eff["cfg"], bid=float(tick.bid), ask=float(tick.ask),
+                                point=float(info.point), tick=float(info.trade_tick_size or info.point),
+                                stops_level=int(getattr(info, "trade_stops_level", 0) or 0),
+                                freeze_level=int(getattr(info, "trade_freeze_level", 0) or 0), atr_R=atr_R)
+    dir_str = "LONG" if d == 1 else "SHORT"
+    if plan["action"] == "modify":
+        tp_send = plan["tp"] if plan["tp"] is not None else (cur_tp or 0.0)
+        res = _mt5_exec.order_send({"action": _mt5_exec.TRADE_ACTION_SLTP, "symbol": symbol, "position": pos.ticket,
+                                    "sl": plan["sl"], "tp": tp_send})
+        ok = res is not None and res.retcode == _mt5_exec.TRADE_RETCODE_DONE
+        plan["ok"] = ok
+        if ok:
+            p["stp_stage"], p["stp_sl"], p["stp_tp"] = plan["stage"], plan["sl"], tp_send
+            p.pop("stp_err", None)
+            log.info(f"  [STP] {sig_id} treapta {plan['stage']}: SL → {format(plan['sl'], fmt)} "
+                     f"(+{plan['sl_R']:.2f}R), TP → {format(tp_send, fmt) if tp_send else '—'} ({eff['source']})")
+            _send_telegram(f"<b>Special TP — treapta {plan['stage']}: {dir_str} {symbol}</b>\n"
+                           f"SL blocat la <code>{format(plan['sl'], fmt)}</code> (+{plan['sl_R']:.2f}R) · vârf "
+                           f"{plan['peak_R']:.2f}R\n<i>{session_id} | {sig_id}</i>")
+        else:
+            why = f"retcode {res.retcode} {getattr(res, 'comment', '')}" if res is not None else f"{_mt5_exec.last_error()}"
+            key = f"{plan['stage']}|{why}"
+            if p.get("stp_err") != key:             # o singura data per treapta / motiv (fara spam la fiecare bara)
+                log.warning(f"  [STP] {sig_id}: modificarea SL respinsă ({why}) — SL real rămâne "
+                            f"{format(cur_sl, fmt) if cur_sl else '—'}; reîncerc la bara următoare")
+                p["stp_err"] = key
+        return plan
+    if plan["action"] == "close":
+        close_type = _mt5_exec.ORDER_TYPE_SELL if pos.type == 0 else _mt5_exec.ORDER_TYPE_BUY
+        price = float(tick.bid) if pos.type == 0 else float(tick.ask)
+        res = _close_position_robust(symbol, pos.volume, close_type, pos.ticket, price, "STP lock", log)
+        ok = res is not None and res.retcode == _mt5_exec.TRADE_RETCODE_DONE
+        plan["ok"] = ok
+        log.warning(f"  [STP] {sig_id}: {plan['reason']} → închidere la piață {'OK' if ok else 'EȘUATĂ'}")
+        if ok:
+            _send_telegram(f"<b>Special TP — închis: {dir_str} {symbol}</b>\n{plan['reason']} (vârf "
+                           f"{plan['peak_R']:.2f}R)\n<i>{session_id} | {sig_id}</i>")
+        return plan
+    return plan
+
+
 def _close_fill(result, request_price: float) -> tuple[float, float | None]:
     """
     Pretul real de iesire + profitul net (USD) al unei inchideri DONE.
@@ -1636,6 +1758,12 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                                     if _pid2:
                                         _pp2 = _mt5_exec.positions_get(ticket=_pid2)
                                         if _pp2: _pos_mt5 = _pp2[0]
+                            # Special TP a preluat pozitia (SL blocat in profit) SAU SL-ul real e deja mai protector
+                            # (manual / alt mecanism) → BE nu trimite nimic (SL monoton; TP-ul extins nu e readus la 2R)
+                            if _pos_mt5 and (p.get("stp_stage") or (
+                                    getattr(_pos_mt5, "sl", 0) and not (_nsl > _pos_mt5.sl if d == 1 else _nsl < _pos_mt5.sl))):
+                                log.info(f"  [BE] {sig_id}: SL real {_pos_mt5.sl} deja mai protector / Special TP activ — BE sărit")
+                                _pos_mt5 = None
                             if _pos_mt5:
                                 _slr = _mt5_exec.order_send({"action": _mt5_exec.TRADE_ACTION_SLTP,
                                     "symbol": symbol, "position": _pos_mt5.ticket,
@@ -1654,6 +1782,11 @@ def _update_outcomes(df: pd.DataFrame, symbol: str,
                                     log.warning(f"  [BE] {sig_id}: SLTP esuat")
                         p["be_phase"]  = _bep
                         p["be_last_t"] = _bar_be["time"]
+                if mt5_res is None:                  # pozitia inca deschisa → Special TP (implicit OPRIT)
+                    try:
+                        _special_tp_step(p, sig_id, symbol, d, df, _ticket, log, fmt, session_id)
+                    except Exception as _stp_e:      # un esec al mecanismului nu opreste sesiunea
+                        log.warning(f"  [STP] {sig_id}: {type(_stp_e).__name__}: {_stp_e}")
                 continue  # nu facem bar-based tracking cand avem ticket MT5
 
             # Bar-based tracking pentru sesiuni fara executie (execute_trades=False / OBS)

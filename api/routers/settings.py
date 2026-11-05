@@ -246,3 +246,75 @@ def put_global_settings(body: dict):
         except Exception:
             pass
     return saved
+
+
+# ── Special Take Profit Mode (profit_lock.py) — Global → Engine, eligibilitate ─────────────────────────────
+# Global: sectiunea `special_tp` din Setari Globale (PUT /settings/global). Engine: `special_tp` la nivelul
+# profilului Custom (data/profiles/standard.json + profilul runtime, recitit de sesiuni la fiecare bara).
+
+_STP_PROFILE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                            "data", "profiles", "standard.json")
+_STP_RUNTIME = os.path.join(os.path.dirname(_STP_PROFILE), "..", "active_profile_runtime.json")
+
+# Rezumatul backtestului (scripts/research_tp/, docs/SPECIAL_TP_RESEARCH.md) — afisat langa comutator
+SPECIAL_TP_RESEARCH = [
+    {"engine": "Custom", "market": "EURUSD (S1)", "current": -0.008, "special": +0.014, "dd_current": -60.1, "dd_special": -45.0},
+    {"engine": "Custom", "market": "GBPUSD (S15)", "current": -0.050, "special": -0.030, "dd_current": -45.7, "dd_special": -47.4},
+    {"engine": "Daily", "market": "DE40 Frankfurt", "current": +0.084, "special": +0.039, "dd_current": -64.3, "dd_special": -39.0},
+    {"engine": "Daily", "market": "GBPUSD Londra", "current": +0.069, "special": +0.015, "dd_current": -141.3, "dd_special": -82.8},
+    {"engine": "Noisy", "market": "US500 M1", "current": -0.096, "special": -0.090, "dd_current": -402.5, "dd_special": -383.5},
+]
+
+
+def _stp_engine_cfg() -> dict:
+    try:
+        with open(_STP_PROFILE, encoding="utf-8") as f:
+            return (json.load(f) or {}).get("special_tp") or {}
+    except Exception:
+        return {}
+
+
+@router.get("/special-tp")
+def get_special_tp():
+    import profit_lock
+    from live import global_guard
+    g = global_guard.load_settings().get("special_tp")
+    eng = {"custom": profit_lock.sanitize(_stp_engine_cfg())}
+    return {"global": g, "engine_cfg": eng,
+            "effective": {e: {k: v for k, v in profit_lock.effective(g, eng.get(e), e).items()}
+                          for e in ("custom", "ai", "daily", "noisy")},
+            "eligible": profit_lock.ELIGIBLE, "not_eligible": profit_lock.NOT_ELIGIBLE,
+            "research": SPECIAL_TP_RESEARCH}
+
+
+@router.put("/special-tp/engine")
+def put_special_tp_engine(body: dict):
+    """Setarea per engine (folosita DOAR cand Global e oprit). Doar engine-urile eligibile."""
+    import profit_lock
+    engine = (body or {}).get("engine", "custom")
+    if engine not in profit_lock.ELIGIBLE:
+        raise HTTPException(400, f"{engine}: {profit_lock.NOT_ELIGIBLE.get(engine, 'neeligibil')}")
+    cfg = profit_lock.sanitize((body or {}).get("cfg"))
+    before = profit_lock.sanitize(_stp_engine_cfg())
+    for path in (_STP_PROFILE, os.path.normpath(_STP_RUNTIME)):
+        try:
+            with open(path, encoding="utf-8") as f:
+                prof = json.load(f)
+        except FileNotFoundError:
+            continue
+        prof["special_tp"] = cfg
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(prof, f, indent=2, ensure_ascii=False)
+        os.replace(tmp, path)
+    if before != cfg:
+        try:
+            from api.telegram import send_message
+            import threading
+            txt = (f"🎯 <b>Special TP — Custom Engine {'PORNIT' if cfg['enabled'] else 'oprit'}</b>\n"
+                   f"extensie +{cfg['tp_extension_R']:g}R · SL la {cfg['sl_offset_R']:g}R sub prag · pas {cfg['step_R']:g}R "
+                   f"({cfg['mode']})\n<i>Se aplică pozițiilor deschise de la următoarea bară (fără restart).</i>")
+            threading.Thread(target=send_message, args=(txt,), daemon=True).start()
+        except Exception:
+            pass
+    return get_special_tp()

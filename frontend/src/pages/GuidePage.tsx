@@ -1046,6 +1046,7 @@ export function GuidePage() {
               <KV k="Închidere vineri" v="Ora = cea mai devreme dintre global și sesiune; cripto exceptat implicit" />
               <KV k="Protecție știri" v="Impact = minimul, minute înainte/după = maximul dintre global și sesiune" />
               <KV k="Max poziții / piață" v="Poziții + pending pe un simbol, pe tot contul, toate engine-urile" />
+              <KV k="Special Take Profit" v="OPRIT implicit; doar Custom Engine (Daily / Noisy / AI excluse pe baza backtestului). La atingerea RR-ului (ex. 2R) SL-ul se blochează la 1,9R și urcă în trepte de 0,5R cât timp piața continuă; SL-ul nu coboară niciodată. Pornit în Setări Globale = câștigă; altfel setarea din tab-ul Custom Engine" />
               <KV k="Risc maxim pe trade" v="ACTIV la 2% din equity (Custom + AI + Daily): volumul peste limită e redus; dacă nici lotul minim nu încape, ordinul nu se plasează" />
               <KV k="Filtru AI" v="Doar Custom Engine: nivelul cel mai strict, Strict = SAU" />
             </div>
