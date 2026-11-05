@@ -32,6 +32,7 @@ if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
 from daily_engine.config import DATA_DIR, ENTRY_MODES, load_config, save_default_config, hm_to_min  # noqa: E402
+from daily_engine.pause import apply_pause, pause_cut_min  # noqa: E402
 from daily_engine.strategy import evaluate_day_multi  # noqa: E402
 import position_sizing as ps  # noqa: E402
 from daily_engine import executor as X  # noqa: E402
@@ -244,7 +245,11 @@ class DailyEngine:
             return {**info, "phase": "disabled"}
         if now_loc.weekday() >= 5:
             return {**info, "phase": "weekend"}
+        info["paused"] = bool(m.get("paused"))
+        cut = pause_cut_min(m, day)                 # pauza per piata: fara intrari noi (vezi daily_engine/pause.py)
         if now_loc < w_open:
+            if cut is not None:
+                return {**info, "phase": "paused", "reason": "piață pe pauză — fără intrări noi"}
             self._arm(sym, day)
             return {**info, "phase": "waiting_open", **self._exec_info(sym, day)}
 
@@ -264,6 +269,7 @@ class DailyEngine:
                                 open_min=hm_to_min(m["open"]), or_minutes=m["or_minutes"],
                                 mode=ENTRY_MODES[m["entry"]], rr=m.get("rr"), slip=m["slip"],
                                 comm=m["comm"], day_complete=day_complete, reentry=m.get("reentry"))
+        st = apply_pause(st, cut)
         if st["phase"] in ("waiting_open", "forming_or"):
             self._arm(sym, day)
         self._events(m, str(day), st)
@@ -313,6 +319,12 @@ class DailyEngine:
             for p in pos_t:
                 ok, res = X.close(self.mt5, p)
                 self._exec_note(sym, f"închis la final de fereastră ({'ok' if ok else 'EȘUAT ' + str(getattr(res, 'retcode', res))})")
+            return
+        # 1b) piata pe PAUZA: niciun ordin nou; ordinele de intrare neactivate se anuleaza, pozitiile raman gestionate
+        if m.get("paused"):
+            for o in ord_t:
+                ok_c = X.cancel(self.mt5, o)
+                self._exec_note(sym, f"pauză: ordinul de intrare #{o.ticket} anulat ({'ok' if ok_c else 'EȘUAT'})")
             return
         # 2) o pozitie deschisa -> anuleaza cealalta margine (OCO)
         if pos_t and ord_t:

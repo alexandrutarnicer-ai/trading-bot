@@ -171,6 +171,9 @@ def engine_entries(inp: dict, now: datetime) -> list[dict]:
             e.update(status="stopped", reason="piață dezactivată")
         elif not d.get("running"):
             e.update(status="stopped", reason="Daily Engine oprit")
+        elif m.get("paused"):
+            e.update(status="blocked", reason="piață pe pauză (manual) — fără intrări noi", manual_pause=True,
+                     phase=ph.get("phase"))
         else:
             status, label = _DAILY_PHASE.get(ph.get("phase"), ("idle", ph.get("phase") or "—"))
             if ph.get("reason") and status in ("idle", "blocked"):

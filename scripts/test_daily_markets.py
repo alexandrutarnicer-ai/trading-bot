@@ -140,6 +140,11 @@ fm.rates = rates_for(datetime(2026, 3, 2, 10, 0), 10, 102,   # Frankfurt 09:00 =
                       lambda dd, i: (24000 + i, 24002 + i, 23999 + i, 24001 + i), 50)
 R._mt5_read = lambda: (threading.RLock(), lambda: fm)
 R._slot_busy = lambda sym: None
+# backtestul automat (api/backtest_refresh): store temporar + job simulat — testul nu atinge MT5-ul real / fisierul real
+import api.backtest_refresh as BR  # noqa: E402
+BR.STORE_PATHS = {"daily": os.path.join(TMP, "bt_auto_daily.json"), "noisy": os.path.join(TMP, "bt_auto_noisy.json")}
+BT_JOBS = []
+BR.daily_job = lambda m_: (BT_JOBS.append(m_["symbol"]), (lambda: {"ok": True, "trades": 1, "summary": m_["symbol"]}))[1]
 pv = R.daily_market_preview({"slot": 0, "symbol": "de40", "preset": "frankfurt"})
 check("previzualizare DE40 Frankfurt: ora / intervalul / modul din sablon, costuri auto, marja, backtest",
       pv["market"]["symbol"] == "DE40" and pv["market"]["open"] == "09:00" and pv["market"]["tz"] == "Europe/Berlin"
@@ -148,9 +153,10 @@ check("previzualizarea NU salveaza nimic", C.load_config()["markets"][0]["symbol
 SENT.clear()
 out = R.daily_config_save({"markets": [{"slot": 0, "symbol": "DE40", "preset": "frankfurt"}]})
 s0 = out["markets"][0]
-check("salvat: slot 1 = DE40 Frankfurt, costuri AUTO, backtest pastrat langa piata",
+check("salvat: slot 1 = DE40 Frankfurt, costuri AUTO; backtestul vechi scos din config",
       (s0["symbol"], s0["preset"], s0["open"], s0["costs_mode"], s0["slip"]) == ("DE40", "frankfurt", "09:00", "auto", 0.125)
-      and (s0.get("backtest") or {}).get("ok"), s0)
+      and "backtest" not in s0, s0)
+check("... backtestul configuratiei noi pornit AUTOMAT in fundal (fingerprint nou)", "DE40" in BT_JOBS, BT_JOBS)
 check("slotul 2 (US500) neatins; re-intrari / R:R ale slotului pastrate",
       out["markets"][1]["symbol"] == "US500" and s0["reentry"]["enabled"] is False and s0["rr"] is None)
 check("Telegram: diff-ul schimbarii de piata", any("GBPUSD (london) → DE40 (frankfurt)" in t for t in SENT), SENT)

@@ -109,6 +109,8 @@ def _sanitize(cfg: dict) -> dict:
                 e["comm"] = float(e.get("comm") or 0.0)
                 e["enabled"] = bool(e.get("enabled", True))
                 e["costs_mode"] = e.get("costs_mode") if e.get("costs_mode") in ("auto", "manual") else "manual"
+                e["paused"] = bool(e.get("paused", False))          # pauza per piata (daily_engine/pause.py)
+                e["paused_at"] = e.get("paused_at") if e["paused"] else None
                 clean.append(e)
             except Exception:
                 continue
