@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { AlertTriangle, Loader2, OctagonX, Pause, Play, RotateCcw, Square, Zap } from "lucide-react";
-import { useMt5Markets, useNoisyAction, useNoisyLogs, useNoisyMarketInfo, useNoisySaveConfig, useNoisyStatus, useNoisyTrades,
+import { useBacktestRefresh, useMt5Markets, useNoisyAction, useNoisyLogs, useNoisyMarketInfo, useNoisySaveConfig, useNoisyStatus, useNoisyTrades,
   useTimezone } from "../api/hooks";
 import type { NoisyConfig, NoisySpreadInfo, NoisyStatus } from "../api/types";
+import { BacktestAutoBadge } from "../components/BacktestAutoBadge";
 
 // Ora RO (fereastra Noisy e definita si testata in ora RO) → ora din alt fus, pentru afisare.
 function roToZone(hm: string, zone: string): string {
@@ -366,7 +367,11 @@ function Market({ st }: { st?: NoisyStatus }) {
 }
 
 function Score({ st }: { st?: NoisyStatus }) {
-  const s = st?.scorecard, r = st?.backtest_ref ?? {};
+  const retry = useBacktestRefresh("noisy");
+  const auto = st?.backtest_auto;
+  // backtestul configuratiei CURENTE (piata / TF / spread / ferestre); referinta veche din cod doar ca rezerva marcata
+  const live = auto?.status === "completed" && auto.result ? (auto.result as Record<string, unknown>) : null;
+  const s = st?.scorecard, r: Record<string, any> = live ?? {};
   const rows: [string, string, string][] = [
     ["Trade-uri", String(s?.trades ?? 0), `${r.trades ?? "—"} (≈${r.per_day ?? "—"}/zi)`],
     ["Win rate", s?.win_rate == null ? "—" : `${(s.win_rate * 100).toFixed(1)}%`, r.win_rate == null ? "—" : `${(Number(r.win_rate) * 100).toFixed(1)}%`],
@@ -380,12 +385,24 @@ function Score({ st }: { st?: NoisyStatus }) {
   ];
   return (
     <div className="rounded-xl border border-surface-border bg-surface-card p-4">
-      <div className="text-[11px] uppercase tracking-wider text-slate-500 mb-2">Shadow vs backtest ({String(r.period ?? "")})</div>
+      <div className="text-[11px] uppercase tracking-wider text-slate-500 mb-2 flex items-center gap-2 flex-wrap">
+        Shadow vs backtest {live ? `(${String(r.symbol ?? "")} ${String(r.timeframe ?? "")}, ${String(r.period ?? "")})` : ""}
+        <BacktestAutoBadge a={auto} onRetry={() => retry.mutate(undefined)} retrying={retry.isPending} />
+      </div>
+      {!live && (
+        <div className="text-[10px] text-slate-500 mb-2">
+          {auto?.status === "failed" ? `Backtestul configurației curente a eșuat: ${auto.error ?? ""}` :
+            "Backtestul configurației curente (12 luni, aceeași funcție ca engine-ul) se calculează în fundal — apare aici când e gata."}
+        </div>
+      )}
       <table className="w-full text-xs">
         <thead><tr className="text-slate-500 text-left"><th className="py-1">Metrică</th><th>Shadow</th><th>Backtest</th></tr></thead>
         <tbody>{rows.map(([k, a, b]) => <tr key={k} className="border-t border-surface-border"><td className="py-1 text-slate-400">{k}</td><td className="text-white">{a}</td><td className="text-slate-400">{b}</td></tr>)}</tbody>
       </table>
-      <div className="text-[10px] text-slate-500 mt-2">Criterii de trecere spre execuție: {String(r.pass_criteria ?? "")}</div>
+      <div className="text-[10px] text-slate-500 mt-2">
+        {live ? `t-stat ${String(r.t_stat ?? "—")} · train ${String(r.train_R ?? "—")}R / test ${String(r.test_R ?? "—")}R · ~${String(r.per_day ?? "—")} trade-uri / zi`
+              : `Referința veche din cercetare (${String(st?.backtest_ref?.symbol ?? "")}) nu corespunde neapărat configurației curente.`}
+      </div>
     </div>
   );
 }

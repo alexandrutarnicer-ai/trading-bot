@@ -1013,6 +1013,26 @@ export const useDailySaveMarket = () => {
   });
 };
 
+export const useDailyPauseMarket = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (b: { slot: number; paused: boolean }) =>
+      apiFetch(`/daily/markets/${b.slot}/${b.paused ? "pause" : "resume"}`, { method: "POST" }),
+    onSuccess: () => {
+      for (const k of ["daily-config", "daily-status"]) qc.invalidateQueries({ queryKey: [k] });
+    },
+  });
+};
+
+export const useBacktestRefresh = (engine: "daily" | "noisy") => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (slot?: number) =>
+      apiFetch(`/${engine}/backtest/refresh`, { method: "POST", body: engine === "daily" ? { slot: slot ?? 0 } : undefined }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: [`${engine}-status`] }),
+  });
+};
+
 export const useDailySetMode = () => {
   const qc = useQueryClient();
   return useMutation({
