@@ -190,6 +190,25 @@ out = R.daily_config_save({"markets": [{"slot": 0, "symbol": "GBPUSD", "preset":
 check("revenire la GBPUSD Londra: costuri auto (slip 25% din 10 points, markup 9 points)",
       out["markets"][0]["symbol"] == "GBPUSD" and abs(out["markets"][0]["comm"] - 0.00009) < 1e-12, out["markets"][0])
 check("engine-ul citeste piata noua (hot-reload)", [m_["symbol"] for m_ in C.load_config()["markets"]] == ["GBPUSD", "US500"])
+
+print("4. API: pauza per piata (Pause / Resume)")
+SENT.clear()
+r1 = R.daily_market_pause(1)
+cfg_p = C.load_config()["markets"][1]
+check("pause slot 2: persistat in config (paused + moment UTC), slotul 1 neatins",
+      r1["paused"] and r1["changed"] and cfg_p["paused"] and cfg_p["paused_at"] and not C.load_config()["markets"][0]["paused"], cfg_p)
+check("... Telegram o data", sum("PE PAUZĂ" in t for t in SENT) == 1, SENT)
+check("pause repetat → fara schimbare / fara mesaj nou", R.daily_market_pause(1)["changed"] is False and
+      sum("PE PAUZĂ" in t for t in SENT) == 1)
+out = R.daily_config_save({"markets": [{"symbol": C.load_config()["markets"][1]["symbol"], "rr": 2}]})
+check("salvarea altor optiuni (R:R) pastreaza pauza", C.load_config()["markets"][1]["paused"] is True)
+r2 = R.daily_market_resume(1)
+check("resume → activ, momentul pauzei sters", r2["paused"] is False and C.load_config()["markets"][1]["paused_at"] is None)
+try:
+    R.daily_market_pause(5)
+    check("slot invalid → 400", False)
+except R.HTTPException as e:
+    check("slot invalid → 400", e.status_code == 400)
 shutil.rmtree(TMP, ignore_errors=True)
 print(f"\n{'TOATE TESTELE AU TRECUT' if not FAIL else f'{FAIL} TESTE ESUATE'}")
 sys.exit(1 if FAIL else 0)
