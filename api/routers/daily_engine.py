@@ -75,8 +75,13 @@ def daily_status():
     st["pid"] = pid if running else None
     if not running:
         st["scorecard"] = scorecard(load_trades())   # disponibil si cu motorul oprit
-    st["backtest_ref"] = BACKTEST_REF
+    st["backtest_ref"] = BACKTEST_REF            # referinta istorica din cercetare (doc) — doar pentru pietele ei
     _cfg = load_config()
+    try:                                          # backtest legat de configuratia EXACTA (porneste singur daca lipseste)
+        from api.backtest_refresh import daily_ensure
+        st["backtest_auto"] = daily_ensure(_cfg)
+    except Exception as e:                        # noqa: BLE001 — statusul nu cade din cauza backtestului
+        st["backtest_auto"] = [{"status": "failed", "error": f"{type(e).__name__}: {e}"}]
     st.setdefault("mode", _cfg["mode"])
     st.setdefault("sizing", _cfg.get("sizing"))
     return st
@@ -187,6 +192,54 @@ def daily_market_preview(body: dict):
     return {"market": m, **chk, "backtest": bt}
 
 
+@router.post("/backtest/refresh")
+def daily_backtest_refresh(body: dict | None = None):
+    """Reporneste backtestul unui slot (dupa „failed” / la cerere). Nu blocheaza."""
+    from api.backtest_refresh import daily_ensure
+    slot = int((body or {}).get("slot", 0))
+    return {"backtest_auto": daily_ensure(load_config(), force_slots=(slot,))}
+
+
+@router.post("/markets/{slot}/pause")
+def daily_market_pause(slot: int):
+    """Pune piata slotului pe PAUZA: fara intrari noi (shadow si executie); pozitiile deschise raman gestionate
+    (SL, inchiderea la final de fereastra). Persistat in config.json — supravietuieste restartului."""
+    return _set_pause(slot, True)
+
+
+@router.post("/markets/{slot}/resume")
+def daily_market_resume(slot: int):
+    return _set_pause(slot, False)
+
+
+def _set_pause(slot: int, paused: bool) -> dict:
+    from datetime import datetime as _dt, timezone as _tz
+    from daily_engine.config import CFG_PATH
+    import json as _json
+    with open(CFG_PATH, encoding="utf-8") as f:
+        raw = _json.load(f)
+    mk = raw.get("markets") or []
+    if not 0 <= slot < len(mk):
+        raise HTTPException(400, "slot invalid")
+    m = mk[slot]
+    was = bool(m.get("paused"))
+    m["paused"] = paused
+    m["paused_at"] = _dt.now(_tz.utc).isoformat(timespec="seconds") if paused else None
+    if was == paused:
+        return {"ok": True, "slot": slot, "symbol": m.get("symbol"), "paused": paused, "changed": False}
+    with open(CFG_PATH, "w", encoding="utf-8") as f:
+        _json.dump(raw, f, indent=2, ensure_ascii=False)
+    try:
+        from api.telegram import send_message
+        send_message(f"{'⏸' if paused else '▶️'} <b>Daily Engine — {m.get('symbol')} {'PE PAUZĂ' if paused else 'reluat'}</b>\n"
+                     + ("Fără intrări noi; pozițiile deschise rămân gestionate (SL, închidere la final de fereastră)."
+                        if paused else "Piața poate deschide din nou trade-uri (de la următoarea fereastră / bară)."))
+    except Exception:
+        pass
+    return {"ok": True, "slot": slot, "symbol": m.get("symbol"), "paused": paused, "changed": True,
+            "paused_at": m["paused_at"]}
+
+
 @router.post("/start")
 def daily_start():
     pid = _read_pid()
@@ -288,16 +341,8 @@ def daily_config_save(body: dict):
                         raise HTTPException(503, f"MT5 indisponibil: {e}")
                     chk = _market_check(mt5, new, upd.get("costs_mode") or "auto", upd.get("slip"), upd.get("comm"))
                     new.update(slip=chk["costs"]["slip"], comm=chk["costs"]["comm"])
-                    from datetime import datetime as _dt, timedelta as _td, timezone as _tz
-                    from daily_engine.market_tools import backtest_rates
-                    _end = _dt.now(_tz.utc)
-                    _rates = mt5.copy_rates_range(new["symbol"], mt5.TIMEFRAME_M5, _end - _td(days=3 * 365), _end)
-                    _pt = float(mt5.symbol_info(new["symbol"]).point)
                 new["costs_mode"] = chk["costs_mode"]
-                try:                                   # backtestul rapid pastrat langa piata (afisat pe card)
-                    new["backtest"] = backtest_rates(_rates, new, _pt) if _rates is not None and len(_rates) else None
-                except Exception:
-                    new["backtest"] = None
+                new.pop("backtest", None)              # backtestul vechi NU mai e valabil — refresh automat (backtest_auto)
                 for k_ in ("label", "role"):
                     new.setdefault(k_, old.get(k_))
                 if new["symbol"] != old["symbol"] or new["preset"] != old.get("preset"):
@@ -306,7 +351,7 @@ def daily_config_save(body: dict):
                                    f"comision {new['comm']:g}")
                 raw_mk[slot] = {k_: v for k_, v in new.items() if k_ in (
                     "symbol", "enabled", "label", "tz", "open", "last_bar", "or_minutes", "entry", "rr", "slip", "comm",
-                    "role", "reentry", "preset", "costs_mode", "backtest")}
+                    "role", "reentry", "preset", "costs_mode", "paused", "paused_at")}
                 continue
             m = by.get(upd.get("symbol"))
             if m is None:
@@ -332,6 +377,11 @@ def daily_config_save(body: dict):
     raw["mode"], raw["sizing"] = clean["mode"], clean["sizing"]
     with open(CFG_PATH, "w", encoding="utf-8") as f:
         _json.dump(raw, f, indent=2, ensure_ascii=False)
+    try:
+        from api.backtest_refresh import daily_ensure
+        daily_ensure(load_config())                # fingerprint nou → rezultatul vechi devine „outdated”, job nou
+    except Exception:
+        pass
     if changes:
         try:
             from api.telegram import send_message

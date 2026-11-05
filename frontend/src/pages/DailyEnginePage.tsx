@@ -2,8 +2,10 @@ import { useState } from "react";
 import { CalendarClock, Loader2, Play, Square, FlaskConical } from "lucide-react";
 import { PositionSizingCard } from "../components/PositionSizingCard";
 import { useDailyConfig, useDailyMarketPreview, useDailyPresets, useDailySaveMarket, useDailySaveSlot, useDailyStatus,
-  useDailyTrades, useDailyLogs, useDailyStart, useDailyStop, useDailySetMode, useMt5Markets } from "../api/hooks";
-import type { DailyMarketConfig, DailyMarketStatus, DailyQuickBacktest, DailyReentry, DailyScore } from "../api/types";
+  useDailyTrades, useDailyLogs, useDailyStart, useDailyStop, useDailySetMode, useMt5Markets, useDailyPauseMarket,
+  useBacktestRefresh } from "../api/hooks";
+import type { DailyBacktestAuto, DailyMarketConfig, DailyMarketStatus, DailyQuickBacktest, DailyReentry, DailyScore } from "../api/types";
+import { BacktestAutoBadge } from "../components/BacktestAutoBadge";
 
 // Daily Engine — motor intraday ORB pe deschiderea Londrei (dimineata) si New York (dupa-amiaza).
 // Mod SHADOW: foloseste preturile reale, inregistreaza trade-uri VIRTUALE, nu plaseaza niciun ordin.
@@ -19,6 +21,7 @@ const PHASE: Record<string, { label: string; cls: string }> = {
   disabled:      { label: "Dezactivat", cls: "bg-slate-700/40 text-slate-500" },
   error:         { label: "Eroare", cls: "bg-loss/15 text-loss" },
   stopped:       { label: "Engine oprit", cls: "bg-slate-700/40 text-slate-500" },
+  paused:        { label: "Pe pauză", cls: "bg-amber-500/15 text-amber-300" },
 };
 
 const fmt = (v: number | undefined) => (v == null ? "—" : Math.abs(v) >= 100 ? v.toFixed(2) : v.toFixed(5));
@@ -142,9 +145,6 @@ function MarketSettings({ symbol, orMinutes, slot }: { symbol: string; orMinutes
   return (
     <div className="border-t border-surface-border pt-2 text-[11px] space-y-2">
       {slot != null && <ChangeMarket key={`${cfg.symbol}-${cfg.preset}`} slot={slot} current={cfg} />}
-      {cfg.backtest && cfg.backtest.ok && !RESEARCH[symbol] && (
-        <div className="text-[10px] text-slate-400">Backtest la schimbarea pieței: {fmtBt(cfg.backtest)}</div>
-      )}
       <button onClick={() => setOpen(!open)} className="text-slate-400 hover:text-white">
         {open ? "▾" : "▸"} Opțiuni: R:R {cfg.rr ? `${cfg.rr}R` : "fără TP"} · re-intrări {cfg.reentry.enabled ? "PORNITE" : "oprite"}
       </button>
@@ -205,11 +205,21 @@ function MarketSettings({ symbol, orMinutes, slot }: { symbol: string; orMinutes
   );
 }
 
-function MarketCard({ m, score, bt, slot }: {
+function MarketCard({ m, score, bt, slot, auto, paused, execute }: {
   m: DailyMarketStatus; score?: DailyScore; slot?: number;
   bt?: { trades: number; expectancy_R: number; period: string; verdict: string };
+  auto?: DailyBacktestAuto; paused?: boolean; execute?: boolean;
 }) {
-  const ph = PHASE[m.phase] ?? PHASE.waiting_open;
+  const pause = useDailyPauseMarket();
+  const retry = useBacktestRefresh("daily");
+  const isPaused = paused ?? m.paused ?? false;
+  const ph = PHASE[isPaused && m.phase !== "in_position" ? "paused" : m.phase] ?? PHASE.waiting_open;
+  function togglePause() {
+    if (slot == null || pause.isPending) return;
+    if (isPaused && execute && !window.confirm(`Reiei ${m.symbol}? În modul EXECUȚIE piața poate plasa din nou ordine REALE.`)) return;
+    pause.mutate({ slot, paused: !isPaused });
+  }
+  const r = auto?.result;
   const side = m.side === 1 ? "LONG" : m.side === -1 ? "SHORT" : null;
   return (
     <div className="bg-surface rounded-xl border border-surface-border p-4 space-y-3">
@@ -222,7 +232,21 @@ function MarketCard({ m, score, bt, slot }: {
           <div className="text-[11px] text-slate-400">{m.label}</div>
         </div>
         <span className={`ml-auto text-[11px] px-2 py-0.5 rounded-full font-semibold ${ph.cls}`}>{ph.label}</span>
+        {slot != null && (
+          <button onClick={togglePause} disabled={pause.isPending}
+            title={isPaused ? "Reia piața (permite din nou intrări noi)" : "Pune piața pe pauză: fără intrări noi; pozițiile deschise rămân gestionate"}
+            className={`text-[11px] px-2 py-0.5 rounded-lg font-semibold disabled:opacity-40 ${isPaused ? "bg-profit/15 text-profit hover:bg-profit/25" : "bg-amber-500/15 text-amber-300 hover:bg-amber-500/25"}`}>
+            {pause.isPending ? "…" : isPaused ? "▶ Resume" : "⏸ Pause"}
+          </button>
+        )}
       </div>
+      {isPaused && (
+        <div className="text-[11px] text-amber-300/90 bg-amber-500/10 border border-amber-500/20 rounded-lg px-2 py-1">
+          Pe pauză: nu se deschid trade-uri noi (shadow sau real); ordinele de intrare neactivate se anulează; o poziție deja
+          deschisă rămâne gestionată (SL, închidere la final de fereastră). Starea persistă la restart.
+        </div>
+      )}
+      {pause.isError && <div className="text-[11px] text-loss">{(pause.error as Error).message}</div>}
 
       <div className="grid grid-cols-2 gap-2 text-[11px]">
         <div className="text-slate-500">Fereastra (ora {m.app_tz_label ?? "RO"})</div>
@@ -278,13 +302,21 @@ function MarketCard({ m, score, bt, slot }: {
           </div>
           <div className="text-slate-500">{score?.wins ?? 0}W / {score?.losses ?? 0}L · total <span className={rCls(score?.total_R)}>{fmtR(score?.total_R)}</span></div>
         </div>
-        {bt && (
-          <div>
-            <div className="text-slate-500">Backtest {bt.period}</div>
-            <div className="text-white">{bt.trades} trade-uri · <span className="text-profit">{fmtR(bt.expectancy_R)}</span>/trade</div>
-            <div className="text-slate-500">verdict M0: {bt.verdict}</div>
+        <div>
+          <div className="text-slate-500 flex items-center gap-1.5">
+            Backtest ~3 ani (config. curentă)
+            <BacktestAutoBadge a={auto} onRetry={() => retry.mutate(slot)} retrying={retry.isPending} />
           </div>
-        )}
+          {auto?.status === "completed" && r?.ok ? (<>
+            <div className="text-white">{r.trades} trade-uri · <span className={rCls(r.expectancy_R)}>{fmtR(r.expectancy_R)}</span>/trade</div>
+            <div className="text-slate-500">verdict M0: {r.verdict ?? "—"} · train {fmtR(r.train_R)} / test {fmtR(r.test_R)} · {r.period}</div>
+          </>) : auto?.status === "failed" ? (
+            <div className="text-loss">{auto.error ?? "eșuat"}</div>
+          ) : (
+            <div className="text-slate-500">{auto?.status === "outdated" ? "configurația s-a schimbat — rezultat nou în curând" : "se calculează…"}</div>
+          )}
+          {bt && <div className="text-[10px] text-slate-600 mt-0.5">cercetare {bt.period}: {bt.trades} trade-uri · {fmtR(bt.expectancy_R)}/trade · {bt.verdict}</div>}
+        </div>
       </div>
     </div>
   );
@@ -350,6 +382,7 @@ export function DailyEnginePage() {
 
   // un card per SLOT din configuratie (piata poate fi schimbata), cu starea live suprapusa pe simbol
   const byStatus: Record<string, DailyMarketStatus> = Object.fromEntries((st?.markets ?? []).map(x => [x.symbol, x]));
+  const cfgMarkets = dcfg?.markets;
   const slotCards = (dcfg?.markets ?? []).map((c, slot) => ({
     slot,
     m: byStatus[c.symbol] ?? { symbol: c.symbol, label: c.label, phase: st?.running ? "waiting_open" : "stopped",
@@ -416,7 +449,8 @@ export function DailyEnginePage() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {slotCards.map(({ m, slot }) => (
-          <MarketCard key={`${slot}-${m.symbol}`} m={m} slot={slot} score={sc?.by_symbol?.[m.symbol]} bt={st?.backtest_ref?.[m.symbol]} />
+          <MarketCard key={`${slot}-${m.symbol}`} m={m} slot={slot} score={sc?.by_symbol?.[m.symbol]} bt={st?.backtest_ref?.[m.symbol]}
+            auto={st?.backtest_auto?.find(a => a.slot === slot)} paused={cfgMarkets?.[slot]?.paused} execute={st?.mode === "execute"} />
         ))}
         {slotCards.length === 0 && (
           <div className="md:col-span-2 text-center text-sm text-slate-500 py-6 bg-surface rounded-xl border border-surface-border">

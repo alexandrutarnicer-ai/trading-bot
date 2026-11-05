@@ -466,6 +466,64 @@ def t_reentry():
     cfg["mode"] = "shadow"
 
 
+def t_pause():
+    print("8. Pauză per piață (fără intrări noi; pozițiile deschise rămân gestionate)")
+    from daily_engine.pause import apply_pause, pause_cut_min
+    from daily_engine.config import _sanitize
+    from datetime import date as _d
+    ber = {"tz": "Europe/Berlin"}
+    check("activă → fără tăietură", pause_cut_min({**ber, "paused": False}, _d(2026, 11, 3)) is None)
+    check("pauză azi 10:07 Berlin → minutul 607",
+          pause_cut_min({**ber, "paused": True, "paused_at": "2026-11-03T09:07:00+00:00"}, _d(2026, 11, 3)) == 607)
+    check("pauză de ieri → toată ziua (0)",
+          pause_cut_min({**ber, "paused": True, "paused_at": "2026-11-02T15:00:00+00:00"}, _d(2026, 11, 3)) == 0)
+    check("pauză fără moment valid → toată ziua", pause_cut_min({**ber, "paused": True, "paused_at": "x"}, _d(2026, 11, 3)) == 0)
+    pos = {"phase": "in_position", "entry_min": 600, "side": 1, "entry": 1.0, "sl": 0.9, "trades": []}
+    check("poziție intrată ÎNAINTE de pauză → rămâne (gestionată)", apply_pause(pos, 607)["phase"] == "in_position")
+    check("poziție intrată DUPĂ pauză → dispare", apply_pause({**pos, "entry_min": 610}, 607)["phase"] == "paused")
+    check("așteaptă intrarea → pauză", apply_pause({"phase": "waiting_entry", "trades": []}, 0)["phase"] == "paused")
+    st = {"phase": "closed", "entry_min": 640, "trades": [{"entry_min": 600, "R": 1}, {"entry_min": 640, "R": -1}]}
+    out = apply_pause(st, 620)
+    check("re-intrări: doar trade-urile dinaintea pauzei rămân", [t["R"] for t in out["trades"]] == [1] and out["phase"] == "paused")
+    check("neatins când nu e pauză", apply_pause(pos, None) is pos)
+    m0 = DEFAULTS["markets"][0]
+    cl = _sanitize({"markets": [{**m0, "paused": True, "paused_at": "2026-11-03T09:07:00+00:00"}]})["markets"][0]
+    check("config: pauza persistă (sanitize)", cl["paused"] is True and cl["paused_at"].startswith("2026-11-03"))
+    cl2 = _sanitize({"markets": [{**m0, "paused": False, "paused_at": "2026-11-03T09:07:00+00:00"}]})["markets"][0]
+    check("config: reluată → fără moment de pauză", cl2["paused"] is False and cl2["paused_at"] is None)
+    check("config veche (fără câmp) → activă", _sanitize({"markets": [m0]})["markets"][0]["paused"] is False)
+
+    old = "2026-11-02T00:00:00+00:00"
+    fake, st = _exec_day("shadow", extra={"paused": True, "paused_at": old})
+    mk = (st.get("markets") or [{}])[0]
+    with open(E.TRADES_FILE, "a+", encoding="utf-8") as f:
+        f.seek(0)
+        n_tr = len([x for x in f.read().splitlines() if x.strip()])
+    check("SHADOW pe pauză: nicio intrare virtuală, faza „paused”", n_tr == 0 and mk.get("phase") == "paused"
+          and mk.get("paused") is True, (n_tr, mk.get("phase")))
+    fake, st = _exec_day("execute", trade_mode=0, extra={"paused": True, "paused_at": old})
+    check("EXECUȚIE (DEMO) pe pauză: zero ordine", not fake.sent, fake.sent)
+    fake, st = _exec_day("execute", trade_mode=0)
+    check("... aceeași zi fără pauză: execută (control)", any(r["action"] == fake.TRADE_ACTION_DEAL for r in fake.sent))
+    # pauza pusa cu ordinele stop GBPUSD deja plasate → anulate; pozitia deschisa ramane pana la final de fereastra
+    eng = E.DailyEngine(mt5_module=fake)
+    lon = ZoneInfo("Europe/London")
+    g = {**next(x for x in DEFAULTS["markets"] if x["symbol"] == "GBPUSD"), "paused": True, "paused_at": old}
+    fake.orders = [SimpleNamespace(ticket=11, symbol="GBPUSD", magic=880001, comment="D-GBPUSD-1104", type=4),
+                   SimpleNamespace(ticket=12, symbol="GBPUSD", magic=880001, comment="D-GBPUSD-1104", type=5)]
+    fake.positions, fake.sent = [], []
+    w_end = datetime(2026, 11, 4, 14, 30, tzinfo=lon)
+    eng._execute(g, _d(2026, 11, 4), {"phase": "paused"}, None, datetime(2026, 11, 4, 8, 20, tzinfo=lon), w_end)
+    check("pauză cu ordinele stop plasate → ambele anulate, niciun ordin nou",
+          [r["action"] for r in fake.sent] == [fake.TRADE_ACTION_REMOVE] * 2, fake.sent)
+    fake.orders, fake.sent = [], []
+    fake.positions = [SimpleNamespace(ticket=13, symbol="GBPUSD", magic=880001, comment="D-GBPUSD-1104", volume=0.01, type=0)]
+    eng._execute(g, _d(2026, 11, 4), {"phase": "in_position"}, None, datetime(2026, 11, 4, 9, 0, tzinfo=lon), w_end)
+    check("poziție deschisă + pauză → NU e închisă în fereastră", not fake.sent and fake.positions, fake.sent)
+    eng._execute(g, _d(2026, 11, 4), {"phase": "in_position"}, None, datetime(2026, 11, 4, 14, 31, tzinfo=lon), w_end)
+    check("... dar se închide la finalul ferestrei (regula existentă)", fake.sent and "position" in fake.sent[0], fake.sent)
+
+
 if __name__ == "__main__":
     t_strategy()
     t_equivalence()
@@ -474,5 +532,6 @@ if __name__ == "__main__":
     t_no_orders()
     t_execution()
     t_reentry()
+    t_pause()
     print(f"\n{PASS} OK, {FAIL} FAIL")
     sys.exit(1 if FAIL else 0)
