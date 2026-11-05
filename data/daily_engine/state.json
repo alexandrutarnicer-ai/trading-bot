@@ -47,6 +47,88 @@
       "reason": null,
       "currency": "USD",
       "capital": 206.37
+    },
+    "2026-11-03|DE40": [
+      "entry",
+      "closed"
+    ],
+    "2026-11-03|DE40|size": {
+      "lots": 0.0,
+      "risk_money": 0.0,
+      "target_money": 2.062,
+      "raw_lots": 0.045068,
+      "at_min_lot": true,
+      "capped_max": false,
+      "ratio": 2.219,
+      "reason": "risc 4.58 = 2.22% din equity > limita 2% (chiar si la lotul minim 0.1)",
+      "risk_cap": "risc 4.58 = 2.22% din equity > limita 2% (chiar si la lotul minim 0.1)",
+      "currency": "USD",
+      "capital": 206.2
+    },
+    "2026-11-04|GBPUSD": [
+      "entry",
+      "closed"
+    ],
+    "2026-11-04|DE40": [
+      "entry",
+      "closed"
+    ],
+    "2026-11-04|GBPUSD|size": {
+      "lots": 0.04,
+      "risk_money": 2.02,
+      "target_money": 2.0743,
+      "raw_lots": 0.041075,
+      "at_min_lot": false,
+      "capped_max": false,
+      "ratio": 0.974,
+      "reason": null,
+      "currency": "USD",
+      "capital": 207.43
+    },
+    "2026-11-04|DE40|size": {
+      "lots": 0.0,
+      "risk_money": 0.0,
+      "target_money": 2.0743,
+      "raw_lots": 0.030819,
+      "at_min_lot": true,
+      "capped_max": false,
+      "ratio": 3.245,
+      "reason": "risc 6.73 = 3.24% din equity > limita 2% (chiar si la lotul minim 0.1)",
+      "risk_cap": "risc 6.73 = 3.24% din equity > limita 2% (chiar si la lotul minim 0.1)",
+      "currency": "USD",
+      "capital": 207.43
+    },
+    "2026-11-05|GBPUSD": [
+      "entry",
+      "closed"
+    ],
+    "2026-11-05|DE40": [
+      "entry"
+    ],
+    "2026-11-05|GBPUSD|size": {
+      "lots": 0.03,
+      "risk_money": 1.965,
+      "target_money": 2.0001,
+      "raw_lots": 0.030536,
+      "at_min_lot": false,
+      "capped_max": false,
+      "ratio": 0.982,
+      "reason": null,
+      "currency": "USD",
+      "capital": 200.01
+    },
+    "2026-11-05|DE40|size": {
+      "lots": 0.0,
+      "risk_money": 0.0,
+      "target_money": 1.995,
+      "raw_lots": 0.024019,
+      "at_min_lot": true,
+      "capped_max": false,
+      "ratio": 4.163,
+      "reason": "risc 8.31 = 4.16% din equity > limita 2% (chiar si la lotul minim 0.1)",
+      "risk_cap": "risc 8.31 = 4.16% din equity > limita 2% (chiar si la lotul minim 0.1)",
+      "currency": "USD",
+      "capital": 199.5
     }
   }
 }

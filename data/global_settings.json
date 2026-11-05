@@ -10,12 +10,12 @@
     "max_daily_loss_pct": 0.0
   },
   "friday_close": {
-    "enabled": false,
+    "enabled": true,
     "hour": 20,
     "exclude_crypto": true
   },
   "news_protection": {
-    "enabled": false,
+    "enabled": true,
     "impact_level": 3,
     "pre_minutes": 15,
     "post_minutes": 15
