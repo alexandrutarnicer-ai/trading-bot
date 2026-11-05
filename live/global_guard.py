@@ -55,6 +55,10 @@ DEFAULTS: dict = {
     # Risc maxim pe trade (% din equity) — Custom + AI + Daily. Peste limita volumul e redus; daca
     # nici lotul minim nu incape, ordinul NU se plaseaza (cont mic + lot minim mare = risc ascuns).
     "risk_cap": {"enabled": False, "max_risk_pct": 2.0},
+    # Special Take Profit Mode (profit_lock.py) — blocarea profitului in trepte; se aplica DOAR engine-urilor
+    # eligibile (profit_lock.ELIGIBLE: Custom). Pornit aici → castiga peste setarea engine-ului.
+    "special_tp": {"enabled": False, "mode": "special", "tp_extension_R": 0.10, "sl_offset_R": 0.10, "step_R": 0.50,
+                   "atr_mult": 2.0},
 }
 
 _CRYPTO_PREFIXES = ("BTC", "ETH", "XRP", "LTC", "SOL", "ADA", "DOGE", "DOT", "BNB", "AVAX",
@@ -102,6 +106,11 @@ def sanitize(raw: dict | None) -> dict:
         af["level"] = "balanced"
     af["strict"] = bool(af["strict"])
     out["risk_cap"]["max_risk_pct"] = _num(out["risk_cap"]["max_risk_pct"], 0.1, 20.0, 2.0)
+    try:
+        import profit_lock
+        out["special_tp"] = profit_lock.sanitize(out["special_tp"])
+    except Exception:
+        out["special_tp"] = copy.deepcopy(DEFAULTS["special_tp"])
     return out
 
 

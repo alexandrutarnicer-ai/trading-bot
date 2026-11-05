@@ -12,6 +12,7 @@ import { TelegramBridgeCard } from "../components/TelegramBridgeCard";
 import { MatrixSettings } from "../components/MatrixSettings";
 import { LiveTradingCard } from "../components/LiveTradingCard";
 import { GlobalSettingsCard } from "../components/GlobalSettingsCard";
+import { SpecialTpCard } from "../components/SpecialTpCard";
 import { Mt5Status } from "../components/Mt5Status";
 import type { Profile, ProfileSession } from "../api/types";
 import type { PendingApply } from "../App";
@@ -404,6 +405,8 @@ export function ProfilePage({
       {/* Custom Engine: bot + piete. Setarile globale (MT5, Telegram, Live, Setari
           Globale, fus orar) stau in tab-ul Settings (SettingsPage). */}
       <BotControl profileId={activeId} profileName={draft?.name} />
+
+      <SpecialTpCard />
 
       {/* Configuratie unica (selectorul de profil eliminat 2026-10-31 — fisierele raman pe disc) */}
       <div className="flex items-center gap-3 flex-wrap">
