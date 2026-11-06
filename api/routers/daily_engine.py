@@ -107,7 +107,7 @@ def _proposed_market(slot_m: dict, body: dict) -> dict:
     sym = str(body.get("symbol") or slot_m["symbol"]).strip().upper()
     m = {**slot_m, "symbol": sym, "preset": preset, "tz": p["tz"], "open": p["open"], "last_bar": p["last_bar"],
          "or_minutes": int(body.get("or_minutes") or p["or_minutes"]), "entry": body.get("entry") or p["entry"],
-         "label": f"{'Dimineața' if p['tz'] != 'America/New_York' else 'După-amiaza'} — {p['label'].lower()}"}
+         "label": f"{'Dimineața' if p['tz'] != 'America/New_York' else 'După-amiaza'} — {p['label']}"}
     if m["entry"] not in ("breakout", "direction") or m["or_minutes"] % 5 or not 5 <= m["or_minutes"] <= 120:
         raise HTTPException(400, "interval de deschidere 5–120 min (multiplu de 5) și mod breakout / direction")
     if "rr" in body:
