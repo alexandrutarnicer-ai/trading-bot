@@ -207,6 +207,59 @@ try:
     check("slot invalid → 400", False)
 except R.HTTPException as e:
     check("slot invalid → 400", e.status_code == 400)
+
+print("5. Cardurile sunt INDEPENDENTE (orice setare a unui slot nu atinge celalalt slot)")
+import copy as _copy  # noqa: E402
+
+
+def _slot_raw(i):
+    with open(C.CFG_PATH, encoding="utf-8") as f_:
+        return _json.load(f_)["markets"][i]
+
+
+def _iso(slot, actions):
+    other = 1 - slot
+    before = _copy.deepcopy(_slot_raw(other))
+    BT_JOBS.clear()
+    for a in actions:
+        a()
+    after = _slot_raw(other)
+    return before == after, (before, after)
+
+
+for slot in (0, 1):
+    sym = C.load_config()["markets"][slot]["symbol"]
+    other_sym = C.load_config()["markets"][1 - slot]["symbol"]
+    BR.STORE_PATHS["daily"] = os.path.join(TMP, f"bt_iso_{slot}.json")
+    R.daily_config_save({})                                   # backtest_auto initial pe ambele sloturi
+    ok, info = _iso(slot, [
+        lambda: R.daily_config_save({"markets": [{"symbol": sym, "rr": 4}]}),
+        lambda: R.daily_config_save({"markets": [{"symbol": sym, "reentry": {"enabled": True, "max_trades": 5}}]}),
+        lambda: R.daily_market_pause(slot),
+        lambda: R.daily_market_resume(slot),
+    ])
+    check(f"slot {slot + 1}: R:R + re-intrari + pauza / resume → slotul {2 - slot} identic (byte cu byte)", ok, info)
+    check(f"... backtestul automat pornit DOAR pentru slotul {slot + 1} ({sym})",
+          BT_JOBS and set(BT_JOBS) == {sym}, BT_JOBS)
+    new_sym = "DE40" if "DE40" not in (sym, other_sym) else "GBPUSD"
+    if new_sym == other_sym:
+        new_sym = "US500"
+    ok, info = _iso(slot, [lambda: R.daily_config_save({"markets": [{"slot": slot, "symbol": new_sym, "preset": "frankfurt",
+                                                                        "costs_mode": "manual", "slip": 0.2, "comm": 0.05}]})])
+    check(f"slot {slot + 1}: schimbarea PIETEI + costuri manuale ({sym} → {new_sym}) → slotul {2 - slot} identic", ok, info)
+    check(f"... backtestul automat doar pentru piata noua a slotului {slot + 1}", set(BT_JOBS) == {new_sym}, BT_JOBS)
+    m_ = C.load_config()["markets"]
+    check(f"... setarile slotului {slot + 1} raman ale lui (R:R 4, re-intrari 5)",
+          m_[slot]["rr"] == 4.0 and m_[slot]["reentry"]["enabled"] and m_[slot]["reentry"]["max_trades"] == 5, m_[slot])
+    check(f"... slotul {2 - slot} are in continuare setarile lui (nu le-a preluat pe ale slotului {slot + 1})",
+          m_[1 - slot]["rr"] != 4.0 or m_[1 - slot]["reentry"].get("max_trades") != 5, m_[1 - slot])
+    R.daily_config_save({"markets": [{"symbol": m_[slot]["symbol"], "rr": None, "reentry": {"enabled": False}}]})
+
+# engine-ul: fiecare piata e evaluata separat (o eroare pe un slot nu opreste celalalt)
+import inspect  # noqa: E402
+import daily_engine.engine as E  # noqa: E402
+src = inspect.getsource(E.DailyEngine)
+check("engine: bucla pe piete are try / except PER piata", "for m in self.cfg[\"markets\"]:\n            try:" in src)
 shutil.rmtree(TMP, ignore_errors=True)
 print(f"\n{'TOATE TESTELE AU TRECUT' if not FAIL else f'{FAIL} TESTE ESUATE'}")
 sys.exit(1 if FAIL else 0)
