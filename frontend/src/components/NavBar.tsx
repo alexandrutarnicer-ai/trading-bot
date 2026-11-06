@@ -1,7 +1,7 @@
 import { useBacktestJobs, useDownloadJobs, useNotifications } from "../api/hooks";
 import { BrandLockup } from "./BrandLogo";
 
-type Tab = "dashboard" | "profile" | "ai" | "daily" | "noisy" | "settings" | "notifications" | "audit" | "reports" | "guide";
+type Tab = "dashboard" | "profile" | "ai" | "daily" | "noisy" | "special" | "settings" | "notifications" | "audit" | "reports" | "guide";
 
 interface Props {
   active: Tab;
@@ -14,6 +14,7 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "ai",            label: "AI Engine" },
   { id: "daily",         label: "Daily Engine" },
   { id: "noisy",         label: "Noisy Engine" },
+  { id: "special",       label: "Special Engine" },
   { id: "settings",      label: "Settings" },
   { id: "notifications", label: "Notificări" },
   { id: "audit",         label: "Audit" },

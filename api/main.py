@@ -65,6 +65,11 @@ app.include_router(noisy_engine.router,       prefix="/api")
 app.include_router(engine_lifecycle.router,   prefix="/api")
 app.include_router(dashboard.router,          prefix="/api")
 app.include_router(sizing.router,             prefix="/api")
+try:  # Special Engine — IZOLAT, necomis (alex-live, perioada de test); lipsa pachetului nu afecteaza restul API-ului
+    from api.routers import special_engine as _special_router
+    app.include_router(_special_router.router, prefix="/api")
+except Exception:  # noqa: BLE001
+    pass
 
 
 @app.get("/api/health")
