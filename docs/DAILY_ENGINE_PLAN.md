@@ -259,3 +259,22 @@ Observații:
 - **GBPUSD s-a degradat puternic în ultimele ~11 luni** (−0,43R pe trade).
 - **US500 e ~0 pe ultimii 3 ani**, față de +0,059 pe tot istoricul.
 - **DE40 e singurul solid și recent**, dar marja nu încape acum în contul de ~206 $ partajat.
+
+## 12. Break-even în trepte + SL mai larg (2026-11-06) — RESPINS
+
+Script: `scripts/research_daily/daily_be_ladder.py` (intrările exacte ale engine-ului, fără TP, închidere la final de
+fereastră, costuri reale; ordinea pe bară conservatoare). Regula propusă: la 2R → SL pe 1R, la 3R → SL pe 2R …
+
+| | R / trade actual | cu BE 2R → 1R | cea mai bună variantă BE (16) | SL × 1,25 / 1,5 / 2 |
+|---|---|---|---|---|
+| GBPUSD (3974 trade-uri) | +0,069 | −0,013 | +0,031 (5R → 3R) | +0,021 / +0,039 / +0,011 |
+| DE40 (2595) | +0,084 | +0,046 | +0,087 (3R → 1R, zgomot) | +0,056 / +0,073 / +0,058 |
+| GBPUSD ultimele 12 luni | **−0,468** | −0,161 | −0,162 | — |
+
+- BE ridică win rate-ul (20 → 37%) și scade drawdown-ul, dar taie zilele de +5…+15R care fac profitul strategiei.
+- BE nu repară o piață fără edge: GBPUSD rămâne puternic negativ pe ultimele 12 luni (și costul ~0,15R / trade).
+- SL mai larg: nicio variantă peste SL-ul actual (marginea opusă a intervalului).
+
+**Decizie (2026-11-06, alex-live):** slotul 1 GBPUSD Londra → **US500 New York** (30 min, direcție), pentru
+observație în shadow. Pe 3 ani: GBPUSD +0,020R (test −0,473R) față de US500 +0,031R (test ≈ 0, DD −36R, marjă ~37 $).
+Din 13 piețe × burse testate niciuna nu e KEEP în afară de DE40.
