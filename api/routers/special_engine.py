@@ -108,8 +108,14 @@ def special_stop():
 
 @router.get("/trades")
 def special_trades(limit: int = 300):
-    from special_engine.engine import load_trades
-    return {"trades": load_trades()[-max(1, min(limit, 5000)):][::-1]}
+    """Trade-urile + momentele in ora bursei SI in fusul aplicatiei + observat live / reconstituit (doar afisare)."""
+    from special_engine.engine import annotate_trade, load_trades
+    try:
+        from tz_helper import get_configured_tz_name
+        app_tz = get_configured_tz_name()
+    except Exception:
+        app_tz = "Europe/Bucharest"
+    return {"trades": [annotate_trade(t, app_tz) for t in load_trades()[-max(1, min(limit, 5000)):][::-1]]}
 
 
 @router.get("/selection")

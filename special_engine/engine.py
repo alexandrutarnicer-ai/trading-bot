@@ -93,6 +93,55 @@ def load_trades() -> list[dict]:
     return out
 
 
+_TZ_LABEL = {"America/New_York": "NY", "Europe/Berlin": "Frankfurt", "Europe/London": "Londra",
+             "Asia/Tokyo": "Tokyo", "Australia/Sydney": "Sydney"}
+LIVE_GRACE_MIN = 20          # un trade observat live e inregistrat la cateva minute dupa iesire (bara inchisa + poll)
+
+
+def annotate_trade(t: dict, app_tz: str = "Europe/Bucharest") -> dict:
+    """Doar AFISARE (pur): momentele reale ale trade-ului in ora bursei SI in fusul aplicatiei + daca a fost
+    OBSERVAT live sau RECONSTITUIT (engine-ul recalculeaza ziua din barele inchise, deci la o pornire tarzie
+    inregistreaza retroactiv trade-urile de peste zi).
+    entry_t / exit_t din jurnal = inceputul lumanarii M5 (ora bursei). NOISE decide la INCHIDEREA lumanarii →
+    momentul = +5 min; ORB: intrarea in lumanare (stop atins / open), iesirea EOD la inchiderea ultimei lumanari."""
+    from zoneinfo import ZoneInfo
+    out = dict(t)
+    try:
+        sym = t.get("symbol")
+        kind = str(t.get("comp", "")).split(":")[0]
+        tbl = NOISE_MARKETS if kind == "NOISE" else ORB_MARKETS
+        tz_name = tbl[sym][0]
+        tz, atz = ZoneInfo(tz_name), ZoneInfo(app_tz)
+        e = pd.Timestamp(t["entry_t"]).to_pydatetime()
+        x = pd.Timestamp(t["exit_t"]).to_pydatetime()
+        e += timedelta(minutes=5) if kind == "NOISE" else timedelta(0)
+        x += timedelta(minutes=5) if (kind == "NOISE" or t.get("why") == "EOD") else timedelta(0)
+        e, x = e.replace(tzinfo=tz), x.replace(tzinfo=tz)
+        out.update(exch_tz=tz_name, exch_label=_TZ_LABEL.get(tz_name, tz_name.split("/")[-1]),
+                   entry_exch=f"{e:%H:%M}", exit_exch=f"{x:%H:%M}",
+                   entry_app=f"{e.astimezone(atz):%Y-%m-%d %H:%M}", exit_app=f"{x.astimezone(atz):%Y-%m-%d %H:%M}",
+                   app_label="DE" if app_tz == "Europe/Berlin" else "RO")
+        logged = datetime.fromisoformat(t["logged_at"]) if t.get("logged_at") else None
+        seen = datetime.fromisoformat(t["seen_since"]) if t.get("seen_since") else None
+        if logged is None:
+            out["live"] = None
+        else:
+            late = logged > x.astimezone(timezone.utc) + timedelta(minutes=LIVE_GRACE_MIN)
+            before_start = seen is not None and seen > e.astimezone(timezone.utc)
+            out["live"] = not (late or before_start)
+            out["recorded_app"] = f"{logged.astimezone(atz):%Y-%m-%d %H:%M}"
+            if late:
+                out["live_note"] = (f"reconstituit: înregistrat la {out['recorded_app']} {out['app_label']}, "
+                                    "după închiderea trade-ului (engine-ul nu rula în timpul lui)")
+            elif before_start:
+                out["live_note"] = "parțial: engine-ul a pornit după intrare (intrarea nu a fost văzută live)"
+            else:
+                out["live_note"] = "observat live"
+    except Exception:            # afisarea nu are voie sa strice lista
+        pass
+    return out
+
+
 def scorecard(trades: list[dict]) -> dict:
     def sc(ts):
         rs = [t["R"] for t in ts]
@@ -158,6 +207,7 @@ class SpecialEngine:
         self._sel_note = ""
         self._d1 = {}           # (sym, day) → D1
         self._hist = {}         # (sym, day) → (sigma, prev_close) pentru NOISE
+        self.started_at = datetime.now(timezone.utc).isoformat(timespec="seconds")   # live vs reconstituit
 
     def connect(self) -> bool:
         if self.mt5 is None:
@@ -307,7 +357,8 @@ class SpecialEngine:
             risk_money = (getattr(acc, "equity", 0) or 0) * self.cfg["risk_pct"]
             rec = {"day": day, "strategy": strategy, "comp": comp, "symbol": sym, "k": k, **t,
                    "risk_money_est": round(risk_money, 2), "pnl_money_est": round(t["R"] * risk_money, 2),
-                   "logged_at": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+                   "logged_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                   "seen_since": self.started_at}
             with open(TRADES_FILE, "a", encoding="utf-8") as f:
                 f.write(json.dumps(rec, ensure_ascii=False) + "\n")
             new.append(rec)

@@ -188,8 +188,35 @@ def t_live_equals_backtest():
           b.mins.tail(2).tolist() if len(b) else "gol")
 
 
+def t_display_times():
+    """annotate_trade: ora bursei + fusul aplicatiei, observat live / reconstituit (doar afisare)."""
+    from special_engine.engine import annotate_trade
+    real = {"day": "2026-11-05", "strategy": "B", "comp": "NOISE:USTEC", "symbol": "USTEC", "entry_t": "2026-11-05 09:55:00",
+            "exit_t": "2026-11-05 15:55:00", "d": -1, "why": "EOD", "R": 10.1, "logged_at": "2026-11-05T21:51:15+00:00"}
+    a = annotate_trade(real, "Europe/Bucharest")
+    check("NOISE USTEC 05.11: intrare 10:00 NY = 17:00 RO, iesire 16:00 NY = 23:00 RO (decizie la inchiderea lumanarii)",
+          (a["entry_exch"], a["exit_exch"], a["entry_app"], a["exit_app"]) == ("10:00", "16:00", "2026-11-05 17:00",
+                                                                              "2026-11-05 23:00"), a)
+    check("... inregistrat la 23:51 RO dupa inchidere → RECONSTITUIT (nu live)", a["live"] is False and "reconstituit" in a["live_note"], a)
+    check("... fus Germania: 16:00 / 22:00 DE", annotate_trade(real, "Europe/Berlin")["entry_app"].endswith("16:00"))
+    live = {**real, "logged_at": "2026-11-05T21:03:00+00:00", "seen_since": "2026-11-05T13:00:00+00:00"}
+    check("inregistrat la 3 min dupa iesire, engine pornit inainte de intrare → ✓ live", annotate_trade(live)["live"] is True)
+    part = {**live, "seen_since": "2026-11-05T16:00:00+00:00"}
+    b = annotate_trade(part)
+    check("engine pornit DUPA intrare → partial (nu live)", b["live"] is False and b["live_note"].startswith("parțial"), b)
+    orb = {"comp": "ORB:JP225:5/direction", "symbol": "JP225", "entry_t": "2026-11-06 09:05:00", "exit_t": "2026-11-06 14:55:00",
+           "why": "EOD", "day": "2026-11-06"}
+    c = annotate_trade(orb)
+    check("ORB JP225: intrare 09:05 Tokyo (open-ul lumanarii) = 02:05 RO, EOD la 15:00 Tokyo = 08:00 RO; fara logged_at → live necunoscut",
+          (c["entry_exch"], c["exit_exch"], c["entry_app"], c["exit_app"], c["live"]) ==
+          ("09:05", "15:00", "2026-11-06 02:05", "2026-11-06 08:00", None), c)
+    check("ORB iesire pe SL = in lumanare (fara +5 min)", annotate_trade({**orb, "why": "SL"})["exit_exch"] == "14:55")
+    check("trade stricat → returnat neschimbat (afisarea nu pica)", annotate_trade({"comp": "X"}) == {"comp": "X"})
+
+
 if __name__ == "__main__":
     t_config_and_safety()
+    t_display_times()
     t_equivalence()
     t_selection()
     t_live_equals_backtest()

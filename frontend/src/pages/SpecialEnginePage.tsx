@@ -21,7 +21,14 @@ interface Status { running: boolean; pid: number | null; updated?: string; compo
   selection?: Selection; selection_note?: string; scorecard?: { total: Score; A: Score; B: Score; by_component: Record<string, Score> };
   research: Record<"A" | "B" | "AB", Ref>; config?: { risk_pct: number; notify_trades: boolean } }
 interface Trade { day: string; strategy: string; comp: string; symbol: string; d: number; entry: number; exit: number; R: number;
-  why: string; entry_t: string; exit_t: string; pnl_money_est?: number }
+  why: string; entry_t: string; exit_t: string; pnl_money_est?: number;
+  // doar afisare (annotate_trade): momentele in fusul aplicatiei + ora bursei, observat live / reconstituit
+  entry_app?: string; exit_app?: string; entry_exch?: string; exit_exch?: string; exch_label?: string; app_label?: string;
+  live?: boolean | null; live_note?: string; recorded_app?: string }
+
+/** Momentul in fusul aplicatiei; ziua apare doar daca difera de ziua bursei (ex. JP225 / Sydney). */
+const tm = (app: string | undefined, raw: string, day: string, label?: string) =>
+  app ? `${app.slice(0, 10) !== day ? app.slice(5, 10) + " " : ""}${app.slice(11, 16)} ${label ?? ""}`.trim() : raw.slice(11, 16);
 
 const useStatus = () => useQuery<Status>({ queryKey: ["special-status"], queryFn: () => apiFetch("/special/status"),
   refetchInterval: 10_000, refetchIntervalInBackground: false });
@@ -139,15 +146,22 @@ export function SpecialEnginePage() {
 
       <div className="bg-surface rounded-xl border border-surface-border p-4">
         <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Trade-uri virtuale</h3>
+        <div className="text-[10px] text-slate-500 mb-1">Orele sunt în ora {tr?.trades?.[0]?.app_label ?? "RO"} (în paranteză: ora bursei).
+          „⟲ reconstituit” = engine-ul nu rula în timpul trade-ului; l-a recalculat la pornire din lumânările închise — nu e o observație live.</div>
         {!tr?.trades?.length ? <div className="text-[11px] text-slate-500">Încă niciun trade virtual închis.</div> : (
           <table className="w-full text-[11px]">
-            <thead><tr className="text-slate-500 text-left"><th>Zi</th><th>Str.</th><th>Componentă</th><th>Dir</th><th>Intrare</th><th>Ieșire</th><th>Motiv</th><th className="text-right">Est. USD</th><th className="text-right">R</th></tr></thead>
+            <thead><tr className="text-slate-500 text-left"><th>Zi</th><th>Str.</th><th>Componentă</th><th>Dir</th><th>Intrare</th><th>Ieșire</th><th>Motiv</th><th>Observat</th><th className="text-right">Est. USD</th><th className="text-right">R</th></tr></thead>
             <tbody>{tr.trades.map((t, i) => (
               <tr key={i} className="border-t border-surface-border/30">
                 <td className="py-0.5 text-slate-400">{t.day}</td><td className="text-slate-400">{t.strategy}</td><td className="text-slate-300">{t.comp}</td>
                 <td className={t.d === 1 ? "text-profit" : "text-loss"}>{t.d === 1 ? "LONG" : "SHORT"}</td>
-                <td className="text-slate-400">{t.entry_t.slice(11, 16)} @ {t.entry}</td><td className="text-slate-400">{t.exit_t.slice(11, 16)} @ {t.exit}</td>
-                <td className="text-slate-500">{t.why}</td>
+                <td className="text-slate-400">{tm(t.entry_app, t.entry_t, t.day, t.app_label)} @ {t.entry}
+                  {t.entry_exch && <span className="text-slate-600"> ({t.entry_exch} {t.exch_label})</span>}</td>
+                <td className="text-slate-400">{tm(t.exit_app, t.exit_t, t.day, t.app_label)} @ {t.exit}
+                  {t.exit_exch && <span className="text-slate-600"> ({t.exit_exch} {t.exch_label})</span>}</td>
+                <td className="text-slate-500">{t.why === "EOD" ? "final de sesiune" : t.why}</td>
+                <td title={t.live_note} className={t.live ? "text-profit" : t.live === false ? "text-amber-400" : "text-slate-500"}>
+                  {t.live ? "✓ live" : t.live === false ? (t.live_note?.startsWith("parțial") ? "◐ parțial" : "⟲ reconstituit") : "—"}</td>
                 <td className={`text-right ${rc(t.pnl_money_est)}`}>{t.pnl_money_est != null ? t.pnl_money_est.toFixed(2) : "—"}</td>
                 <td className={`text-right font-semibold ${rc(t.R)}`}>{fR(t.R)}</td>
               </tr>))}</tbody>
