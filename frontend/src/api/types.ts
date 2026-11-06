@@ -899,6 +899,9 @@ export interface DailyScore {
   total_R: number;
   expectancy_R: number | null;
   win_rate: number | null;
+  pnl_money_est?: number | null;
+  blocked_trades?: number;                 // trade-uri pe care limita globala de risc le-ar fi BLOCAT in executie
+  blocked_pnl_money_est?: number | null;   // ce ar fi insemnat ele la lotul minim (doar afisare)
 }
 
 export interface DailyStatus {
@@ -928,6 +931,12 @@ export interface DailyTrade {
   lots?: number;            // lotul ipotetic (aceeasi dimensionare ca Custom / AI)
   risk_money?: number;
   pnl_money_est?: number;   // R × risc in bani — ESTIMARE, trade-ul e virtual
+  // limita globala de risc l-ar fi BLOCAT in executie (lot 0): ce ar fi insemnat la lotul minim — doar afisare
+  blocked?: boolean;
+  blocked_reason?: string;
+  blocked_lots?: number;
+  blocked_risk_money?: number;
+  blocked_pnl_money_est?: number;
   currency?: string;
   or_hi: number;
   or_lo: number;
