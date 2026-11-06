@@ -17,6 +17,7 @@ import faulthandler
 import json
 import logging
 import os
+import re
 import sys
 import threading
 import time
@@ -130,7 +131,47 @@ def load_trades() -> list[dict]:
                     out.append(json.loads(line))
     except FileNotFoundError:
         pass
+    _enrich_blocked(out)
     return out
+
+
+def _enrich_blocked(trades: list[dict]) -> None:
+    """Trade-urile inregistrate INAINTE de campurile blocked_* (lot 0 din cauza limitei globale de risc): suma la
+    lotul minim e reconstruita la citire din size-ul salvat in state.json (fisierul nu e rescris — e sincronizat
+    intre masini; doar afisare)."""
+    todo = [t for t in trades if not t.get("lots") and "blocked" not in t]
+    if not todo:
+        return
+    try:
+        with open(STATE_FILE, encoding="utf-8") as f:
+            ev = (json.load(f) or {}).get("events") or {}
+    except Exception:
+        return
+    for t in todo:
+        k = int(t.get("k") or 0)
+        sz = ev.get(f"{t.get('day')}|{t.get('symbol')}|size{'' if k == 0 else k}")
+        if isinstance(sz, dict):
+            t.update(blocked_fields(sz, float(t.get("R") or 0.0)))
+
+
+def blocked_fields(sz: dict, R: float) -> dict:
+    """Trade virtual cu lot 0 pentru ca limita globala de risc l-ar fi BLOCAT in executie: suma pe care ar fi
+    riscat-o lotul (minim) nelimitat, ca sa se vada cat ar fi insemnat in bani. DOAR AFISARE — nu intra in
+    pnl_money_est (acela = ce s-ar fi tranzactionat cu adevarat). Size-urile vechi (fara blocked_*) se
+    reconstruiesc din ratio × target_money (ratio = risc lot / tinta, calculat INAINTE de limita)."""
+    if not sz or sz.get("lots") or not sz.get("risk_cap"):
+        return {}
+    rm, lots = sz.get("blocked_risk_money"), sz.get("blocked_lots")
+    if rm is None and sz.get("ratio") and sz.get("target_money"):
+        rm = float(sz["ratio"]) * float(sz["target_money"])
+    if lots is None:
+        mt = re.search(r"lotul minim ([0-9.]+)", sz.get("risk_cap") or "")
+        lots = float(mt.group(1)) if mt else None
+    if not rm or not lots:
+        return {}
+    return {"blocked": True, "blocked_reason": sz["risk_cap"], "blocked_lots": lots,
+            "blocked_risk_money": round(rm, 4), "blocked_pnl_money_est": round(R * rm, 4),
+            "currency": sz.get("currency", "USD")}
 
 
 def scorecard(trades: list[dict]) -> dict:
@@ -139,8 +180,10 @@ def scorecard(trades: list[dict]) -> dict:
         n = len(rs)
         w = sum(1 for r in rs if r > 0)
         est = [t["pnl_money_est"] for t in ts if t.get("pnl_money_est") is not None]
+        blk = [t["blocked_pnl_money_est"] for t in ts if t.get("blocked_pnl_money_est") is not None]
         return {"trades": n, "wins": w, "losses": sum(1 for r in rs if r < 0),
                 "pnl_money_est": round(sum(est), 2) if est else None,
+                "blocked_trades": len(blk), "blocked_pnl_money_est": round(sum(blk), 2) if blk else None,
                 "total_R": round(sum(rs), 3), "expectancy_R": round(sum(rs) / n, 3) if n else None,
                 "win_rate": round(w / n, 3) if n else None}
     syms = sorted({t["symbol"] for t in trades})
@@ -457,11 +500,14 @@ class DailyEngine:
         cap = risk_cap_pct()
         if not cap or not r.get("lots"):
             return r
+        before_lots, before_risk = r["lots"], r.get("risk_money")
         lots, why = ps.apply_risk_cap(info, r["lots"], entry, sl, getattr(acc, "equity", None) if acc else None, cap)
         if why:
             rm = r.get("risk_money")
             r = {**r, "lots": lots, "reason": why if not lots else r.get("reason"), "risk_cap": why,
                  "risk_money": (rm * lots / r["lots"]) if (rm is not None and r["lots"]) else rm}
+            if not lots:                 # BLOCAT: ce ar fi riscat lotul nelimitat (doar afisare, vezi blocked_fields)
+                r.update(blocked_lots=before_lots, blocked_risk_money=before_risk)
         return r
 
     def _exec_note(self, sym: str, text: str, important: bool = False) -> None:
@@ -510,6 +556,10 @@ class DailyEngine:
                 ev.setdefault(f"{key}|size{sfx}", sz)
                 lot_txt = (f"\nLot ipotetic {sz['lots']} · risc ~{sz['risk_money']:.2f} {sz['currency']}"
                            + (" (lot minim > țintă)" if sz.get("at_min_lot") else "")) if sz.get("lots") else ""
+                bf = {} if sz.get("lots") else blocked_fields(sz, 0.0)
+                if bf:
+                    lot_txt = (f"\n⛔ În EXECUȚIE ar fi BLOCAT ({bf['blocked_reason']}) — "
+                               f"la lotul {bf['blocked_lots']:g}: risc ~{bf['blocked_risk_money']:.2f} {bf['currency']}")
                 tp_txt = f" | TP {t['tp']:.5g}" if t.get("tp") else ""
                 msg = (f"🧪 <b>Daily SHADOW — {sym} {side}{nr}</b> (virtual, fără ordin)"
                        + (" — re-intrare" if k else "") + "\n"
@@ -528,6 +578,8 @@ class DailyEngine:
                 if sz.get("lots"):
                     rec.update(lots=sz["lots"], risk_money=round(sz["risk_money"], 4),
                                pnl_money_est=round(t["R"] * sz["risk_money"], 4), currency=sz["currency"])
+                else:
+                    rec.update(blocked_fields(sz, t["R"]))
                 with open(TRADES_FILE, "a", encoding="utf-8") as f:
                     f.write(json.dumps(rec, ensure_ascii=False) + "\n")
                 icon = "✅" if t["R"] > 0 else "❌"

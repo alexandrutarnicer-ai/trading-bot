@@ -485,6 +485,14 @@ export function DailyEnginePage() {
 
       <div className="bg-surface rounded-xl border border-surface-border p-4">
         <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Trade-uri virtuale</h3>
+        {Object.entries(sc?.by_symbol ?? {}).filter(([, v]) => (v.blocked_trades ?? 0) > 0 && v.blocked_pnl_money_est != null).map(([sym, v]) => (
+          <div key={sym} className="mb-2 text-[11px] bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-1.5 text-amber-300">
+            ⛔ <b>{sym}</b>: {v.blocked_trades} trade-uri ar fi fost BLOCATE în EXECUȚIE (limita globală de risc — lotul minim
+            depășește % permis din cont). La lotul minim ar fi însemnat{" "}
+            <b className={rCls(v.blocked_pnl_money_est)}>{v.blocked_pnl_money_est! > 0 ? "+" : ""}{v.blocked_pnl_money_est!.toFixed(2)} USD</b>
+            {" "}({fmtR(v.total_R)}) — sumă ipotetică, nu e inclusă în estimarea totală.
+          </div>
+        ))}
         {!trades || trades.length === 0 ? (
           <div className="text-sm text-slate-500 py-4 text-center">Încă niciun trade înregistrat.</div>
         ) : (
@@ -506,8 +514,22 @@ export function DailyEnginePage() {
                     <td className="text-slate-400">{fmt(t.sl)}</td>
                     <td className="text-slate-300">{fmt(t.exit)}</td>
                     <td className="text-slate-400">{t.reason === "EOD" ? "final de zi" : t.reason}</td>
-                    <td className="text-slate-400">{t.lots ?? "—"}</td>
-                    <td className={`text-right ${rCls(t.pnl_money_est)}`}>{t.pnl_money_est != null ? `${t.pnl_money_est > 0 ? "+" : ""}${t.pnl_money_est.toFixed(2)} ${t.currency ?? ""}` : "—"}</td>
+                    {t.blocked && t.blocked_pnl_money_est != null ? (
+                      <>
+                        <td className="text-amber-400" title={`În EXECUȚIE ordinul NU s-ar plasa: ${t.blocked_reason ?? "limita globală de risc"}`}>
+                          ⛔ blocat <span className="text-slate-500">({t.blocked_lots} min)</span>
+                        </td>
+                        <td className={`text-right italic ${rCls(t.blocked_pnl_money_est)}`}
+                            title={`Ce ar fi însemnat la lotul ${t.blocked_lots} (risc ~${t.blocked_risk_money?.toFixed(2)} ${t.currency ?? ""}) — NU s-ar fi tranzacționat (limita globală de risc). Nu intră în totalul estimat.`}>
+                          ({t.blocked_pnl_money_est > 0 ? "+" : ""}{t.blocked_pnl_money_est.toFixed(2)} {t.currency ?? ""})
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        <td className="text-slate-400">{t.lots ?? "—"}</td>
+                        <td className={`text-right ${rCls(t.pnl_money_est)}`}>{t.pnl_money_est != null ? `${t.pnl_money_est > 0 ? "+" : ""}${t.pnl_money_est.toFixed(2)} ${t.currency ?? ""}` : "—"}</td>
+                      </>
+                    )}
                     <td className={`text-right font-semibold ${rCls(t.R)}`}>{fmtR(t.R)}</td>
                   </tr>
                 ))}
