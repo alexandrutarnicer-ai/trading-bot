@@ -457,7 +457,7 @@ export function GuidePage() {
               <KV k="Statistici" v="Total trades (Custom / AI / Daily / Noisy / manual), câștiguri, pierderi (azi vs ieri), P&L Real" />
               <KV k="Costuri broker (comision + swap)" v="Total = comision + swap pe pozițiile ÎNCHISE în ultimele 365 zile (tot contul sau sursa din filtru). Azi / Ieri = costurile pozițiilor închise azi / ieri (swap-ul acumulat pe toată durata lor). Cont Standard: comision ~0 — costul principal e spread-ul, care e deja în prețul de execuție (în P&L), nu aici" />
               <KV k="Indice Săptămânal" v="Săptămâna / luna curentă vs precedentă: trades, W/L, win rate, R, P&L, costuri broker, DD" />
-              <KV k="Top 5 piețe" v="După rezultat, pe Azi / Săpt / Lună / Tot" />
+              <KV k="Top 5 piețe" v="Toate piețele, agregate peste engine-urile din filtrul de sursă; sortare după $ net (după comision + swap) sau R, pe Azi / Săpt / Lună / Tot" />
               <KV k="Performanță" v="Curba cumulată (USD sau R din SL-ul original)" />
             </div>
             <Note>Aceeași listă MT5 și aceleași definiții peste tot (Dashboard, Tranzacții, Rapoarte, carduri de piață):

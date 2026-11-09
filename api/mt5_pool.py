@@ -158,7 +158,7 @@ def _fetch_closed_trades_raw(mt5, days: int) -> list[dict]:
             "has_out": False, "close_time": None, "symbol": d.symbol,
             "entry_price": None, "entry_time": None, "direction": None, "sl": None, "tp": None,
             "magic": 0, "comment": "",
-            "_out_px_vol": 0.0, "_out_vol": 0.0,
+            "_out_px_vol": 0.0, "_out_vol": 0.0, "volume": 0.0,
         })
         if getattr(d, "magic", 0):
             pos["magic"] = int(d.magic)   # sursa tranzactiei (770015 = AI Engine)
@@ -172,6 +172,7 @@ def _fetch_closed_trades_raw(mt5, days: int) -> list[dict]:
             pos["entry_price"] = float(d.price)
             pos["entry_time"] = _mt5_ts_to_local(d.time, offset_h, tz_name)
             pos["direction"] = 1 if d.type == 0 else -1
+            pos["volume"] += float(d.volume or 0)   # loturi deschise (estimarea spread-ului)
             order = order_by_ticket.get(d.order)
             if order is not None:
                 if getattr(order, "sl", 0):
@@ -208,7 +209,7 @@ def _fetch_closed_trades_raw(mt5, days: int) -> list[dict]:
             "entry_price": pos["entry_price"], "entry_time": pos["entry_time"],
             "exit_price": exit_price, "close_time": pos["close_time"],
             "direction": pos["direction"], "sl": pos["sl"], "tp": pos["tp"],
-            "magic": pos["magic"], "comment": pos["comment"],
+            "magic": pos["magic"], "comment": pos["comment"], "volume": pos["volume"],
             "result_r": result_r, "planned_r": planned_r,
             **classify_trade(pos["magic"], pos["comment"]),
         })
@@ -291,6 +292,47 @@ def get_closed_trades(days: int) -> list[dict]:
             _trades_cache = (now + _TRADES_TTL, trades)
     cutoff = datetime.now() - timedelta(days=days + 1)
     return [t for t in trades if t["close_time"] and t["close_time"] >= cutoff]
+
+
+_SPREAD_TTL = 600.0   # spread-ul curent pe simbol (estimarea costului de spread in Rapoarte)
+_spread_cache: dict[str, tuple[float, float | None]] = {}
+
+
+def get_spread_per_lot(symbols) -> dict[str, float]:
+    """Costul spread-ului CURENT in moneda contului per 1 lot: (ask − bid) / tick_size × tick_value.
+    Estimare — spread-ul de la intrare poate fi diferit (stiri, deschidere). Doar citire; simbolurile
+    fara tick / info (sau MT5 indisponibil) lipsesc din rezultat. Cache 10 min pe simbol."""
+    now = time.monotonic()
+    out: dict[str, float] = {}
+    todo = []
+    for s in set(symbols):
+        hit = _spread_cache.get(s)
+        if hit and hit[0] > now:
+            if hit[1] is not None:
+                out[s] = hit[1]
+        else:
+            todo.append(s)
+    if not todo:
+        return out
+    with _LOCK:
+        try:
+            mt5 = _ensure_mt5()
+        except Exception:
+            return out
+        for s in todo:
+            val = None
+            try:
+                info = mt5.symbol_info(s)
+                tick = mt5.symbol_info_tick(s)
+                if info and tick and info.trade_tick_size and tick.ask > 0 and tick.bid > 0:
+                    val = (tick.ask - tick.bid) / info.trade_tick_size * info.trade_tick_value
+                    val = val if val >= 0 else None
+            except Exception:
+                val = None
+            _spread_cache[s] = (now + _SPREAD_TTL, val)
+            if val is not None:
+                out[s] = val
+    return out
 
 
 def history_status() -> tuple[bool, str]:
