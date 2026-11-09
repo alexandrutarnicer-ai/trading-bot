@@ -130,6 +130,56 @@
       "risk_cap": "risc 8.31 = 4.16% din equity > limita 2% (chiar si la lotul minim 0.1)",
       "currency": "USD",
       "capital": 199.5
+    },
+    "2026-11-06|GBPUSD": [
+      "entry",
+      "closed"
+    ],
+    "2026-11-06|DE40": [
+      "entry",
+      "closed"
+    ],
+    "2026-11-06|GBPUSD|size": {
+      "lots": 0.02,
+      "risk_money": 1.39,
+      "target_money": 1.9368,
+      "raw_lots": 0.027868,
+      "at_min_lot": false,
+      "capped_max": false,
+      "ratio": 0.718,
+      "reason": null,
+      "currency": "USD",
+      "capital": 193.68
+    },
+    "2026-11-06|DE40|size": {
+      "lots": 0.0,
+      "risk_money": 0.0,
+      "target_money": 1.9368,
+      "raw_lots": 0.01247,
+      "at_min_lot": true,
+      "capped_max": false,
+      "ratio": 8.019,
+      "reason": "risc 15.53 = 8.02% din equity > limita 5% (chiar si la lotul minim 0.1)",
+      "risk_cap": "risc 15.53 = 8.02% din equity > limita 5% (chiar si la lotul minim 0.1)",
+      "blocked_lots": 0.1,
+      "blocked_risk_money": 15.5312,
+      "currency": "USD",
+      "capital": 193.68
+    },
+    "2026-11-06|US500": [
+      "entry"
+    ],
+    "2026-11-06|US500|size": {
+      "lots": 0.1,
+      "risk_money": 6.165,
+      "target_money": 1.9536,
+      "raw_lots": 0.031689,
+      "at_min_lot": true,
+      "capped_max": false,
+      "ratio": 3.156,
+      "reason": null,
+      "currency": "USD",
+      "capital": 195.36
     }
   }
 }
