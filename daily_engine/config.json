@@ -17,7 +17,7 @@
       "comm": 0.0,
       "role": "observatie",
       "reentry": {
-        "enabled": false,
+        "enabled": true,
         "window_min": 60,
         "max_trades": 3,
         "max_consec_losses": 2,
@@ -42,7 +42,7 @@
       "comm": 0.0,
       "role": "principal",
       "reentry": {
-        "enabled": false,
+        "enabled": true,
         "window_min": 60,
         "max_trades": 3,
         "max_consec_losses": 2,

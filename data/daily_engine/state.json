@@ -130,6 +130,36 @@
       "risk_cap": "risc 8.31 = 4.16% din equity > limita 2% (chiar si la lotul minim 0.1)",
       "currency": "USD",
       "capital": 199.5
+    },
+    "2026-11-09|DE40": [
+      "entry"
+    ],
+    "2026-11-09|DE40|size": {
+      "lots": 0.1,
+      "risk_money": 6.6356,
+      "target_money": 1.946,
+      "raw_lots": 0.029327,
+      "at_min_lot": true,
+      "capped_max": false,
+      "ratio": 3.41,
+      "reason": null,
+      "currency": "USD",
+      "capital": 194.6
+    },
+    "2026-11-09|US500": [
+      "entry"
+    ],
+    "2026-11-09|US500|size": {
+      "lots": 0.1,
+      "risk_money": 6.735,
+      "target_money": 1.9398,
+      "raw_lots": 0.028802,
+      "at_min_lot": true,
+      "capped_max": false,
+      "ratio": 3.472,
+      "reason": null,
+      "currency": "USD",
+      "capital": 193.98
     }
   }
 }
