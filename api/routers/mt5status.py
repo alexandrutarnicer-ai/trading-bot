@@ -294,55 +294,50 @@ def mt5_weekly_stats(source: str = "all"):
     }
 
 
+def _period_cutoff(period: str):
+    """Inceputul perioadei Azi / Sapt (luni) / Luna in fusul aplicatiei; None = tot istoricul."""
+    today = now_local().date()
+    if period == "day":
+        return datetime.combine(today, datetime.min.time())
+    if period == "week":
+        return datetime.combine(today - timedelta(days=today.weekday()), datetime.min.time())
+    if period == "month":
+        return datetime.combine(today.replace(day=1), datetime.min.time())
+    return None
+
+
+def _market_item(sym: str, st: dict) -> dict:
+    """Randul unei piete — campurile vechi (compat) + cele noi din trade_stats."""
+    return {
+        "symbol": sym, **st,
+        # compat (UI vechi): pnl_usd = brut, expectancy = R / trade-urile cu R
+        "pnl_usd": st["pnl_gross"],
+        "expectancy": st["expectancy_r"] if st["expectancy_r"] is not None else 0.0,
+        "sessions": [],
+    }
+
+
 @router.get("/top-markets")
-def mt5_top_markets(period: str = "week", limit: int = 5, source: str = "all"):
-    """Top piete dupa R cumulat, calculate direct din tranzactiile inchise MT5."""
+def mt5_top_markets(period: str = "week", limit: int = 5, source: str = "all", sort: str = "net"):
+    """Clasamentul pietelor din tranzactiile inchise MT5, agregat pe SIMBOL peste toate
+    engine-urile din filtrul `source` (all = tot contul). Sortare: net (implicit — P&L dupa
+    comision + swap) | r | gross | trades. Definitii: api/trade_stats.py."""
+    from api import trade_stats
     try:
         trades = mt5_pool.get_closed_trades(mt5_pool.HISTORY_DAYS)  # acopera si perioada "all"
     except mt5_pool.Mt5Unavailable as e:
-        return {"connected": False, "error": str(e), "items": []}
+        return {"connected": False, "error": str(e), "items": [], "total_markets": 0}
     trades = _by_source(trades, source)
-
-    today = now_local().date()
-    if period == "day":
-        cutoff = datetime.combine(today, datetime.min.time())
-    elif period == "week":
-        cutoff = datetime.combine(today - timedelta(days=today.weekday()), datetime.min.time())
-    elif period == "month":
-        cutoff = datetime.combine(today.replace(day=1), datetime.min.time())
-    else:
-        cutoff = None
-
+    cutoff = _period_cutoff(period)
     if cutoff is not None:
         trades = [t for t in trades if t["close_time"] >= cutoff]
 
-    symbol_stats: dict[str, dict] = {}
-    for t in trades:
-        st = symbol_stats.setdefault(t["symbol"], {"trades": 0, "wins": 0, "total_r": 0.0, "pnl_usd": 0.0})
-        st["trades"] += 1
-        if t["profit"] > 0:
-            st["wins"] += 1
-        if t["result_r"] is not None:
-            st["total_r"] += t["result_r"]
-        st["pnl_usd"] += t["profit"]
-
-    result = []
-    for sym, st in symbol_stats.items():
-        n = st["trades"]
-        result.append({
-            "symbol":     sym,
-            "trades":     n,
-            "wins":       st["wins"],
-            "losses":     n - st["wins"],
-            "total_r":    round(st["total_r"], 2),
-            "win_rate":   round(st["wins"] / n * 100, 1) if n else 0.0,
-            "expectancy": round(st["total_r"] / n, 3) if n else 0.0,
-            "pnl_usd":    round(st["pnl_usd"], 2),
-            "sessions":   [],  # fara concept de sesiune in MT5 — pastrat pentru compat. de tip
-        })
-
-    result.sort(key=lambda x: x["total_r"], reverse=True)
-    return {"connected": True, "items": result[:limit], "error": None}
+    stats = trade_stats.group_by(trades, lambda t: t["symbol"])
+    ranked = trade_stats.rank(stats, sort)
+    items = [_market_item(sym, st) for sym, st in ranked]
+    return {"connected": True, "items": items[:max(1, limit)], "total_markets": len(items),
+            "sort": sort if sort in trade_stats.SORT_KEYS else "net",
+            "totals": trade_stats.summarize(trades), "error": None}
 
 
 def _trade_status(t: dict) -> str:
@@ -512,88 +507,70 @@ def mt5_transactions_csv(
                     headers={"Content-Disposition": f'attachment; filename="{fname}"'})
 
 
+def _costs_payload(trades: list) -> dict:
+    """Totaluri + defalcare pe engine (sursa) — comun /costs si /costs-daily."""
+    from api import trade_stats
+    spl = mt5_pool.get_spread_per_lot({t["symbol"] for t in trades})
+    by_src = trade_stats.group_by(trades, lambda t: t.get("source") or "manual", spl)
+    return {
+        "spl": spl,
+        "totals": trade_stats.summarize(trades, spl),
+        "by_source": [{"source": k, **v} for k, v in trade_stats.rank(by_src, "trades")],
+        "days": mt5_pool.HISTORY_DAYS,
+    }
+
+
 @router.get("/costs")
-def mt5_costs():
-    """Comisioane+swap per simbol, din tranzactiile inchise MT5."""
+def mt5_costs(source: str = "all"):
+    """Costurile tranzactionarii din MT5, pe piata, pentru ultimele HISTORY_DAYS zile:
+    comision + swap (taxe REALE, separate de pret) si spread-ul ESTIMAT (deja inclus in P&L —
+    contul Standard nu are comision, costul real e spread-ul). Plus totaluri si defalcarea pe engine."""
+    from api import trade_stats
     try:
-        trades = mt5_pool.get_closed_trades(mt5_pool.HISTORY_DAYS)
+        trades = _by_source(mt5_pool.get_closed_trades(mt5_pool.HISTORY_DAYS), source)
     except mt5_pool.Mt5Unavailable as e:
-        return {"connected": False, "error": str(e), "items": []}
-
-    by_symbol: dict[str, dict] = {}
-    for t in trades:
-        st = by_symbol.setdefault(t["symbol"], {
-            "trades": 0, "commission_usd": 0.0, "swap_usd": 0.0, "pnl_gross": 0.0,
-        })
-        st["trades"] += 1
-        st["commission_usd"] += t["commission"]
-        st["swap_usd"] += t["swap"]
-        st["pnl_gross"] += t["profit"]
-
+        return {"connected": False, "error": str(e), "items": [], "totals": None, "by_source": []}
+    pay = _costs_payload(trades)
+    stats = trade_stats.group_by(trades, lambda t: t["symbol"], pay["spl"])
     items = []
-    for sym, st in by_symbol.items():
-        total_costs = round(st["commission_usd"] + st["swap_usd"], 2)
+    for sym, st in trade_stats.rank(stats, "costs"):
         items.append({
-            "symbol": sym,
-            "trades": st["trades"],
-            "trades_with_mt5": st["trades"],  # 100% din trades MT5 au date reale
-            "commission_usd": round(st["commission_usd"], 2),
-            "swap_usd": round(st["swap_usd"], 2),
-            "total_costs": total_costs,
-            "pnl_gross": round(st["pnl_gross"], 2),
-            "pnl_net": round(st["pnl_gross"] + total_costs, 2),
-            "has_cost_data": True,
-            "sessions": [],
+            "symbol": sym, **st,
+            # compat (UI vechi)
+            "trades_with_mt5": st["trades"], "commission_usd": st["commission"],
+            "swap_usd": st["swap"], "total_costs": st["costs"],
+            "has_cost_data": True, "sessions": [],
         })
-
-    items.sort(key=lambda x: x["total_costs"])
-    return {"connected": True, "items": items, "error": None}
+    return {"connected": True, "items": items, "totals": pay["totals"],
+            "by_source": pay["by_source"], "days": pay["days"], "error": None}
 
 
 @router.get("/costs-daily")
-def mt5_costs_daily():
-    """Comisioane+swap pe zi, din tranzactiile inchise MT5."""
+def mt5_costs_daily(source: str = "all"):
+    """Comision + swap + spread estimat pe zi (ora de inchidere, fusul aplicatiei)."""
+    from api import trade_stats
     try:
-        trades = mt5_pool.get_closed_trades(mt5_pool.HISTORY_DAYS)
+        trades = _by_source(mt5_pool.get_closed_trades(mt5_pool.HISTORY_DAYS), source)
     except mt5_pool.Mt5Unavailable as e:
         return {"connected": False, "error": str(e), "items": [],
                 "total_commission": 0.0, "total_swap": 0.0, "total_costs": 0.0}
-
-    by_day: dict[_date, dict] = {}
-    for t in trades:
-        day = t["close_time"].date()
-        st = by_day.setdefault(day, {
-            "trades": 0, "commission_usd": 0.0, "swap_usd": 0.0, "pnl_usd": 0.0, "total_r": 0.0,
-        })
-        st["trades"] += 1
-        st["commission_usd"] += t["commission"]
-        st["swap_usd"] += t["swap"]
-        st["pnl_usd"] += t["profit"]
-        if t["result_r"] is not None:
-            st["total_r"] += t["result_r"]
-
+    spl = mt5_pool.get_spread_per_lot({t["symbol"] for t in trades})
+    stats = trade_stats.group_by(trades, lambda t: t["close_time"].date(), spl)
     items = []
-    for day, st in sorted(by_day.items()):
-        comm = round(st["commission_usd"], 2)
-        swap = round(st["swap_usd"], 2)
+    for day in sorted(stats):
+        st = stats[day]
         items.append({
-            "date": day.isoformat(),
-            "trades": st["trades"],
-            "trades_with_cost": st["trades"],
-            "commission_usd": comm,
-            "swap_usd": swap,
-            "total_costs": round(comm + swap, 2),
-            "pnl_usd": round(st["pnl_usd"], 2),
-            "total_r": round(st["total_r"], 3),
-            "has_cost_data": True,
+            "date": day.isoformat(), **st,
+            # compat (UI vechi)
+            "trades_with_cost": st["trades"], "commission_usd": st["commission"],
+            "swap_usd": st["swap"], "total_costs": st["costs"],
+            "pnl_usd": st["pnl_gross"], "has_cost_data": True,
         })
-
-    total_comm = round(sum(x["commission_usd"] for x in items), 2)
-    total_swap = round(sum(x["swap_usd"] for x in items), 2)
+    tot = trade_stats.summarize(trades, spl)
     return {
-        "connected": True, "items": items, "error": None,
-        "total_commission": total_comm, "total_swap": total_swap,
-        "total_costs": round(total_comm + total_swap, 2),
+        "connected": True, "items": items, "error": None, "totals": tot,
+        "total_commission": tot["commission"], "total_swap": tot["swap"],
+        "total_costs": tot["costs"],
     }
 
 

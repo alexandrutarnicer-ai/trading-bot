@@ -10,7 +10,7 @@ import {
   useMt5Transactions, useMt5MarketStats, useMt5Costs, useMt5CostsDaily,
 } from "../api/hooks";
 import { apiFetch } from "../api/client";
-import type { MarketStat, UptimeEntry, SessionChangeEntry, SystemLogEntry, CostStat, CostsDayEntry, Mt5Transaction } from "../api/types";
+import type { UptimeEntry, SessionChangeEntry, SystemLogEntry, CostStat, CostsDayEntry, CostSourceStat, Mt5Transaction, Mt5TopMarketEntry, TopMarketsSort } from "../api/types";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -302,15 +302,33 @@ function TransactionsTab() {
 }
 
 // ── Market stats tab ──────────────────────────────────────────────────────────
+// Toate pietele, agregate pe simbol peste engine-urile din filtrul de sursa — aceleasi
+// definitii ca Top 5 din Dashboard (api/trade_stats.py).
+
+const MARKET_PERIODS: Array<{ id: string; label: string }> = [
+  { id: "day", label: "Azi" }, { id: "week", label: "Săpt" },
+  { id: "month", label: "Lună" }, { id: "all", label: "Tot (365 z)" },
+];
+const MARKET_SORTS: Array<{ id: TopMarketsSort; label: string }> = [
+  { id: "net", label: "$ net" }, { id: "r", label: "R" }, { id: "trades", label: "Trades" },
+];
 
 function MarketStatsTab() {
-  const mt5Query = useMt5MarketStats();
+  const [period, setPeriod] = useState("all");
+  const [source, setSource] = useState<"" | Mt5Transaction["source"]>("");
+  const [sort, setSort]     = useState<TopMarketsSort>("net");
+  const mt5Query = useMt5MarketStats(period, source || "all", sort);
 
   const isLoading = mt5Query.isLoading;
-  const items: MarketStat[] = mt5Query.data?.items ?? [];
+  const items: Mt5TopMarketEntry[] = mt5Query.data?.items ?? [];
+  const tot = mt5Query.data?.totals;
 
-  const totalTrades = items.reduce((s, m) => s + m.trades, 0);
-  const totalR      = items.reduce((s, m) => s + m.total_r, 0);
+  const chip = (active: boolean) =>
+    `text-[10px] px-2.5 py-1 rounded-lg transition-colors ${
+      active
+        ? "bg-blue-500/20 text-blue-400 border border-blue-500/30 font-medium"
+        : "text-slate-500 hover:text-slate-300 border border-transparent"
+    }`;
 
   return (
     <div className="space-y-4">
@@ -320,20 +338,47 @@ function MarketStatsTab() {
         </div>
       )}
 
-      {/* Summary cards */}
-      {items.length > 0 && (
-        <div className="grid grid-cols-3 gap-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-1">
+          {MARKET_PERIODS.map(p => (
+            <button key={p.id} onClick={() => setPeriod(p.id)} className={chip(period === p.id)}>{p.label}</button>
+          ))}
+        </div>
+        <div className="flex items-center gap-1">
+          {SOURCE_FILTERS.map(f => (
+            <button key={f.id || "all"} onClick={() => setSource(f.id)} className={chip(source === f.id)}>{f.label}</button>
+          ))}
+        </div>
+        <div className="flex items-center gap-1 ml-auto">
+          <span className="text-[10px] text-slate-600">Sortare</span>
+          {MARKET_SORTS.map(o => (
+            <button key={o.id} onClick={() => setSort(o.id)} className={chip(sort === o.id)}>{o.label}</button>
+          ))}
+        </div>
+      </div>
+
+      {tot && tot.trades > 0 && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <div className="bg-surface-card rounded-xl border border-surface-border px-4 py-3">
-            <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Piețe active</div>
-            <div className="text-2xl font-bold font-mono text-white">{items.length}</div>
+            <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Piețe</div>
+            <div className="text-2xl font-bold font-mono text-white">{mt5Query.data?.total_markets ?? items.length}</div>
           </div>
           <div className="bg-surface-card rounded-xl border border-surface-border px-4 py-3">
-            <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Total trades</div>
-            <div className="text-2xl font-bold font-mono text-white">{totalTrades}</div>
+            <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Trades</div>
+            <div className="text-2xl font-bold font-mono text-white">{tot.trades}</div>
+            <div className="text-[10px] text-slate-500 mt-0.5">
+              {tot.wins}W / {tot.losses}L{tot.breakeven ? ` / ${tot.breakeven} BE` : ""} · {fmtPct(tot.win_rate)}
+            </div>
+          </div>
+          <div className="bg-surface-card rounded-xl border border-surface-border px-4 py-3">
+            <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">P&L net</div>
+            <div className={`text-2xl font-bold font-mono ${rColor(tot.pnl_net)}`}>{fmtUsd(tot.pnl_net)}</div>
+            <div className="text-[10px] text-slate-500 mt-0.5">brut {fmtUsd(tot.pnl_gross)} · costuri {fmtUsd(tot.costs)}</div>
           </div>
           <div className="bg-surface-card rounded-xl border border-surface-border px-4 py-3">
             <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Total R</div>
-            <div className={`text-2xl font-bold font-mono ${rColor(totalR)}`}>{fmtR(totalR)}</div>
+            <div className={`text-2xl font-bold font-mono ${rColor(tot.total_r)}`}>{fmtR(tot.total_r)}</div>
+            <div className="text-[10px] text-slate-500 mt-0.5">{tot.trades_with_r} trades cu SL</div>
           </div>
         </div>
       )}
@@ -347,7 +392,7 @@ function MarketStatsTab() {
       ) : items.length === 0 ? (
         <div className="text-center py-16 text-slate-500">
           <Target size={32} className="mx-auto mb-3 opacity-30" />
-          <p>Nicio tranzacție live înregistrată</p>
+          <p>Nicio tranzacție în perioada / sursa selectată</p>
         </div>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-surface-border">
@@ -356,10 +401,13 @@ function MarketStatsTab() {
               <tr className="border-b border-surface-border bg-surface-card">
                 <th className="text-left px-4 py-2.5 text-slate-500 font-medium">Simbol</th>
                 <th className="text-right px-3 py-2.5 text-slate-500 font-medium">Trades</th>
+                <th className="text-right px-3 py-2.5 text-slate-500 font-medium">W / L</th>
                 <th className="text-right px-3 py-2.5 text-slate-500 font-medium">Win Rate</th>
-                <th className="text-right px-3 py-2.5 text-slate-500 font-medium">Expectancy</th>
+                <th className="text-right px-3 py-2.5 text-slate-500 font-medium" title="R mediu pe trade-urile cu SL">Expectancy</th>
                 <th className="text-right px-3 py-2.5 text-slate-500 font-medium">Total R</th>
-                <th className="text-right px-3 py-2.5 text-slate-500 font-medium">P&L $</th>
+                <th className="text-right px-3 py-2.5 text-slate-500 font-medium">P&L brut</th>
+                <th className="text-right px-3 py-2.5 text-slate-500 font-medium" title="comision + swap">Costuri</th>
+                <th className="text-right px-3 py-2.5 text-slate-500 font-medium">P&L net</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-surface-border/40">
@@ -375,20 +423,23 @@ function MarketStatsTab() {
                     </div>
                   </td>
                   <td className="px-3 py-2.5 text-right text-slate-300 font-mono">{m.trades}</td>
+                  <td className="px-3 py-2.5 text-right text-slate-400 font-mono">
+                    {m.wins}/{m.losses}{m.breakeven ? <span className="text-slate-600"> +{m.breakeven}BE</span> : null}
+                  </td>
                   <td className="px-3 py-2.5 text-right">
                     <span className={m.win_rate >= 50 ? "text-profit font-medium" : "text-slate-400"}>
                       {fmtPct(m.win_rate)}
                     </span>
                   </td>
-                  <td className={`px-3 py-2.5 text-right font-mono font-semibold ${rColor(m.expectancy)}`}>
-                    {fmtR(m.expectancy)}
+                  <td className={`px-3 py-2.5 text-right font-mono font-semibold ${m.expectancy_r != null ? rColor(m.expectancy_r) : "text-slate-600"}`}>
+                    {fmtR(m.expectancy_r)}
                   </td>
-                  <td className={`px-3 py-2.5 text-right font-mono font-semibold ${rColor(m.total_r)}`}>
-                    {fmtR(m.total_r)}
+                  <td className={`px-3 py-2.5 text-right font-mono font-semibold ${m.trades_with_r ? rColor(m.total_r) : "text-slate-600"}`}>
+                    {m.trades_with_r ? fmtR(m.total_r) : "—"}
                   </td>
-                  <td className={`px-3 py-2.5 text-right font-mono ${m.pnl_usd != null ? rColor(m.pnl_usd) : "text-slate-600"}`}>
-                    {fmtUsd(m.pnl_usd)}
-                  </td>
+                  <td className={`px-3 py-2.5 text-right font-mono ${rColor(m.pnl_gross)}`}>{fmtUsd(m.pnl_gross)}</td>
+                  <td className={`px-3 py-2.5 text-right font-mono ${m.costs < 0 ? "text-loss/80" : "text-slate-500"}`}>{fmtUsd(m.costs)}</td>
+                  <td className={`px-3 py-2.5 text-right font-mono font-semibold ${rColor(m.pnl_net)}`}>{fmtUsd(m.pnl_net)}</td>
                 </tr>
               ))}
             </tbody>
@@ -601,43 +652,51 @@ function SessionChangesTab() {
 }
 
 // ── Costs tab ────────────────────────────────────────────────────────────────
+// Ce costa tranzactionarea, din MT5 (api/trade_stats.py). Pe contul Standard comisionul e ~0:
+// costul real e SPREAD-ul, care nu apare ca taxa separata (e in pretul de executie, deci deja in
+// P&L) — il estimam la spread-ul curent × volum ca sa se vada cat consuma. Swap = dobanda overnight.
+
+const ENGINE_LABEL: Record<CostSourceStat["source"], string> = {
+  bot: "Custom Engine", ai: "AI Engine", daily: "Daily Engine", noisy: "Noisy Engine", manual: "Manual",
+};
+
+/** Cost total estimat = spread estimat (daca e cunoscut) + comision + swap. */
+const estTotal = (s: { spread_est: number | null; costs: number }) => (s.spread_est ?? 0) + s.costs;
 
 function CostsTab() {
-  const mt5Sym  = useMt5Costs();
-  const mt5Day  = useMt5CostsDaily();
+  const [source, setSource] = useState<"" | Mt5Transaction["source"]>("");
+  const [showAllDays, setShowAllDays] = useState(false);
+  const mt5Sym  = useMt5Costs(source || "all");
+  const mt5Day  = useMt5CostsDaily(source || "all");
 
-  const loadSym = mt5Sym.isLoading;
-  const loadDay = mt5Day.isLoading;
-  const perDay  = mt5Day.data;
-
-  const symItems: CostStat[]   = mt5Sym.data?.items ?? [];
-  const dayItems: CostsDayEntry[] = perDay?.items ?? [];
-
-  const totalComm  = perDay?.total_commission ?? 0;
-  const totalSwap  = perDay?.total_swap ?? 0;
-  const totalCosts = perDay?.total_costs ?? 0;
-  const hasAnyData = dayItems.some(d => d.has_cost_data);
+  const symItems: CostStat[]        = mt5Sym.data?.items ?? [];
+  const dayItems: CostsDayEntry[]   = mt5Day.data?.items ?? [];
+  const bySource: CostSourceStat[]  = mt5Sym.data?.by_source ?? [];
+  const tot = mt5Sym.data?.totals ?? null;
+  const days = mt5Sym.data?.days ?? 365;
   const mt5NotConnected = mt5Sym.data && !mt5Sym.data.connected;
 
-  // Zile cu date de cost (pentru bara vizuala)
-  const maxCost = Math.max(...dayItems.map(d => Math.abs(d.total_costs)), 0.01);
-
-  const fmtMoney = (v: number, showPlus = true) => {
+  const fmtMoney = (v: number | null | undefined, showPlus = true) => {
+    if (v == null) return "—";
     const sign = v > 0 && showPlus ? "+" : "";
     return `${sign}${v.toLocaleString("ro-RO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} $`;
   };
-
-  const MoneyCell = ({ v, dimZero = true }: { v: number; dimZero?: boolean }) => {
-    if (v === 0 && dimZero) return <span className="text-slate-600">0,00 $</span>;
+  const MoneyCell = ({ v, dimZero = true }: { v: number | null | undefined; dimZero?: boolean }) => {
+    if (v == null) return <span className="text-slate-600">—</span>;
+    if (Math.abs(v) < 0.005 && dimZero) return <span className="text-slate-600">0,00 $</span>;
     return <span className={v < 0 ? "text-loss" : v > 0 ? "text-profit" : "text-slate-400"}>{fmtMoney(v)}</span>;
   };
+  const fmtDate = (s: string) =>
+    new Date(s).toLocaleDateString("ro-RO", { day: "2-digit", month: "short" });
 
-  const fmtDate = (s: string) => {
-    const d = new Date(s);
-    return d.toLocaleDateString("ro-RO", { day: "2-digit", month: "short" });
-  };
+  const chip = (active: boolean) =>
+    `text-[10px] px-2.5 py-1 rounded-lg transition-colors ${
+      active
+        ? "bg-blue-500/20 text-blue-400 border border-blue-500/30 font-medium"
+        : "text-slate-500 hover:text-slate-300 border border-transparent"
+    }`;
 
-  if (loadSym || loadDay) {
+  if (mt5Sym.isLoading || mt5Day.isLoading) {
     return (
       <div className="space-y-2">
         {[...Array(6)].map((_, i) => (
@@ -647,215 +706,232 @@ function CostsTab() {
     );
   }
 
+  const daysDesc = [...dayItems].reverse();
+  const shownDays = showAllDays ? daysDesc : daysDesc.slice(0, 30);
+  const maxDayCost = Math.max(...dayItems.map(d => Math.abs(estTotal(d))), 0.01);
+  const totalEst = tot ? estTotal(tot) : 0;
+  const withoutCosts = tot ? tot.pnl_net - totalEst : 0;   // ce ar fi fost fara spread + comision + swap
+
   return (
     <div className="space-y-6">
-
       {mt5NotConnected && (
         <div className="text-[11px] text-warn/80 bg-warn/10 border border-warn/30 rounded-lg px-3 py-2">
           MT5 neconectat — {mt5Sym.data?.error ?? "costurile nu sunt disponibile"}.
         </div>
       )}
 
-      {/* ── 1. Summary totals ─────────────────────────────────────────── */}
-      <div className="grid grid-cols-3 gap-3">
-        <div className="bg-surface-card border border-surface-border rounded-xl p-4">
-          <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Comisioane broker</div>
-          <div className={`text-xl font-bold font-mono ${totalComm < 0 ? "text-loss" : "text-slate-300"}`}>
-            {fmtMoney(totalComm)}
-          </div>
-          <div className="text-[10px] text-slate-600 mt-1">plătit la broker per lot închis</div>
-        </div>
-        <div className="bg-surface-card border border-surface-border rounded-xl p-4">
-          <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Swap overnight</div>
-          <div className={`text-xl font-bold font-mono ${totalSwap < 0 ? "text-loss" : "text-profit"}`}>
-            {fmtMoney(totalSwap, true)}
-          </div>
-          <div className="text-[10px] text-slate-600 mt-1">
-            {totalSwap >= 0 ? "pozitiv = primit de la broker" : "negativ = plătit la broker"}
-          </div>
-        </div>
-        <div className="bg-surface-card border border-surface-border rounded-xl p-4">
-          <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Cost total net</div>
-          <div className={`text-xl font-bold font-mono ${totalCosts < 0 ? "text-loss" : "text-slate-300"}`}>
-            {fmtMoney(totalCosts)}
-          </div>
-          <div className="text-[10px] text-slate-600 mt-1">comisioane + swap</div>
-        </div>
+      <div className="flex flex-wrap items-center gap-2">
+        {SOURCE_FILTERS.map(f => (
+          <button key={f.id || "all"} onClick={() => setSource(f.id)} className={chip(source === f.id)}>{f.label}</button>
+        ))}
+        <span className="text-[10px] text-slate-600 ml-auto">poziții închise · ultimele {days} zile</span>
       </div>
 
-      {/* ── 2. Daily timeline ─────────────────────────────────────────── */}
-      <div>
-        <div className="flex items-center gap-2 mb-3">
-          <span className="text-[11px] font-semibold text-slate-300">Evoluție Zilnică</span>
-          <span className="text-[10px] text-slate-600">
-            {dayItems.length > 0 ? `din ${fmtDate(dayItems[0].date)} până azi` : ""}
-          </span>
-          {!hasAnyData && (
-            <span className="text-[10px] text-warn ml-1">Date MT5 indisponibile — apar după prima închidere de ordin real</span>
-          )}
-        </div>
-        <div className="overflow-x-auto rounded-xl border border-surface-border">
-          <table className="w-full text-[11px]">
-            <thead>
-              <tr className="border-b border-surface-border bg-surface-card">
-                <th className="text-left px-3 py-2 text-slate-500 font-medium w-24">Data</th>
-                <th className="text-right px-3 py-2 text-slate-500 font-medium">Trades</th>
-                <th className="text-right px-3 py-2 text-slate-500 font-medium">Cu date</th>
-                <th className="text-right px-3 py-2 text-slate-500 font-medium">Comisioane</th>
-                <th className="text-right px-3 py-2 text-slate-500 font-medium">Swap</th>
-                <th className="text-right px-3 py-2 text-slate-500 font-medium">Cost total</th>
-                <th className="text-right px-3 py-2 text-slate-500 font-medium">P&L USD</th>
-                <th className="text-right px-3 py-2 text-slate-500 font-medium">R total</th>
-                <th className="px-3 py-2 text-slate-500 font-medium w-28">Cost vizual</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-surface-border/40">
-              {[...dayItems].reverse().map(row => {
-                const today = new Date().toISOString().slice(0, 10);
-                const isToday = row.date === today;
-                const barPct  = row.has_cost_data
-                  ? Math.round(Math.min(Math.abs(row.total_costs) / maxCost * 100, 100))
-                  : 0;
-                return (
-                  <tr key={row.date} className={`hover:bg-surface-border/10 transition-colors ${isToday ? "bg-blue-500/5" : ""}`}>
-                    <td className="px-3 py-2.5 text-slate-300 font-medium">
-                      {fmtDate(row.date)}
-                      {isToday && <span className="ml-1 text-[9px] text-blue-400">azi</span>}
-                    </td>
-                    <td className="px-3 py-2.5 text-right text-slate-400">{row.trades}</td>
-                    <td className="px-3 py-2.5 text-right">
-                      {row.has_cost_data
-                        ? <span className="text-slate-300">{row.trades_with_cost}</span>
-                        : <span className="text-slate-600">—</span>}
-                    </td>
-                    <td className="px-3 py-2.5 text-right">
-                      {row.has_cost_data && row.commission_usd !== 0
-                        ? <MoneyCell v={row.commission_usd} />
-                        : <span className="text-slate-600">—</span>}
-                    </td>
-                    <td className="px-3 py-2.5 text-right">
-                      {row.has_cost_data && row.swap_usd !== 0
-                        ? <MoneyCell v={row.swap_usd} />
-                        : <span className="text-slate-600">—</span>}
-                    </td>
-                    <td className="px-3 py-2.5 text-right font-semibold">
-                      {row.has_cost_data
-                        ? <MoneyCell v={row.total_costs} dimZero={false} />
-                        : <span className="text-slate-600">—</span>}
-                    </td>
-                    <td className="px-3 py-2.5 text-right">
-                      {row.pnl_usd != null
-                        ? <MoneyCell v={row.pnl_usd} />
-                        : <span className="text-slate-600">—</span>}
-                    </td>
-                    <td className="px-3 py-2.5 text-right">
-                      {row.total_r != null
-                        ? <span className={row.total_r >= 0 ? "text-profit" : "text-loss"}>
-                            {row.total_r > 0 ? "+" : ""}{row.total_r.toFixed(2)}R
-                          </span>
-                        : <span className="text-slate-600">—</span>}
-                    </td>
-                    <td className="px-3 py-2.5">
-                      {row.has_cost_data && barPct > 0 ? (
-                        <div className="flex items-center gap-1">
-                          <div className="flex-1 h-2 rounded-full bg-surface-border overflow-hidden">
-                            <div
-                              className={`h-full rounded-full ${row.total_costs < 0 ? "bg-loss/60" : "bg-profit/60"}`}
-                              style={{ width: `${barPct}%` }}
-                            />
-                          </div>
-                        </div>
-                      ) : (
-                        <span className="text-slate-700 text-[9px]">fără date</span>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-            {dayItems.length > 0 && hasAnyData && (
-              <tfoot>
-                <tr className="border-t-2 border-surface-border bg-surface-card/80 font-semibold">
-                  <td className="px-3 py-2.5 text-slate-400 text-[10px]">TOTAL</td>
-                  <td className="px-3 py-2.5 text-right text-slate-400">
-                    {dayItems.reduce((s, d) => s + d.trades, 0)}
-                  </td>
-                  <td className="px-3 py-2.5 text-right text-slate-400">
-                    {dayItems.reduce((s, d) => s + d.trades_with_cost, 0)}
-                  </td>
-                  <td className="px-3 py-2.5 text-right"><MoneyCell v={totalComm} dimZero={false} /></td>
-                  <td className="px-3 py-2.5 text-right"><MoneyCell v={totalSwap} dimZero={false} /></td>
-                  <td className="px-3 py-2.5 text-right"><MoneyCell v={totalCosts} dimZero={false} /></td>
-                  <td className="px-3 py-2.5 text-right">
-                    {(() => {
-                      const s = dayItems.reduce((acc, d) => acc + (d.pnl_usd ?? 0), 0);
-                      return <MoneyCell v={s} dimZero={false} />;
-                    })()}
-                  </td>
-                  <td className="px-3 py-2.5 text-right">
-                    {(() => {
-                      const s = dayItems.reduce((acc, d) => acc + (d.total_r ?? 0), 0);
-                      return <span className={s >= 0 ? "text-profit" : "text-loss"}>{s > 0 ? "+" : ""}{s.toFixed(2)}R</span>;
-                    })()}
-                  </td>
-                  <td />
-                </tr>
-              </tfoot>
-            )}
-          </table>
-        </div>
-        <p className="text-[10px] text-slate-600 mt-2">
-          <span className="text-slate-500">Cu date</span> = trade-uri cu comisioane reale MT5. Zilele fără date = bot nu înregistra încă comisioane (înainte de 2026-07-01).
-        </p>
+      {/* ── 1. Ce platesti ───────────────────────────────────────────── */}
+      <div className="bg-surface-card border border-surface-border rounded-xl p-4 text-[11px] text-slate-400 space-y-1.5">
+        <div className="text-slate-200 font-semibold text-xs mb-1">Ce plătești brokerului</div>
+        <div><span className="text-slate-200">Spread</span> — diferența dintre prețul de cumpărare și cel de vânzare, plătită la fiecare intrare.
+          Nu apare ca taxă separată: e deja în prețul de execuție, deci <b>deja inclus în P&L</b>. Pe contul Standard este costul principal.
+          Valoarea de mai jos e o <b>estimare</b> la spread-ul curent × volumul fiecărui trade (la știri / deschidere spread-ul real e mai mare).</div>
+        <div><span className="text-slate-200">Comision</span> — taxă pe lot; pe contul Standard e ~0 (broker-ul câștigă din spread).</div>
+        <div><span className="text-slate-200">Swap</span> — dobânda pentru pozițiile ținute peste noapte; poate fi plătită (−) sau primită (+).</div>
       </div>
 
-      {/* ── 3. Per-market breakdown ───────────────────────────────────── */}
-      {symItems.some(r => r.has_cost_data) && (
+      {/* ── 2. Totaluri ──────────────────────────────────────────────── */}
+      {tot && (
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          <div className="bg-surface-card border border-surface-border rounded-xl p-4">
+            <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Spread (estimat)</div>
+            <div className="text-xl font-bold font-mono text-loss">{fmtMoney(tot.spread_est)}</div>
+            <div className="text-[10px] text-slate-600 mt-1">deja în P&L · {tot.spread_est_trades}/{tot.trades} trades</div>
+          </div>
+          <div className="bg-surface-card border border-surface-border rounded-xl p-4">
+            <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Comision</div>
+            <div className={`text-xl font-bold font-mono ${tot.commission < 0 ? "text-loss" : "text-slate-300"}`}>{fmtMoney(tot.commission)}</div>
+            <div className="text-[10px] text-slate-600 mt-1">taxă separată, real MT5</div>
+          </div>
+          <div className="bg-surface-card border border-surface-border rounded-xl p-4">
+            <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Swap</div>
+            <div className={`text-xl font-bold font-mono ${tot.swap < 0 ? "text-loss" : "text-profit"}`}>{fmtMoney(tot.swap)}</div>
+            <div className="text-[10px] text-slate-600 mt-1">taxă separată, real MT5</div>
+          </div>
+          <div className="bg-surface-card border border-surface-border rounded-xl p-4">
+            <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">Cost total (estimat)</div>
+            <div className="text-xl font-bold font-mono text-loss">{fmtMoney(totalEst)}</div>
+            <div className="text-[10px] text-slate-600 mt-1">
+              {tot.trades ? `${fmtMoney(totalEst / tot.trades)} / trade` : "—"}
+            </div>
+          </div>
+          <div className="bg-surface-card border border-surface-border rounded-xl p-4">
+            <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">P&L net real</div>
+            <div className={`text-xl font-bold font-mono ${rColor(tot.pnl_net)}`}>{fmtMoney(tot.pnl_net)}</div>
+            <div className="text-[10px] text-slate-600 mt-1">fără niciun cost ar fi fost ~{fmtMoney(withoutCosts)}</div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 3. Pe engine ─────────────────────────────────────────────── */}
+      {bySource.length > 0 && (
         <div>
-          <div className="text-[11px] font-semibold text-slate-300 mb-3">Pe Piețe</div>
+          <div className="text-[11px] font-semibold text-slate-300 mb-3">Pe engine</div>
           <div className="overflow-x-auto rounded-xl border border-surface-border">
             <table className="w-full text-[11px]">
               <thead>
                 <tr className="border-b border-surface-border bg-surface-card">
-                  <th className="text-left px-3 py-2 text-slate-500 font-medium">Piață</th>
-                  <th className="text-right px-3 py-2 text-slate-500 font-medium">Trade-uri</th>
-                  <th className="text-right px-3 py-2 text-slate-500 font-medium">Comisioane</th>
+                  <th className="text-left px-3 py-2 text-slate-500 font-medium">Engine</th>
+                  <th className="text-right px-3 py-2 text-slate-500 font-medium">Trades</th>
+                  <th className="text-right px-3 py-2 text-slate-500 font-medium">Spread (est.)</th>
+                  <th className="text-right px-3 py-2 text-slate-500 font-medium">Comision</th>
                   <th className="text-right px-3 py-2 text-slate-500 font-medium">Swap</th>
-                  <th className="text-right px-3 py-2 text-slate-500 font-medium">Cost/trade</th>
-                  <th className="text-right px-3 py-2 text-slate-500 font-medium">P&L Brut</th>
-                  <th className="text-right px-3 py-2 text-slate-500 font-medium">P&L Net</th>
+                  <th className="text-right px-3 py-2 text-slate-500 font-medium">Cost total (est.)</th>
+                  <th className="text-right px-3 py-2 text-slate-500 font-medium">Cost / trade</th>
+                  <th className="text-right px-3 py-2 text-slate-500 font-medium">P&L net</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-surface-border/40">
-                {symItems.filter(r => r.has_cost_data).map(r => {
-                  const costPerTrade = r.trades_with_mt5 > 0
-                    ? r.total_costs / r.trades_with_mt5
-                    : 0;
-                  return (
-                    <tr key={r.symbol} className="hover:bg-surface-border/10 transition-colors">
-                      <td className="px-3 py-2.5 font-semibold text-white">{r.symbol}</td>
-                      <td className="px-3 py-2.5 text-right text-slate-400">
-                        {r.trades_with_mt5}/{r.trades}
-                      </td>
-                      <td className="px-3 py-2.5 text-right"><MoneyCell v={r.commission_usd} /></td>
-                      <td className="px-3 py-2.5 text-right"><MoneyCell v={r.swap_usd} /></td>
-                      <td className="px-3 py-2.5 text-right">
-                        <span className="text-slate-400">{fmtMoney(costPerTrade)}</span>
-                      </td>
-                      <td className="px-3 py-2.5 text-right">
-                        {r.pnl_net != null ? <MoneyCell v={r.pnl_gross} /> : <span className="text-slate-600">—</span>}
-                      </td>
-                      <td className="px-3 py-2.5 text-right">
-                        {r.pnl_net != null ? <MoneyCell v={r.pnl_net} /> : <span className="text-slate-600">—</span>}
-                      </td>
-                    </tr>
-                  );
-                })}
+                {bySource.map(r => (
+                  <tr key={r.source} className="hover:bg-surface-border/10 transition-colors">
+                    <td className="px-3 py-2.5 font-semibold text-white">{ENGINE_LABEL[r.source] ?? r.source}</td>
+                    <td className="px-3 py-2.5 text-right text-slate-400">{r.trades}</td>
+                    <td className="px-3 py-2.5 text-right"><MoneyCell v={r.spread_est} /></td>
+                    <td className="px-3 py-2.5 text-right"><MoneyCell v={r.commission} /></td>
+                    <td className="px-3 py-2.5 text-right"><MoneyCell v={r.swap} /></td>
+                    <td className="px-3 py-2.5 text-right font-semibold"><MoneyCell v={estTotal(r)} dimZero={false} /></td>
+                    <td className="px-3 py-2.5 text-right text-slate-400">{r.trades ? fmtMoney(estTotal(r) / r.trades) : "—"}</td>
+                    <td className="px-3 py-2.5 text-right"><MoneyCell v={r.pnl_net} dimZero={false} /></td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
         </div>
       )}
+
+      {/* ── 4. Pe piete ──────────────────────────────────────────────── */}
+      {symItems.length > 0 && (
+        <div>
+          <div className="text-[11px] font-semibold text-slate-300 mb-3">Pe piețe <span className="text-slate-600 font-normal">(cele mai scumpe primele)</span></div>
+          <div className="overflow-x-auto rounded-xl border border-surface-border">
+            <table className="w-full text-[11px]">
+              <thead>
+                <tr className="border-b border-surface-border bg-surface-card">
+                  <th className="text-left px-3 py-2 text-slate-500 font-medium">Piață</th>
+                  <th className="text-right px-3 py-2 text-slate-500 font-medium">Trades</th>
+                  <th className="text-right px-3 py-2 text-slate-500 font-medium">Spread (est.)</th>
+                  <th className="text-right px-3 py-2 text-slate-500 font-medium">Comision</th>
+                  <th className="text-right px-3 py-2 text-slate-500 font-medium">Swap</th>
+                  <th className="text-right px-3 py-2 text-slate-500 font-medium">Cost total (est.)</th>
+                  <th className="text-right px-3 py-2 text-slate-500 font-medium">Cost / trade</th>
+                  <th className="text-right px-3 py-2 text-slate-500 font-medium">P&L brut</th>
+                  <th className="text-right px-3 py-2 text-slate-500 font-medium">P&L net</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-surface-border/40">
+                {[...symItems].sort((a, b) => estTotal(a) - estTotal(b)).map(r => (
+                  <tr key={r.symbol} className="hover:bg-surface-border/10 transition-colors">
+                    <td className="px-3 py-2.5 font-semibold text-white">{r.symbol}</td>
+                    <td className="px-3 py-2.5 text-right text-slate-400">{r.trades}</td>
+                    <td className="px-3 py-2.5 text-right"><MoneyCell v={r.spread_est} /></td>
+                    <td className="px-3 py-2.5 text-right"><MoneyCell v={r.commission} /></td>
+                    <td className="px-3 py-2.5 text-right"><MoneyCell v={r.swap} /></td>
+                    <td className="px-3 py-2.5 text-right font-semibold"><MoneyCell v={estTotal(r)} dimZero={false} /></td>
+                    <td className="px-3 py-2.5 text-right text-slate-400">{r.trades ? fmtMoney(estTotal(r) / r.trades) : "—"}</td>
+                    <td className="px-3 py-2.5 text-right"><MoneyCell v={r.pnl_gross} /></td>
+                    <td className="px-3 py-2.5 text-right"><MoneyCell v={r.pnl_net} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── 5. Evolutie zilnica ──────────────────────────────────────── */}
+      <div>
+        <div className="flex items-center gap-2 mb-3">
+          <span className="text-[11px] font-semibold text-slate-300">Evoluție zilnică</span>
+          <span className="text-[10px] text-slate-600">zile cu poziții închise · {dayItems.length} zile</span>
+        </div>
+        {dayItems.length === 0 ? (
+          <div className="text-center py-8 text-slate-500 text-xs">Nicio poziție închisă în perioadă</div>
+        ) : (
+          <div className="overflow-x-auto rounded-xl border border-surface-border">
+            <table className="w-full text-[11px]">
+              <thead>
+                <tr className="border-b border-surface-border bg-surface-card">
+                  <th className="text-left px-3 py-2 text-slate-500 font-medium w-24">Data</th>
+                  <th className="text-right px-3 py-2 text-slate-500 font-medium">Trades</th>
+                  <th className="text-right px-3 py-2 text-slate-500 font-medium">Spread (est.)</th>
+                  <th className="text-right px-3 py-2 text-slate-500 font-medium">Comision</th>
+                  <th className="text-right px-3 py-2 text-slate-500 font-medium">Swap</th>
+                  <th className="text-right px-3 py-2 text-slate-500 font-medium">Cost total (est.)</th>
+                  <th className="text-right px-3 py-2 text-slate-500 font-medium">P&L net</th>
+                  <th className="text-right px-3 py-2 text-slate-500 font-medium">R total</th>
+                  <th className="px-3 py-2 text-slate-500 font-medium w-28">Cost vizual</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-surface-border/40">
+                {shownDays.map(row => {
+                  const today = new Date().toISOString().slice(0, 10);
+                  const isToday = row.date === today;
+                  const c = estTotal(row);
+                  const barPct = Math.round(Math.min(Math.abs(c) / maxDayCost * 100, 100));
+                  return (
+                    <tr key={row.date} className={`hover:bg-surface-border/10 transition-colors ${isToday ? "bg-blue-500/5" : ""}`}>
+                      <td className="px-3 py-2.5 text-slate-300 font-medium">
+                        {fmtDate(row.date)}
+                        {isToday && <span className="ml-1 text-[9px] text-blue-400">azi</span>}
+                      </td>
+                      <td className="px-3 py-2.5 text-right text-slate-400">{row.trades}</td>
+                      <td className="px-3 py-2.5 text-right"><MoneyCell v={row.spread_est} /></td>
+                      <td className="px-3 py-2.5 text-right"><MoneyCell v={row.commission} /></td>
+                      <td className="px-3 py-2.5 text-right"><MoneyCell v={row.swap} /></td>
+                      <td className="px-3 py-2.5 text-right font-semibold"><MoneyCell v={c} dimZero={false} /></td>
+                      <td className="px-3 py-2.5 text-right"><MoneyCell v={row.pnl_net} /></td>
+                      <td className="px-3 py-2.5 text-right">
+                        {row.trades_with_r
+                          ? <span className={rColor(row.total_r)}>{row.total_r > 0 ? "+" : ""}{row.total_r.toFixed(2)}R</span>
+                          : <span className="text-slate-600">—</span>}
+                      </td>
+                      <td className="px-3 py-2.5">
+                        {barPct > 0 && (
+                          <div className="flex-1 h-2 rounded-full bg-surface-border overflow-hidden">
+                            <div className={`h-full rounded-full ${c < 0 ? "bg-loss/60" : "bg-profit/60"}`}
+                                 style={{ width: `${barPct}%` }} />
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              {tot && (
+                <tfoot>
+                  <tr className="border-t-2 border-surface-border bg-surface-card/80 font-semibold">
+                    <td className="px-3 py-2.5 text-slate-400 text-[10px]">TOTAL ({dayItems.length} z)</td>
+                    <td className="px-3 py-2.5 text-right text-slate-400">{tot.trades}</td>
+                    <td className="px-3 py-2.5 text-right"><MoneyCell v={tot.spread_est} dimZero={false} /></td>
+                    <td className="px-3 py-2.5 text-right"><MoneyCell v={tot.commission} dimZero={false} /></td>
+                    <td className="px-3 py-2.5 text-right"><MoneyCell v={tot.swap} dimZero={false} /></td>
+                    <td className="px-3 py-2.5 text-right"><MoneyCell v={totalEst} dimZero={false} /></td>
+                    <td className="px-3 py-2.5 text-right"><MoneyCell v={tot.pnl_net} dimZero={false} /></td>
+                    <td className="px-3 py-2.5 text-right">
+                      <span className={rColor(tot.total_r)}>{tot.total_r > 0 ? "+" : ""}{tot.total_r.toFixed(2)}R</span>
+                    </td>
+                    <td />
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+        )}
+        {daysDesc.length > 30 && (
+          <button onClick={() => setShowAllDays(v => !v)}
+                  className="mt-2 text-[10px] text-blue-400 hover:text-blue-300">
+            {showAllDays ? "Arată doar ultimele 30 de zile" : `Arată toate cele ${daysDesc.length} zile`}
+          </button>
+        )}
+      </div>
     </div>
   );
 }

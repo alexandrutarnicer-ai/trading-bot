@@ -124,7 +124,7 @@
   },
   "budget": {
     "capital": 210.0,
-    "min_remaining": 190.0
+    "min_remaining": 150.0
   },
   "sizing": {
     "risk_pct": 0.01
