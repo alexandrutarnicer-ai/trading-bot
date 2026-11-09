@@ -420,26 +420,57 @@ export interface MarketStat {
   sessions: string[];
 }
 
-export interface Mt5TopMarketEntry {
-  symbol: string;
+/** Statistici pe un grup de tranzactii MT5 inchise — api/trade_stats.py::summarize (sursa unica
+ *  pentru Top 5 Piete, Rapoarte → Piete si Rapoarte → Comisioane+Swap). */
+export interface TradeGroupStats {
   trades: number;
   wins: number;
   losses: number;
-  total_r: number;
+  breakeven: number;
+  /** wins / (wins + losses), % */
   win_rate: number;
-  expectancy: number;
+  trades_with_r: number;
+  total_r: number;
+  /** R mediu pe trade-urile cu SL (null = niciun trade cu R) */
+  expectancy_r: number | null;
+  /** profitul deal-urilor de iesire — spread-ul e deja inclus */
+  pnl_gross: number;
+  commission: number;
+  swap: number;
+  /** comision + swap */
+  costs: number;
+  /** brut + comision + swap */
+  pnl_net: number;
+  cost_per_trade: number;
+  /** spread estimat la spread-ul curent × volum (negativ), DEJA in pnl_gross; null = necunoscut */
+  spread_est: number | null;
+  spread_est_trades: number;
+}
+
+export type TopMarketsSort = "net" | "r" | "gross" | "trades";
+
+export interface Mt5TopMarketEntry extends TradeGroupStats {
+  symbol: string;
+  /** compat: = pnl_gross */
   pnl_usd: number;
+  /** compat: = expectancy_r ?? 0 */
+  expectancy: number;
 }
 
 export interface Mt5TopMarketsResponse {
   connected: boolean;
   items: Mt5TopMarketEntry[];
+  total_markets?: number;
+  sort?: TopMarketsSort;
+  totals?: TradeGroupStats;
   error: string | null;
 }
 
 export interface Mt5MarketStatsResponse {
   connected: boolean;
-  items: MarketStat[];
+  items: Mt5TopMarketEntry[];
+  total_markets?: number;
+  totals?: TradeGroupStats;
   error: string | null;
 }
 
@@ -501,6 +532,10 @@ export interface Mt5TransactionsResponse {
 export interface Mt5CostsResponse {
   connected: boolean;
   items: CostStat[];
+  totals?: TradeGroupStats | null;
+  by_source?: CostSourceStat[];
+  /** fereastra de istoric (zile) */
+  days?: number;
   error: string | null;
 }
 
@@ -510,6 +545,7 @@ export interface Mt5CostsDailyResponse {
   total_commission: number;
   total_swap: number;
   total_costs: number;
+  totals?: TradeGroupStats;
   error: string | null;
 }
 
@@ -554,17 +590,18 @@ export interface SystemLogsResponse {
   total: number;
 }
 
-export interface CostStat {
+export interface CostStat extends TradeGroupStats {
   symbol: string;
-  trades: number;
   trades_with_mt5: number;
   commission_usd: number;
   swap_usd: number;
   total_costs: number;
-  pnl_gross: number;
-  pnl_net: number | null;
   sessions: string[];
   has_cost_data: boolean;
+}
+
+export interface CostSourceStat extends TradeGroupStats {
+  source: "bot" | "ai" | "daily" | "noisy" | "manual";
 }
 
 export interface CostsDayAggregate {
@@ -575,15 +612,13 @@ export interface CostsDayAggregate {
   has_cost_data: boolean;
 }
 
-export interface CostsDayEntry {
+export interface CostsDayEntry extends TradeGroupStats {
   date: string;
-  trades: number;
   trades_with_cost: number;
   commission_usd: number;
   swap_usd: number;
   total_costs: number;
   pnl_usd: number | null;
-  total_r: number | null;
   has_cost_data: boolean;
 }
 

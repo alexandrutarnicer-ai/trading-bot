@@ -453,18 +453,18 @@ export const useClearNotifications = () => {
 
 // ── Reports ──────────────────────────────────────────────────────────────────
 
-export const useMt5TopMarkets = (period: string, limit = 5, source: string = "all") =>
+export const useMt5TopMarkets = (period: string, limit = 5, source: string = "all", sort: string = "net") =>
   useQuery<Mt5TopMarketsResponse>({
-    queryKey: ["mt5-top-markets", period, limit, source],
-    queryFn:  () => apiFetch(`/mt5/top-markets?period=${period}&limit=${limit}&source=${source}`),
+    queryKey: ["mt5-top-markets", period, limit, source, sort],
+    queryFn:  () => apiFetch(`/mt5/top-markets?period=${period}&limit=${limit}&source=${source}&sort=${sort}`),
     refetchInterval: 60_000,
     refetchIntervalInBackground: false,
   });
 
-export const useMt5MarketStats = () =>
+export const useMt5MarketStats = (period: string = "all", source: string = "all", sort: string = "net") =>
   useQuery<Mt5MarketStatsResponse>({
-    queryKey: ["mt5-market-stats"],
-    queryFn:  () => apiFetch("/mt5/top-markets?period=all&limit=100"),
+    queryKey: ["mt5-market-stats", period, source, sort],
+    queryFn:  () => apiFetch(`/mt5/top-markets?period=${period}&limit=500&source=${source}&sort=${sort}`),
     refetchInterval: 60_000,
     refetchIntervalInBackground: false,
   });
@@ -507,18 +507,18 @@ export const useMt5Transactions = (params: {
     refetchIntervalInBackground: false,
   });
 
-export const useMt5Costs = () =>
+export const useMt5Costs = (source: string = "all") =>
   useQuery<Mt5CostsResponse>({
-    queryKey: ["mt5-costs"],
-    queryFn:  () => apiFetch("/mt5/costs"),
+    queryKey: ["mt5-costs", source],
+    queryFn:  () => apiFetch(`/mt5/costs?source=${source}`),
     refetchInterval: 120_000,
     refetchIntervalInBackground: false,
   });
 
-export const useMt5CostsDaily = () =>
+export const useMt5CostsDaily = (source: string = "all") =>
   useQuery<Mt5CostsDailyResponse>({
-    queryKey: ["mt5-costs-daily"],
-    queryFn:  () => apiFetch("/mt5/costs-daily"),
+    queryKey: ["mt5-costs-daily", source],
+    queryFn:  () => apiFetch(`/mt5/costs-daily?source=${source}`),
     refetchInterval: 120_000,
     refetchIntervalInBackground: false,
   });
