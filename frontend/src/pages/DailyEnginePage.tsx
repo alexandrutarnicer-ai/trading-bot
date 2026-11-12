@@ -2,9 +2,10 @@ import { useState } from "react";
 import { CalendarClock, Loader2, Play, Square, FlaskConical } from "lucide-react";
 import { PositionSizingCard } from "../components/PositionSizingCard";
 import { useDailyConfig, useDailyMarketPreview, useDailyPresets, useDailySaveMarket, useDailySaveSlot, useDailyStatus,
-  useDailyTrades, useDailyLogs, useDailyStart, useDailyStop, useDailySetMode, useMt5Markets, useDailyPauseMarket,
-  useBacktestRefresh } from "../api/hooks";
-import type { DailyBacktestAuto, DailyMarketConfig, DailyMarketStatus, DailyQuickBacktest, DailyReentry, DailyScore } from "../api/types";
+  useDailyTrades, useDailyLogs, useDailyStart, useDailyStop, useMt5Markets, useDailyMarketMode,
+  useDailySaveProfitLock, useDailySaveSizing, useBacktestRefresh } from "../api/hooks";
+import type { DailyBacktestAuto, DailyMarketConfig, DailyMarketMode, DailyMarketStatus, DailyQuickBacktest, DailyReentry,
+  DailyScore } from "../api/types";
 import { BacktestAutoBadge } from "../components/BacktestAutoBadge";
 
 // Daily Engine — motor intraday ORB pe deschiderea Londrei (dimineata) si New York (dupa-amiaza).
@@ -29,6 +30,21 @@ const fmtR = (v: number | null | undefined) => (v == null ? "—" : `${v > 0 ? "
 const rCls = (v: number | null | undefined) => (v == null ? "text-slate-400" : v > 0 ? "text-profit" : v < 0 ? "text-loss" : "text-slate-300");
 
 // Rezultatele cercetarii (scripts/research_daily/orb_rr_reentry.py, ~10–14 ani M5, costuri reale) — afisate langa optiuni
+// Profit Lock — backtest pe tot istoricul M5 (scripts/research_daily/daily_profit_lock.py, costuri reale, 2026-11-12)
+const PLOCK_RESEARCH: Record<string, string> = {
+  DE40: "Backtest (tot istoricul M5, configurația curentă cu re-intrări): fără Profit Lock +0,095R/trade, DD −66R; " +
+        "3,5→3R +0,046 · 4,5→4R +0,072 · 5→4R +0,095 (DD −57R) · 6→5R +0,084 · 8→6R +0,089. La 4,5→4R profitul protejat " +
+        "(+291R) e mai mic decât cel pierdut din trade-urile care ar fi mers mai departe (−371R). Doar 5→4R e la egalitate.",
+  US500: "Backtest (tot istoricul M5, configurația curentă cu re-intrări): fără Profit Lock +0,046R/trade; 3,5→3R +0,011 · " +
+         "4,5→4R +0,022 · 6→5R +0,035 · 8→6R +0,043 — niciun prag nu e mai bun decât strategia actuală.",
+};
+
+const MODE_UI: Record<DailyMarketMode, { label: string; on: string }> = {
+  live:   { label: "LIVE",   on: "bg-loss/25 text-loss" },
+  shadow: { label: "SHADOW", on: "bg-violet-500/25 text-violet-200" },
+  pause:  { label: "PAUZĂ",  on: "bg-amber-500/25 text-amber-200" },
+};
+
 const RESEARCH: Record<string, { rr: string; re: string }> = {
   GBPUSD: { rr: "Backtest: fără TP +0,075R/trade; 2R −0,016 · 3R 0,000 · 4R −0,005 — ținta fixă taie trade-urile mari.",
             re: "Backtest: re-intrări (prima oră, max 3, stop la 2 pierderi) → +0,027R/trade (față de +0,075), 6,6 vs 4,6 trade-uri/săpt. Fără stopul pe pierderi: +0,015R." },
@@ -191,6 +207,7 @@ function MarketSettings({ symbol, orMinutes, slot }: { symbol: string; orMinutes
             </div>
           )}
           {curRe.enabled && info && <div className="text-[10px] text-yellow-300/90">{info.re}</div>}
+          <ProfitLockSettings symbol={symbol} cfg={cfg} />
           <div className="flex items-center gap-2">
             <button disabled={!dirty || save.isPending}
               onClick={() => save.mutate({ symbol, rr: curRr ?? null, reentry: curRe }, { onSuccess: () => { setRr(undefined); setRe(undefined); } })}
@@ -205,20 +222,91 @@ function MarketSettings({ symbol, orMinutes, slot }: { symbol: string; orMinutes
   );
 }
 
-function MarketCard({ m, score, bt, slot, auto, paused, execute }: {
+function ProfitLockSettings({ symbol, cfg }: { symbol: string; cfg: DailyMarketConfig }) {
+  const save = useDailySaveProfitLock();
+  const cur = cfg.profit_lock ?? { enabled: false, trigger_R: 4.5, lock_R: 4 };
+  const [pl, setPl] = useState<typeof cur | null>(null);
+  const v = pl ?? cur;
+  const bad = v.trigger_R < 3 || v.lock_R < 0 || v.lock_R >= v.trigger_R;
+  const dirty = pl != null && JSON.stringify(pl) !== JSON.stringify(cur);
+  function doSave() {
+    if (v.enabled && !cur.enabled && !window.confirm(
+      `Pornești Profit Lock pe ${symbol}?\nCând un trade atinge +${v.trigger_R}R, SL-ul se mută la +${v.lock_R}R ` +
+      `(și pe poziția reală, în modul LIVE).\n\nÎn backtest nicio variantă n-a fost mai bună decât strategia actuală.`)) return;
+    save.mutate({ symbol, profit_lock: v }, { onSuccess: () => setPl(null) });
+  }
+  return (
+    <div className="border-t border-surface-border/60 pt-2 space-y-1">
+      <label className="flex items-center gap-2">
+        <input type="checkbox" checked={v.enabled} onChange={e => setPl({ ...v, enabled: e.target.checked })} />
+        <span className="text-slate-300">Profit Lock</span>
+        <span className="text-slate-500">(oprit = strategia actuală; pornit = la +Trigger R, SL → +Lock R)</span>
+      </label>
+      {v.enabled && (
+        <div className="flex items-center gap-3 flex-wrap pl-5">
+          <label className="flex items-center gap-1">Trigger
+            <input type="number" min={3} step={0.5} value={v.trigger_R} onChange={e => setPl({ ...v, trigger_R: Number(e.target.value) })}
+              className="w-16 bg-surface-card border border-surface-border rounded px-1" /> R</label>
+          <label className="flex items-center gap-1">Lock
+            <input type="number" min={0} step={0.5} value={v.lock_R} onChange={e => setPl({ ...v, lock_R: Number(e.target.value) })}
+              className="w-16 bg-surface-card border border-surface-border rounded px-1" /> R</label>
+          {bad && <span className="text-loss">trigger minim 3R; lock între 0 și trigger</span>}
+        </div>
+      )}
+      {PLOCK_RESEARCH[symbol] && <div className="text-[10px] text-slate-500 pl-5">{PLOCK_RESEARCH[symbol]}</div>}
+      {dirty && (
+        <div className="flex items-center gap-2 pl-5">
+          <button disabled={bad || save.isPending} onClick={doSave}
+            className="px-3 py-1 rounded bg-cyan-500/20 text-cyan-200 border border-cyan-500/40 font-semibold disabled:opacity-40">Salvează Profit Lock</button>
+          <button onClick={() => setPl(null)} className="px-3 py-1 rounded border border-surface-border text-slate-400">Renunță</button>
+          {save.isError && <span className="text-loss">{(save.error as Error).message}</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MarketModeSelector({ slot, symbol, mode }: { slot: number; symbol: string; mode: DailyMarketMode }) {
+  const set = useDailyMarketMode();
+  function choose(target: DailyMarketMode) {
+    if (target === mode || set.isPending) return;
+    if (target === "live") {
+      if (!window.confirm(`Treci ${symbol} pe LIVE?\n\nDe la următoarea fereastră plasează ORDINE REALE pe ${symbol} ` +
+        "(SL atașat, închidere în aceeași zi). Cealaltă piață NU e afectată.\n\nPe un cont REAL trebuie în plus deblocat " +
+        "„Daily Engine” în Settings → Trading LIVE.")) return;
+      if (!window.confirm(`Confirmare finală: ${symbol} va tranzacționa cu ordine reale. Continui?`)) return;
+    } else if (target === "pause" && !window.confirm(`Pui ${symbol} pe PAUZĂ? Fără intrări noi; o poziție deschisă rămâne gestionată.`)) {
+      return;
+    } else if (target === "shadow" && mode === "live" && !window.confirm(
+      `Treci ${symbol} pe SHADOW? Fără ordine noi; o poziție reală deschisă azi rămâne gestionată până la SL / finalul ferestrei.`)) {
+      return;
+    }
+    set.mutate({ slot, mode: target });
+  }
+  return (
+    <div className="ml-auto flex flex-col items-end gap-0.5">
+      <div className="flex rounded-lg border border-surface-border overflow-hidden text-[11px] font-semibold">
+        {(["live", "shadow", "pause"] as DailyMarketMode[]).map(k => (
+          <button key={k} onClick={() => choose(k)} disabled={set.isPending}
+            className={`px-2 py-0.5 border-l first:border-l-0 border-surface-border ${mode === k ? MODE_UI[k].on : "text-slate-500 hover:text-slate-300"}`}>
+            {mode === k ? "● " : ""}{MODE_UI[k].label}
+          </button>
+        ))}
+      </div>
+      {set.isError && <span className="text-[10px] text-loss">{(set.error as Error).message}</span>}
+    </div>
+  );
+}
+
+function MarketCard({ m, score, bt, slot, auto, paused, cfgM }: {
   m: DailyMarketStatus; score?: DailyScore; slot?: number;
   bt?: { trades: number; expectancy_R: number; period: string; verdict: string };
-  auto?: DailyBacktestAuto; paused?: boolean; execute?: boolean;
+  auto?: DailyBacktestAuto; paused?: boolean; cfgM?: DailyMarketConfig;
 }) {
-  const pause = useDailyPauseMarket();
   const retry = useBacktestRefresh("daily");
   const isPaused = paused ?? m.paused ?? false;
+  const mode: DailyMarketMode = isPaused ? "pause" : (cfgM?.exec_mode ?? m.exec_mode ?? "shadow");
   const ph = PHASE[isPaused && m.phase !== "in_position" ? "paused" : m.phase] ?? PHASE.waiting_open;
-  function togglePause() {
-    if (slot == null || pause.isPending) return;
-    if (isPaused && execute && !window.confirm(`Reiei ${m.symbol}? În modul EXECUȚIE piața poate plasa din nou ordine REALE.`)) return;
-    pause.mutate({ slot, paused: !isPaused });
-  }
   const r = auto?.result;
   const side = m.side === 1 ? "LONG" : m.side === -1 ? "SHORT" : null;
   return (
@@ -231,22 +319,26 @@ function MarketCard({ m, score, bt, slot, auto, paused, execute }: {
           </div>
           <div className="text-[11px] text-slate-400">{m.label}</div>
         </div>
-        <span className={`ml-auto text-[11px] px-2 py-0.5 rounded-full font-semibold ${ph.cls}`}>{ph.label}</span>
-        {slot != null && (
-          <button onClick={togglePause} disabled={pause.isPending}
-            title={isPaused ? "Reia piața (permite din nou intrări noi)" : "Pune piața pe pauză: fără intrări noi; pozițiile deschise rămân gestionate"}
-            className={`text-[11px] px-2 py-0.5 rounded-lg font-semibold disabled:opacity-40 ${isPaused ? "bg-profit/15 text-profit hover:bg-profit/25" : "bg-amber-500/15 text-amber-300 hover:bg-amber-500/25"}`}>
-            {pause.isPending ? "…" : isPaused ? "▶ Resume" : "⏸ Pause"}
-          </button>
-        )}
+        <span className={`text-[11px] px-2 py-0.5 rounded-full font-semibold ${ph.cls}`}>{ph.label}</span>
+        {slot != null && <MarketModeSelector slot={slot} symbol={m.symbol} mode={mode} />}
       </div>
+      {mode === "live" && (
+        <div className={`text-[11px] rounded-lg px-2 py-1 border ${m.execution?.active ? "bg-loss/10 border-loss/30 text-loss" : "bg-warn/10 border-warn/30 text-warn"}`}>
+          {m.execution?.active ? `LIVE — ordine reale (${m.execution.reason})` : `LIVE cerut, dar BLOCAT: ${m.execution?.reason ?? "engine oprit"}`}
+          {" "}· se aplică de la următoarea fereastră (ziua se activează înainte de formarea intervalului)
+        </div>
+      )}
+      {m.locked && m.phase === "in_position" && (
+        <div className="text-[11px] text-profit bg-profit/10 border border-profit/30 rounded-lg px-2 py-1">
+          🔒 Profit Lock activ — SL la {fmt(m.sl_now)} (+{m.profit_lock?.lock_R}R)
+        </div>
+      )}
       {isPaused && (
         <div className="text-[11px] text-amber-300/90 bg-amber-500/10 border border-amber-500/20 rounded-lg px-2 py-1">
           Pe pauză: nu se deschid trade-uri noi (shadow sau real); ordinele de intrare neactivate se anulează; o poziție deja
-          deschisă rămâne gestionată (SL, închidere la final de fereastră). Starea persistă la restart.
+          deschisă rămâne gestionată (SL, Profit Lock, închidere la final de fereastră). Starea persistă la restart.
         </div>
       )}
-      {pause.isError && <div className="text-[11px] text-loss">{(pause.error as Error).message}</div>}
 
       <div className="grid grid-cols-2 gap-2 text-[11px]">
         <div className="text-slate-500">Fereastra (ora {m.app_tz_label ?? "RO"})</div>
@@ -322,49 +414,34 @@ function MarketCard({ m, score, bt, slot, auto, paused, execute }: {
   );
 }
 
-function ModeSwitch({ mode, execution, running }: { mode?: string; execution?: { active: boolean; reason: string }; running?: boolean }) {
-  const set = useDailySetMode();
-  const exec = mode === "execute";
-  // Selector cu doua stari explicite: un singur comutator „on/off” parea ca SHADOW e dezactivat
-  // (gri = EXECUTIA oprita = SHADOW activ), iar click-ul cerea confirmarea pentru EXECUTIE.
-  function choose(target: "shadow" | "execute") {
-    if (target === mode || set.isPending) return;
-    toggle();
-  }
-  function toggle() {
-    if (!exec) {
-      if (!window.confirm("Treci Daily Engine pe EXECUȚIE?\n\nDe la următoarea fereastră (deschiderea Londrei / a New York-ului)" +
-        "plasează ORDINE REALE în contul MT5 conectat: GBPUSD ordine stop pe margini, US500 ordin la piață, SL atașat, " +
-        "închidere obligatorie în aceeași zi.\n\nPe un cont REAL trebuie în plus deblocat „Daily Engine” în Settings → Trading LIVE.")) return;
-      if (!window.confirm("Confirmare finală: Daily Engine va tranzacționa cu ordine reale. Continui?")) return;
-    } else if (!window.confirm("Revii pe SHADOW? Nu se mai deschid ordine; pozițiile reale de azi se închid la finalul ferestrei.")) return;
-    set.mutate(exec ? "shadow" : "execute");
-  }
+function ModesSummary({ markets, running, sizing }: {
+  markets?: DailyMarketConfig[]; running?: boolean; sizing?: Record<string, unknown> | null;
+}) {
+  const save = useDailySaveSizing();
+  const cur = Number(sizing?.max_margin_pct ?? 80);
+  const [mm, setMm] = useState<number | null>(null);
+  const anyLive = (markets ?? []).some(x => x.exec_mode === "live" && !x.paused);
   return (
-    <div className={`rounded-xl border p-4 flex items-center gap-3 flex-wrap ${exec ? "bg-loss/5 border-loss/40" : "bg-surface border-surface-border"}`}>
-      <div className="flex rounded-lg border border-surface-border overflow-hidden shrink-0 text-xs font-semibold">
-        <button onClick={() => choose("shadow")} disabled={set.isPending}
-          className={`px-3 py-1.5 transition-colors ${!exec ? "bg-cyan-500/20 text-cyan-300" : "text-slate-500 hover:text-slate-300"}`}>
-          {!exec ? "● " : ""}SHADOW
-        </button>
-        <button onClick={() => choose("execute")} disabled={set.isPending}
-          className={`px-3 py-1.5 border-l border-surface-border transition-colors ${exec ? "bg-loss/20 text-loss" : "text-slate-500 hover:text-slate-300"}`}>
-          {exec ? "● " : ""}EXECUȚIE
-        </button>
+    <div className={`rounded-xl border p-4 text-xs space-y-1 ${anyLive ? "bg-loss/5 border-loss/40" : "bg-surface border-surface-border"}`}>
+      <div className="font-semibold text-white">
+        Modul se alege pe FIECARE piață (Live / Shadow / Pauză, pe card) — o piață nu o afectează pe cealaltă.
+        {running === false && <span className="ml-2 text-amber-400 font-normal">Engine-ul e OPRIT: modurile se aplică după Start.</span>}
       </div>
-      <div className="text-xs">
-        <div className="font-semibold text-white">
-          Mod activ: {exec ? "EXECUȚIE (ordine reale)" : "SHADOW (virtual)"}
-          {running === false && <span className="ml-2 text-amber-400 font-normal">— engine-ul e OPRIT: modul se aplică doar după Start</span>}
-        </div>
-        <div className="text-[11px] text-slate-500">
-          {exec
-            ? (execution?.active ? `Activ — ${execution.reason}. ` : `Blocat — ${execution?.reason ?? "?"}. `)
-            : "Trade-uri virtuale pe prețuri reale, zero ordine. "}
-          Se aplică de la următoarea fereastră (ziua trebuie activată înainte de formarea intervalului). Magic 880001 — apare ca „Daily” în Tranzacții.
-        </div>
+      <div className="text-[11px] text-slate-400">
+        {(markets ?? []).map(x => `${x.symbol}: ${MODE_UI[(x.paused ? "pause" : x.exec_mode ?? "shadow") as DailyMarketMode].label}`).join(" · ")}
+        {" "}— LIVE plasează ordine reale doar dacă, pe cont real, „Daily Engine” e deblocat în Settings → Trading LIVE.
+        Magic 880001 — apare ca „Daily” în Tranzacții.
       </div>
-      {set.isError && <span className="text-[11px] text-loss">{(set.error as Error).message}</span>}
+      <div className="flex items-center gap-2 text-[11px] text-slate-400 pt-1">
+        Limită de marjă: marja totală folosită (toate engine-urile + manual) după un ordin Daily ≤
+        <input type="number" min={10} max={95} step={5} value={mm ?? cur} onChange={e => setMm(Number(e.target.value))}
+          className="w-14 bg-surface-card border border-surface-border rounded px-1 text-white" /> % din equity
+        {mm != null && mm !== cur && (
+          <button onClick={() => save.mutate({ ...(sizing ?? {}), max_margin_pct: mm }, { onSuccess: () => setMm(null) })}
+            className="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-200 border border-cyan-500/40">Salvează</button>
+        )}
+        <span className="text-slate-500">(lotul e redus sau ordinul nu se plasează; DE40 la lotul minim ≈ 148 $)</span>
+      </div>
     </div>
   );
 }
@@ -437,7 +514,7 @@ export function DailyEnginePage() {
         )}
       </div>
 
-      <ModeSwitch mode={st?.mode} execution={st?.execution} running={st?.running} />
+      <ModesSummary markets={cfgMarkets} running={st?.running} sizing={(dcfg as { sizing?: Record<string, unknown> } | undefined)?.sizing} />
 
       <div className="text-[11px] text-slate-500 bg-surface rounded-xl border border-surface-border px-4 py-2">
         Implicit un trade pe zi pe piață (re-intrările din „Opțiuni” sunt opționale), închis obligatoriu în aceeași zi (niciodată
@@ -450,7 +527,7 @@ export function DailyEnginePage() {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {slotCards.map(({ m, slot }) => (
           <MarketCard key={`${slot}-${m.symbol}`} m={m} slot={slot} score={sc?.by_symbol?.[m.symbol]} bt={st?.backtest_ref?.[m.symbol]}
-            auto={st?.backtest_auto?.find(a => a.slot === slot)} paused={cfgMarkets?.[slot]?.paused} execute={st?.mode === "execute"} />
+            auto={st?.backtest_auto?.find(a => a.slot === slot)} paused={cfgMarkets?.[slot]?.paused} cfgM={cfgMarkets?.[slot]} />
         ))}
         {slotCards.length === 0 && (
           <div className="md:col-span-2 text-center text-sm text-slate-500 py-6 bg-surface rounded-xl border border-surface-border">
@@ -458,6 +535,18 @@ export function DailyEnginePage() {
           </div>
         )}
       </div>
+
+      {(() => {
+        const inCfg = new Set((cfgMarkets ?? []).map(x => x.symbol));
+        const gone = Object.entries(sc?.by_symbol ?? {}).filter(([sym]) => !inCfg.has(sym));
+        return gone.length ? (
+          <div className="text-[11px] text-slate-400 bg-surface rounded-xl border border-surface-border px-4 py-2">
+            Piețe scoase din configurație (incluse în totalul de mai jos și în rapoarte):{" "}
+            {gone.map(([sym, v]) => <span key={sym} className="mr-3"><b className="text-slate-300">{sym}</b> {v.trades} trade-uri ·
+              {" "}{v.wins}W / {v.losses}L · <span className={rCls(v.total_R)}>{fmtR(v.total_R)}</span></span>)}
+          </div>
+        ) : null;
+      })()}
 
       <div className="bg-surface rounded-xl border border-surface-border p-4 space-y-3">
         <div className="text-sm font-semibold text-white">Dimensionarea poziției <span className="text-[11px] font-normal text-slate-500">— în SHADOW se calculează doar lotul ipotetic al fiecărui trade virtual (estimare în bani)</span></div>

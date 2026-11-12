@@ -212,6 +212,58 @@ def daily_market_resume(slot: int):
     return _set_pause(slot, False)
 
 
+@router.post("/markets/{slot}/mode")
+def daily_market_mode(slot: int, body: dict):
+    """Modul PIETEI din slot: live (ordine reale — DOAR daca Trading LIVE e deblocat pentru Daily pe cont real) /
+    shadow (virtual) / pause (fara intrari noi; pozitiile existente raman gestionate). Persistat in config,
+    hot-reload; cealalta piata nu e atinsa."""
+    mode = str((body or {}).get("mode") or "").lower()
+    if mode not in ("live", "shadow", "pause"):
+        raise HTTPException(400, "mode: una din live / shadow / pause")
+    if mode == "pause":
+        return {**_set_pause(slot, True), "mode": "pause"}
+    from daily_engine.config import CFG_PATH, market_mode
+    import json as _json
+    with open(CFG_PATH, encoding="utf-8") as f:
+        raw = _json.load(f)
+    mk = raw.get("markets") or []
+    if not 0 <= slot < len(mk):
+        raise HTTPException(400, "slot invalid")
+    m = mk[slot]
+    before = market_mode({**m, "exec_mode": m.get("exec_mode") or ("live" if raw.get("mode") == "execute" else "shadow")})
+    for m_ in mk:                                   # fiecare piata cu modul ei scris explicit
+        m_.setdefault("exec_mode", "live" if raw.get("mode") == "execute" else "shadow")
+    if m.get("paused"):
+        _set_pause(slot, False)                     # iesirea din pauza (Telegram + moment)
+        with open(CFG_PATH, encoding="utf-8") as f:
+            raw = _json.load(f)
+        mk = raw["markets"]
+        m = mk[slot]
+        for m_ in mk:
+            m_.setdefault("exec_mode", "live" if raw.get("mode") == "execute" else "shadow")
+    m["exec_mode"] = mode
+    raw["mode"] = "execute" if any(x.get("exec_mode") == "live" for x in mk) else "shadow"
+    with open(CFG_PATH, "w", encoding="utf-8") as f:
+        _json.dump(raw, f, indent=2, ensure_ascii=False)
+    changed = before != mode
+    if changed:
+        try:
+            from api import audit_log
+            audit_log.record("daily", "mode", f"{m.get('symbol')}: {before} → {mode}", market=m.get("symbol"),
+                             before=before, after=mode)
+        except Exception:
+            pass
+        try:
+            from api.telegram import send_message
+            send_message((f"🟢 <b>Daily Engine — {m.get('symbol')} pe LIVE</b>\nOrdine reale de la următoarea fereastră "
+                          "(dacă Trading LIVE e deblocat pentru Daily; altfel rămâne fără ordine)." if mode == "live" else
+                          f"🧪 <b>Daily Engine — {m.get('symbol')} pe SHADOW</b>\nFără ordine noi; o poziție reală deschisă azi "
+                          "rămâne gestionată până la SL / finalul ferestrei."))
+        except Exception:
+            pass
+    return {"ok": True, "slot": slot, "symbol": m.get("symbol"), "mode": mode, "changed": changed}
+
+
 def _set_pause(slot: int, paused: bool) -> dict:
     from datetime import datetime as _dt, timezone as _tz
     from daily_engine.config import CFG_PATH
@@ -229,6 +281,12 @@ def _set_pause(slot: int, paused: bool) -> dict:
         return {"ok": True, "slot": slot, "symbol": m.get("symbol"), "paused": paused, "changed": False}
     with open(CFG_PATH, "w", encoding="utf-8") as f:
         _json.dump(raw, f, indent=2, ensure_ascii=False)
+    try:
+        from api import audit_log
+        audit_log.record("daily", "pause" if paused else "resume", f"{m.get('symbol')} {'pe pauză' if paused else 'reluat'}",
+                         market=m.get("symbol"))
+    except Exception:
+        pass
     try:
         from api.telegram import send_message
         send_message(f"{'⏸' if paused else '▶️'} <b>Daily Engine — {m.get('symbol')} {'PE PAUZĂ' if paused else 'reluat'}</b>\n"
@@ -252,7 +310,12 @@ def daily_start():
     out = open(os.path.join(DATA_DIR, "stdout.log"), "a", encoding="utf-8")
     proc = subprocess.Popen([sys.executable, "-m", "daily_engine"], cwd=ROOT, creationflags=flags,
                             stdout=out, stderr=subprocess.STDOUT, close_fds=True)
-    return {"ok": True, "pid": proc.pid, "note": "Mod SHADOW — trade-uri virtuale, zero ordine reale"}
+    try:
+        from api import audit_log
+        audit_log.record("daily", "start", f"pornit (PID {proc.pid})")
+    except Exception:
+        pass
+    return {"ok": True, "pid": proc.pid, "note": "modul fiecărei piețe se vede pe card (Live / Shadow / Pauză)"}
 
 
 @router.post("/stop")
@@ -281,6 +344,11 @@ def daily_stop():
     try:
         from api.telegram import send_message
         send_message("⏹ <b>Daily Engine oprit</b> (din UI)")
+    except Exception:
+        pass
+    try:
+        from api import audit_log
+        audit_log.record("daily", "stop", "oprit din UI")
     except Exception:
         pass
     return {"ok": True}
@@ -313,6 +381,8 @@ def daily_config_save(body: dict):
         if body["mode"] not in MODES:
             raise HTTPException(400, f"mode: una din {list(MODES)}")
         raw["mode"] = body["mode"]
+        for m_ in raw.get("markets") or []:              # compat: modul global = acelasi mod pe fiecare piata
+            m_["exec_mode"] = "live" if body["mode"] == "execute" else "shadow"
     if isinstance(body.get("sizing"), dict):
         raw["sizing"] = {**(raw.get("sizing") or {}), **body["sizing"]}
     changes = []
@@ -349,9 +419,11 @@ def daily_config_save(body: dict):
                     changes.append(f"slot {slot + 1}: {old['symbol']} ({old.get('preset') or old.get('tz')}) → "
                                    f"{new['symbol']} ({new['preset']}) · costuri {chk['costs_mode']}: slip {new['slip']:g}, "
                                    f"comision {new['comm']:g}")
+                if new["symbol"] != old["symbol"]:
+                    new["exec_mode"] = "shadow"          # o piata noua intra mereu in SHADOW (Live = decizia ta)
                 raw_mk[slot] = {k_: v for k_, v in new.items() if k_ in (
                     "symbol", "enabled", "label", "tz", "open", "last_bar", "or_minutes", "entry", "rr", "slip", "comm",
-                    "role", "reentry", "preset", "costs_mode", "paused", "paused_at")}
+                    "role", "reentry", "preset", "costs_mode", "paused", "paused_at", "exec_mode", "profit_lock")}
                 continue
             m = by.get(upd.get("symbol"))
             if m is None:
@@ -369,11 +441,22 @@ def daily_config_save(body: dict):
                                    + (f" ({new_re['window_min']} min, max {new_re['max_trades']}, stop la "
                                       f"{new_re['max_consec_losses']} pierderi)" if new_re["enabled"] else ""))
                 m["reentry"] = new_re
+            if "profit_lock" in upd:
+                from daily_engine.config import sanitize_plock
+                new_pl = sanitize_plock(upd["profit_lock"])
+                old_pl = sanitize_plock(m.get("profit_lock"))
+                if new_pl != old_pl:
+                    changes.append(f"{m['symbol']}: Profit Lock " + (
+                        f"PORNIT — la {new_pl['trigger_R']:g}R SL → +{new_pl['lock_R']:g}R" if new_pl["enabled"]
+                        else "oprit"))
+                m["profit_lock"] = new_pl
         syms = [m_.get("symbol") for m_ in raw_mk]
         if len(set(syms)) != len(syms):
             raise HTTPException(400, f"aceeași piață în ambele sloturi ({syms}) — alege simboluri diferite")
         raw["markets"] = raw_mk
     clean = _sanitize(raw)
+    for m_, c_ in zip(raw.get("markets") or [], clean["markets"]):
+        m_["exec_mode"] = c_["exec_mode"]
     raw["mode"], raw["sizing"] = clean["mode"], clean["sizing"]
     with open(CFG_PATH, "w", encoding="utf-8") as f:
         _json.dump(raw, f, indent=2, ensure_ascii=False)
@@ -383,6 +466,12 @@ def daily_config_save(body: dict):
     except Exception:
         pass
     if changes:
+        try:
+            from api import audit_log
+            for ch in changes:
+                audit_log.record("daily", "config", ch)
+        except Exception:
+            pass
         try:
             from api.telegram import send_message
             send_message("⚙️ <b>Daily Engine — configurare</b>\n" + "\n".join(changes)

@@ -21,8 +21,54 @@ import numpy as np
 PHASES = ("waiting_open", "forming_or", "waiting_entry", "in_position", "closed", "skipped")
 
 
+# ── Profit Lock (OPTIONAL, oprit implicit) ─────────────────────────────────────────────────────────────────────
+PLOCK_MIN_TRIGGER = 3.0
+
+
+def plock_cfg(p) -> dict | None:
+    """{enabled, trigger_R, lock_R} valid sau None (oprit / invalid). trigger >= 3R, 0 <= lock < trigger."""
+    if not isinstance(p, dict) or not p.get("enabled"):
+        return None
+    try:
+        tr, lk = float(p.get("trigger_R")), float(p.get("lock_R"))
+    except (TypeError, ValueError):
+        return None
+    if not (tr >= PLOCK_MIN_TRIGGER and 0 <= lk < tr):
+        return None
+    return {"trigger_R": tr, "lock_R": lk}
+
+
+def _walk(o, h, l, c, spr, *, i0, n, side, entry, sl, tp, rr, risk, slip, skip_entry_bar, plock):
+    """Iesirea unui trade de la bara i0: SL / TP / (Profit Lock) / None = inca deschis.
+    Fara Profit Lock = EXACT bucla initiala. Cu Profit Lock: dupa ce varful atinge trigger_R, SL-ul trece la
+    lock_R de la bara URMATOARE (ordinea reala din bara nu se cunoaste → conservator); o bara care deschide
+    dincolo de SL-ul blocat se umple la open. Pe bara de intrare a unui breakout varful NU conteaza."""
+    pl = plock_cfg(plock)
+    cur_sl, locked = sl, False
+    for j in range(i0, n):
+        hit_sl = (l[j] <= cur_sl) if side == 1 else (h[j] >= cur_sl)
+        if skip_entry_bar and j == i0:
+            if hit_sl:
+                return -1.0 - (slip + spr[j] / 2) / risk, "SL", j, float(sl - side * slip), locked
+            continue
+        hit_tp = tp is not None and ((h[j] >= tp) if side == 1 else (l[j] <= tp))
+        if hit_sl:
+            if locked:
+                px = min(o[j], cur_sl) if side == 1 else max(o[j], cur_sl)
+                px = float(px - side * slip)
+                return float(side * (px - entry) / risk - (spr[j] / 2) / risk), "LOCK", j, px, locked
+            return -1.0 - (slip + spr[j] / 2) / risk, "SL", j, float(sl - side * slip), locked
+        if hit_tp:
+            return rr - (spr[j] / 2) / risk, "TP", j, float(tp), locked
+        if pl and not locked:
+            peak = ((h[j] - entry) if side == 1 else (entry - l[j])) / risk
+            if peak >= pl["trigger_R"] - 1e-12:
+                locked, cur_sl = True, entry + side * pl["lock_R"] * risk
+    return None, None, None, None, (locked, cur_sl)
+
+
 def evaluate_day(o, h, l, c, spr, mins, *, open_min: int, or_minutes: int, mode: str,
-                 rr: float | None, slip: float, comm: float, day_complete: bool) -> dict:
+                 rr: float | None, slip: float, comm: float, day_complete: bool, plock: dict | None = None) -> dict:
     """o/h/l/c/spr/mins: secvente (spread deja in unitati de pret, mins = minute locale de la
     miezul noptii pentru inceputul barei). Intoarce dict cu `phase` + detalii."""
     o, h, l, c, spr, mins = (np.asarray(x, dtype=float) for x in (o, h, l, c, spr, mins))
@@ -78,38 +124,22 @@ def evaluate_day(o, h, l, c, spr, mins, *, open_min: int, or_minutes: int, mode:
     pos = {**base, "side": side, "entry": entry, "sl": float(sl), "tp": tp, "risk": risk,
            "entry_bar": int(i0), "entry_min": int(mins[i0])}
 
-    res, reason, j_exit = None, None, None
-    for j in range(i0, n):
-        hit_sl = (l[j] <= sl) if side == 1 else (h[j] >= sl)
-        if mode == "brk" and j == i0:
-            if hit_sl:                       # bara de intrare: doar SL (conservator)
-                res, reason, j_exit = -1.0 - (slip + spr[j] / 2) / risk, "SL", j
-                break
-            continue
-        hit_tp = tp is not None and ((h[j] >= tp) if side == 1 else (l[j] <= tp))
-        if hit_sl:
-            res, reason, j_exit = -1.0 - (slip + spr[j] / 2) / risk, "SL", j
-            break
-        if hit_tp:
-            res, reason, j_exit = rr - (spr[j] / 2) / risk, "TP", j
-            break
-
+    res, reason, j_exit, exit_px, lk = _walk(o, h, l, c, spr, i0=i0, n=n, side=side, entry=entry, sl=sl, tp=tp,
+                                             rr=rr, risk=risk, slip=slip, skip_entry_bar=(mode == "brk"),
+                                             plock=plock)
     if res is None:
+        locked, cur_sl = lk
         if not day_complete:
             return {**pos, "phase": "in_position", "last": float(c[-1]),
-                    "open_R": float(side * (c[-1] - entry) / risk)}
+                    "open_R": float(side * (c[-1] - entry) / risk),
+                    "sl_now": float(cur_sl), "locked": locked}
         res, reason, j_exit = float((side * (c[-1] - entry) - spr[-1] / 2) / risk), "EOD", n - 1
+        exit_px = float(c[j_exit])
 
     if day_complete and n < n_or + 6:                 # oglinda filtrului din backtest
         return {**base, "phase": "skipped", "reason": "zi incompleta (prea putine bare)"}
 
     res -= comm / risk
-    if reason == "SL":
-        exit_px = float(sl - side * slip)
-    elif reason == "TP":
-        exit_px = float(tp)
-    else:
-        exit_px = float(c[j_exit])
     return {**pos, "phase": "closed", "R": float(res), "reason": reason,
             "exit": exit_px, "exit_min": int(mins[j_exit])}
 
@@ -119,7 +149,8 @@ REENTRY_DEFAULTS = {"enabled": False, "window_min": 60, "max_trades": 3, "max_co
 
 
 def evaluate_day_multi(o, h, l, c, spr, mins, *, open_min: int, or_minutes: int, mode: str, rr: float | None,
-                       slip: float, comm: float, day_complete: bool, reentry: dict | None = None) -> dict:
+                       slip: float, comm: float, day_complete: bool, reentry: dict | None = None,
+                       plock: dict | None = None) -> dict:
     """Ziua cu RE-INTRARI optionale, peste `evaluate_day` (neatinsa — echivalenta cu backtestul ramane).
 
     reentry = {enabled, window_min, max_trades, max_consec_losses, cooldown_bars}. Oprit (implicit) → EXACT
@@ -132,7 +163,7 @@ def evaluate_day_multi(o, h, l, c, spr, mins, *, open_min: int, or_minutes: int,
     Intoarce: campurile trade-ului CURENT (sau ultimului) + trades (inchise), k (index trade curent), phase,
     reentry_stop (motivul pentru care nu mai urmeaza alte intrari)."""
     first = evaluate_day(o, h, l, c, spr, mins, open_min=open_min, or_minutes=or_minutes, mode=mode, rr=rr,
-                         slip=slip, comm=comm, day_complete=day_complete)
+                         slip=slip, comm=comm, day_complete=day_complete, plock=plock)
     re = {**REENTRY_DEFAULTS, **(reentry or {})}
     if not re["enabled"] or first["phase"] != "closed":
         return {**first, "k": 0, "trades": [{**first, "k": 0}] if first["phase"] == "closed" else []}
@@ -180,29 +211,17 @@ def evaluate_day_multi(o, h, l, c, spr, mins, *, open_min: int, or_minutes: int,
         tp = entry + side * rr * risk if rr else None
         pos = {"or_hi": hi, "or_lo": lo, "side": side, "entry": entry, "sl": float(sl), "tp": tp, "risk": risk,
                "entry_bar": int(i0), "entry_min": int(mins[i0]), "k": len(trades)}
-        res = reason = j = None
-        for j in range(i0, n):
-            hit_sl = (l[j] <= sl) if side == 1 else (h[j] >= sl)
-            if j == i0:                                   # bara de intrare: doar SL (conservator, ca la stop)
-                if hit_sl:
-                    res, reason = -1.0 - (slip + spr[j] / 2) / risk, "SL"
-                    break
-                continue
-            hit_tp = tp is not None and ((h[j] >= tp) if side == 1 else (l[j] <= tp))
-            if hit_sl:
-                res, reason = -1.0 - (slip + spr[j] / 2) / risk, "SL"
-                break
-            if hit_tp:
-                res, reason = rr - (spr[j] / 2) / risk, "TP"
-                break
+        res, reason, j, exit_px, lk = _walk(o, h, l, c, spr, i0=i0, n=n, side=side, entry=entry, sl=sl, tp=tp,
+                                            rr=rr, risk=risk, slip=slip, skip_entry_bar=True, plock=plock)
         if res is None:
+            locked, cur_sl = lk
             if not day_complete:
                 return {**pos, "phase": "in_position", "trades": trades, "last": float(c[-1]),
-                        "open_R": float(side * (c[-1] - entry) / risk)}
+                        "open_R": float(side * (c[-1] - entry) / risk), "sl_now": float(cur_sl), "locked": locked}
             j = n - 1
             res, reason = float((side * (c[-1] - entry) - spr[-1] / 2) / risk), "EOD"
+            exit_px = float(c[j])
         res -= comm / risk
-        exit_px = float(sl - side * slip) if reason == "SL" else float(tp) if reason == "TP" else float(c[j])
         last = {**pos, "phase": "closed", "R": float(res), "reason": reason, "exit": exit_px, "exit_min": int(mins[j])}
         trades.append(last)
         consec = consec + 1 if res < 0 else 0

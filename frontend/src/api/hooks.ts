@@ -1013,6 +1013,38 @@ export const useDailySaveMarket = () => {
   });
 };
 
+export const useDailyMarketMode = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (b: { slot: number; mode: "live" | "shadow" | "pause" }) =>
+      apiFetch(`/daily/markets/${b.slot}/mode`, { method: "POST", body: { mode: b.mode } }),
+    onSuccess: () => {
+      for (const k of ["daily-config", "daily-status"]) qc.invalidateQueries({ queryKey: [k] });
+    },
+  });
+};
+
+export const useDailySaveProfitLock = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (m: { symbol: string; profit_lock: { enabled: boolean; trigger_R: number; lock_R: number } }) =>
+      apiFetch("/daily/config", { method: "PUT", body: { markets: [m] } }),
+    onSuccess: () => {
+      for (const k of ["daily-config", "daily-status"]) qc.invalidateQueries({ queryKey: [k] });
+    },
+  });
+};
+
+export const useDailySaveSizing = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (sizing: Record<string, unknown>) => apiFetch("/daily/config", { method: "PUT", body: { sizing } }),
+    onSuccess: () => {
+      for (const k of ["daily-config", "daily-status"]) qc.invalidateQueries({ queryKey: [k] });
+    },
+  });
+};
+
 export const useDailyPauseMarket = () => {
   const qc = useQueryClient();
   return useMutation({
