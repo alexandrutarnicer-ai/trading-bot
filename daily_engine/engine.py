@@ -379,13 +379,17 @@ class DailyEngine:
         pos, ords = X.own(self.mt5, sym)
         pos_t = [p for p in pos if (p.comment or "").startswith(tag)]
         ord_t = [o for o in ords if (o.comment or "").startswith(tag)]
-        # 1) final de fereastra: anuleaza tot, inchide tot — niciodata peste noapte
-        if now_loc >= w_end:
+        # 1) final de fereastra / INCHIDEREA DE VINERI GLOBALA: anuleaza tot, inchide tot — niciodata peste noapte /
+        #    weekend (Setari Globale → friday_close, ca la Custom / AI / Noisy / Special)
+        from live.global_guard import friday_close_now
+        fc, fc_why = friday_close_now(sym, now_loc.astimezone(timezone.utc))
+        if now_loc >= w_end or fc:
             for o in ord_t:
                 X.cancel(self.mt5, o)
             for p in pos_t:
                 ok, res = X.close(self.mt5, p)
-                self._exec_note(sym, f"închis la final de fereastră ({'ok' if ok else 'EȘUAT ' + str(getattr(res, 'retcode', res))})")
+                self._exec_note(sym, f"închis — {fc_why if fc else 'final de fereastră'} "
+                                     f"({'ok' if ok else 'EȘUAT ' + str(getattr(res, 'retcode', res))})")
             return
         # 1a) PROFIT LOCK pe pozitia REALA: trade-ul virtual pereche a atins pragul → SL real mutat la lock_R
         #     (doar daca e mai protector decat SL-ul real; o data pe pozitie). Functioneaza si cu piata pe pauza.
