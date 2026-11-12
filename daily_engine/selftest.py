@@ -524,6 +524,101 @@ def t_pause():
     check("... dar se închide la finalul ferestrei (regula existentă)", fake.sent and "position" in fake.sent[0], fake.sent)
 
 
+def t_modes_plock():
+    print("9. Moduri per piață (Live / Shadow / Pauză), Profit Lock, limita de marjă")
+    from datetime import date as _d
+    from daily_engine.config import _sanitize, sanitize_plock
+    # --- configurare: migrare + independenta + Profit Lock oprit implicit
+    old = _sanitize({"mode": "execute", "markets": [dict(x) for x in DEFAULTS["markets"]]})
+    check("migrare: modul global vechi „execute” → fiecare piață Live (fără efect asupra comportamentului)",
+          [x["exec_mode"] for x in old["markets"]] == ["live", "live"] and old["mode"] == "execute", old["markets"])
+    mk = [dict(x) for x in DEFAULTS["markets"]]
+    mk[0].update(exec_mode="live")
+    mk[1].update(exec_mode="shadow", paused=True)
+    c = _sanitize({"mode": "shadow", "markets": mk})
+    check("moduri INDEPENDENTE: piața 1 Live, piața 2 Pauză; global = rezumat",
+          [x["mode"] for x in c["markets"]] == ["live", "pause"] and c["mode"] == "execute", [x["mode"] for x in c["markets"]])
+    check("Profit Lock OPRIT implicit pe toate piețele", all(not x["profit_lock"]["enabled"] for x in c["markets"]))
+    check("Profit Lock: trigger sub 3R → 3R; lock >= trigger → trigger − 0,1",
+          sanitize_plock({"enabled": True, "trigger_R": 2, "lock_R": 5}) == {"enabled": True, "trigger_R": 3.0, "lock_R": 2.9})
+    # --- strategie: urcare la ~5R apoi intoarcere la SL
+    bars = [(100, 101, 99, 100.5), (100.5, 101, 99.5, 100.8),       # OR 10 min: 99..101 → LONG
+            (100.8, 103, 100.7, 102.9), (102.9, 106, 102.8, 105.8),   # varf 106 = (106-100.8)/1.8 = 2,9R
+            (105.8, 110.5, 105.5, 110), (110, 110.2, 98, 98.5)] + [(98.5, 99, 98, 98.5)] * 4
+    base = _ev(bars)
+    pl = {"enabled": True, "trigger_R": 4.5, "lock_R": 4.0}
+    o, h, l, cc = (np.array([b[i] for b in bars], float) for i in range(4))
+    mins = 570 + 5 * np.arange(len(bars))
+    lk = evaluate_day(o, h, l, cc, np.zeros(len(bars)), mins, open_min=570, or_minutes=10, mode="dir", rr=None,
+                      slip=0.0, comm=0.0, day_complete=True, plock=pl)
+    check("fără Profit Lock: întoarcerea închide pe SL (−1R)", base["reason"] == "SL" and abs(base["R"] + 1) < 1e-9, base)
+    check("cu Profit Lock 4,5R → 4R: ieșire LOCK la +4R", lk["reason"] == "LOCK" and abs(lk["R"] - 4.0) < 1e-9, lk)
+    lk_off = evaluate_day(o, h, l, cc, np.zeros(len(bars)), mins, open_min=570, or_minutes=10, mode="dir", rr=None,
+                          slip=0.0, comm=0.0, day_complete=True, plock={**pl, "enabled": False})
+    check("Profit Lock oprit = rezultat IDENTIC cu strategia actuală", lk_off == base)
+    part = evaluate_day(o[:5], h[:5], l[:5], cc[:5], np.zeros(5), mins[:5], open_min=570, or_minutes=10, mode="dir",
+                        rr=None, slip=0.0, comm=0.0, day_complete=False, plock=pl)
+    check("în poziție după prag: locked + sl_now = intrare + 4R (pentru SL-ul real)",
+          part["phase"] == "in_position" and part["locked"] and abs(part["sl_now"] - (100.8 + 4 * 1.8)) < 1e-9, part)
+    # --- executie: modul pietei castiga (Shadow pe piata = zero ordine chiar daca global era „execute”)
+    fake, st = _exec_day("execute", trade_mode=0, extra={"exec_mode": "shadow"})
+    check("piața pe SHADOW: zero ordine reale (DEMO, modul global ignorat)", not fake.sent
+          and "SHADOW" in st["markets"][0]["execution"]["reason"], (fake.sent, st["markets"][0].get("execution")))
+    fake, st = _exec_day("shadow", trade_mode=0, extra={"exec_mode": "live"})
+    check("piața pe LIVE (DEMO): ordin real + închidere la final", sum(r["action"] == fake.TRADE_ACTION_DEAL
+                                                                     for r in fake.sent) == 2, fake.sent)
+    fake, st = _exec_day("shadow", trade_mode=2, live=False, extra={"exec_mode": "live"})
+    check("piața pe LIVE + cont REAL nedeblocat: zero ordine", not fake.sent, fake.sent)
+    # --- Profit Lock pe pozitia REALA
+    fake.TRADE_ACTION_SLTP = 6
+    _send0 = fake.order_send
+
+    def _send_sltp(req):                     # brokerul simulat aplica SL-ul nou (ca MT5 real)
+        r = _send0(req)
+        if req["action"] == 6:
+            for p_ in fake.positions:
+                if p_.ticket == req["position"]:
+                    p_.sl = req["sl"]
+        return r
+    fake.order_send = _send_sltp
+    eng = E.DailyEngine(mt5_module=fake)
+    us = {**next(x for x in DEFAULTS["markets"] if x["symbol"] == "US500"), "exec_mode": "live",
+          "profit_lock": pl}
+    ny = ZoneInfo("America/New_York")
+    fake.orders, fake.sent = [], []
+    fake.positions = [SimpleNamespace(ticket=21, symbol="US500", magic=880001, comment="D-US500-1104", volume=0.1,
+                                      type=0, sl=6000.0, tp=0.0)]
+    stp = {"phase": "in_position", "locked": True, "sl_now": 6036.0}
+    w_end = datetime(2026, 11, 4, 16, 0, tzinfo=ny)
+    eng._execute(us, _d(2026, 11, 4), stp, None, datetime(2026, 11, 4, 12, 0, tzinfo=ny), w_end)
+    check("Profit Lock: SL-ul REAL mutat o dată (TRADE_ACTION_SLTP la intrare + 4R)",
+          len(fake.sent) == 1 and fake.sent[0]["action"] == 6 and fake.sent[0]["sl"] == 6036.0, fake.sent)
+    fake.sent = []
+    eng._execute(us, _d(2026, 11, 4), stp, None, datetime(2026, 11, 4, 12, 5, tzinfo=ny), w_end)
+    check("... re-iterația nu trimite din nou", not fake.sent, fake.sent)
+    fake.positions[0].sl, fake.sent = 6040.0, []
+    eng2 = E.DailyEngine(mt5_module=fake)
+    eng2._execute(us, _d(2026, 11, 4), stp, None, datetime(2026, 11, 4, 12, 10, tzinfo=ny), w_end)
+    check("SL real deja mai protector (manual / restart) → nu e coborât", not fake.sent, fake.sent)
+    fake.positions[0].sl, fake.sent = 6000.0, []
+    eng3 = E.DailyEngine(mt5_module=fake)
+    eng3._execute({**us, "paused": True}, _d(2026, 11, 4), stp, None, datetime(2026, 11, 4, 12, 15, tzinfo=ny), w_end)
+    check("piață pe PAUZĂ: Profit Lock gestionează în continuare poziția existentă",
+          len(fake.sent) == 1 and fake.sent[0]["action"] == 6, fake.sent)
+    # --- limita de marja (toate engine-urile)
+    acc = SimpleNamespace(login=1, server="Fake", trade_mode=0, equity=200.0, margin=40.0, currency="USD")
+    fake.account_info = lambda: acc
+    fake.order_calc_margin = lambda t, s_, lots, px: 147.6 * lots / 0.1
+    eng4 = E.DailyEngine(mt5_module=fake)
+    eng4.cfg = {"sizing": {"max_margin_pct": 80}, "markets": []}
+    lots, why = eng4._margin_ok("DE40", 1, 0.1, 24000.0)
+    check("marjă: 40 $ folosiți + 147,6 $ > 80% din 200 $ → ordinul NU se plasează (motiv vizibil)",
+          lots == 0 and "marjă insuficientă" in (why or ""), (lots, why))
+    acc.margin = 0.0
+    lots, why = eng4._margin_ok("DE40", 1, 0.2, 24000.0)
+    check("marjă: 0,2 loturi (295 $) > 160 $ → redus la 0,1", abs(lots - 0.1) < 1e-9 and "redus" in (why or ""), (lots, why))
+
+
 if __name__ == "__main__":
     t_strategy()
     t_equivalence()
@@ -533,5 +628,6 @@ if __name__ == "__main__":
     t_execution()
     t_reentry()
     t_pause()
+    t_modes_plock()
     print(f"\n{PASS} OK, {FAIL} FAIL")
     sys.exit(1 if FAIL else 0)
