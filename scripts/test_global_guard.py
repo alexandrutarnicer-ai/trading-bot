@@ -252,5 +252,19 @@ try:
 finally:
     gg.load_settings = orig_load
 
+print("friday_close_now — inchiderea de vineri comuna (Daily / Special)")
+_fc = gg.sanitize({"friday_close": {"enabled": True, "hour": 20}})
+_tz_orig = gg._tz_name
+gg._tz_name = lambda: "Europe/Bucharest"
+try:
+    check("vineri 19:59 RO -> nu", not gg.friday_close_now("DE40", datetime(2026, 11, 13, 17, 59, tzinfo=timezone.utc), settings=_fc)[0])
+    check("vineri 20:00 RO -> da", gg.friday_close_now("DE40", datetime(2026, 11, 13, 18, 0, tzinfo=timezone.utc), settings=_fc)[0])
+    check("joi 21:00 RO -> nu", not gg.friday_close_now("DE40", datetime(2026, 11, 12, 19, 0, tzinfo=timezone.utc), settings=_fc)[0])
+    check("cripto exceptat", not gg.friday_close_now("BTCUSD", datetime(2026, 11, 13, 19, 0, tzinfo=timezone.utc), settings=_fc)[0])
+    check("regula oprita -> nu", not gg.friday_close_now("DE40", datetime(2026, 11, 13, 19, 0, tzinfo=timezone.utc),
+                                                         settings=gg.sanitize(None))[0])
+finally:
+    gg._tz_name = _tz_orig
+
 print(f"\n{'=' * 60}\nREZULTAT: {PASS} PASS, {FAIL} FAIL")
 sys.exit(1 if FAIL else 0)

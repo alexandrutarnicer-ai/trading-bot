@@ -605,6 +605,20 @@ def t_modes_plock():
     eng3._execute({**us, "paused": True}, _d(2026, 11, 4), stp, None, datetime(2026, 11, 4, 12, 15, tzinfo=ny), w_end)
     check("piață pe PAUZĂ: Profit Lock gestionează în continuare poziția existentă",
           len(fake.sent) == 1 and fake.sent[0]["action"] == 6, fake.sent)
+    # --- inchiderea de vineri GLOBALA (Setari Globale): pozitia Daily inchisa la ora de vineri, nimic nou
+    from live import global_guard as GG
+    _ls = GG.load_settings
+    GG.load_settings = lambda path=None: GG.sanitize({"friday_close": {"enabled": True, "hour": 20}})
+    fake.positions = [SimpleNamespace(ticket=31, symbol="US500", magic=880001, comment="D-US500-1113", volume=0.1,
+                                      type=0, sl=6000.0, tp=0.0)]
+    fake.sent = []
+    eng5 = E.DailyEngine(mt5_module=fake)
+    fri_ny = datetime(2026, 11, 13, 13, 30, tzinfo=ny)              # vineri 20:30 RO (fus aplicatie RO)
+    eng5._execute({**us, "profit_lock": None}, _d(2026, 11, 13), {"phase": "in_position"}, None, fri_ny,
+                  datetime(2026, 11, 13, 16, 0, tzinfo=ny))
+    check("vineri după ora globală de închidere: poziția Daily închisă (fără să aștepte finalul ferestrei)",
+          fake.sent and fake.sent[0]["action"] == fake.TRADE_ACTION_DEAL and "position" in fake.sent[0], fake.sent)
+    GG.load_settings = _ls
     # --- limita de marja (toate engine-urile)
     acc = SimpleNamespace(login=1, server="Fake", trade_mode=0, equity=200.0, margin=40.0, currency="USD")
     fake.account_info = lambda: acc
