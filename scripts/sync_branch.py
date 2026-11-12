@@ -56,6 +56,15 @@ ENGINES = {
 CONFIG_FILES = ["data/global_settings.json", "data/profiles/standard.json",
                 "ai_engine/config.json", "daily_engine/config.json", "noisy_engine/config.json"]
 PROTECTED_BRANCHES = ("main", "vlad-live")
+# Jurnale in care engine-urile DOAR adauga randuri: la integrare se pastreaza randurile AMBELOR dispozitive
+# (.gitattributes merge=union) + dublurile exacte eliminate. Incident 09.11: un conflict pe trades.jsonl rezolvat
+# manual cu o singura parte a sters 2 trade-uri Daily din 06.11.
+APPEND_ONLY = ["data/daily_engine/trades.jsonl", "data/noisy_engine/trades.jsonl", "data/ai/ai_outcomes.csv",
+               "data/live_signals/*/signals.csv", "data/live_signals/*/outcomes.csv",
+               "data/live_signals/*/ai_filter.jsonl", "data/audit_log.jsonl"]
+# Stare interna a unui engine (JSON, nu se poate uni pe randuri): la conflict castiga dispozitivul pe care
+# engine-ul a rulat recent (el o scrie); altfel versiunea de pe GitHub.
+STATE_FILES = {"data/daily_engine/state.json": "Daily Engine", "data/noisy_engine/state.json": "Noisy Engine"}
 
 
 class Stop(Exception):
@@ -208,11 +217,52 @@ def prepare_incoming(br: str) -> int:
     return len(move)
 
 
-def merge_remote(br: str) -> None:
+def dedupe_append_only() -> list[str]:
+    """Randurile IDENTICE dintr-un jurnal append-only (acelasi trade inregistrat pe ambele dispozitive dupa o
+    unire) se pastreaza o singura data, in ordinea primei aparitii. Antetul CSV ramane primul."""
+    fixed = []
+    for pat in APPEND_ONLY:
+        for path in glob.glob(os.path.join(ROOT, pat)):
+            try:
+                with open(path, encoding="utf-8", newline="") as f:
+                    lines = f.read().splitlines(keepends=True)
+            except (OSError, UnicodeDecodeError):
+                continue
+            seen, out = set(), []
+            for ln in lines:
+                key = ln.rstrip("\r\n")
+                if key and key in seen:
+                    continue
+                seen.add(key)
+                out.append(ln if ln.endswith(("\n", "\r")) else ln + "\n")
+            if len(out) != len(lines):
+                with open(path, "w", encoding="utf-8", newline="") as f:
+                    f.writelines(out)
+                fixed.append(os.path.relpath(path, ROOT).replace("\\", "/"))
+    return fixed
+
+
+def _resolve_state_conflicts(here: dict[str, bool]) -> bool:
+    """Conflict DOAR pe fisiere de stare cunoscute → rezolvat automat (vezi STATE_FILES). Altfel False."""
+    conflicted = [f for f in git("diff", "--name-only", "--diff-filter=U").splitlines() if f]
+    if not conflicted or any(f not in STATE_FILES for f in conflicted):
+        return False
+    for f in conflicted:
+        side = "--ours" if here.get(STATE_FILES[f]) else "--theirs"
+        git("checkout", side, "--", f)
+        git("add", "-f", "--", f)                 # datele sunt in .gitignore (urmarite fortat)
+        say(f"{f}: conflict de stare rezolvat automat ({'versiunea acestui dispozitiv' if side == '--ours' else 'versiunea de pe GitHub'})")
+    git("commit", "-q", "--no-edit")
+    return True
+
+
+def merge_remote(br: str, here: dict[str, bool] | None = None) -> None:
     if not git("rev-list", f"HEAD..origin/{br}"):
         return
     r = subprocess.run(["git", "-C", ROOT, "merge", "--no-edit", f"origin/{br}"],
                        capture_output=True, text=True, encoding="utf-8", errors="replace")
+    if r.returncode != 0 and _resolve_state_conflicts(here or {}):
+        r = subprocess.CompletedProcess(r.args, 0, r.stdout, r.stderr)
     if r.returncode != 0:
         git("merge", "--abort", check=False)
         out = (r.stdout + r.stderr).strip()
@@ -253,7 +303,13 @@ def sync() -> None:
     git("fetch", "-q", "origin", br)
     old = git("rev-parse", "HEAD")
     prepare_incoming(br)
-    merge_remote(br)
+    merge_remote(br, here)
+    dup = dedupe_append_only()
+    if dup:
+        git("add", "-f", "--", *dup)
+        if not git_ok("diff", "--cached", "--quiet"):
+            git("commit", "-q", "-m", "data sync: randuri duplicate eliminate din jurnale")
+            say(f"Randuri duplicate eliminate: {', '.join(dup)}")
     new = git("rev-parse", "HEAD")
     if git("rev-list", f"origin/{br}..HEAD"):
         say("Trimit pe GitHub ...", "step")
