@@ -329,6 +329,10 @@ class DailyEngine:
             self._execute(m, day, st, b, now_loc, w_end)
         except Exception as e:                       # o eroare de executie nu opreste shadow-ul
             self._err(f"{sym} executie: {type(e).__name__}: {e}")
+        try:
+            self._profit_alert(m, str(day), st)
+        except Exception as e:                       # alerta nu are voie sa opreasca engine-ul
+            self._err(f"{sym} alerta profit: {type(e).__name__}: {e}")
         clean = {k: (v.item() if isinstance(v, np.generic) else v) for k, v in st.items() if k != "trades"}
         tr = st.get("trades") or []
         return {**info, **clean, **self._exec_info(sym, day),
@@ -541,6 +545,42 @@ class DailyEngine:
                              f"{r['lots']} loturi · SL{' · TP ' + format(m['rr'], 'g') + 'R' if tp else ''}"
                              + ("" if ok_o else f" — retcode {getattr(res, 'retcode', res)}"), important=True)
         _write_json(STATE_FILE, self.state)
+
+    def _profit_alert(self, m: dict, day: str, st: dict) -> None:
+        """Trade-ul DESCHIS a trecut de +alert_R (implicit 5R, pe inchiderea ultimei lumanari) → o singura alerta
+        pe trade (Notificari + Telegram, trimisa si cu rezumatul Telegram oprit). Doar informeaza — NU inchide nimic;
+        decizia e a utilizatorului."""
+        lim = float(self.cfg.get("alert_R", 5.0) or 0.0)
+        if not lim or st.get("phase") != "in_position" or st.get("open_R") is None or float(st["open_R"]) < lim:
+            return
+        sym, ev = m["symbol"], self.state.setdefault("events", {})
+        k = int(st.get("k") or 0)
+        key = f"{day}|{sym}|alert{k}"
+        if ev.get(key):
+            return
+        ev[key] = True
+        _write_json(STATE_FILE, self.state)
+        side = {1: "LONG", -1: "SHORT"}.get(st.get("side"), "")
+        real = ""
+        try:
+            tag = X.day_tag(sym, datetime.strptime(day, "%Y-%m-%d").date())
+            pos, _ = X.own(self.mt5, sym)
+            for p in pos:
+                if (p.comment or "").startswith(tag):
+                    real += f"\nPoziție REALĂ #{p.ticket}: {p.volume} loturi · profit {getattr(p, 'profit', 0.0):+.2f}"
+        except Exception:
+            pass
+        msg = (f"🚀 <b>Daily — {sym} {side} în profit peste +{lim:g}R</b>\n"
+               f"Trade deschis: <b>{float(st['open_R']):+.2f}R</b> (intrare {st.get('entry', 0):.5g}, ultimul preț "
+               f"{st.get('last', 0):.5g}, SL {st.get('sl_now', st.get('sl', 0)):.5g})"
+               + (real or "\n(trade virtual — piața e în SHADOW)")
+               + "\nNu închid nimic automat — decizia e a ta.")
+        log.info(msg.replace("<b>", "").replace("</b>", ""))
+        try:
+            from api.telegram import send_message
+            threading.Thread(target=send_message, args=(msg,), daemon=True).start()
+        except Exception:
+            pass
 
     def _apply_profit_lock(self, m: dict, pos_t: list, sl_now: float, key: str) -> None:
         ev = self.state.setdefault("events", {})

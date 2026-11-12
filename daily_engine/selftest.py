@@ -26,6 +26,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 from daily_engine import engine as E          # noqa: E402
+import api.telegram as _TG_ISO                  # noqa: E402
+_TG_ISO.send_message = lambda *a, **k: True     # testele NU trimit nimic pe Telegram / in Notificari (alerta +5R)
 from daily_engine.config import DEFAULTS, ENTRY_MODES, hm_to_min  # noqa: E402
 from daily_engine.strategy import evaluate_day  # noqa: E402
 
@@ -619,6 +621,29 @@ def t_modes_plock():
     check("vineri după ora globală de închidere: poziția Daily închisă (fără să aștepte finalul ferestrei)",
           fake.sent and fake.sent[0]["action"] == fake.TRADE_ACTION_DEAL and "position" in fake.sent[0], fake.sent)
     GG.load_settings = _ls
+    # --- alerta de profit (+5R): o singura data pe trade, doar informeaza
+    import api.telegram as _TG
+    _sent_al = []
+    _TG.send_message = lambda t: _sent_al.append(t)
+    eng6 = E.DailyEngine(mt5_module=fake)
+    eng6.cfg = {"alert_R": 5.0, "markets": []}
+    base_st = {"phase": "in_position", "side": 1, "entry": 6000.0, "last": 6033.0, "sl": 6000.0, "k": 0}
+    eng6._profit_alert(us, "2026-11-04", {**base_st, "open_R": 4.9})
+    eng6._profit_alert(us, "2026-11-04", {**base_st, "open_R": 5.2})
+    eng6._profit_alert(us, "2026-11-04", {**base_st, "open_R": 6.0})
+    import time as _t
+    _t.sleep(0.3)
+    check("alerta +5R: trimisă o singură dată (la 5,2R, nu la 4,9R / 6R), cu „profit” (trece și în modul liniște)",
+          len(_sent_al) == 1 and "+5.20R" in _sent_al[0] and "profit" in _sent_al[0], _sent_al)
+    from api.notifications import is_important_notification
+    check("... notificarea e considerată IMPORTANTĂ (Telegram și în modul liniște)", is_important_notification(_sent_al[0]))
+    eng6._profit_alert(us, "2026-11-04", {**base_st, "k": 1, "open_R": 5.5})
+    _t.sleep(0.3)
+    check("... re-intrarea (alt trade) are propria alertă", len(_sent_al) == 2, len(_sent_al))
+    eng6.cfg = {"alert_R": 0, "markets": []}
+    eng6._profit_alert(us, "2026-11-05", {**base_st, "open_R": 9.0})
+    _t.sleep(0.3)
+    check("alert_R = 0 → oprită", len(_sent_al) == 2)
     # --- limita de marja (toate engine-urile)
     acc = SimpleNamespace(login=1, server="Fake", trade_mode=0, equity=200.0, margin=40.0, currency="USD")
     fake.account_info = lambda: acc
