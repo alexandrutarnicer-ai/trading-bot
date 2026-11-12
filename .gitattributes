@@ -6,3 +6,4 @@ data/live_signals/*/signals.csv merge=union
 data/live_signals/*/outcomes.csv merge=union
 data/live_signals/*/ai_filter.jsonl merge=union
 data/audit_log.jsonl merge=union
+data/special_engine/trades.jsonl merge=union

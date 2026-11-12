@@ -221,11 +221,48 @@ def _check_daily_engine() -> None:
         tg.send_message(f"<b>Daily Engine oprit neașteptat</b> — repornirea a eșuat: {e}")
 
 
+_special_restarts: list[float] = []
+
+
+def _check_special_engine() -> None:
+    """Special Engine pornit (desired_running.json) dar proces mort, fara Stop din UI → Telegram + repornire
+    (max 3/ora). Incident 06.11: oprit odata cu repornirea dashboard-ului, a ramas oprit 2 ore."""
+    try:
+        from api.routers import special_engine as se
+    except Exception:
+        return                                         # pachetul nu exista pe acest branch
+    if not os.path.isfile(se.DESIRED_FILE):
+        return
+    pid = se._read_pid()
+    if pid and _pid_alive(pid):
+        return
+    now = time.time()
+    _special_restarts[:] = [t for t in _special_restarts if now - t < 3600]
+    if len(_special_restarts) >= 3:
+        tg.send_message("<b>Special Engine nu rămâne pornit</b> — 3 reporniri automate în ultima oră.\n"
+                        "<i>Oprit din watchdog. Verifică data/special_engine/stdout.log și crash.log.</i>")
+        try:
+            os.remove(se.DESIRED_FILE)
+        except OSError:
+            pass
+        return
+    _special_restarts.append(now)
+    try:
+        se.special_start()
+        tg.send_message("<b>Special Engine oprit neașteptat</b> — repornit automat de watchdog (modurile pieței păstrate).")
+    except Exception as e:
+        tg.send_message(f"<b>Special Engine oprit neașteptat</b> — repornirea a eșuat: {e}")
+
+
 def _watchdog_loop() -> None:
     while True:
         time.sleep(_CHECK_INTERVAL)
         try:
             _check_daily_engine()
+        except Exception:
+            pass
+        try:
+            _check_special_engine()
         except Exception:
             pass
         try:

@@ -6,6 +6,7 @@ export const ENGINE_COLOR: Record<MarketEngineId, { bar: string; badge: string; 
   ai:     { bar: "bg-purple-400",  badge: "bg-purple-500/15 text-purple-300 border-purple-500/30",   label: "AI" },
   daily:  { bar: "bg-cyan-400",    badge: "bg-cyan-500/15 text-cyan-300 border-cyan-500/30",         label: "DAILY" },
   noisy:  { bar: "bg-amber-400",   badge: "bg-amber-500/15 text-amber-300 border-amber-500/30",      label: "NOISY" },
+  special: { bar: "bg-pink-400",   badge: "bg-pink-500/15 text-pink-300 border-pink-500/30",         label: "SPECIAL" },
 };
 
 export const STATE_STYLE: Record<MarketState, { dot: string; pill: string }> = {

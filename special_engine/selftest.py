@@ -16,6 +16,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 from special_engine import data as D  # noqa: E402
 from special_engine import engine as E  # noqa: E402
+import api.audit_log as _AL  # noqa: E402
+_AL.AUDIT_FILE = os.path.join(tempfile.mkdtemp(), "audit.jsonl")    # testele nu scriu in jurnalul de audit real
 from special_engine.config import COSTS, NOISE_MARKETS, ORB_MARKETS, sanitize  # noqa: E402
 from special_engine.strategies import nr_flag  # noqa: E402
 
@@ -40,18 +42,28 @@ def load_hist(sym):
     return None
 
 
-POINT = {"DE40": 0.01, "USTEC": 0.01, "US500": 0.01, "XAUUSD": 0.01}   # MT5 ICMarketsEU (symbol_info.point)
+POINT = {"DE40": 0.01, "USTEC": 0.01, "US500": 0.01, "XAUUSD": 0.01, "JP225": 0.01}   # MT5 ICMarketsEU (symbol_info.point)
 
 
 def t_config_and_safety():
-    print("1. siguranta: DOAR shadow, zero ordine in pachet")
-    check("mode fortat shadow", sanitize({"mode": "execute"})["mode"] == "shadow")
+    print("1. siguranta: mod per piata (implicit SHADOW), ordine DOAR in executor.py")
+    check("mod global vechi „execute” ignorat — fara piete Live = shadow", sanitize({"mode": "execute"})["mode"] == "shadow")
+    c = sanitize({"markets": {"JP225": {"mode": "live"}, "USTEC": {"mode": "pause", "paused_at": "2026-11-12T10:00:00+00:00"},
+                              "NOPE": {"mode": "live"}}})
+    check("moduri per piata: JP225 Live, USTEC Pauza, simbol necunoscut ignorat; rezumat = execute",
+          c["markets"]["JP225"]["mode"] == "live" and c["markets"]["USTEC"]["mode"] == "pause" and "NOPE" not in c["markets"]
+          and c["mode"] == "execute", c["markets"])
+    from special_engine.config import market_mode
+    check("piata noua (ex. aleasa de selectia trimestriala) = SHADOW", market_mode(c, "DE40") == "shadow")
+    check("risc implicit 1% / trade, risc total deschis 2%, max 2 pozitii, marja 80%",
+          (sanitize(None)["risk_pct"], sanitize(None)["max_open_risk_pct"], sanitize(None)["max_positions"],
+           sanitize(None)["max_margin_pct"]) == (0.01, 0.02, 2, 80.0))
     check("config corupt → implicit (A: 36 luni, t 1,5, NR4; B: USTEC)",
           sanitize("x")["strategy_a"]["lookback_months"] == 36 and sanitize(None)["strategy_b"]["symbol"] == "USTEC")
     pkg = os.path.join(ROOT, "special_engine")
-    bad = [f for f in os.listdir(pkg) if f.endswith(".py") and f != "selftest.py"
+    bad = [f for f in os.listdir(pkg) if f.endswith(".py") and f not in ("selftest.py", "executor.py")
            and re.search(r"order_send|TRADE_ACTION_DEAL|TRADE_ACTION_PENDING|TRADE_ACTION_SLTP", open(os.path.join(pkg, f), encoding="utf-8").read())]
-    check("niciun order_send / TRADE_ACTION in special_engine/", not bad, bad)
+    check("order_send / TRADE_ACTION DOAR in special_engine/executor.py", not bad, bad)
 
 
 def t_equivalence():
@@ -149,7 +161,7 @@ def t_live_equals_backtest():
     tmp = tempfile.mkdtemp()
     for n in ("STATUS_FILE", "STATE_FILE", "TRADES_FILE", "SELECTION_FILE"):
         setattr(E, n, os.path.join(tmp, os.path.basename(getattr(E, n))))
-    E._notify = lambda cfg, text: None
+    E._notify = lambda *a, **k: None
     E.load_config = lambda: {**sanitize(None), "notify_telegram": False}
     fake = FakeMt5({"USTEC": d}, {"USTEC": d1})
     eng = E.SpecialEngine(mt5_module=fake)
@@ -214,11 +226,183 @@ def t_display_times():
     check("trade stricat → returnat neschimbat (afisarea nu pica)", annotate_trade({"comp": "X"}) == {"comp": "X"})
 
 
+class TradeMt5(FakeMt5):
+    """MT5 simulat CU ordine (pozitii, ordine, cont DEMO / REAL) — pentru executia reala."""
+    TRADE_ACTION_DEAL, TRADE_ACTION_PENDING, TRADE_ACTION_REMOVE = 1, 5, 8
+    ORDER_TYPE_BUY, ORDER_TYPE_SELL, ORDER_TYPE_BUY_STOP, ORDER_TYPE_SELL_STOP = 0, 1, 4, 5
+    ORDER_TIME_GTC, TRADE_RETCODE_DONE, TRADE_RETCODE_PLACED, POSITION_TYPE_BUY = 0, 10009, 10008, 0
+
+    def __init__(self, m5, d1, trade_mode=0, equity=10000.0, margin_per_lot=100.0):
+        super().__init__(m5, d1)
+        self.trade_mode, self.equity, self.mpl = trade_mode, equity, margin_per_lot
+        self.positions, self.orders, self._tk, self.margin = [], [], 500, 0.0
+
+    def symbol_info(self, s):
+        return SimpleNamespace(point=POINT[s], digits=2, volume_min=0.1, volume_step=0.1, volume_max=100.0,
+                               trade_tick_size=0.01, trade_tick_value=0.01, filling_mode=2)
+
+    def account_info(self):
+        return SimpleNamespace(equity=self.equity, balance=self.equity, margin=self.margin, trade_mode=self.trade_mode,
+                               currency="USD", login=1, server="Fake")
+
+    def symbol_info_tick(self, s):
+        x = self.m5[s][self.m5[s].time <= self.now_server].tail(1)
+        px = float(x.close.iat[0])
+        return SimpleNamespace(ask=px + 0.5, bid=px - 0.5, time=0)
+
+    def order_calc_margin(self, t, s, lots, px):
+        return self.mpl * lots / 0.1
+
+    def positions_get(self, symbol=None):
+        return [p for p in self.positions if symbol in (None, p.symbol)]
+
+    def orders_get(self, symbol=None):
+        return [o for o in self.orders if symbol in (None, o.symbol)]
+
+    def order_send(self, req):
+        self.sent.append(dict(req))
+        self._tk += 1
+        if req["action"] == self.TRADE_ACTION_DEAL and "position" in req:
+            self.positions = [p for p in self.positions if p.ticket != req["position"]]
+        elif req["action"] == self.TRADE_ACTION_DEAL:
+            self.positions.append(SimpleNamespace(ticket=self._tk, symbol=req["symbol"], magic=req["magic"],
+                                                  comment=req["comment"], volume=req["volume"], price_open=req["price"],
+                                                  sl=req["sl"], type=0 if req["type"] == self.ORDER_TYPE_BUY else 1))
+        elif req["action"] == self.TRADE_ACTION_PENDING:
+            self.orders.append(SimpleNamespace(ticket=self._tk, symbol=req["symbol"], magic=req["magic"],
+                                               comment=req["comment"], type=req["type"]))
+        elif req["action"] == self.TRADE_ACTION_REMOVE:
+            self.orders = [o for o in self.orders if o.ticket != req["order"]]
+        return SimpleNamespace(retcode=10009, order=self._tk)
+
+
+def t_execution():
+    print("5. EXECUTIE reala per piata (MT5 simulat; zero ordine reale in teste)")
+    d = load_hist("USTEC")
+    if d is None:
+        print("  (sarit: fara istoric USTEC)")
+        return
+    d1 = d.set_index("time").resample("1D").agg({"open": "first", "high": "max", "low": "min", "close": "last",
+                                                "tick_volume": "sum", "spread": "max"}).dropna().reset_index()
+    import live_guard
+    from live import global_guard as GG
+    GG_defaults = GG.sanitize(None)
+    GG.load_settings = lambda path=None: GG_defaults            # Setarile Globale OPRITE (izolare de fisierul real)
+    tz, op, cl = NOISE_MARKETS["USTEC"]
+    ref = pd.DataFrame(D.noise_history(d, "USTEC", tz, op, cl, sum(COSTS["USTEC"]), POINT["USTEC"]))
+    ref["day"] = ref.entry_t.dt.normalize()
+    day = pd.Timestamp(sorted(ref.day.unique())[-3])
+    want = ref[ref.day == day]
+
+    def run_day(mode, trade_mode=0, live=False, equity=10000.0, start_min=0, cfg_extra=None, mpl=100.0, notes=None):
+        tmp = tempfile.mkdtemp()
+        for n in ("STATUS_FILE", "STATE_FILE", "TRADES_FILE", "SELECTION_FILE"):
+            setattr(E, n, os.path.join(tmp, os.path.basename(getattr(E, n))))
+        E._notify = lambda cfg, text, force=False: (notes.append(text) if notes is not None else None)
+        cfg = {**sanitize({"markets": {"USTEC": {"mode": mode, "paused_at": "2000-01-01T00:00:00+00:00"}}}),
+               "notify_telegram": False, **(cfg_extra or {})}
+        E.load_config = lambda: cfg
+        live_guard.live_allowed = lambda comp: live
+        fake = TradeMt5({"USTEC": d}, {"USTEC": d1}, trade_mode=trade_mode, equity=equity, margin_per_lot=mpl)
+        eng = E.SpecialEngine(mt5_module=fake)
+        eng.selection = {"quarter": "x", "components": []}
+        eng.ensure_selection = lambda now: None
+        for mins in range(start_min, 6 * 60 + 45, 5):
+            now_ny = day + pd.Timedelta(hours=9, minutes=30 + mins + 1)
+            fake.now_server = now_ny + pd.Timedelta(hours=7)
+            eng.iteration(now_ny.tz_localize("America/New_York").tz_convert("UTC").to_pydatetime())
+        return fake, eng
+
+    fake, _ = run_day("shadow")
+    check("piata pe SHADOW: zero ordine reale (shadow-ul ruleaza normal)", not fake.sent, fake.sent[:2])
+    fake, _ = run_day("live", trade_mode=2, live=False)
+    check("piata pe LIVE + cont REAL nedeblocat: zero ordine", not fake.sent, fake.sent[:2])
+    notes = []
+    fake, eng = run_day("live", trade_mode=0, notes=notes)
+    deals = [r for r in fake.sent if r["action"] == fake.TRADE_ACTION_DEAL]
+    entries = [r for r in deals if "position" not in r]
+    check(f"piata pe LIVE (DEMO): cate un ordin real pe fiecare trade virtual ({len(want)}) + toate inchise",
+          len(entries) == len(want) and len(deals) == 2 * len(want) and not fake.positions, (len(entries), len(want), fake.positions))
+    e0 = entries[0] if entries else {}
+    check("ordin: magic 660001, comment X-USTEC-MMDD0, SL atasat pe partea corecta",
+          e0.get("magic") == 660001 and str(e0.get("comment", "")).startswith(f"X-USTEC-{day:%m%d}0")
+          and ((e0.get("type") == 0 and e0["sl"] < e0["price"]) or (e0.get("type") == 1 and e0["sl"] > e0["price"])), e0)
+    check("... notificare pentru fiecare ordin real (si cu Telegram-ul de rutina oprit)", any("ORDINE REALE" in t for t in notes))
+    trades = E.load_trades()
+    check("trade-urile cu ordin real marcate mode=execute (rapoartele nu le numara de doua ori)",
+          trades and all(t.get("mode") == "execute" for t in trades), [t.get("mode") for t in trades])
+    fake, _ = run_day("pause")
+    check("piata pe PAUZA: zero ordine si zero trade-uri virtuale noi", not fake.sent and not E.load_trades(), fake.sent[:1])
+    fake, _ = run_day("live", trade_mode=0, start_min=6 * 60 + 25)
+    check("restart TARZIU (dupa semnal): niciun ordin vechi plasat", not [r for r in fake.sent if "position" not in r], fake.sent[:1])
+    fake, _ = run_day("live", trade_mode=0, equity=1000.0)
+    check("cont mic: riscul la lotul minim > riscul total permis (2%) → ordinul NU se plaseaza",
+          not [r for r in fake.sent if "position" not in r], fake.sent[:1])
+    fake, _ = run_day("live", trade_mode=0, mpl=9000.0)
+    check("marja insuficienta (lotul minim > 80% din equity) → ordinul NU se plaseaza",
+          not [r for r in fake.sent if "position" not in r], fake.sent[:1])
+    fake, _ = run_day("live", trade_mode=0, cfg_extra={"max_positions": 1})
+    check("max 1 pozitie: tot plaseaza (o singura pozitie odata pe zi)", [r for r in fake.sent if "position" not in r])
+    # pozitie ramasa din alta zi → inchisa (niciodata peste noapte)
+    fake2 = TradeMt5({"USTEC": d}, {"USTEC": d1})
+    fake2.positions = [SimpleNamespace(ticket=1, symbol="USTEC", magic=660001, comment="X-USTEC-01010", volume=0.1,
+                                       price_open=1.0, sl=0.5, type=0)]
+    fake2.now_server = day + pd.Timedelta(hours=17)
+    eng2 = E.SpecialEngine(mt5_module=fake2)
+    eng2.sweep_stale((day + pd.Timedelta(hours=10)).tz_localize("America/New_York").tz_convert("UTC").to_pydatetime())
+    check("pozitie Special din alta zi → inchisa la urmatoarea iteratie", not fake2.positions and fake2.sent, fake2.sent)
+    fake3 = TradeMt5({"USTEC": d}, {"USTEC": d1})
+    fake3.positions = [SimpleNamespace(ticket=2, symbol="USTEC", magic=770015, comment="AI-1", volume=0.1,
+                                       price_open=1.0, sl=0.5, type=0)]
+    E.SpecialEngine(mt5_module=fake3).sweep_stale(datetime.now(timezone.utc))
+    check("pozitiile ALTOR engine-uri (alt magic) nu sunt atinse", fake3.positions and not fake3.sent)
+    # ORB pe JP225 (strategia A): ordin la PIATA la formarea intervalului, SL = marginea opusa, inchis la final
+    dj = load_hist("JP225")
+    if dj is not None:
+        dj1 = dj.set_index("time").resample("1D").agg({"open": "first", "high": "max", "low": "min", "close": "last",
+                                                      "tick_volume": "sum", "spread": "max"}).dropna().reset_index()
+        tzj, opj, endj = ORB_MARKETS["JP225"]
+        refj = pd.DataFrame(D.orb_history(dj, "JP225", tzj, opj, endj, *COSTS["JP225"], POINT["JP225"]))
+        refj = refj[refj.comp == "ORB:JP225:5/direction"]
+        dayj = pd.Timestamp(refj.entry_t.iloc[-5]).normalize()
+        tmp = tempfile.mkdtemp()
+        for n in ("STATUS_FILE", "STATE_FILE", "TRADES_FILE", "SELECTION_FILE"):
+            setattr(E, n, os.path.join(tmp, os.path.basename(getattr(E, n))))
+        base = sanitize({"markets": {"JP225": {"mode": "live"}}, "strategy_a": {"nr_filter": 0},
+                         "strategy_b": {"enabled": False}})
+        E.load_config = lambda: base
+        live_guard.live_allowed = lambda comp: False
+        fj = TradeMt5({"JP225": dj}, {"JP225": dj1}, trade_mode=0, equity=10000.0)
+        ej = E.SpecialEngine(mt5_module=fj)
+        ej.selection = {"quarter": "x", "components": ["ORB:JP225:5/direction"]}
+        ej.ensure_selection = lambda now: None
+        for mins in range(-10, 6 * 60 + 15, 5):
+            now_t = dayj + pd.Timedelta(hours=9, minutes=mins + 1)          # Tokyo; server = NY + 7h
+            now_u = now_t.tz_localize("Asia/Tokyo").tz_convert("UTC")
+            fj.now_server = now_u.tz_convert("America/New_York").tz_localize(None) + pd.Timedelta(hours=7)
+            ej.iteration(now_u.to_pydatetime())
+        ent = [r for r in fj.sent if r["action"] == fj.TRADE_ACTION_DEAL and "position" not in r]
+        rj = refj[pd.to_datetime(refj.entry_t).dt.normalize() == dayj].iloc[0]
+        check("JP225 ORB direcție (LIVE, DEMO): un ordin la piață cu SL atașat, închis la final de sesiune",
+              len(ent) == 1 and not fj.positions and ent[0]["comment"].startswith(f"X-JP225-{dayj:%m%d}0")
+              and ent[0]["sl"] and ((ent[0]["type"] == 0 and ent[0]["sl"] < ent[0]["price"]) or
+                                    (ent[0]["type"] == 1 and ent[0]["sl"] > ent[0]["price"])), (ent, fj.positions))
+        trj = E.load_trades()
+        check("... trade-ul virtual = backtestul (același R) și marcat execute",
+              len(trj) == 1 and abs(trj[0]["R"] - rj.R) < 1e-9 and trj[0]["mode"] == "execute", (trj, rj.R))
+    # inchiderea de vineri globala
+    GG2 = GG.sanitize({"friday_close": {"enabled": True, "hour": 20}})
+    ok, why = GG.friday_close_now("USTEC", datetime(2026, 11, 13, 19, 0, tzinfo=timezone.utc), settings=GG2)
+    check("inchiderea de vineri globala: vineri 21:00 RO → activa (Special inchide + nu deschide)", ok and "vineri" in why, why)
+    check("... cripto exceptat", not GG.friday_close_now("BTCUSD", datetime(2026, 11, 13, 19, 0, tzinfo=timezone.utc), settings=GG2)[0])
+
+
 if __name__ == "__main__":
     t_config_and_safety()
     t_display_times()
     t_equivalence()
     t_selection()
     t_live_equals_backtest()
+    t_execution()
     print(f"\n{PASS} OK, {FAIL} FAIL")
     sys.exit(1 if FAIL else 0)

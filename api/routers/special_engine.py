@@ -19,6 +19,24 @@ STATUS_FILE = os.path.join(DATA_DIR, "status.json")
 TRADES_FILE = os.path.join(DATA_DIR, "trades.jsonl")
 SELECTION_FILE = os.path.join(DATA_DIR, "selection.json")
 LOG_FILE = os.path.join(DATA_DIR, "engine.log")
+DESIRED_FILE = os.path.join(DATA_DIR, "desired_running.json")   # = special_engine/engine.py::DESIRED_FILE
+
+
+def _audit(action: str, detail: str, **kw) -> None:
+    try:
+        from api import audit_log
+        audit_log.record("special", action, detail, **kw)
+    except Exception:
+        pass
+
+
+def _tg(text: str) -> None:
+    try:
+        from api.telegram import send_message
+        import threading
+        threading.Thread(target=send_message, args=(text,), daemon=True).start()
+    except Exception:
+        pass
 
 # Validarea din cercetare (scripts/research_special/validate_special.py, walk-forward out-of-sample, costuri incluse)
 RESEARCH_REF = {
@@ -76,7 +94,14 @@ def special_status():
         st["scorecard"] = scorecard(load_trades())
         st["selection"] = _read(SELECTION_FILE, {})
     st["research"] = RESEARCH_REF
-    st["config"] = load_config()
+    cfg = st["config"] = load_config()
+    if not running or not st.get("markets"):
+        from special_engine.config import market_mode
+        syms = {c.split(":")[1] for c in ((st.get("selection") or {}).get("components") or [])}
+        if cfg["strategy_b"]["enabled"]:
+            syms.add(cfg["strategy_b"]["symbol"])
+        syms |= set(cfg.get("markets") or {})
+        st["markets"] = {s: market_mode(cfg, s) for s in sorted(syms)}
     return st
 
 
@@ -90,7 +115,8 @@ def special_start():
     out = open(os.path.join(DATA_DIR, "stdout.log"), "a", encoding="utf-8")
     proc = subprocess.Popen([sys.executable, "-m", "special_engine"], cwd=ROOT, creationflags=flags,
                             stdout=out, stderr=subprocess.STDOUT, close_fds=True)
-    return {"ok": True, "pid": proc.pid, "note": "SHADOW — trade-uri virtuale, zero ordine"}
+    _audit("start", f"pornit (PID {proc.pid})")
+    return {"ok": True, "pid": proc.pid, "note": "modul fiecărei piețe: Live / Shadow / Pauză (implicit Shadow)"}
 
 
 @router.post("/stop")
@@ -98,7 +124,14 @@ def special_stop():
     pid = _read_pid()
     if not pid or not _pid_alive(pid):
         raise HTTPException(409, "Special Engine nu rulează")
+    try:
+        os.remove(DESIRED_FILE)            # INAINTE de kill: watchdog-ul nu-l reporneste (oprire voita)
+    except OSError:
+        pass
     subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)], capture_output=True, text=True)
+    _audit("stop", "oprit din UI")
+    _tg("⏹ <b>Special Engine oprit</b> (din UI). Pozițiile reale deschise (dacă există) rămân cu SL-ul lor; "
+        "la repornire se închid la finalul sesiunii / dacă sunt din altă zi.")
     try:
         os.remove(PID_FILE)
     except OSError:
@@ -134,16 +167,69 @@ def special_selection_refresh():
     return {"ok": True, "note": "selecția se recalculează la următoarea iterație (engine pornit)"}
 
 
+_SETTING_LABELS = {"risk_pct": ("risc / trade", 100, "%"), "max_open_risk_pct": ("risc total deschis", 100, "%"),
+                   "max_positions": ("poziții simultane", 1, ""), "max_margin_pct": ("marjă maximă", 1, "% din equity"),
+                   "noise_stop_mult": ("SL de protecție B", 1, "× unitatea R")}
+
+
 @router.put("/config")
 def special_config(body: dict):
+    """Setarile PROPRII ale Special Engine (capital, risc, limite, notificari, strategii). Setarile Globale nu se
+    modifica de aici — se aplica peste acestea („cea mai stricta castiga”)."""
+    body = body or {}
     cur = load_config()
-    for k in ("notify_telegram", "notify_trades", "risk_pct", "poll_seconds"):
-        if k in (body or {}):
+    before = dict(cur)
+    for k in ("notify_telegram", "notify_trades", "risk_pct", "poll_seconds", "max_open_risk_pct", "max_positions",
+              "max_margin_pct", "noise_stop_mult"):
+        if k in body:
             cur[k] = body[k]
+    if isinstance(body.get("capital"), dict):
+        cur["capital"] = {**cur["capital"], **body["capital"]}
     for sec in ("strategy_a", "strategy_b"):
-        if isinstance((body or {}).get(sec), dict):
+        if isinstance(body.get(sec), dict):
             cur[sec] = {**cur[sec], **body[sec]}
-    return save_config(cur)
+    clean = save_config(cur)
+    changes = []
+    for k, (lbl, mul, unit) in _SETTING_LABELS.items():
+        if before.get(k) != clean.get(k):
+            changes.append(f"{lbl}: {before.get(k) * mul:g}{unit} → {clean.get(k) * mul:g}{unit}")
+    if before.get("capital") != clean.get("capital"):
+        c = clean["capital"]
+        changes.append("capital: " + ("equity MT5" if c["capital_sync_mt5"] else f"fix {c['capital_usd']} $")
+                       + f" × {c['fraction'] * 100:.0f}%")
+    if changes:
+        for ch in changes:
+            _audit("config", ch)
+        _tg("⚙️ <b>Special Engine — configurare</b>\n" + "\n".join(changes) + "\nSe aplică de la următoarea iterație.")
+    return clean
+
+
+@router.post("/markets/{symbol}/mode")
+def special_market_mode(symbol: str, body: dict):
+    """Modul unei PIETE: live (ordine reale — pe cont real doar cu Special Engine deblocat in Trading LIVE) /
+    shadow (virtual) / pause (fara intrari noi; pozitiile existente raman gestionate). Cealalta piata nu e atinsa."""
+    from datetime import datetime as _dt, timezone as _tz
+    from special_engine.config import NOISE_MARKETS, ORB_MARKETS, market_mode
+    sym = str(symbol or "").upper()
+    if sym not in set(ORB_MARKETS) | set(NOISE_MARKETS):
+        raise HTTPException(400, f"piață necunoscută în Special Engine: {sym}")
+    mode = str((body or {}).get("mode") or "").lower()
+    if mode not in ("live", "shadow", "pause"):
+        raise HTTPException(400, "mode: una din live / shadow / pause")
+    cur = load_config()
+    before = market_mode(cur, sym)
+    if before == mode:
+        return {"ok": True, "symbol": sym, "mode": mode, "changed": False}
+    cur["markets"] = {**cur.get("markets", {}), sym: {
+        "mode": mode, "paused_at": _dt.now(_tz.utc).isoformat(timespec="seconds") if mode == "pause" else None}}
+    save_config(cur)
+    _audit("mode", f"{sym}: {before} → {mode}", market=sym, before=before, after=mode)
+    _tg({"live": f"🟢 <b>Special Engine — {sym} pe LIVE</b>\nOrdine reale de la următorul semnal (dacă Trading LIVE e "
+                 "deblocat pentru Special Engine; altfel rămâne fără ordine).",
+         "shadow": f"🧪 <b>Special Engine — {sym} pe SHADOW</b>\nFără ordine noi; o poziție reală deschisă rămâne "
+                   "gestionată până la ieșirea strategiei / finalul sesiunii.",
+         "pause": f"⏸ <b>Special Engine — {sym} PE PAUZĂ</b>\nFără intrări noi; pozițiile deschise rămân gestionate."}[mode])
+    return {"ok": True, "symbol": sym, "mode": mode, "changed": True}
 
 
 @router.get("/logs")

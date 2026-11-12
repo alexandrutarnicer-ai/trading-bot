@@ -42,6 +42,12 @@ ENGINES: dict[str, dict] = {
     "noisy":  {"label": "Noisy Engine", "task": None, "setup": None, "remove": None,
                "log": os.path.join(ROOT, "data", "noisy_engine", "engine.log")},
 }
+try:                      # Special Engine (doar alex-live): fara autostart propriu — il reporneste watchdog-ul API
+    import special_engine  # noqa: F401
+    ENGINES["special"] = {"label": "Special Engine", "task": None, "setup": None, "remove": None,
+                          "log": os.path.join(ROOT, "data", "special_engine", "engine.log")}
+except Exception:
+    pass
 
 router = APIRouter(prefix="/engines", tags=["engines"])
 
@@ -83,6 +89,15 @@ def _status(eid: str) -> dict:
                 "detail": f"{s.get('symbol', 'USDJPY')} {(s.get('config') or {}).get('timeframe', '')} · "
                           f"{'EXECUȚIE' if s.get('mode') == 'execute' else 'shadow'} · {s.get('state_label') or ''}".rstrip(" ·"),
                 "mode": s.get("mode", "shadow")}
+    if eid == "special":
+        from api.routers import special_engine as se
+        s = se.special_status()
+        mk = s.get("markets") or {}
+        live = [k for k, v in mk.items() if v == "live"]
+        return {"running": bool(s.get("running")), "pid": s.get("pid"),
+                "detail": (", ".join(f"{k} {v}" for k, v in mk.items()) or "piețe după selecția trimestrială")
+                          + (f" · LIVE: {', '.join(live)}" if live else " · shadow"),
+                "mode": "execute" if live else "shadow"}
     from api.routers import daily_engine
     s = daily_engine.daily_status()
     mk = [m.get("symbol") for m in (s.get("markets") or []) if m.get("symbol")]
@@ -103,6 +118,9 @@ def _do_start(eid: str) -> None:
     elif eid == "noisy":
         from api.routers import noisy_engine
         noisy_engine.noisy_start()
+    elif eid == "special":
+        from api.routers import special_engine as se
+        se.special_start()
     else:
         from api.routers import daily_engine
         daily_engine.daily_start()
@@ -118,6 +136,9 @@ def _do_stop(eid: str) -> None:
     elif eid == "noisy":
         from api.routers import noisy_engine
         noisy_engine.noisy_stop()
+    elif eid == "special":
+        from api.routers import special_engine as se
+        se.special_stop()
     else:
         from api.routers import daily_engine
         daily_engine.daily_stop()

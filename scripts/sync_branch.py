@@ -52,9 +52,13 @@ ENGINES = {
                       ["data/daily_engine/trades.jsonl", "data/daily_engine/state.json"]),
     "Noisy Engine":  (["data/noisy_engine/engine.log"], ["data/noisy_engine/noisy_engine.pid"],
                       ["data/noisy_engine/trades.jsonl", "data/noisy_engine/state.json"]),
+    "Special Engine": (["data/special_engine/engine.log"], ["data/special_engine/special_engine.pid"],
+                       ["data/special_engine/trades.jsonl", "data/special_engine/state.json",
+                        "data/special_engine/selection.json"]),
 }
 CONFIG_FILES = ["data/global_settings.json", "data/profiles/standard.json",
-                "ai_engine/config.json", "daily_engine/config.json", "noisy_engine/config.json"]
+                "ai_engine/config.json", "daily_engine/config.json", "noisy_engine/config.json",
+                "special_engine/config.json"]
 PROTECTED_BRANCHES = ("main", "vlad-live")
 SHARED_DATA = ["data/audit_log.jsonl"]           # jurnal de audit (api/audit_log.py) — mereu trimis
 # Jurnale in care engine-urile DOAR adauga randuri: la integrare se pastreaza randurile AMBELOR dispozitive
@@ -62,10 +66,11 @@ SHARED_DATA = ["data/audit_log.jsonl"]           # jurnal de audit (api/audit_lo
 # manual cu o singura parte a sters 2 trade-uri Daily din 06.11.
 APPEND_ONLY = ["data/daily_engine/trades.jsonl", "data/noisy_engine/trades.jsonl", "data/ai/ai_outcomes.csv",
                "data/live_signals/*/signals.csv", "data/live_signals/*/outcomes.csv",
-               "data/live_signals/*/ai_filter.jsonl", "data/audit_log.jsonl"]
+               "data/live_signals/*/ai_filter.jsonl", "data/audit_log.jsonl", "data/special_engine/trades.jsonl"]
 # Stare interna a unui engine (JSON, nu se poate uni pe randuri): la conflict castiga dispozitivul pe care
 # engine-ul a rulat recent (el o scrie); altfel versiunea de pe GitHub.
-STATE_FILES = {"data/daily_engine/state.json": "Daily Engine", "data/noisy_engine/state.json": "Noisy Engine"}
+STATE_FILES = {"data/daily_engine/state.json": "Daily Engine", "data/noisy_engine/state.json": "Noisy Engine",
+               "data/special_engine/state.json": "Special Engine", "data/special_engine/selection.json": "Special Engine"}
 
 
 class Stop(Exception):

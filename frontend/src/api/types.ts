@@ -982,7 +982,7 @@ export interface DailyTrade {
 // ── Engine Lifecycle comun (/engines) ────────────────────────────────────────
 export type EngineId = "custom" | "ai" | "daily";
 /** Engine-urile din lifecycle (/engines) — include Noisy (shadow, fara tranzactii reale / performanta MT5). */
-export type LifecycleEngineId = EngineId | "noisy";
+export type LifecycleEngineId = EngineId | "noisy" | "special";
 
 export interface EngineState {
   id: LifecycleEngineId;
@@ -1021,6 +1021,7 @@ export interface EnginePerformanceResponse {
   total?: EnginePerf;
   custom?: EnginePerf;
   ai?: EnginePerf;
+  special?: EnginePerf;
   daily?: EnginePerf;
   noisy?: EnginePerf;
   manual?: EnginePerf;
