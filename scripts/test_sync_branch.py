@@ -161,6 +161,30 @@ check("PC: Daily a rulat aici -> trade-urile Daily trimise", err is None and "US
 err = run(LAPTOP)
 check("laptop: primeste trade-urile Daily", err is None and "US500" in rd(LAPTOP, "data/daily_engine/trades.jsonl"), err)
 
+print("5b. Ambele dispozitive au adaugat trade-uri in acelasi jurnal (incidentul 09.11) — nimic pierdut")
+wr(LAPTOP, ".gitattributes", open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                               ".gitattributes"), encoding="utf-8").read())
+sh(LAPTOP, "add", ".gitattributes"); sh(LAPTOP, "commit", "-q", "-m", "attrs"); sh(LAPTOP, "push", "-q")
+check("PC: primeste regulile de unire", run(PC) is None and os.path.exists(os.path.join(PC, ".gitattributes")))
+base = rd(PC, "data/daily_engine/trades.jsonl")
+wr(PC, "data/daily_engine/engine.log", "iter\n")
+wr(LAPTOP, "data/daily_engine/engine.log", "iter\n")
+wr(PC, "data/daily_engine/trades.jsonl", base + '{"day": "2026-11-06", "symbol": "DE40"}\n')
+wr(LAPTOP, "data/daily_engine/trades.jsonl", base + '{"day": "2026-11-09", "symbol": "DE40"}\n'
+   + '{"day": "2026-11-06", "symbol": "DE40"}\n')
+wr(PC, "data/daily_engine/state.json", '{"from": "pc"}\n')
+wr(LAPTOP, "data/daily_engine/state.json", '{"from": "laptop"}\n')
+check("laptop: trimite primul", run(LAPTOP) is None)
+err = run(PC)
+got = rd(PC, "data/daily_engine/trades.jsonl").splitlines()
+check("PC: jurnalul unit — randurile AMBELOR dispozitive, fara conflict", err is None
+      and any("2026-11-09" in x for x in got) and any("2026-11-06" in x for x in got), (err, got))
+check("... randul identic (acelasi trade pe ambele) apare o singura data", sum("2026-11-06" in x for x in got) == 1, got)
+check("... conflict pe state.json rezolvat automat: castiga dispozitivul pe care ruleaza Daily (PC)",
+      '"pc"' in rd(PC, "data/daily_engine/state.json"), rd(PC, "data/daily_engine/state.json"))
+check("laptop: primeste jurnalul complet", run(LAPTOP) is None
+      and sum(1 for x in rd(LAPTOP, "data/daily_engine/trades.jsonl").splitlines() if x.strip()) == len(got))
+
 print("6. Refuza main / vlad-live")
 sh(PC, "checkout", "-q", "-b", "main")
 err = run(PC)
