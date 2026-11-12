@@ -278,3 +278,45 @@ fereastră, costuri reale; ordinea pe bară conservatoare). Regula propusă: la 
 **Decizie (2026-11-06, alex-live):** slotul 1 GBPUSD Londra → **US500 New York** (30 min, direcție), pentru
 observație în shadow. Pe 3 ani: GBPUSD +0,020R (test −0,473R) față de US500 +0,031R (test ≈ 0, DD −36R, marjă ~37 $).
 Din 13 piețe × burse testate niciuna nu e KEEP în afară de DE40.
+
+## 13. Pregătirea pentru Live (2026-11-12): moduri per piață, Profit Lock, DE40
+
+**Moduri per piață:** fiecare slot are modul lui (LIVE / SHADOW / PAUZĂ) — o piață nu o afectează pe cealaltă.
+LIVE pe cont real cere în continuare „Daily Engine” deblocat în Trading LIVE. O piață nouă într-un slot pornește în
+SHADOW. Plus: limita de marjă (marja totală a contului după ordin ≤ 80% din equity) și închiderea de vineri globală.
+
+**Profit Lock** (Trigger → Lock R, oprit implicit) — `scripts/research_daily/daily_profit_lock.py`, tot istoricul M5,
+configurația curentă (re-intrări pornite):
+
+| | fără | 3,5→3 | 4,5→4 | 5→4 | 6→5 | 8→6 | 10→8 |
+|---|---|---|---|---|---|---|---|
+| DE40 R/trade | **+0,095** | +0,046 | +0,072 | +0,095 | +0,084 | +0,089 | +0,089 |
+| DE40 DD (R) | −66 | −67 | −56 | **−57** | −64 | −72 | −65 |
+| US500 R/trade | **+0,046** | +0,011 | +0,022 | +0,019 | +0,035 | +0,043 | +0,043 |
+
+La 4,5→4R pe DE40: profit protejat +291R, profit pierdut (trade-uri închise mai devreme decât ar fi mers) −371R.
+Nicio variantă mai bună decât strategia actuală; 5→4R e la egalitate cu drawdown mai mic.
+
+**DE40 — analiza de pregătire** (`scripts/research_daily/de40_live_readiness.py`):
+
+| | trade-uri | R/trade | t | PF | WR | DD |
+|---|---|---|---|---|---|---|
+| Tot istoricul (2016–2026) | 3428 | +0,095 | 2,47 | 1,14 | 28% | −66R |
+| Train (primele 70%) | 2399 | +0,111 | 2,37 | 1,16 | 29% | −52R |
+| **Test (de la 10.08.2023)** | 1029 | **+0,058** | **0,87** | 1,08 | 27% | −55R |
+| Shadow (10 trade-uri) | 10 | +0,89 | — | — | 20% | −5R |
+
+- Pe ani: 2016 −0,01 · 2017 +0,08 · 2018 +0,08 · 2019 +0,05 · 2020 +0,09 · 2021 +0,18 · 2022 +0,35 · **2023 −0,13**
+  · 2024 +0,01 · 2025 +0,29 · 2026 +0,02 → regim-dependent; perioada de test nu e semnificativă statistic (t 0,87).
+- Ore: 92% din intrări în prima oră (09h Berlin, +0,10R); intrările târzii (11h+) sunt puține și slabe.
+- Zile: luni ≈ 0 (+0,006R), joi cel mai bine (+0,18R).
+- Costuri: spread live 0,5 puncte (istoric 0,8); **+1 punct de slippage înjumătățește edge-ul (+0,039R), +2 puncte îl
+  anulează (−0,013R)** → execuția (slippage la breakout) e riscul principal.
+- Cont (~195 $): marja la lotul minim 148 $ (76% din equity); riscul la lotul minim pe SL-ul real = 2,4 / 3,0 / 3,9 /
+  4,9% din equity (P25 / mediană / P75 / P90) — de ~3× peste ținta de 1%; limita globală 5% ar bloca ~10% din trade-uri.
+- Specificații MT5: tick 0,01, lot 0,1 / pas 0,1, stops / freeze level 0, filling IOC; profit în EUR (convertit de MT5).
+
+**Verdict: CONDITIONALLY READY.** Tehnic gata (execuție testată pe MT5 simulat, toate protecțiile). Condiții: (1) accepți
+~3% risc real pe trade la lotul minim (nu 1%); (2) DE40 ocupă ~76% din marjă — cu alte poziții deschise ordinul NU se
+plasează (limita de marjă); (3) edge-ul out-of-sample e pozitiv dar nesemnificativ și sensibil la slippage. Recomandare:
+LIVE doar pe DE40, cu US500 în SHADOW, după decizia ta; ideal cu un cont mai mare (~1000 $) ca riscul să coboare la ~1%.
