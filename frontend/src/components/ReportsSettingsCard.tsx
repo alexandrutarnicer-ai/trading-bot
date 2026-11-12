@@ -10,6 +10,7 @@ import { apiFetch } from "../api/client";
 
 interface ReportsConfig {
   enabled_on_this_machine: boolean;
+  daily_enabled: boolean;
   daily_time: string;
   weekly_weekday: number;
   weekly_time: string;
@@ -55,18 +56,25 @@ export function ReportsSettingsCard() {
       </div>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <div className="space-y-1">
-          <div className="text-slate-400">Zilnic — în fiecare zi la</div>{timeInput("daily_time")}
+          <label className="flex items-center gap-1.5 text-slate-400">
+            <input type="checkbox" checked={form.daily_enabled ?? true} onChange={e => set("daily_enabled", e.target.checked)} />
+            Zilnic — în fiecare zi la
+          </label>
+          {timeInput("daily_time")}
+          <div className="text-[10px] text-slate-500">{form.daily_enabled === false ? "oprit — nu se trimite" : "o singură dată pe zi (și după restart)"}</div>
         </div>
         <div className="space-y-1">
           <div className="text-slate-400">Săptămânal — <b>vineri</b> la</div>{timeInput("weekly_time")}
-          <div className="text-[10px] text-slate-500">Ultima fereastră: {fmt(form.last_weekly_window?.[0])} → {fmt(form.last_weekly_window?.[1])} (include weekendul)</div>
+          <div className="text-[10px] text-slate-500">Așteaptă întâi închiderea de vineri (max 20 min) și istoricul MT5; dacă
+            aplicația e închisă vineri, se trimite la următoarea pornire (până luni 12:00). Fereastră continuă — ultima nominală:
+            {" "}{fmt(form.last_weekly_window?.[0])} → {fmt(form.last_weekly_window?.[1])}</div>
         </div>
         <div className="space-y-1">
           <div className="text-slate-400">Lunar — în ziua
             <input type="number" min={1} max={28} value={form.monthly_day} onChange={e => set("monthly_day", +e.target.value)}
               className="mx-1 w-12 bg-surface-card border border-surface-border rounded px-1 py-0.5 text-white" /> la</div>
           {timeInput("monthly_time")}
-          <div className="text-[10px] text-slate-500">Luna completă precedentă: {fmt(form.last_monthly_window?.[0])} → {fmt(form.last_monthly_window?.[1])}</div>
+          <div className="text-[10px] text-slate-500">Doar luna încheiată (niciodată luna curentă): {fmt(form.last_monthly_window?.[0])} → {fmt(form.last_monthly_window?.[1])}</div>
         </div>
       </div>
       <label className="flex items-center gap-2 text-slate-300">
