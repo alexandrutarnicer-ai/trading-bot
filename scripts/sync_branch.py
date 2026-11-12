@@ -56,6 +56,7 @@ ENGINES = {
 CONFIG_FILES = ["data/global_settings.json", "data/profiles/standard.json",
                 "ai_engine/config.json", "daily_engine/config.json", "noisy_engine/config.json"]
 PROTECTED_BRANCHES = ("main", "vlad-live")
+SHARED_DATA = ["data/audit_log.jsonl"]           # jurnal de audit (api/audit_log.py) — mereu trimis
 # Jurnale in care engine-urile DOAR adauga randuri: la integrare se pastreaza randurile AMBELOR dispozitive
 # (.gitattributes merge=union) + dublurile exacte eliminate. Incident 09.11: un conflict pe trades.jsonl rezolvat
 # manual cu o singura parte a sters 2 trade-uri Daily din 06.11.
@@ -171,6 +172,9 @@ def commit_local(here: dict[str, bool]) -> bool:
             git("add", "-f", "--", *files)
         if name == "AI Engine":
             _stage_ledger()
+    shared = [f for f in SHARED_DATA if os.path.exists(os.path.join(ROOT, f))]
+    if shared:                                    # scrise de API pe orice dispozitiv (append-only, unite la integrare)
+        git("add", "-f", "--", *shared)
     cfg = [f for f in CONFIG_FILES if git("status", "--porcelain", "--", f)]
     if cfg:
         git("add", "--", *cfg)

@@ -37,6 +37,14 @@ def get_uptime():
         return {"items": []}
 
 
+@router.get("/audit-log")
+def get_audit_log(limit: int = 300, engine: Optional[str] = None):
+    """Jurnalul de audit al engine-urilor (Daily / Special): moduri Live / Shadow / Pauza, configurare,
+    pornire / oprire, ordine blocate. Cele mai noi primele."""
+    from api import audit_log
+    return {"items": audit_log.read(limit, engine)}
+
+
 @router.get("/session-changes")
 def get_session_changes():
     """Istoricul modificarilor de profil/sesiune."""
