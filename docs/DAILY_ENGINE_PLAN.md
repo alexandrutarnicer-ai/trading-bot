@@ -320,3 +320,21 @@ Nicio variantă mai bună decât strategia actuală; 5→4R e la egalitate cu dr
 ~3% risc real pe trade la lotul minim (nu 1%); (2) DE40 ocupă ~76% din marjă — cu alte poziții deschise ordinul NU se
 plasează (limita de marjă); (3) edge-ul out-of-sample e pozitiv dar nesemnificativ și sensibil la slippage. Recomandare:
 LIVE doar pe DE40, cu US500 în SHADOW, după decizia ta; ideal cu un cont mai mare (~1000 $) ca riscul să coboare la ~1%.
+
+## 14. DE40 la deschiderea New York + US30 (2026-11-12)
+
+Tot istoricul M5, regulile curente (30 min, direcție, fără TP), costuri reale; risc / marjă pe contul de ~196 $.
+
+| Variantă | trade-uri | R/trade | t | test (30%) | DD | marjă lot min | risc lot min (mediană) |
+|---|---|---|---|---|---|---|---|
+| DE40 Frankfurt 09:00 (actual) | 3428 | **+0,095** | 2,47 | +0,058 | −66R | 148 $ (76%) | 3,2% |
+| DE40 la deschiderea NY (15:30 Berlin) | 2931 | +0,042 | 1,31 | +0,028 | −83R | 148 $ (76%) | 3,3% (21% din zile > 5%) |
+| US500 NY (actual) | 2926 | +0,045 | 1,29 | +0,024 | −66R | 38 $ (20%) | 1,1% |
+| **US30 NY** | 2465 | **−0,016** | −0,39 | −0,029 | −96R | **263 $ (135%)** | 9,0% |
+| US30 Frankfurt 09:00 | 2576 | +0,074 | 1,10 | +0,140 | −140R | 263 $ | 1,8% (WR 16%, train +0,046) |
+| US30 Londra 08:00 | 2574 | +0,051 | 0,97 | +0,144 | −98R | 263 $ | 1,8% (train +0,011) |
+
+- DE40 după-amiaza: pozitiv, dar la jumătate față de dimineață, regim-dependent (2026 −0,13R); doi sloturi pe același
+  simbol nu sunt suportate (același comment de zi).
+- US30: la deschiderea NY e negativ; variantele Frankfurt / Londra sunt instabile (WR 16–23%, train ~0). Marja la lotul
+  minim depășește contul (263 $ > 196 $) → pe contul actual NU se poate tranzacționa deloc.

@@ -29,6 +29,7 @@ DEFAULTS: dict = {
     "mode": "shadow",
     "poll_seconds": 15,
     "notify_telegram": True,
+    "alert_R": 5.0,          # alerta (Notificari + Telegram) cand un trade deschis trece de +X R; 0 = oprita
     # Dimensionare — ACEEASI logica pe toate engine-urile (position_sizing): baza = equity MT5
     # (sau capital fix plafonat), × fractie, × risc%. In SHADOW se calculeaza doar lotul pe care
     # l-ar fi plasat (estimare in bani a trade-ului virtual), fara ordin.
@@ -119,6 +120,10 @@ def _sanitize(cfg: dict) -> dict:
         out["mode"] = "shadow"
     legacy_mode = out["mode"]
     out["poll_seconds"] = max(5, min(120, int(out.get("poll_seconds") or 15)))
+    try:
+        out["alert_R"] = max(0.0, min(100.0, float(out.get("alert_R", 5.0))))
+    except (TypeError, ValueError):
+        out["alert_R"] = 5.0
     mk = cfg.get("markets")
     if isinstance(mk, list) and mk:
         clean = []
