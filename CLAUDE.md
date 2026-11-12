@@ -322,6 +322,22 @@ Al treilea motor, separat de Bot Engine si AI Engine. Implicit SHADOW; poate tre
 - **Date de cercetare:** `data/research_daily/<SYM>_M5_server.csv` (descarcate din MT5, gitignored, ~250 MB); fara ele testul de echivalenta e sarit.
 - **Executia reala (`DailyEngine._execute`):** ziua e ARMATA doar daca modul era `execute` (si contul permis) INAINTE de formarea intervalului (`_arm` la waiting_open / forming_or) — comutat mai tarziu, ziua ramane shadow. La `waiting_entry`: verificare cost (interval ≥ 2× spread+slip+comision), `global_guard.check_open(mt5, "daily", sym)` + fereastra de stiri GLOBALA, lot din `position_sizing` (config `sizing`). US500 (direction) = ordin la PIATA pe directia intervalului; GBPUSD (breakout) = BUY_STOP + SELL_STOP pe margini (OCO: la umplerea uneia, cealalta e anulata; pret deja dincolo de margine → piata, ca in backtest). SL atasat, fara TP, magic 880001, comment `D-<SIMBOL>-<MMDD>`. La `w_end`: anuleaza + inchide tot. `sweep_stale` (in orice mod, la fiecare iteratie) inchide / anuleaza orice pozitie / ordin Daily din alta zi — NICIODATA overnight. Pozitiile reale de azi sunt gestionate si dupa revenirea la shadow. Diferente fata de backtest (documentate): executie la pret real (slippage), OCO in loc de „ambele margini in aceeasi bara = zi sarita”. Teste: `daily_engine.selftest` sectiunea 6 (11, MT5 simulat: shadow fara ordine, REAL nedeblocat blocat, armare tarzie = shadow, intrare + inchidere, OCO, stale) + `test_engine_lifecycle.py` sectiunea 4.
 
+### `special_engine/` — Special Engine (DOAR alex-live), mod per piata (2026-11-12)
+
+Al cincilea engine: A = portofoliu ORB adaptiv (selectie trimestriala walk-forward, zile NR4), B = noise area USTEC. Doc:
+[docs/SPECIAL_ENGINE.md](docs/SPECIAL_ENGINE.md) §7. Commit-urile lui contin „special” (nu se duc pe main / vlad-live).
+- **Mod per piata:** `config.markets[SIM].mode` = live / shadow / pause (lipsa = SHADOW; o piata noua din selectie = SHADOW).
+  `POST /special/markets/{SIM}/mode` (Telegram + audit). Pauza = fara intrari noi (nici virtuale) de la `paused_at`.
+- **Executie:** `special_engine/executor.py` = SINGURUL fisier cu `order_send` (magic 660001, comment `X-<SIM>-<MMDD><k>`;
+  `live_guard` „special_engine”; `mt5_pool.classify_trade` → „special”). Ordinele oglindesc semnalele virtuale; NOISE are
+  SL de protectie `noise_stop_mult` × unitatea R; inchidere la final de sesiune, vineri globala (`friday_close_now`),
+  `sweep_stale` (nimic peste noapte); semnal vechi → nimic.
+- **Capital proprii:** `capital` {sync, capital_usd, fraction} → `risk_pct` 1% / trade, `max_open_risk_pct` 2% (toate
+  pietele), `max_positions` 2, `max_margin_pct` 80 — PESTE Setarile Globale (care nu se schimba de aici).
+- Lifecycle `/engines` („special”, fara autostart propriu), watchdog `_check_special_engine` (desired_running.json, sters
+  doar de Stop), sync (`trades.jsonl` union, `state.json` / `selection.json` stare). Teste: `python -m special_engine.selftest`
+  (43), `python scripts/test_special_api.py` (19).
+
 ### Sync PC ↔ laptop — `scripts/sync_branch.py` (2026-11-01)
 
 Branch-ul de date `alex-live` e folosit pe DOUA dispozitive; userul decide singur unde ruleaza engine-urile (de obicei laptopul; niciodata pe ambele) — scriptul NU porneste / opreste nimic si nu tine evidenta proprietarului (varianta cu predare/preluare + `device_owner.json` a fost scoasa la cererea userului: prea complicata). Acelasi script pe ambele dispozitive: dublu-click `sync_data.bat` (sau `pull_data.bat`, identic) = `python scripts/sync_branch.py`: (1) commit cu datele acestui dispozitiv, (2) fetch + aduce codul si datele celuilalt, (3) push.

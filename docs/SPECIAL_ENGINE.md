@@ -1,7 +1,8 @@
 # Special Engine — portofoliu intraday adaptiv + noise area (SHADOW, 2026-11-05)
 
-> **Stare: NECOMIS, doar pe `alex-live` (local), perioadă de test.** Rulează DOAR în shadow: zero ordine. Pachetul nu
-> conține nicio funcție de trimitere a ordinelor, iar selftest-ul verifică asta.
+> **Stare (2026-11-12): pregătit pentru Live, doar pe `alex-live`.** Fiecare piață are modul ei (LIVE / SHADOW / PAUZĂ,
+> implicit SHADOW). Ordinele reale trec DOAR prin `special_engine/executor.py` (magic 660001); pe cont real, doar cu
+> „Special Engine” deblocat în Settings → Trading LIVE. Activarea e decizia ta — vezi §7.
 
 ## 1. De unde vine
 
@@ -112,3 +113,71 @@ Modul de lucru al buclei:
   (04.11), deci validarea a confirmat-o, nu a ales-o. Rămâne risc de supra-ajustare: shadow-ul e testul real.
 - **Primul trade B** (05.11, USTEC short +10,1R, ziua de −5% a Nasdaq) **a fost reconstruit după închiderea
   sesiunii.** Engine-ul a pornit la 23:51 RO; nu e o observație live.
+
+## 7. Pregătirea pentru Live (2026-11-12)
+
+### Alocarea capitalului — exemplu pe contul actual (equity 195,53 $)
+
+| Nivel | Regula | Valoare |
+|---|---|---|
+| Contul MT5 | equity sincronizat la fiecare ordin | 195,53 $ |
+| Capitalul Special Engine | equity × fracție (100%) — sau sumă fixă plafonată la equity | 195,53 $ |
+| Risc pe trade (țintă) | 1% din capitalul engine-ului | 1,96 $ |
+| Risc total deschis (toate piețele) | ≤ 2% din capital | 3,91 $ |
+| Poziții + ordine Special | ≤ 2 | |
+| Marja contului după ordin | ≤ 80% din equity (cu pozițiile TUTUROR engine-urilor) | 156,42 $ |
+
+Nicio piață nu folosește singură tot capitalul: riscul TOTAL deschis e plafonat la nivel de engine, iar marja la nivel de
+cont. Peste toate: Setările Globale (limita de risc / trade 5%, Capital Protection, circuit breaker, știri, vineri).
+
+| | JP225 (A — ORB 5 min direcție) | USTEC (B — noise area) |
+|---|---|---|
+| SL tipic | ~265 puncte (marginea opusă a intervalului) | SL de protecție 2 × unitatea ≈ 324 puncte |
+| Risc la lotul minim | 1 lot × ~0,006 $/punct ≈ **1,6 $ (0,8%)** | 0,1 lot × 1 $/punct ≈ **32 $ (16,6%)** |
+| Lot calculat | 1,96 $ ÷ 1,6 $ → 1 lot (minimul) | 1,96 $ ÷ 324 $ → sub minim → 0,1 |
+| Limita globală 5% (9,78 $) | trece | **BLOCAT** |
+| Risc total deschis ≤ 3,91 $ | trece (1,6 $) | **BLOCAT** |
+| Marja (19 $ / 142 $) | trece | 73% din cont — trece doar fără alte poziții |
+| Rezultat | **ordinul se plasează** | **ordinul NU se plasează** (motivul în Notificări + Audit) |
+| Program (RO) | 02:00–08:00 | 16:30–23:00 |
+
+Cele două piețe nu se suprapun în timp, deci în practică nu au poziții simultan; plafonul de risc total deschis acoperă
+cazul în care selecția trimestrială alege o piață din aceeași sesiune.
+
+### Execuția (`special_engine/engine.py::_execute`)
+
+- Intrările oglindesc semnalele virtuale (aceleași funcții pure ca backtestul):
+  - **ORB:** direcție → ordin la piață la formarea intervalului; breakout → BUY_STOP + SELL_STOP pe margini (OCO); SL
+    pe marginea opusă.
+  - **NOISE:** ordin la piață la închiderea lumânării care dă semnalul, cu SL de protecție la `noise_stop_mult` ×
+    unitatea R (strategia iese la bandă / VWAP; dimensionarea e pe distanța până la acest SL).
+- Ieșiri:
+  - când strategia iese (virtual), poziția reală se închide;
+  - la finalul sesiunii bursei și la închiderea de vineri globală, totul se închide;
+  - o poziție din altă zi se închide imediat (`sweep_stale`). Nimic peste noapte.
+- Siguranță:
+  - un semnal vechi (restart târziu) nu plasează nimic;
+  - acelasi semnal nu se plasează niciodată de două ori (`state.json::events`);
+  - PAUZĂ = fără intrări noi, pozițiile rămân gestionate;
+  - o piață nouă din selecția trimestrială intră în SHADOW.
+- Notificări pentru orice ordin, închidere sau blocare (trimise și când rezumatul Telegram e oprit), audit în
+  `data/audit_log.jsonl`.
+- Supraveghere: watchdog-ul API îl repornește dacă moare fără Stop din UI (max 3/oră). Incidentul din 06.11: oprit odată
+  cu dashboard-ul, a rămas oprit 2 ore.
+
+### Teste
+
+`python -m special_engine.selftest` (43) și `python scripts/test_special_api.py` (19):
+- moduri per piață; ordine doar în `executor.py`;
+- o zi USTEC reală și o zi JP225 reală pe MT5 simulat: ordinul real e plasat și închis, R-ul virtual e identic cu
+  backtestul;
+- SHADOW / PAUZĂ / cont REAL nedeblocat = zero ordine;
+- restart târziu; cont mic (riscul total); marjă; poziții din altă zi; alte magic-uri neatinse; vineri globală;
+- API: moduri independente, setări plafonate, audit, Stop = oprire voită, atribuire MT5, Engine Lifecycle, Trading LIVE.
+
+### Status
+
+| Piață | Status | De ce |
+|---|---|---|
+| JP225 (selecția T4 2026) | **Conditionally Ready** | Încape în cont (risc ~0,8%, marjă 19 $). Edge-ul A e confirmat doar în backtest walk-forward; shadow-ul nu are încă trade-uri A. Selecția se schimbă la 01.01 (poate alege o piață care nu încape). |
+| USTEC (B) | **Not Ready pe contul actual** | Lotul minim cu SL-ul de protecție riscă ~16% din cont → blocat de limita globală și de riscul total deschis (comportament corect). Rămâne SHADOW până la un cont de ~3000 $. |
