@@ -32,22 +32,36 @@ def check(cond, name, detail=""):
 
 CFG = dict(S.DEFAULT_CONFIG)
 
-print("1. Saptamanal — doar vineri, fereastra continua")
-fri_before = datetime(2026, 11, 6, 22, 0)     # vineri 22:00
-fri_after = datetime(2026, 11, 6, 23, 35)     # vineri 23:35
+print("1. Saptamanal — vineri de la 20:00, fereastra continua, recuperare pana luni 12:00")
+check(CFG["weekly_time"] == "20:00", "ora implicita = vineri 20:00 (laptopul se inchide de obicei dupa 20:00)")
+fri_before = datetime(2026, 11, 6, 19, 59)     # vineri 19:59
+fri_after = datetime(2026, 11, 6, 20, 5)       # vineri 20:05
 sat = datetime(2026, 11, 7, 10, 0)
 mon = datetime(2026, 11, 9, 9, 0)
+mon_late = datetime(2026, 11, 9, 12, 1)
 check(not S.weekly_due(fri_before, CFG, {}), "vineri inainte de ora raportului -> nu")
 check(S.weekly_due(fri_after, CFG, {}), "vineri dupa ora raportului -> da")
-check(not S.weekly_due(fri_after, CFG, {"weekly_sent": "2026-11-06"}), "deja trimis azi -> nu (fara dubluri la restart)")
-check(not S.weekly_due(sat, CFG, {}) and not S.weekly_due(mon, CFG, {}), "sambata / luni -> NICIODATA (nici recuperare)")
+check(not S.weekly_due(fri_after, CFG, {"weekly_sent": "2026-11-06"}), "deja trimis pentru vinerea asta -> nu (fara dubluri la restart)")
+check(S.weekly_due(sat, CFG, {}) and S.weekly_due(mon, CFG, {}),
+      "laptop inchis vineri -> RECUPERAT sambata / luni dimineata")
+check(not S.weekly_due(sat, CFG, {"weekly_sent": "2026-11-06"}), "... o singura data")
+check(not S.weekly_due(mon_late, CFG, {}), "luni dupa 12:00 -> nu mai recupereaza (raport vechi)")
+check(not S.weekly_due(datetime(2026, 11, 4, 12, 0), CFG, {"weekly_sent": "2026-10-30"}), "miercuri (deja trimis vinerea trecuta) -> nu")
 ws, we = S.weekly_window(fri_after, CFG)
-check((ws, we) == (datetime(2026, 10, 30, 23, 30), datetime(2026, 11, 6, 23, 30)), "fereastra vineri 23:30 -> vineri 23:30", (ws, we))
-ws2, we2 = S.weekly_window(datetime(2026, 11, 13, 23, 40), CFG)
-check(ws2 == we, "ferestre CONTINUE: urmatoarea incepe exact unde s-a terminat (weekendul inclus o singura data)")
-check(S.weekly_window(sat, CFG)[1] == datetime(2026, 11, 6, 23, 30), "sambata: ultima fereastra = cea de vineri")
-cfg2 = dict(CFG, weekly_time="20:00")
-check(S.weekly_due(datetime(2026, 11, 6, 20, 1), cfg2, {}), "ora configurata respectata (20:00)")
+check((ws, we) == (datetime(2026, 10, 30, 20, 0), datetime(2026, 11, 6, 20, 0)), "fereastra nominala vineri 20:00 -> vineri 20:00", (ws, we))
+check(S.weekly_window(sat, CFG)[1] == datetime(2026, 11, 6, 20, 0), "sambata: ultima fereastra = cea de vineri")
+w = S.weekly_send_window(datetime(2026, 11, 6, 20, 12), CFG, {"weekly_last_end": "2026-10-30T20:09:00"})
+check(w == (datetime(2026, 10, 30, 20, 9), datetime(2026, 11, 6, 20, 12)),
+      "fereastra trimisa = de la sfarsitul raportului trecut pana ACUM (inchiderile de vineri 20:00-20:12 incluse)", w)
+w = S.weekly_send_window(datetime(2026, 11, 6, 20, 12), CFG, {})
+check(w[0] == datetime(2026, 10, 30, 20, 0), "fara marcaj -> inceputul nominal", w)
+pos = [{"symbol": "EURUSD", "comment": "S1-EURUSD-1"}, {"symbol": "BTCUSD", "comment": "S3-BTCUSD-2"}]
+check(S.friday_close_pending(fri_after, pos), "vineri: pozitie Custom FX deschisa -> asteapta inchiderea de vineri")
+check(not S.friday_close_pending(fri_after, [pos[1]]), "... doar cripto (non-stop) -> nu asteapta")
+check(not S.friday_close_pending(sat, pos), "... in afara zilei de vineri -> nu asteapta")
+cfg2 = dict(CFG, weekly_time="21:30")
+check(not S.weekly_due(datetime(2026, 11, 6, 21, 0), cfg2, {}) and S.weekly_due(datetime(2026, 11, 6, 21, 31), cfg2, {}),
+      "ora configurata respectata (21:30)")
 
 print("2. Lunar — luna completa, prima zi disponibila")
 check(S.monthly_window(datetime(2026, 11, 1, 9, 0)) == (datetime(2026, 10, 1), datetime(2026, 11, 1)), "1 nov -> octombrie complet")
@@ -71,6 +85,58 @@ try:
     check(False, "ora invalida respinsa")
 except ValueError:
     check(True, "ora invalida respinsa")
+
+print("3b. Programatorul (pas cu pas): zilnic optional + fara dubluri, saptamanal asteapta vinerea, lunar doar luna incheiata")
+_tmpd = tempfile.mkdtemp()
+S.STATE_FILE = os.path.join(_tmpd, "reports_state.json")
+S.CONFIG_FILE = os.path.join(_tmpd, "reports_config2.json")
+SENT_R = []
+S.send_daily_report = lambda d: SENT_R.append(("daily", d)) or ""
+_orig_period = S.send_period_report
+S.send_period_report = lambda kind, now=None, window=None: SENT_R.append((kind, window)) or ""
+ok_ready = lambda kind, now: True
+no_pend = lambda now: False
+S._last_daily = None
+d1 = datetime(2026, 11, 11, 23, 31)
+check(S.scheduler_tick(d1, ready=ok_ready, pending=no_pend) == ["daily"], "zilnic: trimis la 23:31")
+S._last_daily = None                                         # restart al API-ului (memoria pierduta)
+check(S.scheduler_tick(datetime(2026, 11, 11, 23, 40), ready=ok_ready, pending=no_pend) == [],
+      "restart / al doilea API: zilnicul NU se mai trimite (marcaj persistent)")
+S.save_reports_config({"daily_enabled": False})
+S._last_daily = None
+check(S.scheduler_tick(datetime(2026, 11, 12, 23, 31), ready=ok_ready, pending=no_pend) == [], "zilnic OPRIT -> nu se trimite")
+S.save_reports_config({"daily_enabled": True})
+fri = datetime(2026, 11, 13, 20, 1)
+check("weekly" not in S.scheduler_tick(fri, ready=ok_ready, pending=lambda now: True),
+      "vineri 20:01 cu pozitii Custom inca deschise -> asteapta inchiderea de vineri")
+out = S.scheduler_tick(datetime(2026, 11, 13, 20, 6), ready=ok_ready, pending=no_pend)
+check("weekly" in out and SENT_R[-1][1][1] == datetime(2026, 11, 13, 20, 6),
+      "pozitiile s-au inchis -> trimis, fereastra pana in momentul trimiterii", SENT_R[-1])
+check("weekly" not in S.scheduler_tick(datetime(2026, 11, 13, 20, 30), ready=ok_ready, pending=no_pend), "o singura data")
+out = S.scheduler_tick(datetime(2026, 11, 13, 20, 25), ready=ok_ready, pending=lambda now: True)
+S.STATE_FILE = os.path.join(_tmpd, "reports_state_b.json")
+check("weekly" in S.scheduler_tick(datetime(2026, 11, 13, 20, 21), ready=ok_ready, pending=lambda now: True),
+      "pozitii tot deschise dupa 20 min -> trimis oricum (nu se pierde raportul)")
+S.STATE_FILE = os.path.join(_tmpd, "reports_state_c.json")
+check("weekly" in S.scheduler_tick(datetime(2026, 11, 16, 8, 0), ready=ok_ready, pending=no_pend),
+      "laptop inchis vineri -> recuperat luni dimineata")
+S.send_period_report = _orig_period
+sent_n = []
+_orig_log = S.log_notification
+S.log_notification = lambda t: sent_n.append(t)
+r = S.send_period_report("monthly", datetime(2026, 11, 20, 10, 0), window=(datetime(2026, 11, 1), datetime(2026, 12, 1)))
+check(r == "" and sent_n and "refuzat" in sent_n[-1], "garda: un raport lunar pe luna CURENTA (noiembrie, pe 20.11) e refuzat")
+S.log_notification = _orig_log
+S.send_period_report = lambda kind, now=None, window=None: SENT_R.append((kind, window)) or ""
+mig = os.path.join(_tmpd, "reports_config_old.json")
+open(mig, "w", encoding="utf-8").write('{"weekly_time": "23:30", "daily_time": "22:00"}')
+S.CONFIG_FILE = mig
+c = S.load_reports_config()
+check(c["weekly_time"] == "20:00" and c["daily_time"] == "22:00" and c["daily_enabled"] is True,
+      "migrare: vechiul implicit 23:30 -> 20:00; ora zilnica aleasa de user pastrata; zilnic pornit implicit", c)
+S.save_reports_config({"weekly_time": "23:30"})
+check(S.load_reports_config()["weekly_time"] == "23:30", "dupa migrare, 23:30 ales explicit de user ramane")
+S.send_period_report = _orig_period
 
 print("4. Continut + failure handling")
 _ROWS = [{"symbol": "EURUSD", "vol_ratio": 1.0, "er": 0.4, "change_pct": 0.5, "liq_ratio": 1.0},

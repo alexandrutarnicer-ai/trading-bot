@@ -3,11 +3,14 @@ Rapoarte zilnice / saptamanale / lunare — trimise automat via Telegram + Notif
 
 Toate orele sunt in FUSUL ORAR AL APLICATIEI (tz_helper.now_local — acelasi in care MT5 isi
 converteste tranzactiile), configurabile in data/reports_config.json (GET/PUT /reports/config):
-  Zilnic     : in fiecare zi la daily_time (23:30) — tranzactiile zilei
-  Saptamanal : VINERI la weekly_time (23:30) — fereastra CONTINUA de la raportul de vinerea
-               trecuta (include weekendul: cripto sambata/duminica nu se mai pierde). Se trimite
-               doar vineri: daca API-ul e oprit la ora fixa, recupereaza pana la 23:59 vineri,
-               niciodata sambata / duminica / luni.
+  Zilnic     : OPTIONAL (daily_enabled, implicit pornit) in fiecare zi la daily_time (23:30) — tranzactiile
+               zilei; marcaj PERSISTENT (daily_sent in reports_state.json) → fara dubluri la restart /
+               doua API-uri pornite (incident: 05.10 si 31.10 trimise de doua ori).
+  Saptamanal : VINERI de la weekly_time (20:00, 2026-11-12: laptopul se inchide de obicei dupa 20:00) —
+               ASTEAPTA intai inchiderea de vineri (pozitiile Custom pe piete ne-cripto, max
+               WEEKLY_SETTLE_MAX_MIN) si istoricul MT5. Fereastra CONTINUA: de la sfarsitul raportului
+               trecut (weekly_last_end) pana in momentul trimiterii — nimic nu cade intre doua rapoarte.
+               Laptop inchis vineri → RECUPERARE la urmatoarea pornire, pana luni la 12:00.
   Lunar      : in ziua monthly_day (1) la monthly_time (09:00) — LUNA CALENDARISTICA completa
                precedenta (inclusiv weekendurile). Daca API-ul era oprit, se trimite la prima
                ocazie din PRIMELE 7 ZILE (marcaj in data/reports_state.json, fara dubluri);
@@ -46,23 +49,41 @@ CONFIG_FILE = os.path.join(_ROOT, "data", "reports_config.json")
 STATE_FILE = os.path.join(_ROOT, "data", "reports_state.json")
 DEFAULT_CONFIG = {
     "enabled_on_this_machine": True,   # pune False pe masina care NU ruleaza engine-urile (evita dubluri)
+    "daily_enabled": True,             # raportul zilnic e OPTIONAL (implicit pornit)
     "daily_time": "23:30",
     "weekly_weekday": 4,               # 4 = vineri (fix: raportul saptamanal = finalul saptamanii de trading)
-    "weekly_time": "23:30",
+    "weekly_time": "20:00",
     "monthly_day": 1,
     "monthly_time": "09:00",
     "ai_analysis": True,
 }
 
 
+WEEKLY_OLD_DEFAULT = "23:30"           # vechiul implicit → migrat o singura data la 20:00 (cererea userului)
+WEEKLY_SETTLE_MAX_MIN = 20             # vineri: asteapta inchiderea pozitiilor de weekend cel mult atat
+WEEKLY_CATCHUP_DAYS = 3                # laptop inchis vineri → recuperare pana luni la 12:00
+
+
 def load_reports_config() -> dict:
     cfg = dict(DEFAULT_CONFIG)
+    raw = {}
     try:
         with open(CONFIG_FILE, encoding="utf-8") as f:
-            cfg.update({k: v for k, v in json.load(f).items() if k in DEFAULT_CONFIG})
+            raw = json.load(f)
+        cfg.update({k: v for k, v in raw.items() if k in DEFAULT_CONFIG})
     except Exception:
         pass
+    # migrare o singura data: ora veche IMPLICITA a saptamanalului (23:30) → 20:00; o ora aleasa de user ramane
+    if raw and not raw.get("weekly_time_v2"):
+        if raw.get("weekly_time") == WEEKLY_OLD_DEFAULT:
+            cfg["weekly_time"] = DEFAULT_CONFIG["weekly_time"]
+        try:
+            with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+                json.dump({**raw, **{k: cfg[k] for k in DEFAULT_CONFIG}, "weekly_time_v2": True}, f, indent=2)
+        except OSError:
+            pass
     cfg["weekly_weekday"] = 4          # saptamanalul ramane vineri (cerinta)
+    cfg["daily_enabled"] = bool(cfg.get("daily_enabled", True))
     return cfg
 
 
@@ -78,9 +99,11 @@ def save_reports_config(new: dict) -> dict:
             v = f"{int(hh):02d}:{int(mm):02d}"
         if k == "monthly_day":
             v = max(1, min(28, int(v)))
+        if k in ("daily_enabled", "enabled_on_this_machine", "ai_analysis"):
+            v = bool(v)
         cfg[k] = v
     with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-        json.dump(cfg, f, indent=2)
+        json.dump({**cfg, "weekly_time_v2": True}, f, indent=2)
     return cfg
 
 
@@ -124,12 +147,43 @@ def monthly_window(now: datetime) -> tuple[datetime, datetime]:
 
 
 def weekly_due(now: datetime, cfg: dict, st: dict) -> bool:
-    if now.weekday() != 4:
-        return False                       # DOAR vineri — niciodata sambata / duminica / luni
-    h, m = _hm(cfg["weekly_time"])
-    if (now.hour, now.minute) < (h, m):
+    """Raportul saptamanal al ultimei vineri e datorat? Vineri de la weekly_time; daca a fost ratat (laptop
+    inchis), recuperat la prima pornire pana luni la 12:00 — o singura data (marcaj = data vinerii)."""
+    _, end = weekly_window(now, cfg)
+    if st.get("weekly_sent") == end.date().isoformat():
         return False
-    return st.get("weekly_sent") != now.date().isoformat()
+    deadline = datetime.combine(end.date() + timedelta(days=WEEKLY_CATCHUP_DAYS), datetime.min.time()).replace(hour=12)
+    return end <= now < deadline
+
+
+def weekly_send_window(now: datetime, cfg: dict, st: dict) -> tuple[datetime, datetime]:
+    """Fereastra raportului saptamanal trimis ACUM: de la sfarsitul raportului trecut (weekly_last_end) pana
+    acum — continua (tranzactiile inchise intre ora raportului si trimitere nu cad intre doua rapoarte)."""
+    start, _ = weekly_window(now, cfg)
+    try:
+        last = datetime.fromisoformat(st["weekly_last_end"]) if st.get("weekly_last_end") else None
+    except (TypeError, ValueError):
+        last = None
+    if last is not None and timedelta(0) < now - last <= timedelta(days=14):
+        start = last
+    return start, now
+
+
+def friday_close_pending(now: datetime, positions=None) -> bool:
+    """Vineri seara: mai sunt pozitii Custom (comment S<n>-) pe piete NE-cripto care urmeaza sa fie inchise de
+    inchiderea de vineri? Raportul asteapta (cel mult WEEKLY_SETTLE_MAX_MIN). Orice eroare → nu asteapta."""
+    if now.weekday() != 4:
+        return False
+    try:
+        if positions is None:
+            from api import mt5_pool
+            positions = (mt5_pool.get_orders() or {}).get("positions") or []
+        crypto = ("BTC", "ETH", "XRP", "LTC", "SOL", "ADA", "DOGE")
+        import re as _re
+        return any(_re.match(r"^S\d+-", str(p.get("comment") or "")) and not str(p.get("symbol", "")).upper().startswith(crypto)
+                   for p in positions)
+    except Exception:
+        return False
 
 
 MONTHLY_CATCHUP_DAYS = 7     # recuperare doar in prima saptamana dupa ziua programata
@@ -202,13 +256,17 @@ def _send_parts(parts: list[str]) -> str:
     return "\n\n".join(parts)
 
 
-def send_period_report(kind: str, now: datetime | None = None) -> str:
+def send_period_report(kind: str, now: datetime | None = None, window: tuple[datetime, datetime] | None = None) -> str:
     """Raportul saptamanal / lunar complet (api/reports_builder). Nu ridica — o sursa lipsa
     apare marcata in raport, nu blocheaza trimiterea."""
     from api import reports_builder
     now = now or now_local()
     cfg = load_reports_config()
-    start, end = weekly_window(now, cfg) if kind == "weekly" else monthly_window(now)
+    start, end = window or (weekly_window(now, cfg) if kind == "weekly" else monthly_window(now))
+    if kind == "monthly" and (end > now or end.day != 1 or start.month == now.month and start.year == now.year):
+        # garda: un raport lunar acopera DOAR o luna calendaristica INCHEIATA (niciodata luna curenta)
+        log_notification(f"⛔ Raportul lunar refuzat: perioada {start:%d.%m.%Y} → {end:%d.%m.%Y} nu e o lună încheiată.")
+        return ""
     trades = _mt5_trades_between(start, end)
     parts = reports_builder.build_period_report(kind, start, end, now, trades, with_ai=cfg.get("ai_analysis", True))
     return _send_parts(parts)
@@ -328,29 +386,49 @@ def send_monthly_report() -> str:
     return send_period_report("monthly")
 
 
-def _scheduler_loop() -> None:
+def scheduler_tick(now: datetime, *, ready=None, pending=None) -> list[str]:
+    """Un pas al programatorului (apelat la 60 s). Intoarce rapoartele trimise acum (pentru teste).
+    `ready(kind, now)` / `pending(now)` injectabile in teste; implicit report_ready / friday_close_pending."""
     global _last_daily
+    ready = ready or report_ready
+    pending = pending or friday_close_pending
+    sent = []
+    today = now.date()
+    cfg = load_reports_config()
+    if not cfg.get("enabled_on_this_machine", True):
+        return sent
+    st = _state()
+    dh, dm = _hm(cfg["daily_time"])
+    if (cfg.get("daily_enabled", True) and (now.hour, now.minute) >= (dh, dm)
+            and (_last_daily is None or _last_daily < today)
+            and st.get("daily_sent") != today.isoformat() and ready("daily", now)):
+        _last_daily = today
+        st["daily_sent"] = today.isoformat()
+        _save_state(st)                 # marcaj PERSISTENT inainte de trimitere (restart / 2 API-uri)
+        send_daily_report(today)
+        sent.append("daily")
+    st = _state()
+    if weekly_due(now, cfg, st) and ready("weekly", now):
+        _, nominal_end = weekly_window(now, cfg)
+        if not (pending(now) and now - nominal_end < timedelta(minutes=WEEKLY_SETTLE_MAX_MIN)):
+            win = weekly_send_window(now, cfg, st)
+            st["weekly_sent"] = nominal_end.date().isoformat()
+            st["weekly_last_end"] = win[1].isoformat(timespec="seconds")
+            _save_state(st)             # marcaj INAINTE de trimitere: fara dubluri la restart
+            send_period_report("weekly", now, window=win)
+            sent.append("weekly")
+    if monthly_due(now, cfg, st) and ready("monthly", now):
+        st["monthly_sent"] = monthly_window(now)[0].strftime("%Y-%m")
+        _save_state(st)
+        send_period_report("monthly", now)
+        sent.append("monthly")
+    return sent
+
+
+def _scheduler_loop() -> None:
     while True:
         try:
-            now = now_local()                       # fusul aplicatiei, nu ora sistemului
-            today = now.date()
-            cfg = load_reports_config()
-            if cfg.get("enabled_on_this_machine", True):
-                dh, dm = _hm(cfg["daily_time"])
-                if ((now.hour, now.minute) >= (dh, dm) and (_last_daily is None or _last_daily < today)
-                        and report_ready("daily", now)):
-                    _last_daily = today
-                    send_daily_report(today)
-                st = _state()
-                if weekly_due(now, cfg, st) and report_ready("weekly", now):
-                    st["weekly_sent"] = today.isoformat()
-                    _save_state(st)                 # marcaj INAINTE de trimitere: fara dubluri la restart
-                    send_period_report("weekly", now)
-                if monthly_due(now, cfg, st) and report_ready("monthly", now):
-                    st["monthly_sent"] = monthly_window(now)[0].strftime("%Y-%m")
-                    _save_state(st)
-                    send_period_report("monthly", now)
-
+            scheduler_tick(now_local())             # fusul aplicatiei, nu ora sistemului
             # Curatare date AI fara trade: luni de la 12:00 (vezi api/data_cleanup.py)
             from api import data_cleanup
             if data_cleanup.due(datetime.now()):
@@ -358,10 +436,8 @@ def _scheduler_loop() -> None:
                 if rep_["ledger"]["councils"] or rep_["ai_filter"]["verdicts"]:
                     text = data_cleanup.summary_text(rep_)
                     telegram.send_message(text)
-
         except Exception:
             pass  # nu oprim scheduler-ul la erori punctuale
-
         time.sleep(60)
 
 
