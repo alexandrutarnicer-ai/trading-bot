@@ -40,7 +40,7 @@
     "min_atr_over_cost": 3.0,
     "slip_frac": 0.25,
     "comm_price": 0,
-    "tp_rr": 2.0
+    "tp_rr": 0
   },
   "break_even": {
     "enabled": false,
@@ -123,8 +123,8 @@
     }
   },
   "budget": {
-    "capital": 210.0,
-    "min_remaining": 150.0
+    "capital": 180.0,
+    "min_remaining": 110.0
   },
   "sizing": {
     "risk_pct": 0.01
