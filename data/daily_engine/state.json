@@ -279,6 +279,21 @@
       "currency": "USD",
       "capital": 197.35
     },
-    "2026-11-12|US500": []
+    "2026-11-12|US500": [
+      "entry",
+      "closed"
+    ],
+    "2026-11-12|US500|size": {
+      "lots": 0.1,
+      "risk_money": 4.005,
+      "target_money": 1.9553,
+      "raw_lots": 0.048821,
+      "at_min_lot": true,
+      "capped_max": false,
+      "ratio": 2.048,
+      "reason": null,
+      "currency": "USD",
+      "capital": 195.53
+    }
   }
 }

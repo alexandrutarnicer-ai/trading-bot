@@ -1,7 +1,7 @@
 {
   "mode": "shadow",
   "symbol": "US500",
-  "timeframe": "M1",
+  "timeframe": "M5",
   "poll_seconds": 5,
   "notify_telegram": true,
   "notify_trades": false,
@@ -37,7 +37,7 @@
     "er_trend": 0.35,
     "spread_floor": 0.01,
     "spread_max": 0,
-    "min_atr_over_cost": 3.0,
+    "min_atr_over_cost": 15.0,
     "slip_frac": 0.25,
     "comm_price": 0,
     "tp_rr": 0
@@ -111,15 +111,15 @@
   "limits": {
     "max_trades_day": {
       "enabled": true,
-      "value": 60
+      "value": 6
     },
     "max_losses_day": {
       "enabled": true,
-      "value": 25
+      "value": 4
     },
     "max_consec_losses": {
       "enabled": true,
-      "value": 8
+      "value": 3
     }
   },
   "budget": {
