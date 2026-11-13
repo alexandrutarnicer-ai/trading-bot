@@ -1035,6 +1035,25 @@ export const useDailySaveProfitLock = () => {
   });
 };
 
+export const useDailySaveSessions = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (m: { symbol: string; sessions: string[]; max_trades_per_day: number }) =>
+      apiFetch("/daily/config", { method: "PUT", body: { markets: [m] } }),
+    onSuccess: () => {
+      for (const k of ["daily-config", "daily-status"]) qc.invalidateQueries({ queryKey: [k] });
+    },
+  });
+};
+
+export const useDailySaveAlert = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (alert_R: number) => apiFetch("/daily/config", { method: "PUT", body: { alert_R } }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["daily-config"] }),
+  });
+};
+
 export const useDailySaveSizing = () => {
   const qc = useQueryClient();
   return useMutation({

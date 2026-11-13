@@ -338,3 +338,24 @@ Tot istoricul M5, regulile curente (30 min, direcție, fără TP), costuri reale
   simbol nu sunt suportate (același comment de zi).
 - US30: la deschiderea NY e negativ; variantele Frankfurt / Londra sunt instabile (WR 16–23%, train ~0). Marja la lotul
   minim depășește contul (263 $ > 196 $) → pe contul actual NU se poate tranzacționa deloc.
+
+## 15. Mai multe sesiuni pe aceeași piață + limita de trade-uri / zi (2026-11-13)
+
+Fiecare piață poate tranzacționa în oricare dintre sesiunile Londra (08:00), Frankfurt (09:00), New York (09:30), cu
+regulile testate pe fiecare deschidere. Trade-urile se admit în ordine cronologică: maxim N / zi pe piață (toate
+sesiunile + re-intrările) și niciodată două poziții simultan pe aceeași piață. Tot istoricul M5, costuri reale,
+configurația curentă (re-intrări pornite, max 3 / sesiune):
+
+| Piață · sesiuni | max / zi | trade-uri / săpt | R/trade | total | DD | M0 |
+|---|---|---|---|---|---|---|
+| DE40 · Frankfurt (actual) | 3 | 6,6 | **+0,095** | +326R | −66R | KEEP |
+| DE40 · Frankfurt + NY | 1 | 5,0 | +0,082 | +223R | −56R | KEEP |
+| DE40 · Frankfurt + NY | 2 | 7,9 | +0,082 | +354R | −78R | KEEP |
+| DE40 · Frankfurt + NY | 3 | 9,1 | +0,074 | +371R | −77R | KEEP |
+| DE40 · Londra + Frankfurt + NY | 2 | 9,1 | +0,060 | +302R | −62R | KEEP |
+| US500 · NY (actual) | 3 | 5,9 | **+0,045** | +133R | −66R | DEMOTE |
+| US500 · Londra + NY | 2 | 8,9 | −0,064 | −318R | −325R | DEMOTE |
+| US500 · Frankfurt + NY | 2 | 8,3 | −0,049 | −224R | −239R | DEMOTE |
+
+Pe DE40 a doua sesiune (NY) adaugă frecvență (+1,3 trade-uri / săpt la max 2) cu același R/trade și drawdown mai mare;
+pe US500 sesiunile europene sunt negative (deschiderea europeană nu se potrivește indicelui american).

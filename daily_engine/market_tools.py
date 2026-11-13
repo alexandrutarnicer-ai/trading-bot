@@ -13,11 +13,13 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+from zoneinfo import ZoneInfo
+
 import numpy as np
 import pandas as pd
 
 from daily_engine.config import ENTRY_MODES, hm_to_min
-from daily_engine.strategy import evaluate_day_multi
+from daily_engine.strategy import admit_session_trades, evaluate_day_multi
 
 # Bursa urmarita de un slot. or_minutes / entry = varianta TESTATA pe acea deschidere (docs/DAILY_ENGINE_PLAN.md §8, §10)
 PRESETS: dict[str, dict] = {
@@ -29,6 +31,33 @@ PRESETS: dict[str, dict] = {
                   "or_minutes": 30, "entry": "direction"},
 }
 SLOTS = ("dimineata", "dupa-amiaza")
+
+
+SESSION_LETTER = {"london": "L", "frankfurt": "F", "new_york": "N", "custom": "C"}
+SESSION_LABEL = {"london": "Londra", "frankfurt": "Frankfurt", "new_york": "New York", "custom": "fereastra proprie"}
+_WINDOW_KEYS = ("tz", "open", "last_bar", "or_minutes", "entry")
+
+
+def market_sessions(m: dict) -> list[dict]:
+    """Sesiunile pietei ca dict-uri „piata + fereastra sesiunii” (2026-11-13). Sesiunea PRIMARA (bursa pietei din
+    config, `preset`) pastreaza fereastra si cheile / comment-urile de dinainte (`_sfx` = "", `_letter` = "") → o piata
+    cu o singura sesiune se comporta EXACT ca inainte; celelalte primesc fereastra testata din market_tools.PRESETS,
+    cheile `day|SIM@sesiune` si comment-ul `D-SIM-MMDD<litera>`."""
+    ses = list(m.get("sessions") or [])
+    primary = m.get("preset") if m.get("preset") in ses else (ses[0] if ses else "custom")
+    if not ses:
+        ses = [primary]
+    out = []
+    for sid in ses:
+        if sid == primary or sid not in PRESETS:
+            win = {k: m[k] for k in _WINDOW_KEYS}
+        else:
+            win = {k: PRESETS[sid][k] for k in _WINDOW_KEYS}
+        is_p = sid == primary
+        out.append({**m, **win, "_session": sid, "_primary": is_p,
+                    "_sfx": "" if is_p else f"@{sid}", "_letter": "" if is_p else SESSION_LETTER.get(sid, "X")})
+    return out
+
 
 
 def preset_for(m: dict) -> str | None:
@@ -70,28 +99,47 @@ def server_to_exchange(times_server: pd.Series, tz: str) -> pd.Series:
 def backtest_rates(rates, m: dict, point: float, years: float = 3.0) -> dict:
     """Backtest pe barele M5 date (array MT5 sau DataFrame cu time=epoch server), regulile pietei `m`
     (inclusiv rr / reentry). Intoarce rezumatul + verdictul M0."""
-    d = pd.DataFrame(rates)
-    if d.empty:
+    d0 = pd.DataFrame(rates)
+    if d0.empty:
         return {"ok": False, "detail": "fara bare M5"}
-    d["time"] = pd.to_datetime(d["time"], unit="s") if np.issubdtype(d["time"].dtype, np.number) else pd.to_datetime(d["time"])
-    loc = server_to_exchange(d["time"], m["tz"])
-    d = d.assign(loc=loc).dropna(subset=["loc"])
-    d = d[d["loc"].dt.weekday < 5]
-    om, lb = hm_to_min(m["open"]), hm_to_min(m["last_bar"])
-    d["mins"] = d["loc"].dt.hour * 60 + d["loc"].dt.minute
-    d = d[(d.mins >= om) & (d.mins <= lb)]
-    d["day"] = d["loc"].dt.normalize()
-    n_or = m["or_minutes"] // 5
-    rows, days = [], 0
-    for day, g in d.groupby("day", sort=True):
-        if g.mins.iloc[0] != om or len(g) < n_or + 6 or g.high.iloc[:n_or].max() - g.low.iloc[:n_or].min() <= 0:
-            continue
-        days += 1
-        r = evaluate_day_multi(g.open, g.high, g.low, g.close, g.spread.to_numpy(float) * point, g.mins, open_min=om,
-                               or_minutes=m["or_minutes"], mode=ENTRY_MODES[m["entry"]], rr=m.get("rr"),
-                               slip=m["slip"], comm=m["comm"], day_complete=True, reentry=m.get("reentry"),
-                               plock=m.get("profit_lock"))
-        rows += [{"entry_t": day + pd.Timedelta(minutes=int(t["entry_min"])), "R": float(t["R"])} for t in r["trades"]]
+    d0["time"] = pd.to_datetime(d0["time"], unit="s") if np.issubdtype(d0["time"].dtype, np.number) else pd.to_datetime(d0["time"])
+    # fiecare SESIUNE a pietei (Londra / Frankfurt / New York) pe zilele ei; apoi aceeasi admitere ca engine-ul
+    # (strategy.admit_session_trades: max trade-uri / zi pe piata, fara pozitii simultane). O sesiune = ca inainte.
+    by_day: dict = {}
+    days_set = set()
+    for ses in market_sessions(m):
+        loc = server_to_exchange(d0["time"], ses["tz"])
+        d = d0.assign(loc=loc).dropna(subset=["loc"])
+        d = d[d["loc"].dt.weekday < 5]
+        om, lb = hm_to_min(ses["open"]), hm_to_min(ses["last_bar"])
+        d = d.assign(mins=d["loc"].dt.hour * 60 + d["loc"].dt.minute)
+        d = d[(d.mins >= om) & (d.mins <= lb)]
+        d = d.assign(day=d["loc"].dt.normalize())
+        n_or = ses["or_minutes"] // 5
+        tzinfo = ZoneInfo(ses["tz"])
+        for day, g in d.groupby("day", sort=True):
+            if g.mins.iloc[0] != om or len(g) < n_or + 6 or g.high.iloc[:n_or].max() - g.low.iloc[:n_or].min() <= 0:
+                continue
+            days_set.add(day)
+            r = evaluate_day_multi(g.open, g.high, g.low, g.close, g.spread.to_numpy(float) * point, g.mins, open_min=om,
+                                   or_minutes=ses["or_minutes"], mode=ENTRY_MODES[ses["entry"]], rr=ses.get("rr"),
+                                   slip=ses["slip"], comm=ses["comm"], day_complete=True, reentry=ses.get("reentry"),
+                                   plock=ses.get("profit_lock"))
+            base = datetime(day.year, day.month, day.day, tzinfo=tzinfo)
+            by_day.setdefault(day, []).append(
+                {"key": ses["_session"], "st": r, "day": day,
+                 "to_utc": (lambda mins, _b=base: (_b + timedelta(minutes=int(mins))).astimezone(timezone.utc))})
+    from daily_engine.config import sanitize_sessions
+    max_tr = int(m.get("max_trades_per_day") or sanitize_sessions(m)[1])
+    rows = []
+    for day in sorted(by_day):
+        comb = admit_session_trades(by_day[day], max_tr)
+        for item in by_day[day]:
+            for t in comb[item["key"]]["st"]["trades"]:
+                rows.append({"entry_t": item["to_utc"](int(t["entry_min"])).replace(tzinfo=None), "R": float(t["R"]),
+                             "session": item["key"]})
+    rows.sort(key=lambda x: x["entry_t"])
+    days = len(days_set)
     if not rows:
         return {"ok": True, "trades": 0, "days": days, "detail": "niciun trade in perioada (zile sarite / costuri prea mari)"}
     t = pd.DataFrame(rows)

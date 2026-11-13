@@ -32,9 +32,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from daily_engine.config import DATA_DIR, ENTRY_MODES, load_config, market_mode, save_default_config, hm_to_min  # noqa: E402
+from daily_engine.config import DATA_DIR, ENTRY_MODES, load_config, market_mode, sanitize_sessions, save_default_config, hm_to_min  # noqa: E402
 from daily_engine.pause import apply_pause, pause_cut_min  # noqa: E402
-from daily_engine.strategy import evaluate_day_multi  # noqa: E402
+from daily_engine.strategy import admit_session_trades, evaluate_day_multi  # noqa: E402
 import position_sizing as ps  # noqa: E402
 from daily_engine import executor as X  # noqa: E402
 
@@ -213,6 +213,17 @@ def window_times(m: dict, day_local) -> tuple[datetime, datetime]:
 
 
 X_MODE = ENTRY_MODES
+from daily_engine.market_tools import SESSION_LABEL, market_sessions  # noqa: E402  (sesiunile pietei — comune cu backtestul)
+
+
+def comment_in(comment: str, tag: str) -> bool:
+    """Comment-ul apartine sesiunii cu acest tag (tag + optional indexul re-intrarii)? Tag-ul primar
+    „D-DE40-1113” e prefix si pentru „D-DE40-1113N” (sesiunea New York) — de aceea restul trebuie sa fie cifre."""
+    c = comment or ""
+    if not c.startswith(tag):
+        return False
+    rest = c[len(tag):]
+    return rest == "" or rest.isdigit()
 
 MODE_LABEL = {"live": "LIVE", "shadow": "SHADOW", "pause": "PAUZĂ"}
 
@@ -274,12 +285,53 @@ class DailyEngine:
             self.server_offset_s = int(hours * 3600)
 
     def process_market(self, m: dict, now_utc: datetime) -> dict:
+        """O piata = una sau mai multe sesiuni (Londra / Frankfurt / New York). Fiecare sesiune se evalueaza pur, apoi
+        trade-urile lor sunt admise impreuna (`admit_session_trades`: max trade-uri / zi pe piata, fara pozitii
+        simultane) — aceeasi regula ca backtestul (market_tools.backtest_rates)."""
+        evals = [self._eval_session(s_, now_utc) for s_ in market_sessions(m)]
+        comb = admit_session_trades([{"key": e["s"]["_session"], "st": e.get("st"), "to_utc": e["to_utc"]}
+                                     for e in evals if e.get("st") is not None],
+                                    self._max_trades(m))
+        rows = []
+        for e in evals:
+            if e.get("st") is not None:
+                e["st"] = comb[e["s"]["_session"]]["st"]
+                rows.append(self._post_session(e))
+            else:
+                rows.append(e["row"])
+        rank = {"in_position": 0, "waiting_entry": 1, "forming_or": 2, "waiting_open": 3, "closed": 4,
+                "blocked": 5, "paused": 6, "skipped": 7, "weekend": 8, "disabled": 9, "error": 10}
+        focus = min(range(len(rows)), key=lambda i: (rank.get(rows[i].get("phase"), 11), i))
+        row = dict(rows[focus])
+        if len(rows) > 1:
+            row["trades_today"] = sum(int(r.get("trades_today") or 0) for r in rows)
+            row["R_today"] = round(sum(float(r.get("R_today") or 0) for r in rows), 3)
+        row["sessions"] = [{k: r.get(k) for k in ("session", "session_label", "phase", "reason", "window_app",
+                                                   "window_ro", "window_local", "app_tz_label", "or_minutes",
+                                                   "entry_mode", "side", "entry", "sl", "open_R", "R", "trades_today",
+                                                   "R_today", "blocked", "blocked_reason", "no_new_entries")}
+                           for r in rows]
+        row["max_trades_per_day"] = self._max_trades(m)
+        return row
+
+    @staticmethod
+    def _max_trades(m: dict) -> int:
+        """Limita de trade-uri / zi pe piata; lipsa (config nesanitizat) → aceeasi regula ca migrarea din config."""
+        v = m.get("max_trades_per_day")
+        return int(v) if v else sanitize_sessions(m)[1]
+
+    def _eval_session(self, m: dict, now_utc: datetime) -> dict:
+        """Evaluarea PURA a unei sesiuni (fara efecte): {s, row} pentru fazele de dinainte de interval, altfel
+        {s, st, b, now_loc, w_end, day, info, to_utc}."""
         sym = m["symbol"]
         tz = ZoneInfo(m["tz"])
         now_loc = now_utc.astimezone(tz)
         day = now_loc.date()
         w_open, w_end = window_times(m, day)
+        base_day = datetime(day.year, day.month, day.day, tzinfo=tz)
+        to_utc = (lambda mins, _b=base_day: (_b + timedelta(minutes=int(mins))).astimezone(timezone.utc))
         info = {"symbol": sym, "label": m.get("label", ""), "role": m.get("role", ""),
+                "session": m["_session"], "session_label": SESSION_LABEL.get(m["_session"], m["_session"]),
                 "enabled": m.get("enabled", True), "entry_mode": m["entry"], "or_minutes": m["or_minutes"],
                 "rr": m.get("rr"), "reentry": m.get("reentry"),
                 "day": str(day),
@@ -287,10 +339,11 @@ class DailyEngine:
                 "window_ro": f"{w_open.astimezone(RO):%H:%M}–{w_end.astimezone(RO):%H:%M}",
                 # fereastra si in fusul APLICATIEI (RO / DE) — doar afisare; logica ramane pe ora bursei
                 **_app_window(w_open, w_end)}
+        e = {"s": m, "to_utc": to_utc}
         if not m.get("enabled", True):
-            return {**info, "phase": "disabled"}
+            return {**e, "row": {**info, "phase": "disabled"}}
         if now_loc.weekday() >= 5:
-            return {**info, "phase": "weekend"}
+            return {**e, "row": {**info, "phase": "weekend"}}
         info["paused"] = bool(m.get("paused"))
         info["exec_mode"] = self._xmode(m)
         info["mode"] = "pause" if m.get("paused") else info["exec_mode"]
@@ -300,21 +353,21 @@ class DailyEngine:
         cut = pause_cut_min(m, day)                 # pauza per piata: fara intrari noi (vezi daily_engine/pause.py)
         if now_loc < w_open:
             if cut is not None:
-                return {**info, "phase": "paused", "reason": "piață pe pauză — fără intrări noi"}
+                return {**e, "row": {**info, "phase": "paused", "reason": "piață pe pauză — fără intrări noi"}}
             self._arm(sym, day, m)
-            return {**info, "phase": "waiting_open", **self._exec_info(sym, day)}
+            return {**e, "row": {**info, "phase": "waiting_open", **self._exec_info(m, day)}}
 
         self.mt5.symbol_select(sym, True)          # piata poate fi schimbata din UI (hot-reload) — selectata mereu
         self._refresh_offset(sym, now_utc)
         if self.server_offset_s is None:
-            return {**info, "phase": "waiting_open", "note": "astept un tick proaspat (ora serverului)"}
+            return {**e, "row": {**info, "phase": "waiting_open", "note": "astept un tick proaspat (ora serverului)"}}
         rates = self.mt5.copy_rates_from_pos(sym, self.mt5.TIMEFRAME_M5, 0, 200)
         b = bars_today(rates, self.server_offset_s, m, now_utc)
         si = self.mt5.symbol_info(sym)
         point = si.point if si else 0.0
         day_complete = now_loc >= w_end + timedelta(minutes=2)
         if day_complete and len(b) == 0:
-            return {**info, "phase": "skipped", "reason": "piata inchisa azi (fara bare)"}
+            return {**e, "row": {**info, "phase": "skipped", "reason": "piata inchisa azi (fara bare)"}}
         # o zi = unul sau mai multe trade-uri (re-intrari OPTIONALE in prima ora); oprit → identic cu inainte
         st = evaluate_day_multi(b.open, b.high, b.low, b.close, b.spread * point, b.mins,
                                 open_min=hm_to_min(m["open"]), or_minutes=m["or_minutes"],
@@ -322,20 +375,28 @@ class DailyEngine:
                                 comm=m["comm"], day_complete=day_complete, reentry=m.get("reentry"),
                                 plock=m.get("profit_lock"))
         st = apply_pause(st, cut)
+        return {**e, "st": st, "b": b, "now_loc": now_loc, "w_end": w_end, "day": day, "info": info}
+
+    def _post_session(self, e: dict) -> dict:
+        """Efectele unei sesiuni evaluate si admise: armare, evenimente (Telegram + trades.jsonl), executie, alerta."""
+        m, st, b, now_loc, w_end, day, info = (e[k] for k in ("s", "st", "b", "now_loc", "w_end", "day", "info"))
+        sym = m["symbol"]
         if st["phase"] in ("waiting_open", "forming_or"):
             self._arm(sym, day, m)
         self._events(m, str(day), st)
         try:
             self._execute(m, day, st, b, now_loc, w_end)
-        except Exception as e:                       # o eroare de executie nu opreste shadow-ul
-            self._err(f"{sym} executie: {type(e).__name__}: {e}")
+        except Exception as ex:                      # o eroare de executie nu opreste shadow-ul
+            self._err(f"{sym} executie: {type(ex).__name__}: {ex}")
         try:
             self._profit_alert(m, str(day), st)
-        except Exception as e:                       # alerta nu are voie sa opreasca engine-ul
-            self._err(f"{sym} alerta profit: {type(e).__name__}: {e}")
+        except Exception as ex:                      # alerta nu are voie sa opreasca engine-ul
+            self._err(f"{sym} alerta profit: {type(ex).__name__}: {ex}")
         clean = {k: (v.item() if isinstance(v, np.generic) else v) for k, v in st.items() if k != "trades"}
         tr = st.get("trades") or []
-        return {**info, **clean, **self._exec_info(sym, day),
+        if st.get("blocked") and not clean.get("reason"):
+            clean["reason"] = st.get("blocked_reason")
+        return {**info, **clean, **self._exec_info(m, day),
                 "trades_today": len(tr) + (1 if st["phase"] == "in_position" else 0),
                 "R_today": round(sum(t["R"] for t in tr), 3)}
 
@@ -359,6 +420,14 @@ class DailyEngine:
             return x
         return "live" if self.cfg.get("mode") == "execute" else "shadow"
 
+    @staticmethod
+    def _key(m: dict, day) -> str:
+        return f"{day}|{m['symbol']}{m.get('_sfx', '')}"
+
+    @staticmethod
+    def _tag(m: dict, day) -> str:
+        return X.day_tag(m["symbol"], day, m.get("_letter", ""))
+
     def _market_cfg(self, sym: str) -> dict:
         return next((x for x in self.cfg.get("markets", []) if x.get("symbol") == sym), {})
 
@@ -366,23 +435,25 @@ class DailyEngine:
         """Ziua devine REALA doar daca piata era pe Live (si contul permis) INAINTE de formarea intervalului."""
         ok, _ = self.exec_state(m if m is not None else self._market_cfg(sym))
         ev = self.state.setdefault("events", {})
-        k = f"{day}|{sym}|armed"
+        mk = m if m is not None else self._market_cfg(sym)
+        k = f"{self._key({'symbol': sym, **mk}, day)}|armed"
         if ok and not ev.get(k):
             ev[k] = True
-            log.info(f"{sym} {day}: zi ARMATA pentru executie reala")
+            log.info(f"{sym} {day}{(' ' + mk.get('_session', '')) if mk.get('_sfx') else ''}: zi ARMATA pentru executie reala")
 
-    def _exec_info(self, sym: str, day) -> dict:
+    def _exec_info(self, m: dict, day) -> dict:
         ev = self.state.get("events", {})
-        return {"exec_armed": bool(ev.get(f"{day}|{sym}|armed")), "exec_placed": ev.get(f"{day}|{sym}|placed")}
+        key = self._key(m, day)
+        return {"exec_armed": bool(ev.get(f"{key}|armed")), "exec_placed": ev.get(f"{key}|placed")}
 
     def _execute(self, m: dict, day, st: dict, b, now_loc, w_end) -> None:
         sym = m["symbol"]
         ev = self.state.setdefault("events", {})
-        key = f"{day}|{sym}"
-        tag = X.day_tag(sym, day)
+        key = self._key(m, day)
+        tag = self._tag(m, day)
         pos, ords = X.own(self.mt5, sym)
-        pos_t = [p for p in pos if (p.comment or "").startswith(tag)]
-        ord_t = [o for o in ords if (o.comment or "").startswith(tag)]
+        pos_t = [p for p in pos if comment_in(p.comment, tag)]
+        ord_t = [o for o in ords if comment_in(o.comment, tag)]
         # 1) final de fereastra / INCHIDEREA DE VINERI GLOBALA: anuleaza tot, inchide tot — niciodata peste noapte /
         #    weekend (Setari Globale → friday_close, ca la Custom / AI / Noisy / Special)
         from live.global_guard import friday_close_now
@@ -399,8 +470,9 @@ class DailyEngine:
         #     (doar daca e mai protector decat SL-ul real; o data pe pozitie). Functioneaza si cu piata pe pauza.
         if pos_t and st.get("phase") == "in_position" and st.get("locked") and st.get("sl_now") is not None:
             self._apply_profit_lock(m, pos_t, float(st["sl_now"]), key)
-        # 1b) piata pe PAUZA: niciun ordin nou; ordinele de intrare neactivate se anuleaza, pozitiile raman gestionate
-        if m.get("paused"):
+        # 1b) piata pe PAUZA (sau limita de trade-uri / zi atinsa, sau alta sesiune a pietei are o pozitie): niciun
+        #     ordin nou; ordinele de intrare neactivate se anuleaza, pozitiile raman gestionate
+        if m.get("paused") or st.get("no_new_entries") or st.get("phase") == "blocked":
             for o in ord_t:
                 ok_c = X.cancel(self.mt5, o)
                 self._exec_note(sym, f"pauză: ordinul de intrare #{o.ticket} anulat ({'ok' if ok_c else 'EȘUAT'})")
@@ -503,7 +575,7 @@ class DailyEngine:
     def _execute_reentry(self, m: dict, day, st: dict, b, k: int, tag: str) -> None:
         """Re-intrarea k (>= 1) in executie: doar daca semnalul virtual e PROASPAT (intrare pe ultima bara inchisa sau
         cea dinainte) — un restart tarziu nu plaseaza un ordin vechi. Aceleasi protectii ca primul trade."""
-        sym, ev, key = m["symbol"], self.state.setdefault("events", {}), f"{day}|{m['symbol']}"
+        sym, ev, key = m["symbol"], self.state.setdefault("events", {}), self._key(m, day)
         ok, why = self.exec_state(m)
         if not ok:
             return
@@ -555,7 +627,7 @@ class DailyEngine:
             return
         sym, ev = m["symbol"], self.state.setdefault("events", {})
         k = int(st.get("k") or 0)
-        key = f"{day}|{sym}|alert{k}"
+        key = f"{self._key(m, day)}|alert{k}"
         if ev.get(key):
             return
         ev[key] = True
@@ -563,10 +635,10 @@ class DailyEngine:
         side = {1: "LONG", -1: "SHORT"}.get(st.get("side"), "")
         real = ""
         try:
-            tag = X.day_tag(sym, datetime.strptime(day, "%Y-%m-%d").date())
+            tag = self._tag(m, datetime.strptime(day, "%Y-%m-%d").date())
             pos, _ = X.own(self.mt5, sym)
             for p in pos:
-                if (p.comment or "").startswith(tag):
+                if comment_in(p.comment, tag):
                     real += f"\nPoziție REALĂ #{p.ticket}: {p.volume} loturi · profit {getattr(p, 'profit', 0.0):+.2f}"
         except Exception:
             pass
@@ -660,16 +732,20 @@ class DailyEngine:
             pos, ords = X.own(self.mt5)
         except Exception:
             return
-        tags = {}
+        tags: dict[str, list[str]] = {}
         for m in self.cfg["markets"]:
-            d = now_utc.astimezone(ZoneInfo(m["tz"])).date()
-            tags[m["symbol"]] = X.day_tag(m["symbol"], d)
+            for s_ in market_sessions(m):
+                d = now_utc.astimezone(ZoneInfo(s_["tz"])).date()
+                tags.setdefault(m["symbol"], []).append(self._tag(s_, d))
+
+        def today(c, sym):
+            return any(comment_in(c, t) for t in tags.get(sym, []))
         for o in ords:
-            if not (o.comment or "").startswith(tags.get(o.symbol, "\0")):
+            if not today(o.comment, o.symbol):
                 X.cancel(self.mt5, o)
                 self._exec_note(o.symbol, f"ordin rămas din altă zi anulat ({o.comment})")
         for p in pos:
-            if not (p.comment or "").startswith(tags.get(p.symbol, "\0")):
+            if not today(p.comment, p.symbol):
                 ok, _ = X.close(self.mt5, p)
                 self._exec_note(p.symbol, f"poziție rămasă din altă zi închisă ({p.comment}) — {'ok' if ok else 'EȘUAT'}", True)
 
@@ -677,8 +753,11 @@ class DailyEngine:
         """Evenimentele zilei, O DATA per trade (k = indexul trade-ului din zi; k = 0 pastreaza cheile vechi, deci
         starea salvata inainte de re-intrari ramane valida): intrare / inchidere → Telegram + trades.jsonl."""
         sym, ev = m["symbol"], self.state.setdefault("events", {})
-        key = f"{day}|{sym}"
+        key = self._key(m, day)
         sent = ev.setdefault(key, [])
+        if st.get("blocked") and "blocked" not in sent:
+            sent.append("blocked")
+            log.info(f"{sym} {day} {m.get('_session', '')}: sesiune fără trade nou — {st.get('blocked_reason')}")
         trades = list(st.get("trades") or [])
         items = [(t, "closed") for t in trades]
         if st["phase"] == "in_position":
@@ -709,7 +788,7 @@ class DailyEngine:
                 _notify(self.cfg, msg)
             if kind == "closed" and f"closed{sfx}" not in sent:
                 sent.append(f"closed{sfx}")
-                rec = {"day": day, "symbol": sym, "side": side, "entry": t["entry"], "sl": t["sl"],
+                rec = {"day": day, "symbol": sym, "session": m.get("_session"), "side": side, "entry": t["entry"], "sl": t["sl"],
                        "exit": t["exit"], "R": round(t["R"], 4), "reason": t["reason"],
                        "or_hi": t["or_hi"], "or_lo": t["or_lo"], "risk": t["risk"], "k": k,
                        "tp": t.get("tp"), "rr": m.get("rr"),

@@ -1239,3 +1239,14 @@ export interface DailyMarketStatus {
   mode?: DailyMarketMode; exec_mode?: "live" | "shadow"; execution?: { active: boolean; reason: string };
   profit_lock?: DailyProfitLock; locked?: boolean; sl_now?: number;
 }
+
+// ── Daily: mai multe sesiuni pe piață + limita de trade-uri / zi + alerta de profit (2026-11-13) ──
+export type DailySessionId = "london" | "frankfurt" | "new_york" | "custom";
+export interface DailySessionRow {
+  session: DailySessionId; session_label?: string; phase: string; reason?: string; window_app?: string; window_ro?: string;
+  window_local?: string; app_tz_label?: string; or_minutes?: number; entry_mode?: string; side?: number; entry?: number;
+  sl?: number; open_R?: number; R?: number; trades_today?: number; R_today?: number; blocked?: string | null;
+  blocked_reason?: string; no_new_entries?: string;
+}
+export interface DailyMarketConfig { sessions?: DailySessionId[]; max_trades_per_day?: number }
+export interface DailyMarketStatus { session?: DailySessionId; sessions?: DailySessionRow[]; max_trades_per_day?: number }

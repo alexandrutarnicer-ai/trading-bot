@@ -1482,7 +1482,9 @@ export function GuidePage() {
               <KV k="Profit Lock (opțional, OPRIT)" v="„Opțiuni” pe card: la +Trigger R (minim 3R) SL-ul se mută la +Lock R (sub Trigger). Ex. 4,5R → 4R. În Live mută SL-ul real în MT5 (doar dacă e mai protector). Backtest: nicio variantă n-a fost mai bună decât strategia actuală (DE40 5→4R la egalitate, cu drawdown mai mic)" />
               <KV k="Limită de marjă" v="marja TOTALĂ a contului după un ordin Daily ≤ 80% din equity (toate engine-urile). DE40 la lotul minim ≈ 148 $ — cu alte poziții deschise ordinul nu se plasează (motivul în Notificări)" />
               <KV k="Vineri" v="închiderea de vineri din Setări Globale se aplică și pe Daily (poziții închise, nimic nou de la ora globală)" />
-              <KV k="Alertă +5R" v="când un trade deschis trece de +5R primești o singură notificare (Notificări + Telegram) — nu se închide nimic automat, decizia e a ta" />
+              <KV k="Alertă +5R" v="când un trade deschis trece de +5R primești o singură notificare (Notificări + Telegram) — nu se închide nimic automat, decizia e a ta. Pragul se schimbă din tab-ul Daily (0 = oprită)" />
+              <KV k="Sesiuni (per piață)" v="„Opțiuni” pe card: bifezi Londra / Frankfurt / New York (oricâte, minim una). Fiecare sesiune folosește ora, intervalul și modul testate pe acea deschidere" />
+              <KV k="Trade-uri maxime / zi" v="limită pe piață peste toate sesiunile și re-intrările (implicit 1; config vechi păstrează limita re-intrărilor). Trade-urile se admit în ordinea apariției; o piață nu are niciodată două poziții simultan; cealaltă piață are propria limită" />
               <KV k="Audit" v="schimbările de mod / pauză / configurare apar în Rapoarte → Modificări („Audit engine-uri”)" />
             </div>
           </SubSection>

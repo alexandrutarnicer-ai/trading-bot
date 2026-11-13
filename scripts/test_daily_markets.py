@@ -305,6 +305,36 @@ check("compat: modul global „shadow” → toate piețele SHADOW", [x["exec_mo
 out = R.daily_config_save({"sizing": {"max_margin_pct": 200}})
 check("limita de marjă plafonată la 95%", C.load_config()["sizing"]["max_margin_pct"] == 95.0, C.load_config()["sizing"])
 
+print("7. Sesiuni multiple pe piata + limita de trade-uri / zi + alerta de profit (API)")
+SENT.clear()
+sym1 = C.load_config()["markets"][1]["symbol"]
+pre1 = C.load_config()["markets"][1]["preset"]
+out = R.daily_config_save({"markets": [{"symbol": sym1, "sessions": ["new_york", "london"], "max_trades_per_day": 2}]})
+m1 = C.load_config()["markets"][1]
+check("sesiuni salvate în ordinea zilei + limita 2", m1["sessions"] == ["london", "new_york"]
+      and m1["max_trades_per_day"] == 2, (m1["sessions"], m1["max_trades_per_day"]))
+check("... bursa primară păstrată dacă rămâne selectată", m1["preset"] == pre1 or pre1 not in m1["sessions"], m1["preset"])
+check("... Telegram + audit cu schimbarea", any("sesiuni" in t for t in SENT) and any("sesiuni" in a["detail"] for a in AL.read()), SENT)
+out = R.daily_config_save({"markets": [{"symbol": sym1, "sessions": ["frankfurt"]}]})
+m1 = C.load_config()["markets"][1]
+check("bursa primară deselectată → piața trece pe sesiunea rămasă (ora / interval / mod din șablon)",
+      m1["sessions"] == ["frankfurt"] and m1["preset"] == "frankfurt" and m1["open"] == "09:00", (m1["preset"], m1["open"]))
+check("fără nicio sesiune → 400", refused({"markets": [{"symbol": sym1, "sessions": []}]}, 400))
+out = R.daily_config_save({"markets": [{"symbol": sym1, "max_trades_per_day": 50}]})
+check("limita plafonată la 20", C.load_config()["markets"][1]["max_trades_per_day"] == 20)
+R._slot_busy = lambda sym: f"{sym} are o poziție azi"
+check("schimbarea sesiunilor cu o poziție / ordin azi → 409", refused({"markets": [{"symbol": sym1, "sessions": ["london", "frankfurt"]}]}, 409))
+R._slot_busy = lambda sym: None
+other0 = C.load_config()["markets"][0]
+out = R.daily_config_save({"markets": [{"symbol": sym1, "sessions": ["london", "frankfurt"]}]})
+check("cealaltă piață NU e atinsă de sesiunile / limita primei", C.load_config()["markets"][0] == other0)
+out = R.daily_config_save({"markets": [{"slot": 1, "symbol": "DE40" if sym1 != "DE40" else "GBPUSD", "preset": "frankfurt"}]})
+check("piață NOUĂ în slot → o singură sesiune (bursa aleasă)", C.load_config()["markets"][1]["sessions"] == ["frankfurt"],
+      C.load_config()["markets"][1]["sessions"])
+out = R.daily_config_save({"alert_R": 6})
+check("alerta de profit setabilă (6R) + oprită cu 0", C.load_config()["alert_R"] == 6.0
+      and (R.daily_config_save({"alert_R": 0}) or True) and C.load_config()["alert_R"] == 0.0)
+
 # engine-ul: fiecare piata e evaluata separat (o eroare pe un slot nu opreste celalalt)
 import inspect  # noqa: E402
 import daily_engine.engine as E  # noqa: E402
