@@ -89,7 +89,8 @@ def backtest_rates(rates, m: dict, point: float, years: float = 3.0) -> dict:
         days += 1
         r = evaluate_day_multi(g.open, g.high, g.low, g.close, g.spread.to_numpy(float) * point, g.mins, open_min=om,
                                or_minutes=m["or_minutes"], mode=ENTRY_MODES[m["entry"]], rr=m.get("rr"),
-                               slip=m["slip"], comm=m["comm"], day_complete=True, reentry=m.get("reentry"))
+                               slip=m["slip"], comm=m["comm"], day_complete=True, reentry=m.get("reentry"),
+                               plock=m.get("profit_lock"))
         rows += [{"entry_t": day + pd.Timedelta(minutes=int(t["entry_min"])), "R": float(t["R"])} for t in r["trades"]]
     if not rows:
         return {"ok": True, "trades": 0, "days": days, "detail": "niciun trade in perioada (zile sarite / costuri prea mari)"}

@@ -982,7 +982,7 @@ export interface DailyTrade {
 // ── Engine Lifecycle comun (/engines) ────────────────────────────────────────
 export type EngineId = "custom" | "ai" | "daily";
 /** Engine-urile din lifecycle (/engines) — include Noisy (shadow, fara tranzactii reale / performanta MT5). */
-export type LifecycleEngineId = EngineId | "noisy";
+export type LifecycleEngineId = EngineId | "noisy" | "special";
 
 export interface EngineState {
   id: LifecycleEngineId;
@@ -1021,6 +1021,7 @@ export interface EnginePerformanceResponse {
   total?: EnginePerf;
   custom?: EnginePerf;
   ai?: EnginePerf;
+  special?: EnginePerf;
   daily?: EnginePerf;
   noisy?: EnginePerf;
   manual?: EnginePerf;
@@ -1229,3 +1230,12 @@ export interface DailyMarketStatus { paused?: boolean }
 export interface DailyStatus { backtest_auto?: DailyBacktestAuto[] }
 export interface NoisyStatus { backtest_auto?: BacktestAuto<Record<string, unknown>> }
 export interface DailyMarketConfig { paused?: boolean; paused_at?: string | null }
+
+// ── Daily: mod per piata (Live / Shadow / Pauza) + Profit Lock (2026-11-12) ──
+export type DailyMarketMode = "live" | "shadow" | "pause";
+export interface DailyProfitLock { enabled: boolean; trigger_R: number; lock_R: number }
+export interface DailyMarketConfig { exec_mode?: "live" | "shadow"; mode?: DailyMarketMode; profit_lock?: DailyProfitLock }
+export interface DailyMarketStatus {
+  mode?: DailyMarketMode; exec_mode?: "live" | "shadow"; execution?: { active: boolean; reason: string };
+  profit_lock?: DailyProfitLock; locked?: boolean; sl_now?: number;
+}

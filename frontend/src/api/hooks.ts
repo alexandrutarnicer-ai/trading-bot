@@ -776,7 +776,7 @@ export const useAiLotInfo = () =>
 // ── Trading LIVE — deblocarea explicita a contului real, per componenta ──────
 
 export interface LiveTradingState {
-  flags: { bot: boolean; ai_engine: boolean; daily_engine?: boolean; noisy_engine?: boolean };
+  flags: { bot: boolean; ai_engine: boolean; daily_engine?: boolean; noisy_engine?: boolean; special_engine?: boolean };
   account: { connected: boolean; is_demo: boolean | null;
              login: string | null; server: string | null };
 }
@@ -792,7 +792,7 @@ export const useLiveTrading = () =>
 export const useSetLiveTrading = () => {
   const qc = useQueryClient();
   return useMutation<{ ok: boolean; flags: LiveTradingState["flags"]; note: string },
-                     Error, { component: "bot" | "ai_engine" | "daily_engine" | "noisy_engine"; allowed: boolean }>({
+                     Error, { component: "bot" | "ai_engine" | "daily_engine" | "noisy_engine" | "special_engine"; allowed: boolean }>({
     mutationFn: body => apiFetch("/settings/live-trading", { method: "PUT", body }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["live-trading"] }),
   });
@@ -1007,6 +1007,38 @@ export const useDailySaveMarket = () => {
   return useMutation({
     mutationFn: (m: { symbol: string; rr: number | null; reentry: DailyReentry }) =>
       apiFetch("/daily/config", { method: "PUT", body: { markets: [m] } }),
+    onSuccess: () => {
+      for (const k of ["daily-config", "daily-status"]) qc.invalidateQueries({ queryKey: [k] });
+    },
+  });
+};
+
+export const useDailyMarketMode = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (b: { slot: number; mode: "live" | "shadow" | "pause" }) =>
+      apiFetch(`/daily/markets/${b.slot}/mode`, { method: "POST", body: { mode: b.mode } }),
+    onSuccess: () => {
+      for (const k of ["daily-config", "daily-status"]) qc.invalidateQueries({ queryKey: [k] });
+    },
+  });
+};
+
+export const useDailySaveProfitLock = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (m: { symbol: string; profit_lock: { enabled: boolean; trigger_R: number; lock_R: number } }) =>
+      apiFetch("/daily/config", { method: "PUT", body: { markets: [m] } }),
+    onSuccess: () => {
+      for (const k of ["daily-config", "daily-status"]) qc.invalidateQueries({ queryKey: [k] });
+    },
+  });
+};
+
+export const useDailySaveSizing = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (sizing: Record<string, unknown>) => apiFetch("/daily/config", { method: "PUT", body: { sizing } }),
     onSuccess: () => {
       for (const k of ["daily-config", "daily-status"]) qc.invalidateQueries({ queryKey: [k] });
     },

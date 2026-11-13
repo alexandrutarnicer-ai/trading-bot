@@ -99,6 +99,16 @@ def place_stop(mt5, symbol: str, side: int, level: float, lots: float, sl: float
     return _send(mt5, req, info)
 
 
+def modify_sl(mt5, pos, sl: float) -> tuple[bool, object]:
+    """Muta SL-ul pozitiei (Profit Lock), pastrand TP-ul. TRADE_ACTION_SLTP."""
+    info = mt5.symbol_info(pos.symbol)
+    digits = getattr(info, "digits", 5) if info else 5
+    req = {"action": mt5.TRADE_ACTION_SLTP, "position": pos.ticket, "symbol": pos.symbol,
+           "sl": round(float(sl), digits), "tp": float(getattr(pos, "tp", 0.0) or 0.0), "magic": MAGIC}
+    res = mt5.order_send(req)
+    return bool(res is not None and res.retcode == mt5.TRADE_RETCODE_DONE), res
+
+
 def cancel(mt5, order) -> bool:
     res = mt5.order_send({"action": mt5.TRADE_ACTION_REMOVE, "order": order.ticket})
     return res is not None and res.retcode == getattr(mt5, "TRADE_RETCODE_DONE", 10009)

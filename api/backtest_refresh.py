@@ -124,7 +124,11 @@ DAILY_VERSION = "daily-orb-v1|3y-M5"
 
 
 def daily_fp(m: dict) -> str:
-    return fingerprint({"v": DAILY_VERSION, **{k: m.get(k) for k in DAILY_FIELDS}})
+    fp = {"v": DAILY_VERSION, **{k: m.get(k) for k in DAILY_FIELDS}}
+    pl = m.get("profit_lock") or {}
+    if pl.get("enabled"):                     # oprit = amprenta de dinainte (fara recalculari inutile)
+        fp["profit_lock"] = {"t": pl.get("trigger_R"), "l": pl.get("lock_R")}
+    return fingerprint(fp)
 
 
 def daily_job(m: dict) -> Callable[[], dict]:

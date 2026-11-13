@@ -228,6 +228,7 @@ def _fetch_closed_trades_raw(mt5, days: int) -> list[dict]:
 AI_MAGIC = 770015
 DAILY_MAGIC = 880001        # tinut sincron cu daily_engine/config.py::MAGIC
 NOISY_MAGIC = 990001        # tinut sincron cu noisy_engine/config.py::MAGIC
+SPECIAL_MAGIC = 660001      # tinut sincron cu special_engine/config.py::MAGIC
 _BOT_COMMENT_RE = re.compile(r"^S(\d+)-")
 _SMART_NEWS_RE  = re.compile(r"^SN\d+$")
 _STRATEGY_TAGS  = (("SIG", "pullback"), ("IB", "inside_bar"), ("FLG", "flag"))
@@ -256,6 +257,9 @@ def classify_trade(magic: int, comment: str) -> dict:
         return {"source": "daily", "session_id": None, "strategy": "orb"}
     if magic == NOISY_MAGIC:
         return {"source": "noisy", "session_id": None, "strategy": "mean_reversion"}
+    if magic == SPECIAL_MAGIC:
+        return {"source": "special", "session_id": None,
+                "strategy": "orb" if str(comment or "")[:2] == "X-" else "special"}
     m = _BOT_COMMENT_RE.match(comment or "")
     if not m:
         # Ordinele "Mod Inteligent" la stiri au comment "SN<nr>" (fara prefix de sesiune)
@@ -423,6 +427,8 @@ def _classify_source(magic: int, comment: str) -> str:
         return "daily"
     if magic == NOISY_MAGIC:
         return "noisy"
+    if magic == SPECIAL_MAGIC:
+        return "special"
     c = (comment or "").strip()
     if c.startswith("S") and "-" in c:
         return "bot"

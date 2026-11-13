@@ -16,7 +16,12 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CFG_PATH = os.path.join(ROOT, "daily_engine", "config.json")
 DATA_DIR = os.path.join(ROOT, "data", "daily_engine")
 
-MODES = ("shadow", "execute")  # shadow = virtual (implicit); execute = ordine reale (DEMO, sau REAL deblocat)
+MODES = ("shadow", "execute")  # compat: modul GLOBAL = rezumat ("execute" daca macar o piata e Live)
+# Modul PER PIATA (2026-11-12): live = ordine reale (DEMO, sau REAL deblocat in Trading LIVE) / shadow = virtual;
+# pauza = campul `paused` (daily_engine/pause.py). Modul afisat: "pause" daca paused, altfel exec_mode.
+MARKET_EXEC_MODES = ("live", "shadow")
+PLOCK_DEFAULT = {"enabled": False, "trigger_R": 4.5, "lock_R": 4.0}
+MARGIN_DEFAULT_PCT = 80.0      # marja TOTALA folosita dupa ordin <= X% din equity (toate engine-urile)
 ENTRY_MODES = {"breakout": "brk", "direction": "dir"}
 MAGIC = 880001               # rezervat pentru ordinele reale viitoare (api/mt5_pool.DAILY_MAGIC)
 
@@ -24,10 +29,12 @@ DEFAULTS: dict = {
     "mode": "shadow",
     "poll_seconds": 15,
     "notify_telegram": True,
+    "alert_R": 5.0,          # alerta (Notificari + Telegram) cand un trade deschis trece de +X R; 0 = oprita
     # Dimensionare — ACEEASI logica pe toate engine-urile (position_sizing): baza = equity MT5
     # (sau capital fix plafonat), × fractie, × risc%. In SHADOW se calculeaza doar lotul pe care
     # l-ar fi plasat (estimare in bani a trade-ului virtual), fara ordin.
-    "sizing": {"capital_sync_mt5": True, "capital_usd": None, "fraction": 1.0, "risk_pct": 0.01},
+    "sizing": {"capital_sync_mt5": True, "capital_usd": None, "fraction": 1.0, "risk_pct": 0.01,
+               "max_margin_pct": MARGIN_DEFAULT_PCT},
     "markets": [
         {"symbol": "GBPUSD", "enabled": True, "label": "Dimineata — deschiderea Londrei",
          "tz": "Europe/London", "open": "08:00", "last_bar": "14:25",
@@ -69,6 +76,29 @@ def sanitize_rr(v) -> float | None:
     return round(max(0.5, min(10.0, v)), 2) if v > 0 else None
 
 
+def sanitize_plock(p) -> dict:
+    """Profit Lock per piata — OPRIT implicit. trigger >= 3R (fara plafon artificial; maxim tehnic 100R),
+    0 <= lock < trigger. Valori invalide → corectate in limite (nu se activeaza niciodata singur)."""
+    out = dict(PLOCK_DEFAULT)
+    if isinstance(p, dict):
+        out["enabled"] = bool(p.get("enabled", False))
+        try:
+            out["trigger_R"] = round(max(3.0, min(100.0, float(p.get("trigger_R", out["trigger_R"])))), 2)
+        except (TypeError, ValueError):
+            pass
+        try:
+            out["lock_R"] = round(float(p.get("lock_R", out["lock_R"])), 2)
+        except (TypeError, ValueError):
+            pass
+        out["lock_R"] = round(max(0.0, min(out["trigger_R"] - 0.1, out["lock_R"])), 2)
+    return out
+
+
+def market_mode(m: dict) -> str:
+    """Modul afisat al pietei: pause / live / shadow."""
+    return "pause" if m.get("paused") else (m.get("exec_mode") if m.get("exec_mode") in MARKET_EXEC_MODES else "shadow")
+
+
 def hm_to_min(s: str) -> int:
     hh, mm = s.split(":")
     return int(hh) * 60 + int(mm)
@@ -82,12 +112,18 @@ def _sanitize(cfg: dict) -> dict:
         sz["fraction"] = max(0.0, min(1.0, float(sz.get("fraction") or 0)))
         sz["risk_pct"] = max(0.0, min(0.02, float(sz.get("risk_pct") or 0)))
         sz["capital_sync_mt5"] = bool(sz.get("capital_sync_mt5", True))
+        sz["max_margin_pct"] = max(10.0, min(95.0, float(sz.get("max_margin_pct") or MARGIN_DEFAULT_PCT)))
     except (TypeError, ValueError):
         sz = dict(DEFAULTS["sizing"])
     out["sizing"] = sz
     if out["mode"] not in MODES:
         out["mode"] = "shadow"
+    legacy_mode = out["mode"]
     out["poll_seconds"] = max(5, min(120, int(out.get("poll_seconds") or 15)))
+    try:
+        out["alert_R"] = max(0.0, min(100.0, float(out.get("alert_R", 5.0))))
+    except (TypeError, ValueError):
+        out["alert_R"] = 5.0
     mk = cfg.get("markets")
     if isinstance(mk, list) and mk:
         clean = []
@@ -111,11 +147,23 @@ def _sanitize(cfg: dict) -> dict:
                 e["costs_mode"] = e.get("costs_mode") if e.get("costs_mode") in ("auto", "manual") else "manual"
                 e["paused"] = bool(e.get("paused", False))          # pauza per piata (daily_engine/pause.py)
                 e["paused_at"] = e.get("paused_at") if e["paused"] else None
+                # modul per piata; config vechi (doar modul global) → acelasi mod pe fiecare piata (migrare fara efect)
+                if e.get("exec_mode") not in MARKET_EXEC_MODES:
+                    e["exec_mode"] = "live" if legacy_mode == "execute" else "shadow"
+                e["mode"] = market_mode(e)
+                e["profit_lock"] = sanitize_plock(e.get("profit_lock"))
                 clean.append(e)
             except Exception:
                 continue
         if clean:
             out["markets"] = clean
+    for e in out["markets"]:                      # implicitele (fara „markets” in fisier) primesc aceleasi campuri
+        e.setdefault("exec_mode", "live" if legacy_mode == "execute" else "shadow")
+        e.setdefault("paused", False)
+        e["mode"] = market_mode(e)
+        e["profit_lock"] = sanitize_plock(e.get("profit_lock"))
+    # modul GLOBAL = rezumat (compat cu cititorii vechi: dashboard, rapoarte, lifecycle)
+    out["mode"] = "execute" if any(e["exec_mode"] == "live" for e in out["markets"]) else "shadow"
     return out
 
 

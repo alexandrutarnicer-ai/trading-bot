@@ -35,7 +35,7 @@ _SYMBOL_TO_SESSION: dict[str, str] = {
     m: s["id"] for s in SESSIONS for m in s["markets"]
 }
 
-_SOURCES = ("bot", "ai", "daily", "noisy", "manual")
+_SOURCES = ("bot", "ai", "daily", "noisy", "special", "manual")
 
 
 def _by_source(trades: list, source: str) -> list:
@@ -153,11 +153,12 @@ def mt5_engine_performance(days: int = 365):
         return {"connected": False, "error": str(e)}
     st = mt5_pool.get_status()
     by = {s: [t for t in trades if t.get("source") == s] for s in _SOURCES}
-    engines = by["bot"] + by["ai"] + by["daily"] + by["noisy"]
+    engines = by["bot"] + by["ai"] + by["daily"] + by["noisy"] + by["special"]
     out = {"connected": True, "error": None, "days": days, "currency": st.get("currency"),
            "is_demo": st.get("is_demo"),
            "total": _perf(engines), "custom": _perf(by["bot"]), "ai": _perf(by["ai"]),
-           "daily": _perf(by["daily"]), "noisy": _perf(by["noisy"]), "manual": _perf(by["manual"]),
+           "daily": _perf(by["daily"]), "noisy": _perf(by["noisy"]), "special": _perf(by["special"]),
+           "manual": _perf(by["manual"]),
            "account": _perf(trades)}
     for v in out.values():
         if isinstance(v, dict):

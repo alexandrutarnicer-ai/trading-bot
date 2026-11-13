@@ -223,6 +223,25 @@ def effective_ai_weekend(cfg: dict, symbol: str, settings: dict | None = None) -
     return on, hour
 
 
+def friday_close_now(symbol: str, now_utc: datetime | None = None, settings: dict | None = None) -> tuple[bool, str]:
+    """Inchiderea de vineri GLOBALA activa ACUM pentru simbol? (vineri, de la ora configurata, in fusul
+    aplicatiei; cripto exceptat daca asa e setat). Folosita de Daily / Special (nicio intrare noua + pozitiile
+    inchise), la fel ca la Custom / AI / Noisy. Orice eroare → (False, "") — fail-open, ca restul garzilor."""
+    try:
+        s = settings if settings is not None else load_settings()
+        fc = s["friday_close"]
+        if not fc.get("enabled") or (fc.get("exclude_crypto", True) and is_crypto(symbol)):
+            return False, ""
+        from zoneinfo import ZoneInfo
+        from datetime import timezone as _tz
+        now = (now_utc or datetime.now(_tz.utc)).astimezone(ZoneInfo(_tz_name()))
+        if now.weekday() == 4 and now.hour >= int(fc.get("hour", 20)):
+            return True, f"închiderea de vineri (Setări Globale, de la {int(fc.get('hour', 20)):02d}:00)"
+        return False, ""
+    except Exception:
+        return False, ""
+
+
 # ── Istoricul zilei din MT5 (sursa unica) ───────────────────────────────────
 
 def classify(magic: int, comment: str) -> tuple[str, str | None]:

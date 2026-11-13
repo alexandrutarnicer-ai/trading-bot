@@ -32,7 +32,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
-from daily_engine.config import DATA_DIR, ENTRY_MODES, load_config, save_default_config, hm_to_min  # noqa: E402
+from daily_engine.config import DATA_DIR, ENTRY_MODES, load_config, market_mode, save_default_config, hm_to_min  # noqa: E402
 from daily_engine.pause import apply_pause, pause_cut_min  # noqa: E402
 from daily_engine.strategy import evaluate_day_multi  # noqa: E402
 import position_sizing as ps  # noqa: E402
@@ -214,6 +214,9 @@ def window_times(m: dict, day_local) -> tuple[datetime, datetime]:
 
 X_MODE = ENTRY_MODES
 
+MODE_LABEL = {"live": "LIVE", "shadow": "SHADOW", "pause": "PAUZĂ"}
+
+
 
 def bars_today(rates, server_offset_s: int, m: dict, now_utc: datetime) -> pd.DataFrame:
     """Barele M5 INCHISE de azi (zi locala a bursei) din fereastra pietei."""
@@ -289,11 +292,16 @@ class DailyEngine:
         if now_loc.weekday() >= 5:
             return {**info, "phase": "weekend"}
         info["paused"] = bool(m.get("paused"))
+        info["exec_mode"] = self._xmode(m)
+        info["mode"] = "pause" if m.get("paused") else info["exec_mode"]
+        info["profit_lock"] = m.get("profit_lock")
+        ok_x, why_x = self.exec_state(m)
+        info["execution"] = {"active": ok_x, "reason": why_x}
         cut = pause_cut_min(m, day)                 # pauza per piata: fara intrari noi (vezi daily_engine/pause.py)
         if now_loc < w_open:
             if cut is not None:
                 return {**info, "phase": "paused", "reason": "piață pe pauză — fără intrări noi"}
-            self._arm(sym, day)
+            self._arm(sym, day, m)
             return {**info, "phase": "waiting_open", **self._exec_info(sym, day)}
 
         self.mt5.symbol_select(sym, True)          # piata poate fi schimbata din UI (hot-reload) — selectata mereu
@@ -311,15 +319,20 @@ class DailyEngine:
         st = evaluate_day_multi(b.open, b.high, b.low, b.close, b.spread * point, b.mins,
                                 open_min=hm_to_min(m["open"]), or_minutes=m["or_minutes"],
                                 mode=ENTRY_MODES[m["entry"]], rr=m.get("rr"), slip=m["slip"],
-                                comm=m["comm"], day_complete=day_complete, reentry=m.get("reentry"))
+                                comm=m["comm"], day_complete=day_complete, reentry=m.get("reentry"),
+                                plock=m.get("profit_lock"))
         st = apply_pause(st, cut)
         if st["phase"] in ("waiting_open", "forming_or"):
-            self._arm(sym, day)
+            self._arm(sym, day, m)
         self._events(m, str(day), st)
         try:
             self._execute(m, day, st, b, now_loc, w_end)
         except Exception as e:                       # o eroare de executie nu opreste shadow-ul
             self._err(f"{sym} executie: {type(e).__name__}: {e}")
+        try:
+            self._profit_alert(m, str(day), st)
+        except Exception as e:                       # alerta nu are voie sa opreasca engine-ul
+            self._err(f"{sym} alerta profit: {type(e).__name__}: {e}")
         clean = {k: (v.item() if isinstance(v, np.generic) else v) for k, v in st.items() if k != "trades"}
         tr = st.get("trades") or []
         return {**info, **clean, **self._exec_info(sym, day),
@@ -328,15 +341,30 @@ class DailyEngine:
 
     # ── EXECUTIE REALA (doar mode=execute + cont permis + zi armata) ──────────
 
-    def exec_state(self) -> tuple[bool, str]:
-        if self.cfg.get("mode") != "execute":
-            return False, "mod SHADOW (fără ordine)"
+    def exec_state(self, m: dict | None = None) -> tuple[bool, str]:
+        """Executie reala permisa? Per PIATA (m dat): piata pe Live + cont permis (DEMO, sau REAL deblocat in
+        Trading LIVE). Fara m: macar o piata Live (rezumatul engine-ului)."""
+        if m is not None:
+            if self._xmode(m) != "live":
+                return False, "piață în SHADOW (fără ordine reale)"
+        elif not any(self._xmode(x) == "live" for x in self.cfg.get("markets", [])):
+            return False, "toate piețele în SHADOW (fără ordine)"
         from live_guard import live_allowed
         return X.execution_allowed(self.mt5, live_allowed)
 
-    def _arm(self, sym: str, day) -> None:
-        """Ziua devine REALA doar daca modul Executie era activ INAINTE de formarea intervalului."""
-        ok, _ = self.exec_state()
+    def _xmode(self, m: dict) -> str:
+        """Modul de executie al pietei; o piata fara mod propriu (config vechi nesanitizat) mosteneste modul global."""
+        x = m.get("exec_mode")
+        if x in ("live", "shadow"):
+            return x
+        return "live" if self.cfg.get("mode") == "execute" else "shadow"
+
+    def _market_cfg(self, sym: str) -> dict:
+        return next((x for x in self.cfg.get("markets", []) if x.get("symbol") == sym), {})
+
+    def _arm(self, sym: str, day, m: dict | None = None) -> None:
+        """Ziua devine REALA doar daca piata era pe Live (si contul permis) INAINTE de formarea intervalului."""
+        ok, _ = self.exec_state(m if m is not None else self._market_cfg(sym))
         ev = self.state.setdefault("events", {})
         k = f"{day}|{sym}|armed"
         if ok and not ev.get(k):
@@ -355,14 +383,22 @@ class DailyEngine:
         pos, ords = X.own(self.mt5, sym)
         pos_t = [p for p in pos if (p.comment or "").startswith(tag)]
         ord_t = [o for o in ords if (o.comment or "").startswith(tag)]
-        # 1) final de fereastra: anuleaza tot, inchide tot — niciodata peste noapte
-        if now_loc >= w_end:
+        # 1) final de fereastra / INCHIDEREA DE VINERI GLOBALA: anuleaza tot, inchide tot — niciodata peste noapte /
+        #    weekend (Setari Globale → friday_close, ca la Custom / AI / Noisy / Special)
+        from live.global_guard import friday_close_now
+        fc, fc_why = friday_close_now(sym, now_loc.astimezone(timezone.utc))
+        if now_loc >= w_end or fc:
             for o in ord_t:
                 X.cancel(self.mt5, o)
             for p in pos_t:
                 ok, res = X.close(self.mt5, p)
-                self._exec_note(sym, f"închis la final de fereastră ({'ok' if ok else 'EȘUAT ' + str(getattr(res, 'retcode', res))})")
+                self._exec_note(sym, f"închis — {fc_why if fc else 'final de fereastră'} "
+                                     f"({'ok' if ok else 'EȘUAT ' + str(getattr(res, 'retcode', res))})")
             return
+        # 1a) PROFIT LOCK pe pozitia REALA: trade-ul virtual pereche a atins pragul → SL real mutat la lock_R
+        #     (doar daca e mai protector decat SL-ul real; o data pe pozitie). Functioneaza si cu piata pe pauza.
+        if pos_t and st.get("phase") == "in_position" and st.get("locked") and st.get("sl_now") is not None:
+            self._apply_profit_lock(m, pos_t, float(st["sl_now"]), key)
         # 1b) piata pe PAUZA: niciun ordin nou; ordinele de intrare neactivate se anuleaza, pozitiile raman gestionate
         if m.get("paused"):
             for o in ord_t:
@@ -383,7 +419,7 @@ class DailyEngine:
             return
         if pos_t or ord_t or ev.get(f"{key}|placed") or not ev.get(f"{key}|armed"):
             return
-        ok, why = self.exec_state()
+        ok, why = self.exec_state(m)
         if not ok or st["phase"] not in ("waiting_entry",) or st.get("or_hi") is None:
             return
         hi, lo = st["or_hi"], st["or_lo"]
@@ -428,6 +464,12 @@ class DailyEngine:
                 ev[f"{key}|placed"] = "skip"
                 self._exec_note(sym, f"nu plasez: {r['reason']}")
                 return
+            lots_m, why_m = self._margin_ok(sym, side, r["lots"], entry)
+            if not lots_m:
+                ev[f"{key}|placed"] = "skip"
+                self._exec_note(sym, f"nu plasez: {why_m}")
+                return
+            r = {**r, "lots": lots_m}
             tp = entry + side * m["rr"] * abs(entry - sl) if m.get("rr") else None
             ok_o, res = X.place_market(self.mt5, sym, side, r["lots"], sl, tag, tp=tp)
             results.append((("LONG" if side == 1 else "SHORT") + " piață" + (f" · TP {m['rr']:g}R" if tp else ""), r, ok_o, res))
@@ -438,6 +480,11 @@ class DailyEngine:
                     if r.get("reason"):
                         self._exec_note(sym, f"{'BUY' if side == 1 else 'SELL'}_STOP nu se plasează: {r['reason']}")
                     continue
+                lots_m, why_m = self._margin_ok(sym, side, r["lots"], lvl)
+                if not lots_m:
+                    self._exec_note(sym, f"{'BUY' if side == 1 else 'SELL'}_STOP nu se plasează: {why_m}")
+                    continue
+                r = {**r, "lots": lots_m}
                 beyond = (side == 1 and tick.ask >= lvl) or (side == -1 and tick.bid <= lvl)
                 tp = lvl + side * m["rr"] * abs(lvl - sl) if m.get("rr") else None
                 if beyond:      # pretul a trecut deja de margine -> ca in backtest: umplere la piata
@@ -457,7 +504,7 @@ class DailyEngine:
         """Re-intrarea k (>= 1) in executie: doar daca semnalul virtual e PROASPAT (intrare pe ultima bara inchisa sau
         cea dinainte) — un restart tarziu nu plaseaza un ordin vechi. Aceleasi protectii ca primul trade."""
         sym, ev, key = m["symbol"], self.state.setdefault("events", {}), f"{day}|{m['symbol']}"
-        ok, why = self.exec_state()
+        ok, why = self.exec_state(m)
         if not ok:
             return
         if len(b) == 0 or int(st.get("entry_min", -1)) < int(b.mins.iloc[-1]) - 5:
@@ -485,6 +532,12 @@ class DailyEngine:
             ev[f"{key}|placed{k}"] = "skip"
             self._exec_note(sym, f"re-intrarea {k + 1} nu se plasează: {r.get('reason')}")
             return
+        lots_m, why_m = self._margin_ok(sym, side, r["lots"], entry)
+        if not lots_m:
+            ev[f"{key}|placed{k}"] = "skip"
+            self._exec_note(sym, f"re-intrarea {k + 1} nu se plasează: {why_m}")
+            return
+        r = {**r, "lots": lots_m}
         tp = entry + side * m["rr"] * abs(entry - sl) if m.get("rr") else None
         ok_o, res = X.place_market(self.mt5, sym, side, r["lots"], sl, f"{tag}{k}"[:16], tp=tp)
         ev[f"{key}|placed{k}"] = "yes" if ok_o else "failed"
@@ -492,6 +545,91 @@ class DailyEngine:
                              f"{r['lots']} loturi · SL{' · TP ' + format(m['rr'], 'g') + 'R' if tp else ''}"
                              + ("" if ok_o else f" — retcode {getattr(res, 'retcode', res)}"), important=True)
         _write_json(STATE_FILE, self.state)
+
+    def _profit_alert(self, m: dict, day: str, st: dict) -> None:
+        """Trade-ul DESCHIS a trecut de +alert_R (implicit 5R, pe inchiderea ultimei lumanari) → o singura alerta
+        pe trade (Notificari + Telegram, trimisa si cu rezumatul Telegram oprit). Doar informeaza — NU inchide nimic;
+        decizia e a utilizatorului."""
+        lim = float(self.cfg.get("alert_R", 5.0) or 0.0)
+        if not lim or st.get("phase") != "in_position" or st.get("open_R") is None or float(st["open_R"]) < lim:
+            return
+        sym, ev = m["symbol"], self.state.setdefault("events", {})
+        k = int(st.get("k") or 0)
+        key = f"{day}|{sym}|alert{k}"
+        if ev.get(key):
+            return
+        ev[key] = True
+        _write_json(STATE_FILE, self.state)
+        side = {1: "LONG", -1: "SHORT"}.get(st.get("side"), "")
+        real = ""
+        try:
+            tag = X.day_tag(sym, datetime.strptime(day, "%Y-%m-%d").date())
+            pos, _ = X.own(self.mt5, sym)
+            for p in pos:
+                if (p.comment or "").startswith(tag):
+                    real += f"\nPoziție REALĂ #{p.ticket}: {p.volume} loturi · profit {getattr(p, 'profit', 0.0):+.2f}"
+        except Exception:
+            pass
+        msg = (f"🚀 <b>Daily — {sym} {side} în profit peste +{lim:g}R</b>\n"
+               f"Trade deschis: <b>{float(st['open_R']):+.2f}R</b> (intrare {st.get('entry', 0):.5g}, ultimul preț "
+               f"{st.get('last', 0):.5g}, SL {st.get('sl_now', st.get('sl', 0)):.5g})"
+               + (real or "\n(trade virtual — piața e în SHADOW)")
+               + "\nNu închid nimic automat — decizia e a ta.")
+        log.info(msg.replace("<b>", "").replace("</b>", ""))
+        try:
+            from api.telegram import send_message
+            threading.Thread(target=send_message, args=(msg,), daemon=True).start()
+        except Exception:
+            pass
+
+    def _apply_profit_lock(self, m: dict, pos_t: list, sl_now: float, key: str) -> None:
+        ev = self.state.setdefault("events", {})
+        info = self.mt5.symbol_info(m["symbol"])
+        tol = float(getattr(info, "point", 0.0) or 0.0) * 0.5 + 1e-9      # rotunjirea la tick nu re-trimite
+        for p in pos_t:
+            side = 1 if p.type == getattr(self.mt5, "POSITION_TYPE_BUY", 0) else -1
+            cur = float(getattr(p, "sl", 0.0) or 0.0)
+            # comparat cu SL-ul REAL din MT5 (nu cu un marcaj): dupa restart / modificare manuala se reface,
+            # dar niciodata nu coboara un SL deja mai protector
+            better = cur == 0.0 or (side == 1 and sl_now > cur + tol) or (side == -1 and sl_now < cur - tol)
+            k = f"{key}|plock|{p.ticket}"
+            if not better:
+                continue
+            ok, res = X.modify_sl(self.mt5, p, sl_now)
+            if ok:
+                ev[k] = "done"
+                self._exec_note(m["symbol"], f"🔒 Profit Lock: SL mutat la {sl_now:.5g} "
+                                             f"(+{(m.get('profit_lock') or {}).get('lock_R', 0):g}R) pe poziția #{p.ticket}",
+                                important=True)
+                _write_json(STATE_FILE, self.state)
+            elif ev.get(k) != "warned":
+                ev[k] = "warned"
+                self._exec_note(m["symbol"], f"⚠ Profit Lock: mutarea SL la {sl_now:.5g} a fost RESPINSĂ "
+                                             f"(retcode {getattr(res, 'retcode', res)}) — reîncerc la iterația următoare",
+                                important=True)
+
+    def _margin_ok(self, sym: str, side: int, lots: float, price: float) -> tuple[float, str | None]:
+        """Marja TOTALA folosita dupa ordin <= max_margin_pct% din equity (toate engine-urile + manual).
+        Lotul e redus la cel mai mare pas care incape; nici lotul minim → 0 (ordinul NU se plaseaza)."""
+        try:
+            pct = float((self.cfg.get("sizing") or {}).get("max_margin_pct") or 80.0) / 100.0
+            acc, info = self.mt5.account_info(), self.mt5.symbol_info(sym)
+            if acc is None or info is None or not lots:
+                return lots, None
+            otype = self.mt5.ORDER_TYPE_BUY if side == 1 else self.mt5.ORDER_TYPE_SELL
+            room = pct * float(acc.equity) - float(getattr(acc, "margin", 0.0) or 0.0)
+            need = self.mt5.order_calc_margin(otype, sym, lots, price)
+            if need is None or need <= room:
+                return lots, None
+            per = need / lots
+            step, vmin = float(info.volume_step or 0.01), float(info.volume_min or 0.01)
+            fit = int(max(0.0, room) / per / step + 1e-9) * step if per > 0 else 0.0
+            if fit + 1e-12 < vmin:
+                return 0.0, (f"marjă insuficientă: {need:.2f} necesar, loc {max(0.0, room):.2f} "
+                             f"(limita {pct * 100:.0f}% din equity, cu toate pozițiile deschise)")
+            return round(fit, 8), f"lot redus la {fit:g} pentru limita de marjă {pct * 100:.0f}% din equity"
+        except Exception:
+            return lots, None                        # fail-open: o eroare de citire nu blocheaza
 
     @staticmethod
     def _capped(r: dict, info, entry: float, sl: float, acc) -> dict:
@@ -561,7 +699,9 @@ class DailyEngine:
                     lot_txt = (f"\n⛔ În EXECUȚIE ar fi BLOCAT ({bf['blocked_reason']}) — "
                                f"la lotul {bf['blocked_lots']:g}: risc ~{bf['blocked_risk_money']:.2f} {bf['currency']}")
                 tp_txt = f" | TP {t['tp']:.5g}" if t.get("tp") else ""
-                msg = (f"🧪 <b>Daily SHADOW — {sym} {side}{nr}</b> (virtual, fără ordin)"
+                live_m = self._xmode(m) == "live"
+                msg = (f"🧪 <b>Daily {'LIVE (semnal)' if live_m else 'SHADOW'} — {sym} {side}{nr}</b> "
+                       + ("(ordinul real e raportat separat)" if live_m else "(virtual, fără ordin)")
                        + (" — re-intrare" if k else "") + "\n"
                        f"Intrare {t['entry']:.5g} | SL {t['sl']:.5g}{tp_txt} | interval {t['or_lo']:.5g}–{t['or_hi']:.5g}"
                        + lot_txt)
@@ -573,7 +713,10 @@ class DailyEngine:
                        "exit": t["exit"], "R": round(t["R"], 4), "reason": t["reason"],
                        "or_hi": t["or_hi"], "or_lo": t["or_lo"], "risk": t["risk"], "k": k,
                        "tp": t.get("tp"), "rr": m.get("rr"),
-                       "mode": self.cfg["mode"], "recorded_at": datetime.now(RO).isoformat(timespec="seconds")}
+                       "mode": ("execute" if ev.get(f"{key}|placed{sfx}") == "yes" else "shadow"),
+                       "market_mode": market_mode(m), "profit_lock": (m.get("profit_lock") or {}).get("enabled", False),
+                       "locked": bool(t.get("locked")) or t.get("reason") == "LOCK",
+                       "recorded_at": datetime.now(RO).isoformat(timespec="seconds")}
                 sz = ev.get(f"{key}|size{sfx}") or self.virtual_size(sym, t)
                 if sz.get("lots"):
                     rec.update(lots=sz["lots"], risk_money=round(sz["risk_money"], 4),
@@ -691,10 +834,12 @@ def _run() -> None:
     _write_json(DESIRED_FILE, {"running": True, "since": datetime.now(RO).isoformat(timespec="seconds"),
                                "pid": os.getpid()})
     eng = DailyEngine()
-    mode_txt = "EXECUȚIE (ordine reale, dacă contul o permite)" if cfg["mode"] == "execute" else "SHADOW (fără ordine reale)"
-    log.info(f"Daily Engine pornit — mod {mode_txt}")
-    _notify(cfg, f"🧪 <b>Daily Engine pornit</b> — mod {mode_txt}\n"
-                 + "\n".join(f"• {m['symbol']}: {m.get('label', '')}" for m in cfg["markets"] if m.get("enabled", True)))
+    mode_txt = ("cel puțin o piață LIVE (ordine reale, dacă contul o permite)" if cfg["mode"] == "execute"
+                else "SHADOW (fără ordine reale)")
+    log.info(f"Daily Engine pornit — {mode_txt}")
+    _notify(cfg, f"🧪 <b>Daily Engine pornit</b> — {mode_txt}\n"
+                 + "\n".join(f"• {m['symbol']}: {MODE_LABEL.get(market_mode(m), market_mode(m))} — {m.get('label', '')}"
+                             for m in cfg["markets"] if m.get("enabled", True)))
     while not eng.connect():
         _write_json(STATUS_FILE, {"running": True, "mode": "shadow", "pid": os.getpid(),
                                   "heartbeat": datetime.now(RO).isoformat(timespec="seconds"),

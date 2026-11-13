@@ -32,6 +32,8 @@ with open(C.CFG_PATH, "w", encoding="utf-8") as _f:          # pornim de la conf
 from daily_engine import market_tools as T  # noqa: E402
 from daily_engine.strategy import evaluate_day_multi  # noqa: E402
 from api.routers import daily_engine as R  # noqa: E402
+import api.audit_log as AL  # noqa: E402
+AL.AUDIT_FILE = os.path.join(TMP, "audit.jsonl")       # testul nu scrie in jurnalul de audit real
 
 FAIL = 0
 SENT: list[str] = []
@@ -256,6 +258,52 @@ for slot in (0, 1):
     check(f"... slotul {2 - slot} are in continuare setarile lui (nu le-a preluat pe ale slotului {slot + 1})",
           m_[1 - slot]["rr"] != 4.0 or m_[1 - slot]["reentry"].get("max_trades") != 5, m_[1 - slot])
     R.daily_config_save({"markets": [{"symbol": m_[slot]["symbol"], "rr": None, "reentry": {"enabled": False}}]})
+
+print("6. Modul PER PIATA (Live / Shadow / Pauza), Profit Lock, audit")
+SENT.clear()
+R.daily_config_save({"mode": "shadow"})
+r = R.daily_market_mode(0, {"mode": "live"})
+cm = C.load_config()["markets"]
+check("slot 1 → LIVE; slotul 2 rămâne SHADOW (independent)", r["changed"] and cm[0]["mode"] == "live"
+      and cm[1]["mode"] == "shadow" and C.load_config()["mode"] == "execute", [x["mode"] for x in cm])
+check("... Telegram + audit (live)", any("pe LIVE" in t for t in SENT) and any(a["action"] == "mode" and a["after"] == "live"
+                                                                              for a in AL.read()), SENT)
+r = R.daily_market_mode(1, {"mode": "pause"})
+cm = C.load_config()["markets"]
+check("slot 2 → PAUZĂ; slotul 1 rămâne LIVE", cm[0]["mode"] == "live" and cm[1]["mode"] == "pause" and cm[1]["paused"], cm[1])
+r = R.daily_market_mode(1, {"mode": "shadow"})
+cm = C.load_config()["markets"]
+check("slot 2 din PAUZĂ → SHADOW: pauza scoasă, modul shadow", cm[1]["mode"] == "shadow" and not cm[1]["paused"], cm[1])
+check("mod repetat → fără schimbare", R.daily_market_mode(0, {"mode": "live"})["changed"] is False)
+try:
+    R.daily_market_mode(0, {"mode": "turbo"})
+    check("mod invalid → 400", False)
+except R.HTTPException as e:
+    check("mod invalid → 400", e.status_code == 400)
+with open(C.CFG_PATH, encoding="utf-8") as f_:
+    raw_ = _json.load(f_)
+check("modul fiecărei piețe e scris explicit în fișier (persistă la restart)",
+      [x.get("exec_mode") for x in raw_["markets"]] == ["live", "shadow"], [x.get("exec_mode") for x in raw_["markets"]])
+sym0 = C.load_config()["markets"][0]["symbol"]
+other = C.load_config()["markets"][1]["symbol"]
+new0 = "DE40" if "DE40" not in (sym0, other) else ("GBPUSD" if other != "GBPUSD" else "US500")
+out = R.daily_config_save({"markets": [{"slot": 0, "symbol": new0, "preset": "frankfurt"}]})
+check(f"piață NOUĂ în slot ({sym0} → {new0}) pornește în SHADOW (Live se aprobă per piață)",
+      C.load_config()["markets"][0]["mode"] == "shadow", C.load_config()["markets"][0]["mode"])
+out = R.daily_config_save({"markets": [{"symbol": new0, "profit_lock": {"enabled": True, "trigger_R": 4.5, "lock_R": 4}}]})
+cm = C.load_config()["markets"]
+check("Profit Lock salvat pe o piață; cealaltă rămâne OPRITĂ", cm[0]["profit_lock"] == {"enabled": True, "trigger_R": 4.5,
+      "lock_R": 4.0} and not cm[1]["profit_lock"]["enabled"], [x["profit_lock"] for x in cm])
+check("... modificarea apare în audit + Telegram", any("Profit Lock PORNIT" in a["detail"] for a in AL.read()))
+out = R.daily_config_save({"markets": [{"symbol": new0, "profit_lock": {"enabled": True, "trigger_R": 1, "lock_R": 9}}]})
+check("Profit Lock invalid → corectat în limite (trigger 3R, lock < trigger)",
+      C.load_config()["markets"][0]["profit_lock"] == {"enabled": True, "trigger_R": 3.0, "lock_R": 2.9})
+R.daily_config_save({"mode": "execute"})
+check("compat: modul global vechi „execute” → toate piețele LIVE", [x["exec_mode"] for x in C.load_config()["markets"]] == ["live", "live"])
+R.daily_config_save({"mode": "shadow"})
+check("compat: modul global „shadow” → toate piețele SHADOW", [x["exec_mode"] for x in C.load_config()["markets"]] == ["shadow", "shadow"])
+out = R.daily_config_save({"sizing": {"max_margin_pct": 200}})
+check("limita de marjă plafonată la 95%", C.load_config()["sizing"]["max_margin_pct"] == 95.0, C.load_config()["sizing"])
 
 # engine-ul: fiecare piata e evaluata separat (o eroare pe un slot nu opreste celalalt)
 import inspect  # noqa: E402

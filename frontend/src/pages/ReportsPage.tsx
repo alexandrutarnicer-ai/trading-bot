@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   BarChart2, TrendingUp, TrendingDown, Clock, Settings,
   Filter, ChevronDown, ChevronRight, Trophy, Target, Minus,
@@ -535,6 +536,35 @@ function UptimeTab() {
 
 // ── Session changes tab ───────────────────────────────────────────────────────
 
+interface AuditRow { time: string; engine: string; action: string; market?: string | null; detail: string;
+  before?: unknown; after?: unknown }
+
+const AUDIT_ACTION: Record<string, string> = { mode: "mod", pause: "pauză", resume: "reluat", config: "configurare",
+  start: "pornit", stop: "oprit", order: "ordin", blocked: "blocat", rejected: "respins" };
+
+function EngineAuditPanel() {
+  const { data } = useQuery<{ items: AuditRow[] }>({ queryKey: ["audit-log"], queryFn: () => apiFetch("/reports/audit-log?limit=200"),
+    refetchInterval: 60_000, refetchIntervalInBackground: false });
+  const items = data?.items ?? [];
+  if (!items.length) return null;
+  return (
+    <div className="border border-surface-border rounded-xl p-3 space-y-1">
+      <div className="text-xs font-semibold text-slate-300">Audit engine-uri (Daily / Special) — moduri, configurare, pornire / oprire</div>
+      <div className="max-h-72 overflow-y-auto">
+        <table className="w-full text-[11px]">
+          <tbody>{items.map((r, i) => (
+            <tr key={i} className="border-t border-surface-border/30">
+              <td className="py-0.5 pr-2 text-slate-500 whitespace-nowrap">{new Date(r.time).toLocaleString("ro-RO")}</td>
+              <td className="pr-2 text-slate-300 uppercase">{r.engine}</td>
+              <td className="pr-2 text-slate-400">{AUDIT_ACTION[r.action] ?? r.action}</td>
+              <td className="text-slate-300">{r.detail}</td>
+            </tr>))}</tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function SessionChangesTab() {
   const { data, isLoading } = useSessionChanges();
   const items = data?.items ?? [];
@@ -578,6 +608,7 @@ function SessionChangesTab() {
 
   return (
     <div className="space-y-3">
+      <EngineAuditPanel />
       {isLoading ? (
         <div className="space-y-2">
           {[...Array(4)].map((_, i) => (

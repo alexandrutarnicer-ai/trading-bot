@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Activity, Brain, CalendarClock, Loader2, Play, Square, Power, Zap } from "lucide-react";
+import { Activity, Brain, CalendarClock, Loader2, Play, Square, Power, Zap, Sparkles } from "lucide-react";
 import { useEngines, useEngineAction } from "../api/hooks";
 import type { LifecycleEngineId, EngineState } from "../api/types";
 
@@ -15,6 +15,7 @@ export const ENGINE_THEME: Record<LifecycleEngineId, { text: string; dot: string
   ai:     { text: "text-purple-300",  dot: "bg-purple-400",  bg: "bg-purple-500/10",  border: "border-purple-500/30",  icon: Brain },
   daily:  { text: "text-cyan-300",    dot: "bg-cyan-400",    bg: "bg-cyan-500/10",    border: "border-cyan-500/30",    icon: CalendarClock },
   noisy:  { text: "text-amber-300",   dot: "bg-amber-400",   bg: "bg-amber-500/10",   border: "border-amber-500/30",   icon: Zap },
+  special: { text: "text-pink-300",   dot: "bg-pink-400",    bg: "bg-pink-500/10",    border: "border-pink-500/30",    icon: Sparkles },
 };
 
 export const NOISY_START_CONFIRM =
@@ -31,6 +32,8 @@ const CONFIRM: Partial<Record<string, string>> = {
   "ai:start":     "Pornești AI Engine? Pe piețele în mod Activ poate plasa ordine în contul MT5 conectat.",
   "ai:stop":      "Oprești AI Engine? Pozițiile AI deschise rămân în MT5 cu SL/TP.",
   "noisy:start":  NOISY_START_CONFIRM,
+  "special:stop": "Oprești Special Engine? Pozițiile reale deschise (dacă există) rămân cu SL-ul lor; la repornire " +
+                  "se închid la finalul sesiunii sau dacă sunt din altă zi.",
 };
 
 function EngineCard({ e }: { e: EngineState }) {

@@ -1,0 +1,9 @@
+# Jurnale append-only: la integrare se pastreaza randurile AMBELOR dispozitive (scripts/sync_branch.py)
+data/daily_engine/trades.jsonl merge=union
+data/noisy_engine/trades.jsonl merge=union
+data/ai/ai_outcomes.csv merge=union
+data/live_signals/*/signals.csv merge=union
+data/live_signals/*/outcomes.csv merge=union
+data/live_signals/*/ai_filter.jsonl merge=union
+data/audit_log.jsonl merge=union
+data/special_engine/trades.jsonl merge=union

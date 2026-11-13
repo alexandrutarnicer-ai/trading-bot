@@ -64,7 +64,9 @@ def engine_stats(trades: list[dict]) -> dict:
 def daily_shadow(start: datetime, end: datetime) -> dict:
     try:
         from daily_engine.engine import load_trades
-        tr = [t for t in load_trades() if start <= datetime.fromisoformat(t["recorded_at"][:19]) < end]
+        # doar trade-urile VIRTUALE: cele cu ordin real (mode=execute) apar deja in sectiunea din MT5
+        tr = [t for t in load_trades() if start <= datetime.fromisoformat(t["recorded_at"][:19]) < end
+              and t.get("mode", "shadow") != "execute"]
     except Exception:
         return {"trades": 0}
     rs = [t["R"] for t in tr]

@@ -1472,9 +1472,23 @@ export function GuidePage() {
               Frankfurt (DE40) a ieșit cel mai bine (+0,08…0,09R, KEEP, și cu re-intrări), dar marja lotului minim (~145 $) nu încape
               acum în cont. Detalii: docs/DAILY_ENGINE_PLAN.md §10.</Warn>
           </SubSection>
+          <SubSection title="Mod per piață: LIVE / SHADOW / PAUZĂ, Profit Lock, limita de marjă" defaultOpen={false}>
+            <div className="space-y-1 text-xs">
+              <KV k="Unde" v="Pe cardul fiecărei piețe: LIVE / SHADOW / PAUZĂ. O piață nu o afectează pe cealaltă; modul persistă la restart" />
+              <KV k="LIVE" v="ordine reale de la următoarea fereastră; pe cont REAL doar cu „Daily Engine” deblocat în Settings → Trading LIVE (altfel cardul arată „LIVE cerut, dar BLOCAT” + motivul). Două confirmări" />
+              <KV k="SHADOW" v="trade-uri virtuale pe prețuri reale, zero ordine; o poziție reală deschisă azi rămâne gestionată până la SL / final" />
+              <KV k="PAUZĂ" v="nicio intrare nouă (nici virtuală); ordinele de intrare neactivate se anulează; o poziție deschisă rămâne gestionată (SL, Profit Lock, final de fereastră)" />
+              <KV k="Piață nouă într-un slot" v="pornește mereu în SHADOW — Live se aprobă per piață" />
+              <KV k="Profit Lock (opțional, OPRIT)" v="„Opțiuni” pe card: la +Trigger R (minim 3R) SL-ul se mută la +Lock R (sub Trigger). Ex. 4,5R → 4R. În Live mută SL-ul real în MT5 (doar dacă e mai protector). Backtest: nicio variantă n-a fost mai bună decât strategia actuală (DE40 5→4R la egalitate, cu drawdown mai mic)" />
+              <KV k="Limită de marjă" v="marja TOTALĂ a contului după un ordin Daily ≤ 80% din equity (toate engine-urile). DE40 la lotul minim ≈ 148 $ — cu alte poziții deschise ordinul nu se plasează (motivul în Notificări)" />
+              <KV k="Vineri" v="închiderea de vineri din Setări Globale se aplică și pe Daily (poziții închise, nimic nou de la ora globală)" />
+              <KV k="Alertă +5R" v="când un trade deschis trece de +5R primești o singură notificare (Notificări + Telegram) — nu se închide nimic automat, decizia e a ta" />
+              <KV k="Audit" v="schimbările de mod / pauză / configurare apar în Rapoarte → Modificări („Audit engine-uri”)" />
+            </div>
+          </SubSection>
           <SubSection title="Shadow → Execuție (ordine reale)">
             <div className="space-y-1 text-xs">
-              <KV k="Unde" v="Tab Daily Engine → comutatorul „Mod” (două confirmări; revenirea la Shadow cere o confirmare)" />
+              <KV k="Unde" v="Pe cardul pieței: selectorul LIVE / SHADOW / PAUZĂ (două confirmări la LIVE)" />
               <KV k="Cont DEMO" v="Execuția merge direct" />
               <KV k="Cont REAL" v="În plus: Settings → Trading LIVE → „Daily Engine” deblocat (per mașină). Altfel: „Execuție blocată” + motivul" />
               <KV k="De când" v="De la următoarea fereastră — ziua trebuie activată înainte de formarea intervalului (comutat mai târziu → ziua rămâne shadow)" />
@@ -1596,9 +1610,9 @@ export function GuidePage() {
 
           <SubSection title="Rapoarte automate (Telegram)" defaultOpen={false}>
             <div className="space-y-1 text-xs">
-              <KV k="Zilnic" v="În fiecare zi la ora setată (23:30): tranzacțiile zilei din MT5" />
-              <KV k="Săptămânal" v="DOAR vineri la ora setată (23:30), de la raportul de vinerea trecută (include weekendul)" />
-              <KV k="Lunar" v="Pe 1 ale lunii la 09:00, luna calendaristică completă precedentă; recuperat în primele 7 zile" />
+              <KV k="Zilnic (opțional)" v="Pornit implicit, se poate opri din Settings; în fiecare zi la ora setată (23:30): tranzacțiile zilei din MT5. O singură dată pe zi, și după restart / cu două dashboard-uri pornite" />
+              <KV k="Săptămânal" v="Vineri de la 20:00 (ora setată): așteaptă întâi închiderea pozițiilor de vineri (max 20 min) și istoricul MT5; fereastra e continuă — de la raportul trecut până în momentul trimiterii, deci închiderile de vineri intră în raport. Dacă aplicația e închisă vineri, se trimite la următoarea pornire (până luni 12:00)" />
+              <KV k="Lunar" v="Pe 1 ale lunii la 09:00, DOAR luna calendaristică încheiată (niciodată luna curentă — o gardă refuză altceva); recuperat în primele 7 zile" />
               <KV k="Conținut lunar" v="Complet: performanța Custom / AI / Daily + TOTAL, comparație (profit, risc, drawdown, consistență), condiții de piață, evenimente, weekend, probleme, analiză AI consultativă" />
               <KV k="Conținut săptămânal" v="Esențial: partea de trading identică (performanță + comparație); piața într-un rând (trend / range pe piață), știrile High (următoarele 5), gap-uri de weekend și probleme grave DOAR dacă au existat, analiză AI în 3 puncte" />
               <KV k="Lipsuri" v="O sursă indisponibilă (MT5, calendar, AI) e marcată explicit — raportul se trimite oricum" />

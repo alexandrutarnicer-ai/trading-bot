@@ -1,4 +1,4 @@
-import { Activity, Brain, CalendarClock, Sigma, Zap } from "lucide-react";
+import { Activity, Brain, CalendarClock, Sigma, Zap, Sparkles } from "lucide-react";
 import { useEnginePerformance, useDailyStatus, useAiStatus, useEngines, useNoisyStatus } from "../api/hooks";
 import type { EnginePerf, EngineId } from "../api/types";
 
@@ -11,7 +11,7 @@ import type { EnginePerf, EngineId } from "../api/types";
  * sunt 0, iar trade-urile virtuale sunt afisate separat, in R, niciodata adunate la bani.
  */
 
-type Key = "total" | EngineId | "noisy";
+type Key = "total" | EngineId | "noisy" | "special";
 type EngineKey = Exclude<Key, "total">;
 
 const THEME: Record<Key, { label: string; text: string; dot: string; border: string; bg: string; icon: typeof Activity }> = {
@@ -20,6 +20,7 @@ const THEME: Record<Key, { label: string; text: string; dot: string; border: str
   ai:     { label: "AI Engine",     text: "text-purple-300",  dot: "bg-purple-400",  border: "border-purple-500/30",  bg: "bg-purple-500/5",  icon: Brain },
   daily:  { label: "Daily Engine",  text: "text-cyan-300",    dot: "bg-cyan-400",    border: "border-cyan-500/30",    bg: "bg-cyan-500/5",    icon: CalendarClock },
   noisy:  { label: "Noisy Engine",  text: "text-amber-300",   dot: "bg-amber-400",   border: "border-amber-500/30",   bg: "bg-amber-500/5",   icon: Zap },
+  special: { label: "Special Engine", text: "text-pink-300",  dot: "bg-pink-400",    border: "border-pink-500/30",    bg: "bg-pink-500/5",    icon: Sparkles },
 };
 
 const money = (v: number | null | undefined, cur: string) =>
@@ -84,7 +85,7 @@ export function EnginePerformanceCards() {
   return (
     <div className="space-y-1.5">
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-        {(["total", "custom", "ai", "daily", "noisy"] as Key[]).map(k => <PerfCard key={k} k={k} p={data?.[k]} cur={cur} />)}
+        {(["total", "custom", "ai", "daily", "noisy", "special"] as Key[]).map(k => <PerfCard key={k} k={k} p={data?.[k]} cur={cur} />)}
       </div>
       <p className="text-[10px] text-slate-600">
         Ultimele {data?.days ?? 365} zile · doar poziții închise (P&L flotant: Ordine Active) · profit brut din MT5, costurile
