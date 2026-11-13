@@ -1,0 +1,10 @@
+{
+  "events": {
+    "2026-11-09|NOISE:USTEC|0": true,
+    "2026-11-10|ORB:JP225:5/direction|0": true,
+    "2026-11-11|ORB:JP225:5/direction|0": true,
+    "2026-11-11|NOISE:USTEC|0": true,
+    "2026-11-11|NOISE:USTEC|1": true
+  },
+  "summary_day": "2026-11-12"
+}

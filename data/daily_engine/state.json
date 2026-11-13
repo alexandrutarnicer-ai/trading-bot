@@ -294,6 +294,21 @@
       "reason": null,
       "currency": "USD",
       "capital": 195.53
+    },
+    "2026-11-13|DE40": [
+      "entry"
+    ],
+    "2026-11-13|DE40|size": {
+      "lots": 0.1,
+      "risk_money": 6.7339,
+      "target_money": 1.9553,
+      "raw_lots": 0.029037,
+      "at_min_lot": true,
+      "capped_max": false,
+      "ratio": 3.444,
+      "reason": null,
+      "currency": "USD",
+      "capital": 195.53
     }
   }
 }
