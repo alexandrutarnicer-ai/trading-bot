@@ -226,3 +226,80 @@ def evaluate_day_multi(o, h, l, c, spr, mins, *, open_min: int, or_minutes: int,
         trades.append(last)
         consec = consec + 1 if res < 0 else 0
         j_exit = j
+
+
+# ── Mai multe sesiuni pe aceeasi piata + limita de trade-uri / zi (2026-11-13) ─────────────────────────────────
+def admit_session_trades(sessions: list[dict], max_trades: int) -> dict:
+    """Combina sesiunile unei piete dintr-o zi (ex. DE40 la deschiderea Frankfurt + la deschiderea New York).
+
+    sessions: [{"key", "st" (rezultatul evaluate_day_multi al sesiunii, dupa pauza), "to_utc" (minut local → datetime
+    UTC)}], in ordinea sesiunilor. Trade-urile TUTUROR sesiunilor sunt admise in ordine CRONOLOGICA a intrarii:
+      - cel mult `max_trades` pe zi pe piata (toate sesiunile, inclusiv re-intrarile);
+      - niciodata doua pozitii simultan pe aceeasi piata (o intrare inainte de iesirea trade-ului admis anterior
+        sau cat timp acesta e inca deschis = respinsa);
+      - un trade respins opreste sesiunea lui pentru restul zilei (re-intrarile ei depindeau de el).
+    Admiterea depinde doar de trade-urile cu intrare ANTERIOARA → recalcularea la fiecare iteratie e stabila (un trade
+    admis nu mai poate fi scos ulterior). O singura sesiune cu max_trades >= trade-urile ei = rezultat IDENTIC.
+    Intoarce {key: {"st": st filtrat, "blocked": None | "limit" | "overlap"}}."""
+    cands = []
+    for order, s in enumerate(sessions):
+        st = s.get("st")
+        if not st:
+            continue
+        trades = list(st.get("trades") or [])
+        for t in trades:
+            cands.append((s["to_utc"](int(t["entry_min"])), order, int(t.get("k") or 0), s["key"],
+                          s["to_utc"](int(t["exit_min"]) + 5), t))
+        if st.get("phase") == "in_position" and st.get("entry_min") is not None:
+            cands.append((s["to_utc"](int(st["entry_min"])), order, int(st.get("k") or len(trades)), s["key"],
+                          None, None))
+    cands.sort(key=lambda c: (c[0], c[1], c[2]))
+    admitted, stopped = {}, {}
+    count, busy_until, open_busy = 0, None, False
+    for entry, _order, k, key, exit_utc, _t in cands:
+        if key in stopped:
+            continue
+        if count >= max_trades:
+            stopped[key] = "limit"
+            continue
+        if open_busy or (busy_until is not None and entry < busy_until):
+            stopped[key] = "overlap"
+            continue
+        admitted.setdefault(key, set()).add(k)
+        count += 1
+        if exit_utc is None:
+            open_busy = True
+        else:
+            busy_until = exit_utc if busy_until is None else max(busy_until, exit_utc)
+    out = {}
+    for s in sessions:
+        st, key = s.get("st"), s["key"]
+        if not st:
+            out[key] = {"st": st, "blocked": None}
+            continue
+        ok = admitted.get(key, set())
+        kept = [t for t in (st.get("trades") or []) if int(t.get("k") or 0) in ok]
+        new = dict(st)
+        new["trades"] = kept
+        if st.get("phase") == "in_position" and int(st.get("k") or len(st.get("trades") or [])) not in ok:
+            new = {**{k_: v for k_, v in kept[-1].items()}, "phase": "closed", "trades": kept} if kept else \
+                {"phase": "blocked", "trades": [], **{k_: st.get(k_) for k_ in ("or_hi", "or_lo")}}
+        elif key in stopped and kept and new.get("phase") == "closed":
+            new = {**kept[-1], "phase": "closed", "trades": kept}
+        elif key in stopped and not kept and st.get("phase") in ("closed", "in_position"):
+            new = {"phase": "blocked", "trades": [], **{k_: st.get(k_) for k_ in ("or_hi", "or_lo")}}
+        if key in stopped:
+            new["blocked"] = stopped[key]
+            new["blocked_reason"] = ("limita de trade-uri / zi pe piață atinsă" if stopped[key] == "limit"
+                                     else "altă sesiune a pieței avea deja o poziție deschisă")
+        new["k"] = int(new.get("k") or 0)
+        # sesiune inca in asteptare (interval / intrare / re-intrare): ACUM nu are voie la intrari noi daca limita zilei
+        # e atinsa sau alta sesiune are o pozitie deschisa (in executie: niciun ordin de intrare plasat / ramas)
+        if key not in stopped and (new.get("phase") in ("waiting_open", "forming_or", "waiting_entry")
+                                   or new.get("reentry_wait")):
+            if count >= max_trades:
+                new["no_new_entries"] = "limita de trade-uri / zi pe piață atinsă"
+            elif open_busy:
+                new["no_new_entries"] = "altă sesiune a pieței are o poziție deschisă"
+        out[key] = {"st": new, "blocked": stopped.get(key)}
+    return out

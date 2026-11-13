@@ -18,8 +18,10 @@ FILL_IOC, FILL_FOK, FILL_RETURN = 1, 0, 2       # mt5.ORDER_FILLING_*
 RETRY_RETCODES = (10030, 10006)                 # filling incompatibil / reject (ICMarketsEU)
 
 
-def day_tag(symbol: str, day) -> str:
-    return f"D-{symbol[:8]}-{day:%m%d}"[:16]
+def day_tag(symbol: str, day, letter: str = "") -> str:
+    """Comment-ul ordinelor unei sesiuni: „D-<SIM>-<MMDD>” (sesiunea primara, ca inainte) sau „D-<SIM>-<MMDD><L|F|N>”
+    (celelalte sesiuni ale pietei). Plus indexul re-intrarii; maxim 16 caractere (ICMarketsEU trunchiaza)."""
+    return f"D-{symbol[:7] if letter else symbol[:8]}-{day:%m%d}{letter}"[:16]
 
 
 def execution_allowed(mt5, live_allowed_fn) -> tuple[bool, str]:
