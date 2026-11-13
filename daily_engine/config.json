@@ -26,7 +26,8 @@
       "preset": "new_york",
       "costs_mode": "auto",
       "paused": false,
-      "paused_at": null
+      "paused_at": null,
+      "exec_mode": "shadow"
     },
     {
       "symbol": "DE40",
@@ -63,13 +64,21 @@
         "verdict": "KEEP",
         "train_R": 0.162,
         "test_R": 0.093
-      }
+      },
+      "sessions": [
+        "london",
+        "frankfurt",
+        "new_york"
+      ],
+      "max_trades_per_day": 3,
+      "exec_mode": "shadow"
     }
   ],
   "sizing": {
     "capital_sync_mt5": true,
     "capital_usd": null,
     "fraction": 1.0,
-    "risk_pct": 0.01
+    "risk_pct": 0.01,
+    "max_margin_pct": 80.0
   }
 }
