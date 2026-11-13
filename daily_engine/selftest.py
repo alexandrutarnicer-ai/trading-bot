@@ -658,6 +658,103 @@ def t_modes_plock():
     check("marjă: 0,2 loturi (295 $) > 160 $ → redus la 0,1", abs(lots - 0.1) < 1e-9 and "redus" in (why or ""), (lots, why))
 
 
+def t_sessions():
+    print("10. Mai multe sesiuni pe piață (Londra / Frankfurt / New York) + limita de trade-uri / zi")
+    from daily_engine.strategy import admit_session_trades
+    from daily_engine.config import _sanitize, sanitize_sessions
+    from daily_engine.market_tools import market_sessions
+    base = datetime(2026, 11, 3, tzinfo=timezone.utc)
+    u = lambda mins: base + timedelta(minutes=mins)                     # noqa: E731
+    tr = lambda k, e, x, R=1.0: {"k": k, "entry_min": e, "exit_min": x, "R": R, "reason": "SL"}  # noqa: E731
+    A = {"key": "A", "to_utc": u, "st": {"phase": "closed", "trades": [tr(0, 540, 600), tr(1, 610, 620)]}}
+    B = {"key": "B", "to_utc": u, "st": {"phase": "closed", "trades": [tr(0, 900, 960)]}}
+    r = admit_session_trades([A, B], 3)
+    check("max 3: toate trade-urile ambelor sesiuni admise", len(r["A"]["st"]["trades"]) == 2 and len(r["B"]["st"]["trades"]) == 1)
+    r = admit_session_trades([A, B], 2)
+    check("max 2: primele 2 în ordine cronologică (ambele din A), B oprită „limit”",
+          len(r["A"]["st"]["trades"]) == 2 and r["B"]["blocked"] == "limit" and not r["B"]["st"]["trades"], r["B"])
+    r = admit_session_trades([A, B], 1)
+    check("max 1: doar primul trade al zilei (re-intrarea din A și B oprite)",
+          [t["k"] for t in r["A"]["st"]["trades"]] == [0] and r["B"]["blocked"] == "limit")
+    C = {"key": "C", "to_utc": u, "st": {"phase": "closed", "trades": [tr(0, 590, 700)]}}
+    r = admit_session_trades([A, C], 5)
+    check("suprapunere: C intră înainte de ieșirea lui A → C oprită „overlap” (niciodată 2 poziții pe piață)",
+          r["C"]["blocked"] == "overlap" and len(r["A"]["st"]["trades"]) == 2, r["C"])
+    late = {"key": "L", "to_utc": u, "st": {"phase": "closed", "trades": [tr(0, 500, 520)]}}
+    r = admit_session_trades([A, late], 1)
+    check("ordine CRONOLOGICĂ (nu ordinea sesiunilor): trade-ul mai devreme al sesiunii a doua câștigă",
+          r["L"]["blocked"] is None and r["A"]["blocked"] == "limit")
+    O = {"key": "O", "to_utc": u, "st": {"phase": "in_position", "entry_min": 540, "k": 0, "trades": []}}
+    W = {"key": "W", "to_utc": u, "st": {"phase": "waiting_entry", "trades": []}}
+    r = admit_session_trades([O, W], 3)
+    check("poziție deschisă în altă sesiune → sesiunea care așteaptă NU are voie la intrări noi acum",
+          r["W"]["st"].get("no_new_entries") and r["O"]["st"]["phase"] == "in_position", r["W"]["st"])
+    one = {"key": "X", "to_utc": u, "st": {"phase": "closed", "trades": [tr(0, 540, 600), tr(1, 610, 620)], "k": 1}}
+    check("o singură sesiune cu limita ≥ trade-urile ei = rezultat IDENTIC",
+          admit_session_trades([one], 3)["X"]["st"]["trades"] == one["st"]["trades"])
+    # configurare
+    m0 = dict(next(x for x in DEFAULTS["markets"] if x["symbol"] == "US500"))
+    check("config vechi: o sesiune (bursa pieței), limita implicită 1 (fără re-intrări)",
+          sanitize_sessions(m0) == (["new_york"], 1))
+    check("... cu re-intrări pornite (max 3) → limita 3 (comportament neschimbat)",
+          sanitize_sessions({**m0, "reentry": {"enabled": True, "max_trades": 3}}) == (["new_york"], 3))
+    c = _sanitize({"markets": [{**m0, "sessions": ["new_york", "london", "nope"], "max_trades_per_day": 99}]})
+    check("sesiuni în ordinea zilei, necunoscute ignorate, limita plafonată la 20",
+          c["markets"][0]["sessions"] == ["london", "new_york"] and c["markets"][0]["max_trades_per_day"] == 20,
+          c["markets"][0]["sessions"])
+    ses = market_sessions({**m0, "sessions": ["frankfurt", "new_york"]})
+    check("sesiunea PRIMARĂ (bursa pieței) păstrează cheile / comment-urile vechi; celelalte primesc @sesiune + literă",
+          [(x["_session"], x["_sfx"], x["_letter"], x["open"]) for x in ses]
+          == [("frankfurt", "@frankfurt", "F", "09:00"), ("new_york", "", "", "09:30")], ses)
+    check("comment_in: „D-US500-1103” NU revendică poziția sesiunii F („D-US500-1103F”) și invers",
+          E.comment_in("D-US500-1103", "D-US500-1103") and E.comment_in("D-US500-11031", "D-US500-1103")
+          and not E.comment_in("D-US500-1103F", "D-US500-1103") and E.comment_in("D-US500-1103F", "D-US500-1103F")
+          and not E.comment_in("D-US500-1103", "D-US500-1103F"))
+    # engine: aceeași piață pe Frankfurt + New York, cu TP 2R (trade-urile se închid repede, fără suprapunere)
+
+    def run(max_tr, live=True):
+        tmp = tempfile.mkdtemp()
+        for name in ("STATUS_FILE", "STATE_FILE", "TRADES_FILE"):
+            setattr(E, name, os.path.join(tmp, os.path.basename(getattr(E, name))))
+        E._notify = lambda cfg, text: None
+        import live_guard
+        live_guard.live_allowed = lambda comp: True
+        mk = {**m0, "rr": 2.0, "reentry": None, "sessions": ["frankfurt", "new_york"], "max_trades_per_day": max_tr,
+              "exec_mode": "live" if live else "shadow"}
+        cfg = {"mode": "shadow", "poll_seconds": 15, "notify_telegram": True, "markets": [mk],
+               "sizing": {"capital_sync_mt5": True, "capital_usd": None, "fraction": 1.0, "risk_pct": 0.01}}
+        E.load_config = lambda: cfg
+        start = datetime(2026, 11, 3, 8, 0, tzinfo=timezone.utc)
+        rates = _fake_rates(start, 170, 7, lambda i: (6000 + i, 6001.5 + i, 5999.5 + i, 6001 + i))
+        fake = _FakeMt5(rates, 7)
+        fake.trade_mode = 0
+        eng = E.DailyEngine(mt5_module=fake)
+        eng.connect()
+        st = None
+        for mins in range(-5, 14 * 60, 5):
+            fake.now = start + timedelta(minutes=mins + 1)
+            fake.px = 6000 + max(0, mins) / 5 + 1.6
+            st = eng.iteration(fake.now)
+        return fake, st, E.load_trades()
+    fake, st, trades = run(2)
+    ent = [r_ for r_ in fake.sent if r_["action"] == fake.TRADE_ACTION_DEAL and "position" not in r_]
+    check("2 sesiuni, max 2 / zi (LIVE pe DEMO): câte un ordin real pe fiecare sesiune, comment-uri distincte",
+          sorted(r_["comment"] for r_ in ent) == ["D-US500-1103", "D-US500-1103F"], [r_["comment"] for r_ in ent])
+    check("... trade-urile virtuale au sesiunea lor în jurnal", sorted(t["session"] for t in trades) == ["frankfurt", "new_york"],
+          [t.get("session") for t in trades])
+    mrow = st["markets"][0]
+    check("status: piața arată ambele sesiuni + limita", len(mrow.get("sessions") or []) == 2
+          and mrow.get("max_trades_per_day") == 2, mrow.get("sessions"))
+    fake, st, trades = run(1)
+    ent = [r_ for r_ in fake.sent if r_["action"] == fake.TRADE_ACTION_DEAL and "position" not in r_]
+    check("max 1 / zi: doar sesiunea care intră PRIMA (Frankfurt) tranzacționează; New York oprită",
+          [r_["comment"] for r_ in ent] == ["D-US500-1103F"] and [t["session"] for t in trades] == ["frankfurt"],
+          ([r_["comment"] for r_ in ent], [t.get("session") for t in trades]))
+    ny = next(x for x in st["markets"][0]["sessions"] if x["session"] == "new_york")
+    check("... motivul e vizibil pe sesiunea oprită", "limita" in str(ny.get("reason") or ny.get("blocked_reason")
+                                                                      or ny.get("no_new_entries")), ny)
+
+
 if __name__ == "__main__":
     t_strategy()
     t_equivalence()
@@ -668,5 +765,6 @@ if __name__ == "__main__":
     t_reentry()
     t_pause()
     t_modes_plock()
+    t_sessions()
     print(f"\n{PASS} OK, {FAIL} FAIL")
     sys.exit(1 if FAIL else 0)

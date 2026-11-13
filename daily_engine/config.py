@@ -21,6 +21,10 @@ MODES = ("shadow", "execute")  # compat: modul GLOBAL = rezumat ("execute" daca 
 # pauza = campul `paused` (daily_engine/pause.py). Modul afisat: "pause" daca paused, altfel exec_mode.
 MARKET_EXEC_MODES = ("live", "shadow")
 PLOCK_DEFAULT = {"enabled": False, "trigger_R": 4.5, "lock_R": 4.0}
+# Sesiunile in care o piata poate tranzactiona (2026-11-13) — aceleasi chei ca market_tools.PRESETS (ora, interval si
+# mod TESTATE pe fiecare deschidere). Ordinea = ordinea zilei. "custom" = fereastra proprie a pietei (config vechi).
+SESSION_IDS = ("london", "frankfurt", "new_york")
+MAX_TRADES_LIMITS = (1, 20)
 MARGIN_DEFAULT_PCT = 80.0      # marja TOTALA folosita dupa ordin <= X% din equity (toate engine-urile)
 ENTRY_MODES = {"breakout": "brk", "direction": "dir"}
 MAGIC = 880001               # rezervat pentru ordinele reale viitoare (api/mt5_pool.DAILY_MAGIC)
@@ -94,6 +98,28 @@ def sanitize_plock(p) -> dict:
     return out
 
 
+def sanitize_sessions(e: dict) -> tuple[list[str], int]:
+    """(sesiunile pietei, max trade-uri / zi pe piata). Config vechi (fara `sessions`) → o singura sesiune = bursa
+    actuala a pietei; fara `max_trades_per_day` → limita care pastreaza EXACT comportamentul de dinainte (re-intrarile
+    pornite → max_trades-ul lor, altfel 1)."""
+    primary = e.get("preset") if e.get("preset") in SESSION_IDS else "custom"
+    raw = e.get("sessions")
+    if isinstance(raw, list):
+        ses = [x for x in SESSION_IDS if x in raw] + (["custom"] if "custom" in raw and primary == "custom" else [])
+    else:
+        ses = [primary]
+    if not ses:
+        ses = [primary]
+    re_ = e.get("reentry") or {}
+    legacy = int(re_.get("max_trades", 1)) if re_.get("enabled") else 1
+    try:
+        mt = int(e.get("max_trades_per_day", legacy))
+    except (TypeError, ValueError):
+        mt = legacy
+    lo, hi = MAX_TRADES_LIMITS
+    return ses, max(lo, min(hi, mt))
+
+
 def market_mode(m: dict) -> str:
     """Modul afisat al pietei: pause / live / shadow."""
     return "pause" if m.get("paused") else (m.get("exec_mode") if m.get("exec_mode") in MARKET_EXEC_MODES else "shadow")
@@ -152,6 +178,7 @@ def _sanitize(cfg: dict) -> dict:
                     e["exec_mode"] = "live" if legacy_mode == "execute" else "shadow"
                 e["mode"] = market_mode(e)
                 e["profit_lock"] = sanitize_plock(e.get("profit_lock"))
+                e["sessions"], e["max_trades_per_day"] = sanitize_sessions(e)
                 clean.append(e)
             except Exception:
                 continue
@@ -162,6 +189,7 @@ def _sanitize(cfg: dict) -> dict:
         e.setdefault("paused", False)
         e["mode"] = market_mode(e)
         e["profit_lock"] = sanitize_plock(e.get("profit_lock"))
+        e["sessions"], e["max_trades_per_day"] = sanitize_sessions(e)
     # modul GLOBAL = rezumat (compat cu cititorii vechi: dashboard, rapoarte, lifecycle)
     out["mode"] = "execute" if any(e["exec_mode"] == "live" for e in out["markets"]) else "shadow"
     return out

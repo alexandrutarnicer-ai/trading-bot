@@ -114,6 +114,8 @@ def _proposed_market(slot_m: dict, body: dict) -> dict:
         m["rr"] = sanitize_rr(body["rr"])
     if "reentry" in body:
         m["reentry"] = sanitize_reentry(body["reentry"])
+    if sym != slot_m.get("symbol") or preset != slot_m.get("preset"):
+        m["sessions"] = [preset]                  # piata / bursa noua = o singura sesiune (se pot adauga din Optiuni)
     return m
 
 
@@ -386,6 +388,15 @@ def daily_config_save(body: dict):
     if isinstance(body.get("sizing"), dict):
         raw["sizing"] = {**(raw.get("sizing") or {}), **body["sizing"]}
     changes = []
+    if "alert_R" in body:
+        try:
+            new_a = max(0.0, min(100.0, float(body["alert_R"])))
+        except (TypeError, ValueError):
+            raise HTTPException(400, "alert_R: număr (0 = oprită)")
+        if new_a != float(raw.get("alert_R", 5.0)):
+            changes.append(f"alertă de profit: {float(raw.get('alert_R', 5.0)):g}R → "
+                           + (f"{new_a:g}R" if new_a else "OPRITĂ"))
+        raw["alert_R"] = new_a
     if isinstance(body.get("markets"), list):
         # per piata se pot schimba DOAR R:R si re-intrarile (restul regulilor = varianta testata, din config.json)
         from daily_engine.config import sanitize_reentry, sanitize_rr
@@ -423,7 +434,8 @@ def daily_config_save(body: dict):
                     new["exec_mode"] = "shadow"          # o piata noua intra mereu in SHADOW (Live = decizia ta)
                 raw_mk[slot] = {k_: v for k_, v in new.items() if k_ in (
                     "symbol", "enabled", "label", "tz", "open", "last_bar", "or_minutes", "entry", "rr", "slip", "comm",
-                    "role", "reentry", "preset", "costs_mode", "paused", "paused_at", "exec_mode", "profit_lock")}
+                    "role", "reentry", "preset", "costs_mode", "paused", "paused_at", "exec_mode", "profit_lock",
+                    "sessions", "max_trades_per_day")}
                 continue
             m = by.get(upd.get("symbol"))
             if m is None:
@@ -441,6 +453,35 @@ def daily_config_save(body: dict):
                                    + (f" ({new_re['window_min']} min, max {new_re['max_trades']}, stop la "
                                       f"{new_re['max_consec_losses']} pierderi)" if new_re["enabled"] else ""))
                 m["reentry"] = new_re
+            if "sessions" in upd or "max_trades_per_day" in upd:
+                from daily_engine.config import SESSION_IDS, sanitize_sessions
+                from daily_engine.market_tools import PRESETS, SESSION_LABEL
+                cur_ses, cur_mt = sanitize_sessions({**load_config()["markets"][raw_mk.index(m)], **m})
+                new_ses = cur_ses
+                if "sessions" in upd:
+                    req = [x for x in (upd.get("sessions") or []) if x in SESSION_IDS]
+                    if not req:
+                        raise HTTPException(400, "alege cel puțin o sesiune (Londra / Frankfurt / New York)")
+                    new_ses = [x for x in SESSION_IDS if x in req]
+                if new_ses != cur_ses:
+                    busy = _slot_busy(m["symbol"])
+                    if busy:
+                        raise HTTPException(409, busy)
+                    if m.get("preset") not in new_ses:     # bursa primara deselectata → prima sesiune ramasa
+                        p_ = PRESETS[new_ses[0]]
+                        m.update(preset=new_ses[0], tz=p_["tz"], open=p_["open"], last_bar=p_["last_bar"],
+                                 or_minutes=p_["or_minutes"], entry=p_["entry"])
+                    changes.append(f"{m['symbol']}: sesiuni {' + '.join(SESSION_LABEL[x] for x in cur_ses if x in SESSION_LABEL)}"
+                                   f" → {' + '.join(SESSION_LABEL[x] for x in new_ses)}")
+                    m["sessions"] = new_ses
+                if "max_trades_per_day" in upd:
+                    try:
+                        mt = max(1, min(20, int(upd["max_trades_per_day"])))
+                    except (TypeError, ValueError):
+                        raise HTTPException(400, "max_trades_per_day: număr întreg 1–20")
+                    if mt != cur_mt:
+                        changes.append(f"{m['symbol']}: maxim {cur_mt} → {mt} trade-uri / zi (toate sesiunile)")
+                    m["max_trades_per_day"] = mt
             if "profit_lock" in upd:
                 from daily_engine.config import sanitize_plock
                 new_pl = sanitize_plock(upd["profit_lock"])

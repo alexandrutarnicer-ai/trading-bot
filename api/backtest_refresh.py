@@ -125,6 +125,14 @@ DAILY_VERSION = "daily-orb-v1|3y-M5"
 
 def daily_fp(m: dict) -> str:
     fp = {"v": DAILY_VERSION, **{k: m.get(k) for k in DAILY_FIELDS}}
+    # sesiuni multiple / limita de trade-uri diferita de cea implicita → alt rezultat; o sesiune cu limita implicita =
+    # amprenta de dinainte (fara recalculari inutile)
+    from daily_engine.config import sanitize_sessions
+    legacy_mt = sanitize_sessions({k: v for k, v in m.items() if k != "max_trades_per_day"})[1]
+    if len(m.get("sessions") or []) > 1:
+        fp["sessions"] = list(m["sessions"])
+    if len(m.get("sessions") or []) > 1 or (m.get("max_trades_per_day") or legacy_mt) != legacy_mt:
+        fp["max_trades_per_day"] = m.get("max_trades_per_day")
     pl = m.get("profit_lock") or {}
     if pl.get("enabled"):                     # oprit = amprenta de dinainte (fara recalculari inutile)
         fp["profit_lock"] = {"t": pl.get("trigger_R"), "l": pl.get("lock_R")}

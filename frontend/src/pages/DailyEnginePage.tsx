@@ -3,7 +3,7 @@ import { CalendarClock, Loader2, Play, Square, FlaskConical } from "lucide-react
 import { PositionSizingCard } from "../components/PositionSizingCard";
 import { useDailyConfig, useDailyMarketPreview, useDailyPresets, useDailySaveMarket, useDailySaveSlot, useDailyStatus,
   useDailyTrades, useDailyLogs, useDailyStart, useDailyStop, useMt5Markets, useDailyMarketMode,
-  useDailySaveProfitLock, useDailySaveSizing, useBacktestRefresh } from "../api/hooks";
+  useDailySaveProfitLock, useDailySaveSizing, useDailySaveSessions, useDailySaveAlert, useBacktestRefresh } from "../api/hooks";
 import type { DailyBacktestAuto, DailyMarketConfig, DailyMarketMode, DailyMarketStatus, DailyQuickBacktest, DailyReentry,
   DailyScore } from "../api/types";
 import { BacktestAutoBadge } from "../components/BacktestAutoBadge";
@@ -208,6 +208,7 @@ function MarketSettings({ symbol, orMinutes, slot }: { symbol: string; orMinutes
           )}
           {curRe.enabled && info && <div className="text-[10px] text-yellow-300/90">{info.re}</div>}
           <ProfitLockSettings symbol={symbol} cfg={cfg} />
+          <SessionsSettings symbol={symbol} cfg={cfg} />
           <div className="flex items-center gap-2">
             <button disabled={!dirty || save.isPending}
               onClick={() => save.mutate({ symbol, rr: curRr ?? null, reentry: curRe }, { onSuccess: () => { setRr(undefined); setRe(undefined); } })}
@@ -216,6 +217,66 @@ function MarketSettings({ symbol, orMinutes, slot }: { symbol: string; orMinutes
             <span className="text-[10px] text-slate-500">se aplică din mers; în Execuție TP-ul e atașat ordinului real</span>
             {save.isError && <span className="text-loss">{(save.error as Error).message}</span>}
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const SESSION_ORDER = ["london", "frankfurt", "new_york"] as const;
+const SESSION_NAME: Record<string, string> = { london: "Londra", frankfurt: "Frankfurt", new_york: "New York", custom: "fereastra proprie" };
+
+/** În ce sesiuni tranzacționează piața (oricâte, minim una) + câte trade-uri / zi pe piață (toate sesiunile). */
+function SessionsSettings({ symbol, cfg }: { symbol: string; cfg: DailyMarketConfig }) {
+  const save = useDailySaveSessions();
+  const { data: pre } = useDailyPresets();
+  const cur = { sessions: (cfg.sessions ?? [cfg.preset ?? "london"]) as string[], max: cfg.max_trades_per_day ?? 1 };
+  const [v, setV] = useState<typeof cur | null>(null);
+  const val = v ?? cur;
+  const dirty = v != null && JSON.stringify(v) !== JSON.stringify(cur);
+  const toggle = (sid: string) => {
+    const has = val.sessions.includes(sid);
+    const next = has ? val.sessions.filter(x => x !== sid) : SESSION_ORDER.filter(x => x === sid || val.sessions.includes(x));
+    setV({ ...val, sessions: next });
+  };
+  const roTime = (sid: string) => {
+    const p = pre?.presets?.[sid];
+    if (!p) return "";
+    const tzName = p.tz.split("/")[1]?.replace("_", " ");
+    return `${p.open} ${tzName} · interval ${p.or_minutes} min · ${p.entry === "breakout" ? "stop pe margini" : "pe direcție"}`;
+  };
+  return (
+    <div className="border-t border-surface-border/60 pt-2 space-y-1">
+      <div className="text-slate-300">Sesiuni în care tranzacționează {symbol}</div>
+      <div className="flex flex-col gap-0.5 pl-1">
+        {SESSION_ORDER.map(sid => (
+          <label key={sid} className="flex items-center gap-2">
+            <input type="checkbox" checked={val.sessions.includes(sid)} onChange={() => toggle(sid)} />
+            <span className="text-slate-200 w-20">{SESSION_NAME[sid]}</span>
+            <span className="text-slate-500">{roTime(sid)}</span>
+          </label>
+        ))}
+      </div>
+      <label className="flex items-center gap-2 pl-1">
+        <span className="text-slate-300">Trade-uri maxime / zi pe piață</span>
+        <input type="number" min={1} max={20} value={val.max} onChange={e => setV({ ...val, max: Number(e.target.value) || 1 })}
+          className="w-14 bg-surface-card border border-surface-border rounded px-1" />
+        <span className="text-slate-500">(toate sesiunile + re-intrările; implicit 1)</span>
+      </label>
+      <div className="text-[10px] text-slate-500 pl-1">
+        Trade-urile se admit în ordinea în care apar: peste limită, sau cât timp altă sesiune a pieței are o poziție
+        deschisă, sesiunea nu mai deschide nimic în ziua respectivă. Cealaltă piață are propria limită. Backtestul cardului
+        se recalculează automat pe configurația nouă. Backtest (tot istoricul M5): DE40 Frankfurt + New York → max 1: +0,082R
+        (5,0 / săpt) · max 2: +0,082R (7,9 / săpt) · max 3: +0,074R; US500 cu Londra sau Frankfurt adăugată = negativ (−0,03…−0,10R).
+      </div>
+      {val.sessions.length === 0 && <div className="text-loss pl-1">alege cel puțin o sesiune</div>}
+      {dirty && (
+        <div className="flex items-center gap-2 pl-1">
+          <button disabled={!val.sessions.length || save.isPending}
+            onClick={() => save.mutate({ symbol, sessions: val.sessions, max_trades_per_day: val.max }, { onSuccess: () => setV(null) })}
+            className="px-3 py-1 rounded bg-cyan-500/20 text-cyan-200 border border-cyan-500/40 font-semibold disabled:opacity-40">Salvează sesiunile</button>
+          <button onClick={() => setV(null)} className="px-3 py-1 rounded border border-surface-border text-slate-400">Renunță</button>
+          {save.isError && <span className="text-loss">{(save.error as Error).message}</span>}
         </div>
       )}
     </div>
@@ -341,7 +402,21 @@ function MarketCard({ m, score, bt, slot, auto, paused, cfgM }: {
       )}
 
       <div className="grid grid-cols-2 gap-2 text-[11px]">
-        <div className="text-slate-500">Fereastra (ora {m.app_tz_label ?? "RO"})</div>
+        {(m.sessions?.length ?? 0) > 1 && (
+          <div className="col-span-2 space-y-0.5 bg-surface-card/60 rounded-lg px-2 py-1">
+            <div className="text-slate-500">Sesiuni (max {m.max_trades_per_day ?? 1} trade-uri / zi pe piață)</div>
+            {m.sessions!.map(ss => (
+              <div key={ss.session} className="flex items-center gap-2">
+                <span className="text-slate-200 w-20">{SESSION_NAME[ss.session] ?? ss.session}</span>
+                <span className="text-slate-400 w-24">{ss.window_app ?? ss.window_ro}</span>
+                <span className={(PHASE[ss.phase] ?? PHASE.waiting_open).cls + " px-1.5 rounded"}>{(PHASE[ss.phase] ?? { label: ss.phase }).label}</span>
+                {ss.phase === "closed" && ss.R_today != null && <span className={rCls(ss.R_today)}>{fmtR(ss.R_today)}</span>}
+                {(ss.blocked_reason || ss.no_new_entries) && <span className="text-amber-300/80">{ss.blocked_reason ?? ss.no_new_entries}</span>}
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="text-slate-500">Fereastra (ora {m.app_tz_label ?? "RO"}){(m.sessions?.length ?? 0) > 1 ? ` · ${SESSION_NAME[m.session ?? ""] ?? ""}` : ""}</div>
         <div className="text-white font-semibold"
           title={m.app_tz_label === "DE" ? `ora RO: ${m.window_ro ?? "—"}` : undefined}>{m.window_app ?? m.window_ro ?? "—"}</div>
         <div className="text-slate-500">Ora bursei</div>
@@ -414,10 +489,12 @@ function MarketCard({ m, score, bt, slot, auto, paused, cfgM }: {
   );
 }
 
-function ModesSummary({ markets, running, sizing }: {
-  markets?: DailyMarketConfig[]; running?: boolean; sizing?: Record<string, unknown> | null;
+function ModesSummary({ markets, running, sizing, alertR }: {
+  markets?: DailyMarketConfig[]; running?: boolean; sizing?: Record<string, unknown> | null; alertR?: number;
 }) {
   const save = useDailySaveSizing();
+  const saveAlert = useDailySaveAlert();
+  const [al, setAl] = useState<number | null>(null);
   const cur = Number(sizing?.max_margin_pct ?? 80);
   const [mm, setMm] = useState<number | null>(null);
   const anyLive = (markets ?? []).some(x => x.exec_mode === "live" && !x.paused);
@@ -441,6 +518,16 @@ function ModesSummary({ markets, running, sizing }: {
             className="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-200 border border-cyan-500/40">Salvează</button>
         )}
         <span className="text-slate-500">(lotul e redus sau ordinul nu se plasează; DE40 la lotul minim ≈ 148 $)</span>
+      </div>
+      <div className="flex items-center gap-2 text-[11px] text-slate-400">
+        🚀 Alertă de profit (Notificări + Telegram) când un trade deschis trece de
+        <input type="number" min={0} max={100} step={0.5} value={al ?? alertR ?? 5} onChange={e => setAl(Number(e.target.value))}
+          className="w-14 bg-surface-card border border-surface-border rounded px-1 text-white" /> R
+        {al != null && al !== (alertR ?? 5) && (
+          <button onClick={() => saveAlert.mutate(al, { onSuccess: () => setAl(null) })}
+            className="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-200 border border-cyan-500/40">Salvează</button>
+        )}
+        <span className="text-slate-500">— o singură dată pe trade, nu închide nimic (0 = oprită). Acum: {(alertR ?? 5) ? `ACTIVĂ la +${alertR ?? 5}R` : "OPRITĂ"}</span>
       </div>
     </div>
   );
@@ -514,7 +601,8 @@ export function DailyEnginePage() {
         )}
       </div>
 
-      <ModesSummary markets={cfgMarkets} running={st?.running} sizing={(dcfg as { sizing?: Record<string, unknown> } | undefined)?.sizing} />
+      <ModesSummary markets={cfgMarkets} running={st?.running} sizing={(dcfg as { sizing?: Record<string, unknown> } | undefined)?.sizing}
+        alertR={(dcfg as { alert_R?: number } | undefined)?.alert_R} />
 
       <div className="text-[11px] text-slate-500 bg-surface rounded-xl border border-surface-border px-4 py-2">
         Implicit un trade pe zi pe piață (re-intrările din „Opțiuni” sunt opționale), închis obligatoriu în aceeași zi (niciodată
