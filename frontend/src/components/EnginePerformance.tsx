@@ -1,5 +1,5 @@
 import { Activity, Brain, CalendarClock, Sigma, Zap, Sparkles } from "lucide-react";
-import { useEnginePerformance, useDailyStatus, useAiStatus, useEngines, useNoisyStatus } from "../api/hooks";
+import { useEnginePerformance, useDailyStatus, useAiStatus, useEngines, useNoisyStatus, useSpecialStatus } from "../api/hooks";
 import type { EnginePerf, EngineId } from "../api/types";
 
 /**
@@ -37,12 +37,15 @@ function Stat({ label, value, cls, sub }: { label: string; value: string; cls?: 
   );
 }
 
-function ShadowLine({ engine = "daily" }: { engine?: "daily" | "noisy" }) {
+function ShadowLine({ engine = "daily" }: { engine?: "daily" | "noisy" | "special" }) {
   const { data: d } = useDailyStatus();
   const { data: n } = useNoisyStatus();
-  const sc = engine === "noisy" ? n?.scorecard : d?.scorecard;
+  const { data: sp } = useSpecialStatus();
+  const sc = engine === "noisy" ? n?.scorecard : engine === "special" ? sp?.scorecard?.total : d?.scorecard;
+  const cls = engine === "noisy" ? "text-amber-300/80 border-amber-500/20" : engine === "special" ? "text-pink-300/80 border-pink-500/20"
+    : "text-cyan-300/80 border-cyan-500/20";
   return (
-    <div className={`text-[10px] border-t pt-1.5 ${engine === "noisy" ? "text-amber-300/80 border-amber-500/20" : "text-cyan-300/80 border-cyan-500/20"}`}>
+    <div className={`text-[10px] border-t pt-1.5 ${cls}`}>
       SHADOW (virtual, fără bani): {sc?.trades ?? 0} trade-uri · {sc?.wins ?? 0}W / {sc?.losses ?? 0}L ·{" "}
       <span className={pnlCls(sc?.total_R)}>{rTxt(sc?.total_R)}</span>
     </div>
@@ -71,6 +74,7 @@ function PerfCard({ k, p, cur }: { k: Key; p?: EnginePerf; cur: string }) {
       </div>
       {k === "daily" && <ShadowLine />}
       {k === "noisy" && <ShadowLine engine="noisy" />}
+      {k === "special" && <ShadowLine engine="special" />}
     </div>
   );
 }
@@ -103,6 +107,7 @@ export function EnginePerformanceSection({ engine }: { engine: EngineKey }) {
   const { data: ai } = useAiStatus();
   const { data: daily } = useDailyStatus();
   const { data: noisy } = useNoisyStatus();
+  const { data: special } = useSpecialStatus();
   const th = THEME[engine];
   const Icon = th.icon;
   const cur = data?.currency ?? "USD";
@@ -130,6 +135,12 @@ export function EnginePerformanceSection({ engine }: { engine: EngineKey }) {
              noisy?.mode === "execute" ? "EXECUȚIE" : "SHADOW",
              noisy?.config ? (noisy.config.window.intervals ?? [noisy.config.window]).map(w => `${w.start}–${w.end}`).join(", ") : ""].filter(Boolean);
     note = "Frecvență mare: mean reversion pe o singură piață, fără autostart (pornire doar manuală). Bani reali doar în modul Execuție.";
+  } else if (engine === "special") {
+    const sc = special?.scorecard?.total;
+    extra = [{ label: "Shadow (virtual)", value: `${sc?.trades ?? 0} · ${rTxt(sc?.total_R)}`, cls: pnlCls(sc?.total_R) },
+             { label: "Medie shadow", value: rTxt(sc?.expectancy_R ?? undefined), cls: pnlCls(sc?.expectancy_R ?? undefined) }];
+    chips = Object.entries(special?.markets ?? {}).map(([s, m]) => `${s} ${m === "live" ? "LIVE" : m === "pause" ? "PAUZĂ" : "SHADOW"}`);
+    note = "A = ORB adaptiv (selecție trimestrială, zile NR4) + B = noise area USTEC; mod per piață (Live / Shadow / Pauză), magic 660001. Fără autostart propriu.";
   } else {
     const sc = daily?.scorecard;
     extra = [{ label: "Shadow (virtual)", value: `${sc?.trades ?? 0} · ${rTxt(sc?.total_R)}`, cls: pnlCls(sc?.total_R) },

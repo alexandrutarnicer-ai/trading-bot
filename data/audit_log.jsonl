@@ -7,3 +7,7 @@
 {"time": "2026-11-20T12:23:23+00:00", "engine": "special", "action": "close", "market": "JP225", "before": null, "after": null, "detail": "poziție rămasă din altă zi închisă (X-TEST-1120) — ok", "source": "engine"}
 {"time": "2026-11-20T17:24:29+00:00", "engine": "daily", "action": "stop", "market": null, "before": null, "after": null, "detail": "oprit din UI", "source": "ui"}
 {"time": "2026-11-20T17:24:35+00:00", "engine": "special", "action": "stop", "market": null, "before": null, "after": null, "detail": "oprit din UI", "source": "ui"}
+{"time": "2026-11-20T13:57:34+00:00", "engine": "daily", "action": "config", "market": null, "before": null, "after": null, "detail": "DE40: re-intrări oprite", "source": "ui"}
+{"time": "2026-11-20T13:57:34+00:00", "engine": "daily", "action": "config", "market": null, "before": null, "after": null, "detail": "DE40: sesiuni Londra + Frankfurt + New York → Frankfurt + New York", "source": "ui"}
+{"time": "2026-11-20T13:57:34+00:00", "engine": "daily", "action": "config", "market": null, "before": null, "after": null, "detail": "DE40: maxim 3 → 2 trade-uri / zi (toate sesiunile)", "source": "ui"}
+{"time": "2026-11-20T13:57:34+00:00", "engine": "daily", "action": "config", "market": null, "before": null, "after": null, "detail": "DE40: risc — setări GLOBALE (override oprit) → override PORNIT — risc 1% / trade, maxim 6% la lotul minim", "source": "ui"}

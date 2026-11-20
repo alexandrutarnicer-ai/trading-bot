@@ -43,7 +43,7 @@
       "comm": 0.0,
       "role": "principal",
       "reentry": {
-        "enabled": true,
+        "enabled": false,
         "window_min": 60,
         "max_trades": 3,
         "max_consec_losses": 2,
@@ -66,12 +66,16 @@
         "test_R": 0.093
       },
       "sessions": [
-        "london",
         "frankfurt",
         "new_york"
       ],
-      "max_trades_per_day": 3,
-      "exec_mode": "shadow"
+      "max_trades_per_day": 2,
+      "exec_mode": "shadow",
+      "risk": {
+        "override": true,
+        "risk_pct": 1.0,
+        "max_risk_pct": 6.0
+      }
     }
   ],
   "sizing": {

@@ -358,6 +358,11 @@ def _build_report(trades: list[dict] | None, title: str) -> str:
     if noisy:
         lines.append(f"\n⚡ <b>Noisy Engine:</b> {_summary_line(noisy)}")
 
+    special = [t for t in trades if t.get("source") == "special"]
+    if special:
+        lines.append(f"\n✨ <b>Special Engine:</b> {_summary_line(special)}")
+        lines += _grouped(special, lambda t: t["symbol"])
+
     manual =[t for t in trades if t.get("source") == "manual"]
     if manual:
         lines.append(f"\n✋ <b>Manual:</b> {_summary_line(manual)}")

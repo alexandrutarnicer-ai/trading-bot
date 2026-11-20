@@ -3,7 +3,7 @@ import { CalendarClock, Loader2, Play, Square, FlaskConical } from "lucide-react
 import { PositionSizingCard } from "../components/PositionSizingCard";
 import { useDailyConfig, useDailyMarketPreview, useDailyPresets, useDailySaveMarket, useDailySaveSlot, useDailyStatus,
   useDailyTrades, useDailyLogs, useDailyStart, useDailyStop, useMt5Markets, useDailyMarketMode,
-  useDailySaveProfitLock, useDailySaveSizing, useDailySaveSessions, useDailySaveAlert, useBacktestRefresh } from "../api/hooks";
+  useDailySaveProfitLock, useDailySaveSizing, useDailySaveSessions, useDailySaveAlert, useDailySaveRisk, useGlobalSettings, useBacktestRefresh } from "../api/hooks";
 import type { DailyBacktestAuto, DailyMarketConfig, DailyMarketMode, DailyMarketStatus, DailyQuickBacktest, DailyReentry,
   DailyScore } from "../api/types";
 import { BacktestAutoBadge } from "../components/BacktestAutoBadge";
@@ -65,30 +65,24 @@ function ChangeMarket({ slot, current }: { slot: number; current: DailyMarketCon
   const save = useDailySaveSlot();
   const [open, setOpen] = useState(false);
   const [symbol, setSymbol] = useState(current.symbol);
-  const [preset, setPreset] = useState(current.preset ?? "london");
   const [mode, setMode] = useState<"auto" | "manual">("auto");
   const [slip, setSlip] = useState<number>(current.slip);
   const [comm, setComm] = useState<number>(current.comm);
   const pv = preview.data;
-  const body = { slot, symbol: symbol.trim().toUpperCase(), preset, costs_mode: mode,
+  // sesiunile (ora / interval / mod) se aleg DOAR din „Sesiuni” mai jos — aici se schimba simbolul + costurile
+  const body = { slot, symbol: symbol.trim().toUpperCase(), costs_mode: mode,
                  ...(mode === "manual" ? { slip, comm } : {}) };
-  const sameAsNow = body.symbol === current.symbol && preset === current.preset;
+  const sameAsNow = body.symbol === current.symbol;
+  const sesTxt = ((current.sessions ?? [current.preset ?? "london"]) as string[]).map(s => SESSION_NAME[s] ?? s).join(" + ");
   const btn = (on: boolean) => `px-2 py-0.5 rounded border ${on ? "border-cyan-500/50 text-cyan-200" : "border-surface-border text-slate-500"}`;
   return (
     <div className="space-y-1.5">
       <button onClick={() => setOpen(!open)} className="text-slate-400 hover:text-white">
-        {open ? "▾" : "▸"} Schimbă piața slotului {slot + 1} · acum {current.symbol} ({pre?.presets?.[current.preset ?? ""]?.label ?? current.tz})
+        {open ? "▾" : "▸"} Schimbă piața slotului {slot + 1} · acum {current.symbol} ({sesTxt})
         · costuri {current.costs_mode === "auto" ? "auto" : "fixe"}: slip {current.slip} · comision {current.comm}
       </button>
       {open && (
         <div className="space-y-2 pl-2 border-l-2 border-surface-border">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-slate-300 w-16">Bursa</span>
-            {Object.entries(pre?.presets ?? {}).map(([k, p]) => (
-              <button key={k} className={btn(preset === k)} onClick={() => setPreset(k)}
-                title={`${p.open}–${p.last_bar} ${p.tz} · interval ${p.or_minutes} min · ${p.entry}`}>{p.label}</button>
-            ))}
-          </div>
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-slate-300 w-16">Piața</span>
             <input list={`daily-syms-${slot}`} value={symbol} onChange={e => setSymbol(e.target.value)}
@@ -109,8 +103,8 @@ function ChangeMarket({ slot, current }: { slot: number; current: DailyMarketCon
           </div>
           <div className="text-[10px] text-slate-500">
             Auto: slippage = 25% din spread-ul live; „comision” = diferența dintre spread-ul live și cel din istoricul barelor
-            (markup-ul contului — pe FX Standard ~0,8–0,9 pip, pe indici ~0). Ora, intervalul și modul vin din bursa aleasă
-            (varianta testată). Re-intrările / R:R ale slotului se păstrează.
+            (markup-ul contului — pe FX Standard ~0,8–0,9 pip, pe indici ~0). Piața nouă păstrează sesiunile slotului
+            ({sesTxt}) — le schimbi din „Sesiuni” mai jos; re-intrările / R:R se păstrează, modul pornește în SHADOW.
           </div>
           <div className="flex items-center gap-2">
             <button onClick={() => preview.mutate(body)} disabled={preview.isPending || !body.symbol}
@@ -118,7 +112,7 @@ function ChangeMarket({ slot, current }: { slot: number; current: DailyMarketCon
               {preview.isPending ? "Calculez (~3 ani M5)…" : "Previzualizează (costuri + backtest)"}
             </button>
             <button disabled={!pv || save.isPending || sameAsNow && mode === (current.costs_mode ?? "manual")}
-              onClick={() => window.confirm(`Schimbi slotul ${slot + 1}: ${current.symbol} → ${body.symbol} (${pre?.presets?.[preset]?.label})?`)
+              onClick={() => window.confirm(`Schimbi slotul ${slot + 1}: ${current.symbol} → ${body.symbol} (sesiuni: ${sesTxt})?`)
                 && save.mutate(body, { onSuccess: () => { setOpen(false); preview.reset(); } })}
               className="px-3 py-1 rounded bg-cyan-500/20 text-cyan-200 border border-cyan-500/40 font-semibold disabled:opacity-40">
               {save.isPending ? "Salvez…" : "Salvează piața"}</button>
@@ -209,6 +203,7 @@ function MarketSettings({ symbol, orMinutes, slot }: { symbol: string; orMinutes
           {curRe.enabled && info && <div className="text-[10px] text-yellow-300/90">{info.re}</div>}
           <ProfitLockSettings symbol={symbol} cfg={cfg} />
           <SessionsSettings symbol={symbol} cfg={cfg} />
+          <RiskOverrideSettings symbol={symbol} cfg={cfg} />
           <div className="flex items-center gap-2">
             <button disabled={!dirty || save.isPending}
               onClick={() => save.mutate({ symbol, rr: curRr ?? null, reentry: curRe }, { onSuccess: () => { setRr(undefined); setRe(undefined); } })}
@@ -236,7 +231,10 @@ function SessionsSettings({ symbol, cfg }: { symbol: string; cfg: DailyMarketCon
   const dirty = v != null && JSON.stringify(v) !== JSON.stringify(cur);
   const toggle = (sid: string) => {
     const has = val.sessions.includes(sid);
-    const next = has ? val.sessions.filter(x => x !== sid) : SESSION_ORDER.filter(x => x === sid || val.sessions.includes(x));
+    // Londra (08:00 UK) si Frankfurt (09:00 Berlin) se deschid in ACELASI minut → se exclud reciproc
+    const rival = sid === "london" ? "frankfurt" : sid === "frankfurt" ? "london" : null;
+    const next = has ? val.sessions.filter(x => x !== sid)
+      : SESSION_ORDER.filter(x => x === sid || (val.sessions.includes(x) && x !== rival));
     setV({ ...val, sessions: next });
   };
   const roTime = (sid: string) => {
@@ -269,12 +267,71 @@ function SessionsSettings({ symbol, cfg }: { symbol: string; cfg: DailyMarketCon
         se recalculează automat pe configurația nouă. Backtest (tot istoricul M5): DE40 Frankfurt + New York → max 1: +0,082R
         (5,0 / săpt) · max 2: +0,082R (7,9 / săpt) · max 3: +0,074R; US500 cu Londra sau Frankfurt adăugată = negativ (−0,03…−0,10R).
       </div>
+      <div className="text-[10px] text-slate-500 pl-1">Londra și Frankfurt se deschid în același minut (08:00 UK = 09:00 Berlin) —
+        se poate alege doar una dintre ele.</div>
+      {val.sessions.includes("london") && val.sessions.includes("frankfurt") && (
+        <div className="text-amber-300 pl-1">⚠ Configurația salvată are și Londra, și Frankfurt — tranzacționează doar Londra (prima
+          admisă). Debifează una și salvează.</div>
+      )}
       {val.sessions.length === 0 && <div className="text-loss pl-1">alege cel puțin o sesiune</div>}
       {dirty && (
         <div className="flex items-center gap-2 pl-1">
           <button disabled={!val.sessions.length || save.isPending}
             onClick={() => save.mutate({ symbol, sessions: val.sessions, max_trades_per_day: val.max }, { onSuccess: () => setV(null) })}
             className="px-3 py-1 rounded bg-cyan-500/20 text-cyan-200 border border-cyan-500/40 font-semibold disabled:opacity-40">Salvează sesiunile</button>
+          <button onClick={() => setV(null)} className="px-3 py-1 rounded border border-surface-border text-slate-400">Renunță</button>
+          {save.isError && <span className="text-loss">{(save.error as Error).message}</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Market Risk Override: riscul PIETEI are prioritate fata de setarile globale, plafonat de plafonul absolut. */
+function RiskOverrideSettings({ symbol, cfg }: { symbol: string; cfg: DailyMarketConfig }) {
+  const save = useDailySaveRisk();
+  const { data: gs } = useGlobalSettings();
+  const { data: st } = useDailyStatus();
+  const cur = { override: cfg.risk?.override ?? false, risk_pct: cfg.risk?.risk_pct ?? 1, max_risk_pct: cfg.risk?.max_risk_pct ?? 1 };
+  const [v, setV] = useState<typeof cur | null>(null);
+  const val = v ?? cur;
+  const dirty = v != null && JSON.stringify(v) !== JSON.stringify(cur);
+  const hard = gs?.risk_cap?.override_max_pct ?? 5;
+  const globalCap = gs?.risk_cap?.enabled ? gs.risk_cap.max_risk_pct : null;
+  const pol = st?.risk_policies?.[symbol];
+  const engRisk = ((st?.sizing?.risk_pct ?? 0.01) * 100);
+  return (
+    <div className="border-t border-surface-border/60 pt-2 space-y-1">
+      <label className="flex items-center gap-2">
+        <input type="checkbox" checked={val.override} onChange={e => setV({ ...val, override: e.target.checked })} />
+        <span className="text-slate-300">Market Risk Override — risc propriu pentru {symbol}</span>
+        <span className={`text-[10px] px-1.5 rounded ${pol?.source === "market" ? "bg-cyan-500/15 text-cyan-300" : "bg-slate-600/30 text-slate-400"}`}>
+          acum: {pol?.source === "market" ? `override ${pol.risk_pct * 100}% · max ${pol.cap_pct}%` :
+                 `global ${engRisk.toFixed(1)}% · limita ${globalCap != null ? globalCap + "%" : "oprită"}`}
+        </span>
+      </label>
+      {val.override && (
+        <div className="flex items-center gap-2 pl-5 flex-wrap">
+          risc / trade
+          <input type="number" min={0.1} max={5} step={0.1} value={val.risk_pct}
+            onChange={e => setV({ ...val, risk_pct: Number(e.target.value) || 0.1, max_risk_pct: Math.max(val.max_risk_pct, Number(e.target.value) || 0.1) })}
+            className="w-16 bg-surface-card border border-surface-border rounded px-1" />% din capital · risc maxim la lotul minim
+          <input type="number" min={val.risk_pct} max={10} step={0.5} value={val.max_risk_pct}
+            onChange={e => setV({ ...val, max_risk_pct: Math.max(val.risk_pct, Number(e.target.value) || val.risk_pct) })}
+            className="w-16 bg-surface-card border border-surface-border rounded px-1" />% din equity
+          {val.max_risk_pct > hard && <span className="text-amber-300">→ plafonat la {hard}% (plafonul absolut din Setări Globale)</span>}
+        </div>
+      )}
+      <div className="text-[10px] text-slate-500 pl-1">
+        Prioritate: 1) override pornit → setările pieței (riscul real la lotul minim poate urca până la „risc maxim”; peste el
+        trade-ul e RESPINS, nu rotunjit în sus); 2) oprit → riscul engine-ului ({engRisk.toFixed(1)}%) + limita globală
+        ({globalCap != null ? `${globalCap}%` : "oprită"}); 3) protecțiile obligatorii (capital, circuit breaker, vineri, știri,
+        poziții simultane, marjă, pauză) rămân mereu active. Plafon absolut: {hard}% din equity.
+      </div>
+      {dirty && (
+        <div className="flex items-center gap-2 pl-1">
+          <button disabled={save.isPending} onClick={() => save.mutate({ symbol, risk: val }, { onSuccess: () => setV(null) })}
+            className="px-3 py-1 rounded bg-cyan-500/20 text-cyan-200 border border-cyan-500/40 font-semibold disabled:opacity-40">Salvează riscul</button>
           <button onClick={() => setV(null)} className="px-3 py-1 rounded border border-surface-border text-slate-400">Renunță</button>
           {save.isError && <span className="text-loss">{(save.error as Error).message}</span>}
         </div>
@@ -662,6 +719,19 @@ export function DailyEnginePage() {
 
       <div className="bg-surface rounded-xl border border-surface-border p-4">
         <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Trade-uri virtuale</h3>
+        {(st?.excluded_trades?.length ?? 0) > 0 && (
+          <details className="mb-2 text-[11px] bg-slate-500/10 border border-surface-border rounded-lg px-3 py-1.5 text-slate-400">
+            <summary className="cursor-pointer">
+              {st!.excluded_trades!.length} rânduri din jurnal NU intră în statistici (dubluri / trade-uri fantomă) — detalii
+            </summary>
+            <div className="mt-1 space-y-0.5">
+              {st!.excluded_trades!.map((x, i) => (
+                <div key={i}>{x.day} · {x.symbol}{x.session ? ` · ${x.session}` : ""} · k{x.k ?? 0} · {fmtR(x.R)} — {x.excluded}</div>
+              ))}
+              <div className="text-slate-500">Jurnalul nu e rescris (e sincronizat între PC și laptop); rândurile sunt doar ignorate la citire.</div>
+            </div>
+          </details>
+        )}
         {Object.entries(sc?.by_symbol ?? {}).filter(([, v]) => (v.blocked_trades ?? 0) > 0 && v.blocked_pnl_money_est != null).map(([sym, v]) => (
           <div key={sym} className="mb-2 text-[11px] bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-1.5 text-amber-300">
             ⛔ <b>{sym}</b>: {v.blocked_trades} trade-uri ar fi fost BLOCATE în EXECUȚIE (limita globală de risc — lotul minim

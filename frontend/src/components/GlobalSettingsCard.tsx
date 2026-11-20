@@ -103,6 +103,13 @@ export function GlobalSettingsCard() {
         {num(draft.risk_cap.max_risk_pct, v => set("risk_cap", { max_risk_pct: v }), 0.1, 20, 0.1)}% din equity
         <span className="text-slate-600">(volumul se reduce; dacă nici lotul minim nu încape, ordinul nu se plasează)</span>
       </>)}
+      <div className="flex items-center gap-2 flex-wrap py-1 pl-[3.25rem] text-[11px] text-slate-400">
+        <span className="text-xs font-semibold text-white">Plafon absolut — Market Risk Override</span>
+        <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-border/40 text-slate-400">Daily + Special · obligatoriu</span>
+        o piață cu setări proprii de risc poate trece peste limita de mai sus (valoarea implicită), dar niciodată peste
+        {num(draft.risk_cap.override_max_pct ?? 5, v => set("risk_cap", { override_max_pct: v }), 0.5, 20, 0.5)}% din equity
+        <span className="text-slate-600">(piețele fără override folosesc limita globală, ca înainte)</span>
+      </div>
 
       {row("max_concurrent_per_market", "Poziții simultane / piață", "toate engine-urile · tot contul", <>
         max

@@ -172,3 +172,58 @@ def apply_risk_cap(info, lots: float, entry: float, sl: float, equity: float | N
                      f"(chiar si la lotul minim {vmin:g})")
     fit = round(fit, _decimals(step))
     return fit, f"volum redus {lots:g} → {fit:g} (riscul depasea {max_risk_pct:g}% din equity)"
+
+
+# ── Market Risk Override (20.11.2026): setari de risc PER PIATA, comune Daily + Special ─────────────────────────
+MARKET_RISK_DEFAULT = {"override": False, "risk_pct": 1.0, "max_risk_pct": 1.0}
+
+
+def sanitize_market_risk(r) -> dict:
+    """{override, risk_pct (% din capitalul engine-ului, 0,1–5), max_risk_pct (% din equity, >= risk_pct, <= 10)}.
+    max_risk_pct = cat poate ajunge riscul real cand lotul MINIM al brokerului depaseste tinta; peste el → respins
+    (nu rotunjit in sus). Valori invalide → implicite; lipsa → override oprit (comportamentul de dinainte)."""
+    out = dict(MARKET_RISK_DEFAULT)
+    if not isinstance(r, dict):
+        return out
+    def num(v, lo, hi, d):
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            return d
+        return d if math.isnan(f) else max(lo, min(hi, f))
+    out["override"] = bool(r.get("override", False))
+    out["risk_pct"] = round(num(r.get("risk_pct"), 0.1, 5.0, 1.0), 3)
+    out["max_risk_pct"] = round(max(out["risk_pct"], num(r.get("max_risk_pct", out["risk_pct"]), 0.1, 10.0,
+                                                          out["risk_pct"])), 3)
+    return out
+
+
+def size_with_policy(info, entry: float, sl: float, capital: float, equity: float | None, policy: dict) -> dict:
+    """Lotul unei piete dupa politica de risc (global_guard.risk_policy): tinta = policy.risk_pct × capital, apoi
+    plafonul policy.cap_pct (% din equity) — peste plafon volumul e redus, iar daca nici lotul minim nu incape
+    → lots 0 (ordinul NU se plaseaza). Campurile: ca size_by_risk + risk_cap (motiv) + policy_source."""
+    r = size_by_risk(info, entry, sl, capital, policy.get("risk_pct") or 0.0)
+    r["policy_source"] = policy.get("source")
+    cap = policy.get("cap_pct")
+    if not r.get("lots") or not cap:
+        return r
+    before_lots, before_risk = r["lots"], r.get("risk_money")
+    lots, why = apply_risk_cap(info, r["lots"], entry, sl, equity, cap)
+    if why:
+        if policy.get("source") == "market":
+            why = why.replace("> limita", "> limita pieței (override)")
+        rm = r.get("risk_money")
+        r.update(lots=lots, risk_cap=why, reason=why if not lots else r.get("reason"),
+                 risk_money=(rm * lots / before_lots) if (rm is not None and before_lots) else rm)
+        if not lots:
+            r.update(blocked_lots=before_lots, blocked_risk_money=before_risk)
+    return r
+
+
+def describe_market_risk(r: dict | None) -> str:
+    """Textul pentru Telegram / audit / UI."""
+    r = sanitize_market_risk(r)
+    if not r["override"]:
+        return "setări GLOBALE (override oprit)"
+    return f"override PORNIT — risc {r['risk_pct']:g}% / trade, maxim {r['max_risk_pct']:g}% la lotul minim"
+

@@ -121,7 +121,7 @@ def _notify(cfg: dict, text: str) -> None:
     threading.Thread(target=_send, daemon=True).start()
 
 
-def load_trades() -> list[dict]:
+def _read_trades() -> list[dict]:
     out = []
     try:
         with open(TRADES_FILE, encoding="utf-8") as f:
@@ -131,6 +131,44 @@ def load_trades() -> list[dict]:
                     out.append(json.loads(line))
     except FileNotFoundError:
         pass
+    return out
+
+
+def split_valid(trades: list[dict]) -> tuple[list[dict], list[dict]]:
+    """(valide, excluse) — PUR, fara a rescrie jurnalul (append-only, unit intre PC si laptop: un rand modificat ar
+    aparea de doua ori). Reguli (analiza Live Readiness 20.11.2026):
+      • DUBLURA: acelasi (zi, piata, sesiune, k) inregistrat de doua ori (doua procese / sync) → ramane primul;
+      • FANTOMA: in aceeasi zi + sesiune toate trade-urile rup ACELASI interval de deschidere; un trade cu alt
+        interval decat primul inregistrat vine dintr-un set GRESIT de bare (ora serverului detectata gresit dintr-un
+        tick inghetat — server_clock) → exclus. Ordinea fisierului pastreaza ordinea inregistrarii."""
+    seen: set = set()
+    ref: dict = {}
+    ok, bad = [], []
+    for t in trades:
+        g = (t.get("day"), t.get("symbol"), t.get("session") or "")
+        key = (*g, int(t.get("k") or 0))
+        rng = (t.get("or_hi"), t.get("or_lo"))
+        if key in seen:
+            bad.append({**t, "excluded": "dublură (aceeași zi / piață / sesiune / k înregistrată de două ori)"})
+            continue
+        if None not in rng and g in ref and (abs(rng[0] - ref[g][0]) > 1e-9 or abs(rng[1] - ref[g][1]) > 1e-9):
+            bad.append({**t, "excluded": (f"fantomă: interval {rng[1]:g}–{rng[0]:g} ≠ intervalul zilei "
+                                          f"{ref[g][1]:g}–{ref[g][0]:g} (ora serverului detectată greșit)")})
+            continue
+        seen.add(key)
+        if None not in rng:
+            ref.setdefault(g, rng)
+        ok.append(t)
+    return ok, bad
+
+
+def excluded_trades() -> list[dict]:
+    """Randurile din jurnal ignorate de statistici (dubluri / fantome) — vizibile pentru audit."""
+    return split_valid(_read_trades())[1]
+
+
+def load_trades() -> list[dict]:
+    out = split_valid(_read_trades())[0]
     _enrich_blocked(out)
     return out
 
@@ -278,11 +316,12 @@ class DailyEngine:
         tick = self.mt5.symbol_info_tick(symbol)
         if tick is None or not tick.time:
             return
-        diff = tick.time - now_utc.timestamp()
-        hours = round(diff / 3600)
-        # tick proaspat (< 3 min dupa scaderea offset-ului) => offset de incredere
-        if abs(diff - hours * 3600) < 180:
-            self.server_offset_s = int(hours * 3600)
+        # tick proaspat => offset de incredere; un tick INGHETAT de N ore exacte (pauza pietei) nu mai schimba
+        # offset-ul cunoscut (server_clock: re-intrarile fantoma de la 00:56, 20.11.2026)
+        if not hasattr(self, "_clock"):
+            from server_clock import ServerClock
+            self._clock = ServerClock()
+        self.server_offset_s = self._clock.update(symbol, tick.time, now_utc.timestamp(), self.server_offset_s)
 
     def process_market(self, m: dict, now_utc: datetime) -> dict:
         """O piata = una sau mai multe sesiuni (Londra / Frankfurt / New York). Fiecare sesiune se evalueaza pur, apoi
@@ -531,7 +570,7 @@ class DailyEngine:
                 return
             side = 1 if c_last > o0 else -1
             entry, sl = (tick.ask, lo) if side == 1 else (tick.bid, hi)
-            r = self._capped(ps.size_by_risk(info, entry, sl, cap, sz.get("risk_pct", 0.01)), info, entry, sl, acc)
+            r = self._sized(sym, info, entry, sl, cap, acc)
             if not r["lots"]:
                 ev[f"{key}|placed"] = "skip"
                 self._exec_note(sym, f"nu plasez: {r['reason']}")
@@ -547,7 +586,7 @@ class DailyEngine:
             results.append((("LONG" if side == 1 else "SHORT") + " piață" + (f" · TP {m['rr']:g}R" if tp else ""), r, ok_o, res))
         else:
             for side, lvl, sl in ((1, hi, lo), (-1, lo, hi)):
-                r = self._capped(ps.size_by_risk(info, lvl, sl, cap, sz.get("risk_pct", 0.01)), info, lvl, sl, acc)
+                r = self._sized(sym, info, lvl, sl, cap, acc)
                 if not r["lots"]:
                     if r.get("reason"):
                         self._exec_note(sym, f"{'BUY' if side == 1 else 'SELL'}_STOP nu se plasează: {r['reason']}")
@@ -599,7 +638,7 @@ class DailyEngine:
         sz = self.cfg.get("sizing") or {}
         cap = ps.capital_base(sz.get("capital_sync_mt5", True), sz.get("capital_usd"),
                               getattr(acc, "equity", 0) if acc else 0) * ps.clamp_fraction(sz.get("fraction", 1.0))
-        r = self._capped(ps.size_by_risk(info, entry, sl, cap, sz.get("risk_pct", 0.01)), info, entry, sl, acc)
+        r = self._sized(sym, info, entry, sl, cap, acc)
         if not r["lots"]:
             ev[f"{key}|placed{k}"] = "skip"
             self._exec_note(sym, f"re-intrarea {k + 1} nu se plasează: {r.get('reason')}")
@@ -703,6 +742,22 @@ class DailyEngine:
         except Exception:
             return lots, None                        # fail-open: o eroare de citire nu blocheaza
 
+    def risk_policy(self, sym: str) -> dict:
+        """Politica de risc a pietei (Market Risk Override → setarile pietei; altfel globale) — global_guard.risk_policy."""
+        from live.global_guard import risk_policy
+        mkt = next((x for x in self.cfg.get("markets") or [] if x.get("symbol") == sym), {})
+        return risk_policy((self.cfg.get("sizing") or {}).get("risk_pct", 0.01), mkt.get("risk"))
+
+    def _sized(self, sym: str, info, entry: float, sl: float, cap: float, acc) -> dict:
+        """Lotul unui ordin / trade virtual: override OPRIT = exact calea de dinainte (riscul engine-ului + limita
+        globala); PORNIT = riscul + plafonul pietei (limitat la plafonul absolut) — position_sizing.size_with_policy."""
+        pol = self.risk_policy(sym)
+        if pol["source"] != "market":
+            r = self._capped(ps.size_by_risk(info, entry, sl, cap, (self.cfg.get("sizing") or {}).get("risk_pct", 0.01)),
+                             info, entry, sl, acc)
+            return {**r, "policy_source": "global"}
+        return ps.size_with_policy(info, entry, sl, cap, getattr(acc, "equity", None) if acc else None, pol)
+
     @staticmethod
     def _capped(r: dict, info, entry: float, sl: float, acc) -> dict:
         """Limita globala de risc pe trade (Setari Globale → risk_cap) — comuna cu Custom / AI."""
@@ -743,11 +798,12 @@ class DailyEngine:
         for o in ords:
             if not today(o.comment, o.symbol):
                 X.cancel(self.mt5, o)
-                self._exec_note(o.symbol, f"ordin rămas din altă zi anulat ({o.comment})")
+                self._exec_note(o.symbol, f"ordin Daily din altă zi / nerecunoscut azi anulat ({o.comment})")
         for p in pos:
             if not today(p.comment, p.symbol):
                 ok, _ = X.close(self.mt5, p)
-                self._exec_note(p.symbol, f"poziție rămasă din altă zi închisă ({p.comment}) — {'ok' if ok else 'EȘUAT'}", True)
+                self._exec_note(p.symbol, f"poziție Daily din altă zi / nerecunoscută azi închisă ({p.comment}) — "
+                                          f"{'ok' if ok else 'EȘUAT'}", True)
 
     def _events(self, m: dict, day: str, st: dict) -> None:
         """Evenimentele zilei, O DATA per trade (k = indexul trade-ului din zi; k = 0 pastreaza cheile vechi, deci
@@ -830,7 +886,7 @@ class DailyEngine:
             base = ps.capital_base(sz.get("capital_sync_mt5", True), sz.get("capital_usd"), eq)
             cap = base * ps.clamp_fraction(sz.get("fraction", 1.0))
             si = self.mt5.symbol_info(sym)
-            r = self._capped(ps.size_by_risk(si, st["entry"], st["sl"], cap, sz.get("risk_pct", 0.01)), si, st["entry"], st["sl"], acc)
+            r = self._sized(sym, si, st["entry"], st["sl"], cap, acc)
             return {**r, "currency": getattr(acc, "currency", "USD") if acc else "USD", "capital": round(cap, 2)}
         except Exception as e:                 # estimarea nu are voie sa opreasca shadow-ul
             return {"lots": 0.0, "risk_money": None, "reason": str(e), "currency": "USD"}

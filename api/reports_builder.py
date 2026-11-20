@@ -27,7 +27,7 @@ from datetime import datetime, timedelta
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, "data")
 _ENGINES = (("custom", "bot", "⚙️ Custom Engine"), ("ai", "ai", "🤖 AI Engine"), ("daily", "daily", "🕘 Daily Engine"),
-            ("noisy", "noisy", "⚡ Noisy Engine"))
+            ("noisy", "noisy", "⚡ Noisy Engine"), ("special", "special", "✨ Special Engine"))
 
 
 def _sgn(v, nd=2):
@@ -89,6 +89,20 @@ def noisy_shadow(start: datetime, end: datetime) -> dict:
             "total_R": round(sum(rs), 2), "pnl_money_est": round(sum(est), 2) if est else None}
 
 
+def special_shadow(start: datetime, end: datetime) -> dict:
+    """Trade-urile VIRTUALE Special (shadow) din perioada — separat de banii reali (DOAR alex-live)."""
+    try:
+        from special_engine.engine import load_trades
+        tr = [t for t in load_trades() if t.get("mode", "shadow") != "execute"
+              and start <= datetime.fromisoformat(str(t["exit_t"])[:19]) < end]
+    except Exception:
+        return {"trades": 0}
+    rs = [float(t["R"]) for t in tr]
+    est = [t["pnl_money_est"] for t in tr if t.get("pnl_money_est") is not None]
+    return {"trades": len(tr), "wins": sum(1 for r in rs if r > 0), "losses": sum(1 for r in rs if r < 0),
+            "total_R": round(sum(rs), 2), "pnl_money_est": round(sum(est), 2) if est else None}
+
+
 def performance_section(trades: list[dict] | None, start, end, cur: str) -> tuple[str, dict]:
     if trades is None:
         return ("📊 <b>Performanță</b>\n⚠️ MT5 indisponibil (terminal oprit / cont neautentificat) — performanța NU a "
@@ -96,7 +110,7 @@ def performance_section(trades: list[dict] | None, start, end, cur: str) -> tupl
                 "Rapoarte programate după ce MT5 se conectează."), {}
     by = {k: [t for t in trades if t.get("source") == src] for k, src, _ in _ENGINES}
     stats = {k: engine_stats(v) for k, v in by.items()}
-    engines_all = by["custom"] + by["ai"] + by["daily"] + by["noisy"]
+    engines_all = [t for k, _, _ in _ENGINES for t in by[k]]
     stats["total"] = engine_stats(engines_all)
     manual = [t for t in trades if t.get("source") == "manual"]
     lines = ["📊 <b>Performanță (MT5, poziții închise)</b>"]
@@ -109,8 +123,8 @@ def performance_section(trades: list[dict] | None, start, end, cur: str) -> tupl
                 f"loss {_sgn(s['loss'])} · net {_sgn(s['net'])} {cur}")
     for k, _, label in _ENGINES:
         lines.append(row(label, stats[k]))
-        if k in ("daily", "noisy"):
-            sh = daily_shadow(start, end) if k == "daily" else noisy_shadow(start, end)
+        if k in ("daily", "noisy", "special"):
+            sh = {"daily": daily_shadow, "noisy": noisy_shadow, "special": special_shadow}[k](start, end)
             if sh.get("trades"):
                 lines.append(f"   └ SHADOW (virtual): {sh['trades']} trade-uri · {sh['wins']}W/{sh['losses']}L · "
                              f"{_sgn(sh['total_R'])}R" + (f" · ≈{_sgn(sh['pnl_money_est'])} {cur} estimat" if sh.get("pnl_money_est") is not None else ""))

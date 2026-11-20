@@ -481,7 +481,7 @@ export const useMt5Transactions = (params: {
   status?: string;
   direction?: string;
   symbol?: string;
-  source?: "bot" | "ai" | "daily" | "noisy" | "manual";
+  source?: "bot" | "ai" | "daily" | "noisy" | "special" | "manual";
   session_id?: string;
   date_from?: string;
   date_to?: string;
@@ -806,7 +806,7 @@ export interface GlobalSettings {
   news_protection: { enabled: boolean; impact_level: number; pre_minutes: number; post_minutes: number };
   max_concurrent_per_market: { enabled: boolean; max: number };
   ai_filter: { enabled: boolean; level: "permissive" | "balanced" | "strict"; strict: boolean };
-  risk_cap: { enabled: boolean; max_risk_pct: number };
+  risk_cap: { enabled: boolean; max_risk_pct: number; override_max_pct?: number };
   special_tp: SpecialTpCfg;
 }
 
@@ -987,14 +987,14 @@ export const useDailyPresets = () =>
 /** Previzualizarea unei piete noi pentru slot: costuri auto, marja, backtest rapid ~3 ani (nu salveaza nimic) */
 export const useDailyMarketPreview = () =>
   useMutation({
-    mutationFn: (b: { slot: number; symbol: string; preset: string; costs_mode?: "auto" | "manual"; slip?: number; comm?: number }) =>
+    mutationFn: (b: { slot: number; symbol: string; preset?: string; costs_mode?: "auto" | "manual"; slip?: number; comm?: number }) =>
       apiFetch<DailyMarketPreview>("/daily/market-preview", { method: "POST", body: b }),
   });
 
 export const useDailySaveSlot = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (b: { slot: number; symbol: string; preset: string; costs_mode: "auto" | "manual"; slip?: number; comm?: number }) =>
+    mutationFn: (b: { slot: number; symbol: string; preset?: string; costs_mode: "auto" | "manual"; slip?: number; comm?: number }) =>
       apiFetch("/daily/config", { method: "PUT", body: { markets: [b] } }),
     onSuccess: () => {
       for (const k of ["daily-config", "daily-status"]) qc.invalidateQueries({ queryKey: [k] });
@@ -1028,6 +1028,25 @@ export const useDailySaveProfitLock = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (m: { symbol: string; profit_lock: { enabled: boolean; trigger_R: number; lock_R: number } }) =>
+      apiFetch("/daily/config", { method: "PUT", body: { markets: [m] } }),
+    onSuccess: () => {
+      for (const k of ["daily-config", "daily-status"]) qc.invalidateQueries({ queryKey: [k] });
+    },
+  });
+};
+
+/** Statusul Special Engine (DOAR alex-live) — aceeasi cheie de cache ca SpecialEnginePage. */
+export const useSpecialStatus = () =>
+  useQuery<{ running: boolean; scorecard?: { total?: { trades: number; wins: number; losses: number; total_R: number; expectancy_R: number | null } };
+             markets?: Record<string, "live" | "shadow" | "pause">; capital?: { engine_capital: number; open_risk: number } }>({
+    queryKey: ["special-status"], queryFn: () => apiFetch("/special/status"),
+    refetchInterval: 15_000, refetchIntervalInBackground: false,
+  });
+
+export const useDailySaveRisk = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (m: { symbol: string; risk: { override: boolean; risk_pct: number; max_risk_pct: number } }) =>
       apiFetch("/daily/config", { method: "PUT", body: { markets: [m] } }),
     onSuccess: () => {
       for (const k of ["daily-config", "daily-status"]) qc.invalidateQueries({ queryKey: [k] });

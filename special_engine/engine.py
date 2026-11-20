@@ -247,11 +247,27 @@ class SpecialEngine:
         self._sel_thread.start()
 
     # ── date ─────────────────────────────────────────────────────────────────────────────────────────────────
-    def _d1_for(self, sym: str, day) -> pd.DataFrame:
-        k = (sym, str(day))
+    def _d1_for(self, sym: str, day, now_utc: datetime | None = None) -> pd.DataFrame:
+        """Barele D1 INCHISE la momentul `now_utc` (ora serverului = New York + 7h, regula brokerului — ca data.py).
+        Bug reparat (20.11.2026): ziua JP225 (Tokyo) incepe la 17:00 ora serverului din ziua PRECEDENTA; D1 era citit
+        atunci si tinut in cache toata ziua, cu bara „de ieri” a serverului inca IN FORMARE (range partial, mai mic)
+        → zile marcate gresit NR4 (shadow 10.11 si 18.11). Acum: doar bare inchise + cache reimprospatat la
+        schimbarea zilei serverului (40 de bare D1 — ieftin)."""
+        srv = None
+        if now_utc is not None:
+            srv = (now_utc.astimezone(ZoneInfo("America/New_York")).replace(tzinfo=None) + timedelta(hours=7))
+        k = (sym, str(day), str(srv.date()) if srv is not None else "")
         if k not in self._d1:
             self._d1 = {kk: v for kk, v in self._d1.items() if kk[1] == str(day)}
-            self._d1[k] = D.fetch_d1(self.mt5, sym, 40)
+            d = D.fetch_d1(self.mt5, sym, 40)
+            pending = False
+            if srv is not None and not d.empty:
+                before = d[d["time"].dt.normalize() < pd.Timestamp(day)]
+                # bara serverului de dinaintea zilei bursei inca se formeaza → NR nu se poate decide inca
+                pending = bool(len(before)) and before["time"].iloc[-1] + pd.Timedelta(days=1) > pd.Timestamp(srv)
+                d = d[d["time"] + pd.Timedelta(days=1) <= pd.Timestamp(srv)].reset_index(drop=True)
+            d.attrs["pending"] = pending
+            self._d1[k] = d
         return self._d1[k]
 
     def _today_bars(self, sym, tz, op, end, inclusive, now_utc) -> pd.DataFrame:
@@ -299,7 +315,11 @@ class SpecialEngine:
             return {**base, "phase": "weekend"}
         if strategy == "A" and self.cfg["strategy_a"]["nr_filter"]:
             n = self.cfg["strategy_a"]["nr_filter"]
-            fl = nr_flag(self._d1_for(sym, today.date()), today, n)
+            d1c = self._d1_for(sym, today.date(), now_utc)
+            if d1c.attrs.get("pending"):
+                return {**base, "phase": "waiting_open", "nr": None,
+                        "reason": f"NR{n} se decide la închiderea barei D1 de ieri (00:00 ora serverului)"}
+            fl = nr_flag(d1c, today, n)
             base["nr"] = fl
             if not fl:
                 return {**base, "phase": "no_nr", "reason": f"azi nu e zi NR{n} (range-ul de ieri nu e minimul ultimelor {n} zile)"}
@@ -418,6 +438,11 @@ class SpecialEngine:
             except Exception:
                 pass
 
+    def risk_policy(self, sym: str) -> dict:
+        """Politica de risc a pietei (Market Risk Override → setarile pietei; altfel globale) — global_guard.risk_policy."""
+        from live.global_guard import risk_policy
+        return risk_policy(self.cfg.get("risk_pct", 0.01), ((self.cfg.get("markets") or {}).get(sym) or {}).get("risk"))
+
     def _size(self, sym: str, side: int, entry: float, sl: float) -> tuple[float, str, float]:
         """(loturi, motiv daca 0 / redus, risc in bani). Lantul: risc% × capitalul engine-ului → limita globala de
         risc / trade → riscul TOTAL deschis al engine-ului → marja totala a contului."""
@@ -425,18 +450,24 @@ class SpecialEngine:
         if info is None or acc is None:
             return 0.0, "symbol_info / cont indisponibil", 0.0
         cap = self._capital(acc)
-        r = ps.size_by_risk(info, entry, sl, cap, self.cfg["risk_pct"])
-        lots, risk = float(r.get("lots") or 0.0), float(r.get("risk_money") or 0.0)
-        if not lots:
-            return 0.0, r.get("reason") or "lot 0", 0.0
-        from live.global_guard import risk_cap_pct
-        gcap = risk_cap_pct()
-        if gcap:
-            lots2, why = ps.apply_risk_cap(info, lots, entry, sl, float(acc.equity), gcap)
-            if not lots2:
-                return 0.0, why, 0.0
-            if lots2 != lots:
-                risk, lots = risk * lots2 / lots, lots2
+        pol = self.risk_policy(sym)
+        if pol["source"] == "market":             # Market Risk Override: riscul + plafonul PIETEI (≤ plafonul absolut)
+            r = ps.size_with_policy(info, entry, sl, cap, float(acc.equity), pol)
+            lots, risk = float(r.get("lots") or 0.0), float(r.get("risk_money") or 0.0)
+            if not lots:
+                return 0.0, r.get("reason") or "lot 0", 0.0
+        else:                                     # setarile engine-ului + limita GLOBALA (exact ca inainte)
+            r = ps.size_by_risk(info, entry, sl, cap, self.cfg["risk_pct"])
+            lots, risk = float(r.get("lots") or 0.0), float(r.get("risk_money") or 0.0)
+            if not lots:
+                return 0.0, r.get("reason") or "lot 0", 0.0
+            gcap = pol["cap_pct"]
+            if gcap:
+                lots2, why = ps.apply_risk_cap(info, lots, entry, sl, float(acc.equity), gcap)
+                if not lots2:
+                    return 0.0, why, 0.0
+                if lots2 != lots:
+                    risk, lots = risk * lots2 / lots, lots2
         pos, ords = X.own(self.mt5)
         if len(pos) + len(ords) >= self.cfg["max_positions"]:
             return 0.0, f"maxim {self.cfg['max_positions']} poziții Special deschise", 0.0
@@ -625,11 +656,11 @@ class SpecialEngine:
         for o in ords:
             if stale(o):
                 X.cancel(self.mt5, o)
-                self._note(o.symbol, f"ordin rămas din altă zi anulat ({o.comment})", audit="close")
+                self._note(o.symbol, f"ordin Special din altă zi / nerecunoscut azi anulat ({o.comment})", audit="close")
         for p_ in pos:
             if stale(p_):
                 ok, _ = X.close(self.mt5, p_)
-                self._note(p_.symbol, f"poziție rămasă din altă zi închisă ({p_.comment}) — {'ok' if ok else 'EȘUAT'}",
+                self._note(p_.symbol, f"poziție Special din altă zi / nerecunoscută azi închisă ({p_.comment}) — {'ok' if ok else 'EȘUAT'}",
                            audit="close")
 
     def _record(self, comp, strategy, sym, day, trades) -> None:

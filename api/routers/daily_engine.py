@@ -73,8 +73,13 @@ def daily_status():
         pass
     st["running"] = running
     st["pid"] = pid if running else None
-    if not running:
-        st["scorecard"] = scorecard(load_trades())   # disponibil si cu motorul oprit
+    # scorecard-ul MEREU din jurnal (dubluri / fantome excluse — engine.split_valid), si cu un engine pe cod vechi
+    st["scorecard"] = scorecard(load_trades())
+    try:
+        from daily_engine.engine import excluded_trades
+        st["excluded_trades"] = excluded_trades()
+    except Exception:
+        st["excluded_trades"] = []
     st["backtest_ref"] = BACKTEST_REF            # referinta istorica din cercetare (doc) — doar pentru pietele ei
     _cfg = load_config()
     try:                                          # backtest legat de configuratia EXACTA (porneste singur daca lipseste)
@@ -84,6 +89,12 @@ def daily_status():
         st["backtest_auto"] = [{"status": "failed", "error": f"{type(e).__name__}: {e}"}]
     st.setdefault("mode", _cfg["mode"])
     st.setdefault("sizing", _cfg.get("sizing"))
+    try:                                          # politica de risc pe fiecare piata (Market Risk Override)
+        from live.global_guard import risk_policy
+        st["risk_policies"] = {m["symbol"]: {"risk": m.get("risk"), **risk_policy(
+            (_cfg.get("sizing") or {}).get("risk_pct", 0.01), m.get("risk"))} for m in _cfg["markets"]}
+    except Exception:
+        pass
     return st
 
 
@@ -114,8 +125,9 @@ def _proposed_market(slot_m: dict, body: dict) -> dict:
         m["rr"] = sanitize_rr(body["rr"])
     if "reentry" in body:
         m["reentry"] = sanitize_reentry(body["reentry"])
-    if sym != slot_m.get("symbol") or preset != slot_m.get("preset"):
-        m["sessions"] = [preset]                  # piata / bursa noua = o singura sesiune (se pot adauga din Optiuni)
+    if "preset" in body and (preset != slot_m.get("preset") or sym != slot_m.get("symbol")):
+        m["sessions"] = [preset]                  # bursa aleasa EXPLICIT (API vechi) = o singura sesiune
+    # fara „preset” (UI-ul nou, 20.11.2026): sesiunile se aleg DOAR din „Sesiuni” → slotul isi pastreaza sesiunile
     return m
 
 
@@ -432,10 +444,11 @@ def daily_config_save(body: dict):
                                    f"comision {new['comm']:g}")
                 if new["symbol"] != old["symbol"]:
                     new["exec_mode"] = "shadow"          # o piata noua intra mereu in SHADOW (Live = decizia ta)
+                    new.pop("risk", None)                # ... si pe setarile GLOBALE de risc (override oprit)
                 raw_mk[slot] = {k_: v for k_, v in new.items() if k_ in (
                     "symbol", "enabled", "label", "tz", "open", "last_bar", "or_minutes", "entry", "rr", "slip", "comm",
                     "role", "reentry", "preset", "costs_mode", "paused", "paused_at", "exec_mode", "profit_lock",
-                    "sessions", "max_trades_per_day")}
+                    "sessions", "max_trades_per_day", "risk")}
                 continue
             m = by.get(upd.get("symbol"))
             if m is None:
@@ -463,6 +476,9 @@ def daily_config_save(body: dict):
                     if not req:
                         raise HTTPException(400, "alege cel puțin o sesiune (Londra / Frankfurt / New York)")
                     new_ses = [x for x in SESSION_IDS if x in req]
+                    if "london" in new_ses and "frankfurt" in new_ses:
+                        raise HTTPException(400, "Londra (08:00 UK) și Frankfurt (09:00 Berlin) se deschid în ACELAȘI minut — "
+                                                 "alege una singură (cu ambele bifate tranzacționa doar Londra)")
                 if new_ses != cur_ses:
                     busy = _slot_busy(m["symbol"])
                     if busy:
@@ -482,6 +498,14 @@ def daily_config_save(body: dict):
                     if mt != cur_mt:
                         changes.append(f"{m['symbol']}: maxim {cur_mt} → {mt} trade-uri / zi (toate sesiunile)")
                     m["max_trades_per_day"] = mt
+            if "risk" in upd:                                     # Market Risk Override (position_sizing — comun cu Special)
+                import position_sizing as ps
+                if not isinstance(upd["risk"], dict):
+                    raise HTTPException(400, "risk: {override, risk_pct, max_risk_pct}")
+                new_r, old_r = ps.sanitize_market_risk(upd["risk"]), ps.sanitize_market_risk(m.get("risk"))
+                if new_r != old_r:
+                    changes.append(f"{m['symbol']}: risc — {ps.describe_market_risk(old_r)} → {ps.describe_market_risk(new_r)}")
+                m["risk"] = new_r
             if "profit_lock" in upd:
                 from daily_engine.config import sanitize_plock
                 new_pl = sanitize_plock(upd["profit_lock"])

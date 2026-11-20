@@ -54,7 +54,10 @@ DEFAULTS: dict = {
     "ai_filter": {"enabled": False, "level": "balanced", "strict": False},
     # Risc maxim pe trade (% din equity) — Custom + AI + Daily. Peste limita volumul e redus; daca
     # nici lotul minim nu incape, ordinul NU se plaseaza (cont mic + lot minim mare = risc ascuns).
-    "risk_cap": {"enabled": False, "max_risk_pct": 2.0},
+    "risk_cap": {"enabled": False, "max_risk_pct": 2.0,
+                 # PLAFON ABSOLUT pentru Market Risk Override (Daily / Special): o piata cu setari proprii de risc
+                 # poate trece peste limita GLOBALA de mai sus (= valoare implicita), dar NICIODATA peste acest plafon.
+                 "override_max_pct": 5.0},
     # Special Take Profit Mode (profit_lock.py) — blocarea profitului in trepte; se aplica DOAR engine-urilor
     # eligibile (profit_lock.ELIGIBLE: Custom). Pornit aici → castiga peste setarea engine-ului.
     "special_tp": {"enabled": False, "mode": "special", "tp_extension_R": 0.10, "sl_offset_R": 0.10, "step_R": 0.50,
@@ -106,12 +109,35 @@ def sanitize(raw: dict | None) -> dict:
         af["level"] = "balanced"
     af["strict"] = bool(af["strict"])
     out["risk_cap"]["max_risk_pct"] = _num(out["risk_cap"]["max_risk_pct"], 0.1, 20.0, 2.0)
+    out["risk_cap"]["override_max_pct"] = _num(out["risk_cap"].get("override_max_pct", 5.0), 0.5, 20.0, 5.0)
     try:
         import profit_lock
         out["special_tp"] = profit_lock.sanitize(out["special_tp"])
     except Exception:
         out["special_tp"] = copy.deepcopy(DEFAULTS["special_tp"])
     return out
+
+
+def risk_policy(engine_risk_frac: float, market_risk: dict | None, settings: dict | None = None) -> dict:
+    """Ordinea de prioritate a riscului pe trade (Market Risk Override, 20.11.2026) — COMUNA Daily + Special:
+      1. piata are override PORNIT  → riscul + plafonul PIETEI (plafonul limitat la risk_cap.override_max_pct = hard);
+      2. override oprit / lipsa     → riscul engine-ului + limita GLOBALA risk_cap (exact ca inainte);
+      3. protectiile OBLIGATORII (capital, circuit breaker, vineri, stiri, pozitii simultane, marja, pauza, stop)
+         raman aplicate separat (check_open / engine) — override-ul NU le poate ocoli.
+    Intoarce {source, risk_pct (fractie din capitalul engine-ului), cap_pct (% din equity sau None), hard_pct}."""
+    import position_sizing as ps
+    try:
+        st = settings if settings is not None else load_settings()
+        hard = float(st["risk_cap"].get("override_max_pct", 5.0))
+    except Exception:
+        st, hard = None, 5.0
+    mr = ps.sanitize_market_risk(market_risk)
+    if mr["override"]:
+        return {"source": "market", "risk_pct": mr["risk_pct"] / 100.0,
+                "cap_pct": min(mr["max_risk_pct"], hard), "hard_pct": hard,
+                "market_max_pct": mr["max_risk_pct"], "clamped": mr["max_risk_pct"] > hard}
+    return {"source": "global", "risk_pct": float(engine_risk_frac or 0.0), "cap_pct": risk_cap_pct(st),
+            "hard_pct": hard, "market_max_pct": None, "clamped": False}
 
 
 def risk_cap_pct(settings: dict | None = None) -> float | None:

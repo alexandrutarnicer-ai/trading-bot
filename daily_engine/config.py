@@ -130,6 +130,11 @@ def hm_to_min(s: str) -> int:
     return int(hh) * 60 + int(mm)
 
 
+def _market_risk(r) -> dict:
+    import position_sizing as ps                  # sursa unica (comuna cu Special Engine)
+    return ps.sanitize_market_risk(r)
+
+
 def _sanitize(cfg: dict) -> dict:
     out = copy.deepcopy(DEFAULTS)
     out.update({k: v for k, v in cfg.items() if k in DEFAULTS and k not in ("markets", "sizing")})
@@ -179,6 +184,7 @@ def _sanitize(cfg: dict) -> dict:
                 e["mode"] = market_mode(e)
                 e["profit_lock"] = sanitize_plock(e.get("profit_lock"))
                 e["sessions"], e["max_trades_per_day"] = sanitize_sessions(e)
+                e["risk"] = _market_risk(e.get("risk"))   # Market Risk Override (lipsa = oprit = setarile globale)
                 clean.append(e)
             except Exception:
                 continue
@@ -190,6 +196,7 @@ def _sanitize(cfg: dict) -> dict:
         e["mode"] = market_mode(e)
         e["profit_lock"] = sanitize_plock(e.get("profit_lock"))
         e["sessions"], e["max_trades_per_day"] = sanitize_sessions(e)
+        e["risk"] = _market_risk(e.get("risk"))
     # modul GLOBAL = rezumat (compat cu cititorii vechi: dashboard, rapoarte, lifecycle)
     out["mode"] = "execute" if any(e["exec_mode"] == "live" for e in out["markets"]) else "shadow"
     return out
