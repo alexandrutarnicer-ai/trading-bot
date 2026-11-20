@@ -570,7 +570,7 @@ class DailyEngine:
                 return
             side = 1 if c_last > o0 else -1
             entry, sl = (tick.ask, lo) if side == 1 else (tick.bid, hi)
-            r = self._capped(ps.size_by_risk(info, entry, sl, cap, sz.get("risk_pct", 0.01)), info, entry, sl, acc)
+            r = self._sized(sym, info, entry, sl, cap, acc)
             if not r["lots"]:
                 ev[f"{key}|placed"] = "skip"
                 self._exec_note(sym, f"nu plasez: {r['reason']}")
@@ -586,7 +586,7 @@ class DailyEngine:
             results.append((("LONG" if side == 1 else "SHORT") + " piață" + (f" · TP {m['rr']:g}R" if tp else ""), r, ok_o, res))
         else:
             for side, lvl, sl in ((1, hi, lo), (-1, lo, hi)):
-                r = self._capped(ps.size_by_risk(info, lvl, sl, cap, sz.get("risk_pct", 0.01)), info, lvl, sl, acc)
+                r = self._sized(sym, info, lvl, sl, cap, acc)
                 if not r["lots"]:
                     if r.get("reason"):
                         self._exec_note(sym, f"{'BUY' if side == 1 else 'SELL'}_STOP nu se plasează: {r['reason']}")
@@ -638,7 +638,7 @@ class DailyEngine:
         sz = self.cfg.get("sizing") or {}
         cap = ps.capital_base(sz.get("capital_sync_mt5", True), sz.get("capital_usd"),
                               getattr(acc, "equity", 0) if acc else 0) * ps.clamp_fraction(sz.get("fraction", 1.0))
-        r = self._capped(ps.size_by_risk(info, entry, sl, cap, sz.get("risk_pct", 0.01)), info, entry, sl, acc)
+        r = self._sized(sym, info, entry, sl, cap, acc)
         if not r["lots"]:
             ev[f"{key}|placed{k}"] = "skip"
             self._exec_note(sym, f"re-intrarea {k + 1} nu se plasează: {r.get('reason')}")
@@ -741,6 +741,22 @@ class DailyEngine:
             return round(fit, 8), f"lot redus la {fit:g} pentru limita de marjă {pct * 100:.0f}% din equity"
         except Exception:
             return lots, None                        # fail-open: o eroare de citire nu blocheaza
+
+    def risk_policy(self, sym: str) -> dict:
+        """Politica de risc a pietei (Market Risk Override → setarile pietei; altfel globale) — global_guard.risk_policy."""
+        from live.global_guard import risk_policy
+        mkt = next((x for x in self.cfg.get("markets") or [] if x.get("symbol") == sym), {})
+        return risk_policy((self.cfg.get("sizing") or {}).get("risk_pct", 0.01), mkt.get("risk"))
+
+    def _sized(self, sym: str, info, entry: float, sl: float, cap: float, acc) -> dict:
+        """Lotul unui ordin / trade virtual: override OPRIT = exact calea de dinainte (riscul engine-ului + limita
+        globala); PORNIT = riscul + plafonul pietei (limitat la plafonul absolut) — position_sizing.size_with_policy."""
+        pol = self.risk_policy(sym)
+        if pol["source"] != "market":
+            r = self._capped(ps.size_by_risk(info, entry, sl, cap, (self.cfg.get("sizing") or {}).get("risk_pct", 0.01)),
+                             info, entry, sl, acc)
+            return {**r, "policy_source": "global"}
+        return ps.size_with_policy(info, entry, sl, cap, getattr(acc, "equity", None) if acc else None, pol)
 
     @staticmethod
     def _capped(r: dict, info, entry: float, sl: float, acc) -> dict:
@@ -869,7 +885,7 @@ class DailyEngine:
             base = ps.capital_base(sz.get("capital_sync_mt5", True), sz.get("capital_usd"), eq)
             cap = base * ps.clamp_fraction(sz.get("fraction", 1.0))
             si = self.mt5.symbol_info(sym)
-            r = self._capped(ps.size_by_risk(si, st["entry"], st["sl"], cap, sz.get("risk_pct", 0.01)), si, st["entry"], st["sl"], acc)
+            r = self._sized(sym, si, st["entry"], st["sl"], cap, acc)
             return {**r, "currency": getattr(acc, "currency", "USD") if acc else "USD", "capital": round(cap, 2)}
         except Exception as e:                 # estimarea nu are voie sa opreasca shadow-ul
             return {"lots": 0.0, "risk_money": None, "reason": str(e), "currency": "USD"}
