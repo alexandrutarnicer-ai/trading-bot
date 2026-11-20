@@ -798,11 +798,12 @@ class DailyEngine:
         for o in ords:
             if not today(o.comment, o.symbol):
                 X.cancel(self.mt5, o)
-                self._exec_note(o.symbol, f"ordin rămas din altă zi anulat ({o.comment})")
+                self._exec_note(o.symbol, f"ordin Daily din altă zi / nerecunoscut azi anulat ({o.comment})")
         for p in pos:
             if not today(p.comment, p.symbol):
                 ok, _ = X.close(self.mt5, p)
-                self._exec_note(p.symbol, f"poziție rămasă din altă zi închisă ({p.comment}) — {'ok' if ok else 'EȘUAT'}", True)
+                self._exec_note(p.symbol, f"poziție Daily din altă zi / nerecunoscută azi închisă ({p.comment}) — "
+                                          f"{'ok' if ok else 'EȘUAT'}", True)
 
     def _events(self, m: dict, day: str, st: dict) -> None:
         """Evenimentele zilei, O DATA per trade (k = indexul trade-ului din zi; k = 0 pastreaza cheile vechi, deci
