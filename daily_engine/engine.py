@@ -278,11 +278,12 @@ class DailyEngine:
         tick = self.mt5.symbol_info_tick(symbol)
         if tick is None or not tick.time:
             return
-        diff = tick.time - now_utc.timestamp()
-        hours = round(diff / 3600)
-        # tick proaspat (< 3 min dupa scaderea offset-ului) => offset de incredere
-        if abs(diff - hours * 3600) < 180:
-            self.server_offset_s = int(hours * 3600)
+        # tick proaspat => offset de incredere; un tick INGHETAT de N ore exacte (pauza pietei) nu mai schimba
+        # offset-ul cunoscut (server_clock: re-intrarile fantoma de la 00:56, 20.11.2026)
+        if not hasattr(self, "_clock"):
+            from server_clock import ServerClock
+            self._clock = ServerClock()
+        self.server_offset_s = self._clock.update(symbol, tick.time, now_utc.timestamp(), self.server_offset_s)
 
     def process_market(self, m: dict, now_utc: datetime) -> dict:
         """O piata = una sau mai multe sesiuni (Londra / Frankfurt / New York). Fiecare sesiune se evalueaza pur, apoi

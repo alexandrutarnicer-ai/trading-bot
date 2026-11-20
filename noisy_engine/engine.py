@@ -351,10 +351,10 @@ class NoisyEngine:
         tick = self.mt5.symbol_info_tick(symbol)
         if tick is None or not tick.time:
             return
-        diff = tick.time - now_utc.timestamp()
-        hours = round(diff / 3600)
-        if abs(diff - hours * 3600) < 180:
-            self.offset_s = int(hours * 3600)
+        if not hasattr(self, "_clock"):           # comun cu Daily (server_clock: tick inghetat in pauza ≠ offset nou)
+            from server_clock import ServerClock
+            self._clock = ServerClock()
+        self.offset_s = self._clock.update(symbol, tick.time, now_utc.timestamp(), self.offset_s)
 
     def _events_news(self) -> list[dict]:
         if self._news_fetch is not None:
