@@ -418,6 +418,11 @@ class SpecialEngine:
             except Exception:
                 pass
 
+    def risk_policy(self, sym: str) -> dict:
+        """Politica de risc a pietei (Market Risk Override → setarile pietei; altfel globale) — global_guard.risk_policy."""
+        from live.global_guard import risk_policy
+        return risk_policy(self.cfg.get("risk_pct", 0.01), ((self.cfg.get("markets") or {}).get(sym) or {}).get("risk"))
+
     def _size(self, sym: str, side: int, entry: float, sl: float) -> tuple[float, str, float]:
         """(loturi, motiv daca 0 / redus, risc in bani). Lantul: risc% × capitalul engine-ului → limita globala de
         risc / trade → riscul TOTAL deschis al engine-ului → marja totala a contului."""
@@ -425,18 +430,24 @@ class SpecialEngine:
         if info is None or acc is None:
             return 0.0, "symbol_info / cont indisponibil", 0.0
         cap = self._capital(acc)
-        r = ps.size_by_risk(info, entry, sl, cap, self.cfg["risk_pct"])
-        lots, risk = float(r.get("lots") or 0.0), float(r.get("risk_money") or 0.0)
-        if not lots:
-            return 0.0, r.get("reason") or "lot 0", 0.0
-        from live.global_guard import risk_cap_pct
-        gcap = risk_cap_pct()
-        if gcap:
-            lots2, why = ps.apply_risk_cap(info, lots, entry, sl, float(acc.equity), gcap)
-            if not lots2:
-                return 0.0, why, 0.0
-            if lots2 != lots:
-                risk, lots = risk * lots2 / lots, lots2
+        pol = self.risk_policy(sym)
+        if pol["source"] == "market":             # Market Risk Override: riscul + plafonul PIETEI (≤ plafonul absolut)
+            r = ps.size_with_policy(info, entry, sl, cap, float(acc.equity), pol)
+            lots, risk = float(r.get("lots") or 0.0), float(r.get("risk_money") or 0.0)
+            if not lots:
+                return 0.0, r.get("reason") or "lot 0", 0.0
+        else:                                     # setarile engine-ului + limita GLOBALA (exact ca inainte)
+            r = ps.size_by_risk(info, entry, sl, cap, self.cfg["risk_pct"])
+            lots, risk = float(r.get("lots") or 0.0), float(r.get("risk_money") or 0.0)
+            if not lots:
+                return 0.0, r.get("reason") or "lot 0", 0.0
+            gcap = pol["cap_pct"]
+            if gcap:
+                lots2, why = ps.apply_risk_cap(info, lots, entry, sl, float(acc.equity), gcap)
+                if not lots2:
+                    return 0.0, why, 0.0
+                if lots2 != lots:
+                    risk, lots = risk * lots2 / lots, lots2
         pos, ords = X.own(self.mt5)
         if len(pos) + len(ords) >= self.cfg["max_positions"]:
             return 0.0, f"maxim {self.cfg['max_positions']} poziții Special deschise", 0.0

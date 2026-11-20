@@ -89,6 +89,9 @@ def sanitize(cfg: dict | None) -> dict:
         if sym in known and isinstance(m, dict):
             mode = m.get("mode") if m.get("mode") in MARKET_MODES else "shadow"
             mk[sym] = {"mode": mode, "paused_at": m.get("paused_at") if mode == "pause" else None}
+            if "risk" in m:                       # Market Risk Override (comun cu Daily — position_sizing)
+                import position_sizing as ps
+                mk[sym]["risk"] = ps.sanitize_market_risk(m.get("risk"))
     out["markets"] = mk
     out["mode"] = "execute" if any(m["mode"] == "live" for m in mk.values()) else "shadow"
     a = {**DEFAULTS["strategy_a"], **(cfg.get("strategy_a") or {})}

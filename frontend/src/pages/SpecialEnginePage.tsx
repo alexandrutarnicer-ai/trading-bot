@@ -29,7 +29,9 @@ interface Ref { label: string; trades_per_month: number; expectancy_R: number; t
   pct_months_pos: number; month_pct_at_05: number; dd_pct_at_05: number; verdict: string; period: string; note?: string }
 interface Status { running: boolean; pid: number | null; updated?: string; components?: Comp[]; errors?: string[];
   selection?: Selection; selection_note?: string; scorecard?: { total: Score; A: Score; B: Score; by_component: Record<string, Score> };
-  research: Record<"A" | "B" | "AB", Ref>; config?: SpecialCfg; markets?: Record<string, MarketMode>; capital?: CapitalInfo }
+  research: Record<"A" | "B" | "AB", Ref>; config?: SpecialCfg; markets?: Record<string, MarketMode>; capital?: CapitalInfo;
+  risk_policies?: Record<string, { source: "market" | "global"; risk_pct: number; cap_pct: number | null; hard_pct: number;
+    risk?: { override: boolean; risk_pct: number; max_risk_pct: number } | null }> }
 interface Trade { day: string; strategy: string; comp: string; symbol: string; d: number; entry: number; exit: number; R: number;
   why: string; entry_t: string; exit_t: string; pnl_money_est?: number;
   // doar afisare (annotate_trade): momentele in fusul aplicatiei + ora bursei, observat live / reconstituit
@@ -93,6 +95,59 @@ function ModeSelector({ symbol, mode }: { symbol: string; mode: MarketMode }) {
         </button>
       ))}
       {set.isError && <span className="px-2 text-loss">{(set.error as Error).message}</span>}
+    </div>
+  );
+}
+
+/** Market Risk Override pe o piata Special (acelasi mecanism ca Daily — position_sizing + global_guard.risk_policy). */
+function RiskRow({ symbol, pol }: { symbol: string; pol?: NonNullable<Status["risk_policies"]>[string] }) {
+  const qc = useQueryClient();
+  const cur = { override: pol?.risk?.override ?? false, risk_pct: pol?.risk?.risk_pct ?? 1, max_risk_pct: pol?.risk?.max_risk_pct ?? 1 };
+  const [v, setV] = useState<typeof cur | null>(null);
+  const val = v ?? cur;
+  const dirty = v != null && JSON.stringify(v) !== JSON.stringify(cur);
+  const save = useMutation({
+    mutationFn: (r: typeof cur) => apiFetch(`/special/markets/${symbol}/risk`, { method: "PUT", body: r }),
+    onSuccess: () => { setV(null); qc.invalidateQueries({ queryKey: ["special-status"] }); },
+  });
+  return (
+    <div className="flex items-center gap-2 flex-wrap text-[11px]">
+      <span className="text-white font-semibold w-16">{symbol}</span>
+      <label className="flex items-center gap-1">
+        <input type="checkbox" checked={val.override} onChange={e => setV({ ...val, override: e.target.checked })} /> override
+      </label>
+      {val.override ? (<>
+        risc
+        <input type="number" min={0.1} max={5} step={0.1} value={val.risk_pct}
+          onChange={e => setV({ ...val, risk_pct: Number(e.target.value) || 0.1, max_risk_pct: Math.max(val.max_risk_pct, Number(e.target.value) || 0.1) })}
+          className="w-14 bg-surface-card border border-surface-border rounded px-1" />% · maxim la lotul minim
+        <input type="number" min={val.risk_pct} max={10} step={0.5} value={val.max_risk_pct}
+          onChange={e => setV({ ...val, max_risk_pct: Math.max(val.risk_pct, Number(e.target.value) || val.risk_pct) })}
+          className="w-14 bg-surface-card border border-surface-border rounded px-1" />%
+        {pol && val.max_risk_pct > pol.hard_pct && <span className="text-amber-300">→ plafonat la {pol.hard_pct}%</span>}
+      </>) : (
+        <span className="text-slate-500">setările engine-ului ({((pol?.risk_pct ?? 0.01) * 100).toFixed(1)}%) + limita globală
+          ({pol?.cap_pct != null ? `${pol.cap_pct}%` : "oprită"})</span>
+      )}
+      {dirty && <button onClick={() => save.mutate(val)} disabled={save.isPending}
+        className="px-2 py-0.5 rounded bg-pink-500/20 text-pink-200 border border-pink-500/40">Salvează</button>}
+      {save.isError && <span className="text-loss">{(save.error as Error).message}</span>}
+    </div>
+  );
+}
+
+function RiskCard({ st }: { st?: Status }) {
+  const syms = Object.keys(st?.markets ?? {});
+  if (!syms.length) return null;
+  return (
+    <div className="bg-surface rounded-xl border border-surface-border p-4 space-y-1.5">
+      <div className="text-sm font-semibold text-white">Risc per piață <span className="text-[11px] font-normal text-slate-500">— Market Risk Override</span></div>
+      {syms.map(s => <RiskRow key={s} symbol={s} pol={st?.risk_policies?.[s]} />)}
+      <div className="text-[10px] text-slate-500">
+        Override pornit → riscul pieței are prioritate față de setările engine-ului / limita globală; riscul real la lotul minim poate urca până
+        la „maxim” (peste el trade-ul e respins, nu rotunjit în sus), niciodată peste plafonul absolut din Setări Globale. Riscul total deschis
+        al engine-ului, pozițiile maxime, marja și protecțiile globale (capital, vineri, știri) rămân mereu active.
+      </div>
     </div>
   );
 }
@@ -209,6 +264,7 @@ export function SpecialEnginePage() {
       </div>
 
       <CapitalCard cap={st?.capital} cfg={st?.config} />
+      <RiskCard st={st} />
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <ScoreBox title="A — adaptiv NR4" s={sc?.A} r={st?.research?.A} />

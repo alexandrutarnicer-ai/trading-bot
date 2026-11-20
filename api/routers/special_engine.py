@@ -102,6 +102,13 @@ def special_status():
             syms.add(cfg["strategy_b"]["symbol"])
         syms |= set(cfg.get("markets") or {})
         st["markets"] = {s: market_mode(cfg, s) for s in sorted(syms)}
+    try:                                                       # politica de risc pe fiecare piata (UI)
+        from live.global_guard import risk_policy
+        st["risk_policies"] = {s: {"risk": ((cfg.get("markets") or {}).get(s) or {}).get("risk"),
+                                   **risk_policy(cfg.get("risk_pct", 0.01), ((cfg.get("markets") or {}).get(s) or {}).get("risk"))}
+                               for s in (st.get("markets") or {})}
+    except Exception:
+        pass
     return st
 
 
@@ -220,7 +227,9 @@ def special_market_mode(symbol: str, body: dict):
     before = market_mode(cur, sym)
     if before == mode:
         return {"ok": True, "symbol": sym, "mode": mode, "changed": False}
+    prev = (cur.get("markets") or {}).get(sym) or {}
     cur["markets"] = {**cur.get("markets", {}), sym: {
+        **({"risk": prev["risk"]} if "risk" in prev else {}),          # setarile de risc ale pietei raman
         "mode": mode, "paused_at": _dt.now(_tz.utc).isoformat(timespec="seconds") if mode == "pause" else None}}
     save_config(cur)
     _audit("mode", f"{sym}: {before} → {mode}", market=sym, before=before, after=mode)
@@ -230,6 +239,31 @@ def special_market_mode(symbol: str, body: dict):
                    "gestionată până la ieșirea strategiei / finalul sesiunii.",
          "pause": f"⏸ <b>Special Engine — {sym} PE PAUZĂ</b>\nFără intrări noi; pozițiile deschise rămân gestionate."}[mode])
     return {"ok": True, "symbol": sym, "mode": mode, "changed": True}
+
+
+@router.put("/markets/{symbol}/risk")
+def special_market_risk(symbol: str, body: dict):
+    """Market Risk Override pe o piata Special: {override, risk_pct, max_risk_pct} (position_sizing — comun cu Daily).
+    Oprit = riscul engine-ului + limita globala; pornit = setarile pietei, plafonate la plafonul absolut din Setari
+    Globale. Protectiile obligatorii (capital, circuit breaker, vineri, stiri, marja, risc total deschis) raman."""
+    import position_sizing as ps
+    from special_engine.config import NOISE_MARKETS, ORB_MARKETS
+    sym = str(symbol or "").upper()
+    if sym not in set(ORB_MARKETS) | set(NOISE_MARKETS):
+        raise HTTPException(400, f"piață necunoscută în Special Engine: {sym}")
+    if not isinstance(body, dict):
+        raise HTTPException(400, "body: {override, risk_pct, max_risk_pct}")
+    cur = load_config()
+    prev = (cur.get("markets") or {}).get(sym) or {"mode": "shadow", "paused_at": None}
+    old_r, new_r = ps.sanitize_market_risk(prev.get("risk")), ps.sanitize_market_risk(body)
+    cur["markets"] = {**cur.get("markets", {}), sym: {**prev, "risk": new_r}}
+    save_config(cur)
+    if new_r != old_r:
+        txt = f"{sym}: risc — {ps.describe_market_risk(old_r)} → {ps.describe_market_risk(new_r)}"
+        _audit("config", txt, market=sym, before=old_r, after=new_r)
+        _tg("⚙️ <b>Special Engine — risc per piață</b>\n" + txt + "\nSe aplică de la următoarea iterație.")
+    from live.global_guard import risk_policy
+    return {"ok": True, "symbol": sym, "risk": new_r, "policy": risk_policy(cur.get("risk_pct", 0.01), new_r)}
 
 
 @router.get("/logs")
