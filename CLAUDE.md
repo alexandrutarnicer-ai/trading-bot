@@ -84,6 +84,8 @@ python scripts/test_position_sizing.py    # 38 teste: dimensionare comuna, Custo
 python scripts/test_market_risk.py        # 29 teste: Market Risk Override (risc per piata > global, plafon absolut, protectii obligatorii; offline)
 python scripts/test_server_clock.py       # 16 teste: ora serverului din tick (tick inghetat in pauza ≠ offset nou) + reproducere pe barele reale
 python scripts/test_daily_journal.py      # 7 teste: jurnalul shadow Daily citit fara dubluri / fantome (fisierul nu e rescris)
+python scripts/test_special_nr4.py        # 9 teste: Special NR4 doar pe bare D1 INCHISE (JP225 10.11 / 18.11) + barele reale
+python scripts/research_daily/live_readiness_2026_11.py   # analiza Live Readiness: Daily + Special, backtest vs shadow, risc la 300 $
 python scripts/test_reports.py            # 69 teste: rapoarte zilnic (optional, fara dubluri) / saptamanal (vineri 20:00, asteapta inchiderea de vineri, recuperare) / lunar (doar luna incheiata) (offline)
 python scripts/test_market_overview.py    # 51 teste: Dashboard global — piete active + „ascunde nefolosite” pe toate engine-urile (offline)
 python scripts/test_reports_costs.py      # 31 teste: Top 5 Piete + Rapoarte Piete / Comisioane+Swap (definitii comune api/trade_stats.py, spread estimat)
@@ -340,6 +342,16 @@ Al cincilea engine: A = portofoliu ORB adaptiv (selectie trimestriala walk-forwa
   `sweep_stale` (nimic peste noapte); semnal vechi → nimic.
 - **Capital proprii:** `capital` {sync, capital_usd, fraction} → `risk_pct` 1% / trade, `max_open_risk_pct` 2% (toate
   pietele), `max_positions` 2, `max_margin_pct` 80 — PESTE Setarile Globale (care nu se schimba de aici).
+- **Market Risk Override (20.11.2026):** `markets[SIM].risk` (acelasi mecanism comun ca Daily — `global_guard.risk_policy`
+  + `position_sizing.size_with_policy`); `PUT /special/markets/{SIM}/risk`, `/special/status::risk_policies`, cardul
+  „Risc per piata”; schimbarea modului pastreaza riscul pietei. Riscul total deschis / max pozitii / marja raman.
+- **NR4 doar pe bare D1 INCHISE (fix 20.11.2026):** ziua JP225 (Tokyo) incepe la 17:00 server din ziua precedenta; D1 era
+  citit atunci si tinut in cache cu bara serverului „de ieri” IN FORMARE → zile marcate gresit NR4 (shadow 10.11 / 18.11).
+  `_d1_for(sym, day, now_utc)`: doar bare inchise, cache pe ziua serverului; pana la inchiderea barei → `waiting_open`.
+- **Integrare (20.11.2026):** sectiunea Special in Dashboard, filtrul de sursa, Piete active (`_collect_special`),
+  eticheta SPECIAL in Tranzactii / Rapoarte / Ordine active, rapoartele programate (rand + SHADOW, in TOTAL).
+  Analiza Live Readiness (USTEC NOISE nu incape la 300 $: lot minim = 5,7% risc; JP225 NR4 = candidatul Live):
+  [docs/LIVE_READINESS_2026_11.md](docs/LIVE_READINESS_2026_11.md).
 - Lifecycle `/engines` („special”, fara autostart propriu), watchdog `_check_special_engine` (desired_running.json, sters
   doar de Stop), sync (`trades.jsonl` union, `state.json` / `selection.json` stare). Teste: `python -m special_engine.selftest`
   (43), `python scripts/test_special_api.py` (19).
