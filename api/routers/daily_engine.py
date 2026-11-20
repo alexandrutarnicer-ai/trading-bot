@@ -125,8 +125,9 @@ def _proposed_market(slot_m: dict, body: dict) -> dict:
         m["rr"] = sanitize_rr(body["rr"])
     if "reentry" in body:
         m["reentry"] = sanitize_reentry(body["reentry"])
-    if sym != slot_m.get("symbol") or preset != slot_m.get("preset"):
-        m["sessions"] = [preset]                  # piata / bursa noua = o singura sesiune (se pot adauga din Optiuni)
+    if "preset" in body and (preset != slot_m.get("preset") or sym != slot_m.get("symbol")):
+        m["sessions"] = [preset]                  # bursa aleasa EXPLICIT (API vechi) = o singura sesiune
+    # fara „preset” (UI-ul nou, 20.11.2026): sesiunile se aleg DOAR din „Sesiuni” → slotul isi pastreaza sesiunile
     return m
 
 
@@ -475,6 +476,9 @@ def daily_config_save(body: dict):
                     if not req:
                         raise HTTPException(400, "alege cel puțin o sesiune (Londra / Frankfurt / New York)")
                     new_ses = [x for x in SESSION_IDS if x in req]
+                    if "london" in new_ses and "frankfurt" in new_ses:
+                        raise HTTPException(400, "Londra (08:00 UK) și Frankfurt (09:00 Berlin) se deschid în ACELAȘI minut — "
+                                                 "alege una singură (cu ambele bifate tranzacționa doar Londra)")
                 if new_ses != cur_ses:
                     busy = _slot_busy(m["symbol"])
                     if busy:

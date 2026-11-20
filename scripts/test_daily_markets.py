@@ -323,11 +323,21 @@ check("fără nicio sesiune → 400", refused({"markets": [{"symbol": sym1, "ses
 out = R.daily_config_save({"markets": [{"symbol": sym1, "max_trades_per_day": 50}]})
 check("limita plafonată la 20", C.load_config()["markets"][1]["max_trades_per_day"] == 20)
 R._slot_busy = lambda sym: f"{sym} are o poziție azi"
-check("schimbarea sesiunilor cu o poziție / ordin azi → 409", refused({"markets": [{"symbol": sym1, "sessions": ["london", "frankfurt"]}]}, 409))
+check("schimbarea sesiunilor cu o poziție / ordin azi → 409", refused({"markets": [{"symbol": sym1, "sessions": ["london", "new_york"]}]}, 409))
 R._slot_busy = lambda sym: None
 other0 = C.load_config()["markets"][0]
-out = R.daily_config_save({"markets": [{"symbol": sym1, "sessions": ["london", "frankfurt"]}]})
+out = R.daily_config_save({"markets": [{"symbol": sym1, "sessions": ["london", "new_york"]}]})
 check("cealaltă piață NU e atinsă de sesiunile / limita primei", C.load_config()["markets"][0] == other0)
+check("Londra + Frankfurt (același minut) → 400", refused({"markets": [{"symbol": sym1, "sessions": ["london", "frankfurt"]}]}, 400))
+check("... Londra + Frankfurt + NY → 400", refused({"markets": [{"symbol": sym1, "sessions": ["london", "frankfurt", "new_york"]}]}, 400))
+R.daily_config_save({"markets": [{"symbol": sym1, "sessions": ["frankfurt", "new_york"], "max_trades_per_day": 2}]})
+new1 = "DE40" if sym1 != "DE40" else "GBPUSD"
+out = R.daily_config_save({"markets": [{"slot": 1, "symbol": new1}]})        # UI-ul nou: fara „Bursa”
+m1 = C.load_config()["markets"][1]
+check("piață nouă FĂRĂ bursă (UI-ul nou) → păstrează sesiunile + limita slotului (Frankfurt + NY, max 2)",
+      m1["symbol"] == new1 and m1["sessions"] == ["frankfurt", "new_york"] and m1["max_trades_per_day"] == 2
+      and m1["exec_mode"] == "shadow", (m1["symbol"], m1["sessions"], m1["max_trades_per_day"]))
+sym1 = new1
 out = R.daily_config_save({"markets": [{"slot": 1, "symbol": "DE40" if sym1 != "DE40" else "GBPUSD", "preset": "frankfurt"}]})
 check("piață NOUĂ în slot → o singură sesiune (bursa aleasă)", C.load_config()["markets"][1]["sessions"] == ["frankfurt"],
       C.load_config()["markets"][1]["sessions"])
