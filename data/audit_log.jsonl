@@ -4,3 +4,7 @@
 {"time": "2026-11-13T18:36:33+00:00", "engine": "daily", "action": "start", "market": null, "before": null, "after": null, "detail": "pornit (PID 17824)", "source": "ui"}
 {"time": "2026-11-15T21:08:03+00:00", "engine": "daily", "action": "start", "market": null, "before": null, "after": null, "detail": "pornit (PID 3600)", "source": "ui"}
 {"time": "2026-11-15T21:08:46+00:00", "engine": "special", "action": "start", "market": null, "before": null, "after": null, "detail": "pornit (PID 18248)", "source": "ui"}
+{"time": "2026-11-20T13:57:34+00:00", "engine": "daily", "action": "config", "market": null, "before": null, "after": null, "detail": "DE40: re-intrări oprite", "source": "ui"}
+{"time": "2026-11-20T13:57:34+00:00", "engine": "daily", "action": "config", "market": null, "before": null, "after": null, "detail": "DE40: sesiuni Londra + Frankfurt + New York → Frankfurt + New York", "source": "ui"}
+{"time": "2026-11-20T13:57:34+00:00", "engine": "daily", "action": "config", "market": null, "before": null, "after": null, "detail": "DE40: maxim 3 → 2 trade-uri / zi (toate sesiunile)", "source": "ui"}
+{"time": "2026-11-20T13:57:34+00:00", "engine": "daily", "action": "config", "market": null, "before": null, "after": null, "detail": "DE40: risc — setări GLOBALE (override oprit) → override PORNIT — risc 1% / trade, maxim 6% la lotul minim", "source": "ui"}
