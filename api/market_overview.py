@@ -35,7 +35,7 @@ from datetime import datetime, timedelta
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA = os.path.join(ROOT, "data")
 
-ENGINES = ("custom", "ai", "daily", "noisy")
+ENGINES = ("custom", "ai", "daily", "noisy", "special")
 # ordinea de prioritate pentru starea AGREGATA a pietei (prima gasita castiga)
 STATUS_ORDER = ("in_position", "active", "observe", "idle", "blocked", "stopped")
 STATUS_LABEL = {"in_position": "În poziție", "active": "Activ", "observe": "Observație",
@@ -214,6 +214,38 @@ def engine_entries(inp: dict, now: datetime) -> list[dict]:
             e.update(status="observe" if shadow else "active",
                      reason="caută semnale · shadow" if shadow else "caută semnale")
         out.append(e)
+    # Special Engine (DOAR alex-live) — pietele componentelor selectate (A = ORB adaptiv, B = NOISE), mod PER PIATA
+    sp = inp.get("special") or {}
+    for sym, mode in sorted((sp.get("markets") or {}).items()):
+        comps = [c_ for c_ in sp.get("components") or []
+                 if (c_.get("symbol") or (str(c_.get("comp", "")).split(":") + ["", ""])[1]) == sym]
+        shadow = mode != "live"
+        e = {"symbol": sym, "engine": "special", "ref": " + ".join(str(c_.get("comp", "")) for c_ in comps) or "Special",
+             "direction": "BOTH", "tf": "M5", "mode": "shadow" if shadow else "execute",
+             "window": next((c_.get("window_ro") for c_ in comps if c_.get("window_ro")), None),
+             "positions": has_pos(sym, "special")}
+        ph = next((c_ for c_ in comps if c_.get("phase") == "in_position"), comps[0] if comps else {})
+        phase = ph.get("phase")
+        if not sp.get("running"):
+            e.update(status="stopped", reason="Special Engine oprit")
+        elif mode == "pause":
+            e.update(status="blocked", reason="piață pe pauză (manual) — fără intrări noi", manual_pause=True, phase=phase)
+        elif phase == "error":
+            e.update(status="blocked", reason=f"eroare: {ph.get('reason') or '—'}", phase=phase)
+        elif phase == "in_position":
+            e.update(status="observe" if shadow else "in_position",
+                     reason="poziție virtuală · shadow" if shadow else "în poziție", phase=phase)
+        elif phase in ("forming_or",):
+            e.update(status="observe" if shadow else "active",
+                     reason="formează intervalul" + (" · shadow" if shadow else ""), phase=phase)
+        else:
+            lbl = {"no_nr": "zi fără NR4 — nu tranzacționează azi", "weekend": "weekend",
+                   "waiting_open": "așteaptă deschiderea", "skipped": "zi sărită (fără bare)",
+                   "paused": "pauză"}.get(phase, phase or "—")
+            if phase == "waiting_open" and e["window"]:
+                lbl += f" ({e['window']} ora RO)"
+            e.update(status="idle", reason=lbl, phase=phase)
+        out.append(e)
     for e in out:
         e["status_label"] = STATUS_LABEL[e["status"]]
         e["in_use"] = entry_in_use(e)
@@ -244,7 +276,7 @@ def _stats(trades: list[dict], today: str, yesterday: str) -> dict:
             "trades_today": len(on(today))}
 
 
-_SRC = {"custom": "bot", "ai": "ai", "daily": "daily", "noisy": "noisy"}
+_SRC = {"custom": "bot", "ai": "ai", "daily": "daily", "noisy": "noisy", "special": "special"}
 
 
 def build(inp: dict, now: datetime) -> dict:
@@ -260,7 +292,7 @@ def build(inp: dict, now: datetime) -> dict:
     for e in entries:
         m = markets.setdefault(e["symbol"], {"symbol": e["symbol"], "engines": []})
         e["signals_today"] = int(sig.get((e["symbol"], e["engine"]), 0))
-        if e["engine"] in ("daily", "noisy") and e["mode"] == "shadow":
+        if e["engine"] in ("daily", "noisy", "special") and e["mode"] == "shadow":
             v = virt.get((e["symbol"], e["engine"])) or {}
             e["virtual_today"] = {"trades": int(v.get("n", 0)), "R": round(float(v.get("R", 0.0)), 2)}
         m["engines"].append(e)
@@ -418,6 +450,22 @@ def _collect_noisy(today: str) -> dict:
             "reason": st.get("reason"), "virtual": virt, "signals": sig}
 
 
+def _collect_special(today: str) -> dict:
+    from api.routers import special_engine as SPR
+    from special_engine.engine import load_trades
+    st = SPR.special_status()
+    virt, sig = {}, {}
+    for t in load_trades():
+        if str(t.get("day")) == today and t.get("mode", "shadow") != "execute":
+            k = (t.get("symbol"), "special")
+            v = virt.setdefault(k, {"n": 0, "R": 0.0})
+            v["n"] += 1
+            v["R"] += float(t.get("R") or 0)
+            sig[k] = sig.get(k, 0) + 1
+    return {"running": bool(st.get("running")), "markets": st.get("markets") or {},
+            "components": (st.get("components") or []) if st.get("running") else [], "virtual": virt, "signals": sig}
+
+
 def global_block(trades: list[dict] | None, equity: float | None, today: str) -> str | None:
     """Blocaj cont-wide din Setari Globale (capital / circuit breaker), din datele deja cache-uite."""
     try:
@@ -447,7 +495,8 @@ def collect() -> dict:
     errors: dict = {}
     inp: dict = {"errors": errors}
     for eid, fn in (("custom", lambda: _collect_custom(errors, today)), ("ai", lambda: _collect_ai(today)),
-                    ("daily", lambda: _collect_daily(today)), ("noisy", lambda: _collect_noisy(today))):
+                    ("daily", lambda: _collect_daily(today)), ("noisy", lambda: _collect_noisy(today)),
+                    ("special", lambda: _collect_special(today))):
         try:
             inp[eid] = fn()
         except Exception as e:      # un engine stricat nu strica Dashboard-ul
@@ -548,7 +597,8 @@ def signals(symbol: str | None = None, engine: str | None = None, limit: int = 1
             pass
 
     for eid, mod, strat in (("daily", "daily_engine.engine", "ORB (deschiderea bursei)"),
-                            ("noisy", "noisy_engine.engine", "Mean reversion")):
+                            ("noisy", "noisy_engine.engine", "Mean reversion"),
+                            ("special", "special_engine.engine", "Special (ORB adaptiv / NOISE)")):
         if not want(eid):
             continue
         try:

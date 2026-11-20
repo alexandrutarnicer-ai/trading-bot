@@ -13,7 +13,7 @@ interface Props {
 
 // filtrul de sursa al paginii → engine-ul semnalelor (manual nu are semnale)
 const SOURCE_ENGINE: Record<SourceFilter, string | null> = {
-  all: null, bot: "custom", ai: "ai", daily: "daily", noisy: "noisy", manual: null,
+  all: null, bot: "custom", ai: "ai", daily: "daily", noisy: "noisy", special: "special", manual: null,
 };
 
 const SOURCE_BADGE: Record<Mt5Transaction["source"], { label: string; cls: string }> = {
@@ -21,6 +21,7 @@ const SOURCE_BADGE: Record<Mt5Transaction["source"], { label: string; cls: strin
   ai:     { label: "AI",  cls: "bg-purple-500/15 text-purple-300" },
   daily:  { label: "DAILY", cls: "bg-cyan-500/15 text-cyan-300" },
   noisy:  { label: "NOISY", cls: "bg-amber-500/15 text-amber-300" },
+  special: { label: "SPECIAL", cls: "bg-pink-500/15 text-pink-300" },
   manual: { label: "MAN", cls: "bg-slate-500/20 text-slate-300" },
 };
 

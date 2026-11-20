@@ -495,7 +495,7 @@ export interface Mt5SessionsResponse {
 }
 
 // Filtrul de sursa al Dashboard-ului (pagina intreaga) — default "all".
-export type SourceFilter = "all" | "bot" | "ai" | "daily" | "noisy" | "manual";
+export type SourceFilter = "all" | "bot" | "ai" | "daily" | "noisy" | "special" | "manual";
 
 export interface Mt5Transaction {
   ticket: number;
@@ -515,7 +515,7 @@ export interface Mt5Transaction {
   commission_usd: number;
   swap_usd: number;
   // Atribuire din magic + comment-ul ordinului (api/mt5_pool.py::classify_trade)
-  source: "bot" | "ai" | "daily" | "noisy" | "manual";
+  source: "bot" | "ai" | "daily" | "noisy" | "special" | "manual";
   session_id: string | null;
   strategy: "pullback" | "inside_bar" | "flag" | "smart_news" | null;
   ai_approved: boolean | null;     // verdictul Filtrului AI Pre-Trade (doar bot)
@@ -601,7 +601,7 @@ export interface CostStat extends TradeGroupStats {
 }
 
 export interface CostSourceStat extends TradeGroupStats {
-  source: "bot" | "ai" | "daily" | "noisy" | "manual";
+  source: "bot" | "ai" | "daily" | "noisy" | "special" | "manual";
 }
 
 export interface CostsDayAggregate {
@@ -782,7 +782,7 @@ export interface Mt5Position {
   tp: number | null;
   profit: number;
   swap: number;
-  source: "bot" | "ai" | "daily" | "noisy" | "manual";
+  source: "bot" | "ai" | "daily" | "noisy" | "special" | "manual";
   comment: string;
   margin: number;
   // Filtru AI Pre-Trade — null cand ordinul nu a trecut prin filtru
@@ -798,7 +798,7 @@ export interface Mt5PendingOrder {
   entry: number;
   sl: number | null;
   tp: number | null;
-  source: "bot" | "ai" | "daily" | "noisy" | "manual";
+  source: "bot" | "ai" | "daily" | "noisy" | "special" | "manual";
   comment: string;
   ai_approved?: boolean | null;
   ai_confidence?: number | null;

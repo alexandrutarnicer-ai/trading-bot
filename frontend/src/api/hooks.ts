@@ -481,7 +481,7 @@ export const useMt5Transactions = (params: {
   status?: string;
   direction?: string;
   symbol?: string;
-  source?: "bot" | "ai" | "daily" | "noisy" | "manual";
+  source?: "bot" | "ai" | "daily" | "noisy" | "special" | "manual";
   session_id?: string;
   date_from?: string;
   date_to?: string;
@@ -1034,6 +1034,14 @@ export const useDailySaveProfitLock = () => {
     },
   });
 };
+
+/** Statusul Special Engine (DOAR alex-live) — aceeasi cheie de cache ca SpecialEnginePage. */
+export const useSpecialStatus = () =>
+  useQuery<{ running: boolean; scorecard?: { total?: { trades: number; wins: number; losses: number; total_R: number; expectancy_R: number | null } };
+             markets?: Record<string, "live" | "shadow" | "pause">; capital?: { engine_capital: number; open_risk: number } }>({
+    queryKey: ["special-status"], queryFn: () => apiFetch("/special/status"),
+    refetchInterval: 15_000, refetchIntervalInBackground: false,
+  });
 
 export const useDailySaveRisk = () => {
   const qc = useQueryClient();

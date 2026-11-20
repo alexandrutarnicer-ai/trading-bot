@@ -241,7 +241,7 @@ export function Dashboard() {
   // Filtrul de sursa al paginii se aplica si cardurilor: pe un engine → doar pietele lui,
   // cu statisticile MT5 ale acelui engine pe piata (aceleasi definitii).
   const srcEngine: MarketEngineId | null =
-    source === "bot" ? "custom" : source === "ai" || source === "daily" || source === "noisy" ? source : null;
+    source === "bot" ? "custom" : source === "ai" || source === "daily" || source === "noisy" || source === "special" ? source : null;
   const scoped: MarketCardData[] = (marketsData?.markets ?? [])
     .filter(m => !srcEngine || m.engine_ids.includes(srcEngine))
     .map(m => {
@@ -327,7 +327,7 @@ export function Dashboard() {
       {/* Filtru de SURSA pentru toata pagina (carduri, statistici, grafic, tranzactii) */}
       <div className="flex items-center gap-2 flex-wrap">
         <span className="text-[11px] text-slate-500">Arată tranzacțiile:</span>
-        {([["all", "Toate"], ["bot", "Custom Engine"], ["ai", "AI Engine"], ["daily", "Daily Engine"], ["noisy", "Noisy Engine"], ["manual", "Manual"]] as const).map(([v, label]) => (
+        {([["all", "Toate"], ["bot", "Custom Engine"], ["ai", "AI Engine"], ["daily", "Daily Engine"], ["noisy", "Noisy Engine"], ["special", "Special Engine"], ["manual", "Manual"]] as const).map(([v, label]) => (
           <button key={v} onClick={() => setSource(v)}
             className={`text-[11px] px-2.5 py-1 rounded-lg border transition-colors ${
               source === v ? "border-blue-500 bg-blue-500/15 text-white font-semibold"
@@ -337,7 +337,7 @@ export function Dashboard() {
         ))}
         {source !== "all" && (
           <span className="text-[10px] text-amber-400/80">
-            filtru activ — cifrele de pe pagină includ doar {source === "bot" ? "Custom Engine" : source === "ai" ? "AI Engine" : source === "daily" ? "Daily Engine (ordine reale MT5; shadow = 0)" : source === "noisy" ? "Noisy Engine (ordine reale MT5; shadow = 0)" : "tranzacțiile manuale"}
+            filtru activ — cifrele de pe pagină includ doar {source === "bot" ? "Custom Engine" : source === "ai" ? "AI Engine" : source === "daily" ? "Daily Engine (ordine reale MT5; shadow = 0)" : source === "noisy" ? "Noisy Engine (ordine reale MT5; shadow = 0)" : source === "special" ? "Special Engine (ordine reale MT5; shadow = 0)" : "tranzacțiile manuale"}
           </span>
         )}
       </div>
@@ -509,6 +509,7 @@ export function Dashboard() {
         <EnginePerformanceSection engine="ai" />
         <EnginePerformanceSection engine="daily" />
         <EnginePerformanceSection engine="noisy" />
+        <EnginePerformanceSection engine="special" />
       </div>
     </div>
   );

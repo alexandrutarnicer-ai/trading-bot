@@ -12,6 +12,7 @@ const SOURCE_BADGE: Record<string, { label: string; cls: string }> = {
   daily:  { label: "DAILY",  cls: "bg-cyan-500/20 text-cyan-300" },
   ai:     { label: "AI",     cls: "bg-purple-500/20 text-purple-300" },
   noisy:  { label: "NOISY",  cls: "bg-amber-500/20 text-amber-300" },
+  special: { label: "SPECIAL", cls: "bg-pink-500/20 text-pink-300" },
   manual: { label: "MANUAL", cls: "bg-slate-600/40 text-slate-300" },
 };
 
