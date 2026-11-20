@@ -806,7 +806,7 @@ export interface GlobalSettings {
   news_protection: { enabled: boolean; impact_level: number; pre_minutes: number; post_minutes: number };
   max_concurrent_per_market: { enabled: boolean; max: number };
   ai_filter: { enabled: boolean; level: "permissive" | "balanced" | "strict"; strict: boolean };
-  risk_cap: { enabled: boolean; max_risk_pct: number };
+  risk_cap: { enabled: boolean; max_risk_pct: number; override_max_pct?: number };
   special_tp: SpecialTpCfg;
 }
 
@@ -1028,6 +1028,17 @@ export const useDailySaveProfitLock = () => {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (m: { symbol: string; profit_lock: { enabled: boolean; trigger_R: number; lock_R: number } }) =>
+      apiFetch("/daily/config", { method: "PUT", body: { markets: [m] } }),
+    onSuccess: () => {
+      for (const k of ["daily-config", "daily-status"]) qc.invalidateQueries({ queryKey: [k] });
+    },
+  });
+};
+
+export const useDailySaveRisk = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (m: { symbol: string; risk: { override: boolean; risk_pct: number; max_risk_pct: number } }) =>
       apiFetch("/daily/config", { method: "PUT", body: { markets: [m] } }),
     onSuccess: () => {
       for (const k of ["daily-config", "daily-status"]) qc.invalidateQueries({ queryKey: [k] });
