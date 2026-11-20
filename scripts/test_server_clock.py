@@ -112,8 +112,9 @@ try:
     good, bad = run(2 * H), run(H)
     print("     offset corect 2h :", good)
     print("     offset gresit 1h :", bad)
-    check("offset corect = trade-ul real (LONG −1,01R)", len(good) >= 1 and good[0][1] == -1.01)
-    check("offset gresit = alta zi (de aici fantoma)", bad != good)
+    check("offset corect = intervalul real al zilei (OR high 7368,3 — trade-ul LONG pierdut)", len(good) >= 1
+          and good[0][2] == 7368.3 and good[0][1] < 0)
+    check("offset gresit = alt interval (7370,4) → alta zi (de aici fantoma)", bad and bad[0][2] != good[0][2])
 except Exception as e:  # noqa: BLE001
     print(f"     sarit: {e}")
 

@@ -110,12 +110,14 @@ import daily_engine.engine as DE  # noqa: E402
 from daily_engine.config import _sanitize, load_config  # noqa: E402
 
 cfg = load_config()
-raw = copy.deepcopy(cfg)
-raw["markets"][1]["risk"] = {"override": True, "risk_pct": 1.0, "max_risk_pct": 3.0}   # DE40 (slotul 2)
-raw["markets"][0].pop("risk", None)                                                   # US500 → globale
+raw = copy.deepcopy(cfg)                    # piete construite EXPLICIT (independent de configuratia masinii / branch-ului)
+base_m = {k: v for k, v in cfg["markets"][0].items() if k not in ("risk",)}
+raw["markets"] = [{**base_m, "symbol": "US500"},                                                  # → setarile globale
+                  {**base_m, "symbol": "DE40", "risk": {"override": True, "risk_pct": 1.0, "max_risk_pct": 3.0}}]
 clean = _sanitize(raw)
-check("config: override pastrat dupa sanitize (restart / reincarcare)", clean["markets"][1]["risk"]["override"]
-      and clean["markets"][1]["risk"]["max_risk_pct"] == 3.0 and not clean["markets"][0]["risk"]["override"])
+by_sym = {m["symbol"]: m for m in clean["markets"]}
+check("config: override pastrat dupa sanitize (restart / reincarcare)", by_sym["DE40"]["risk"]["override"]
+      and by_sym["DE40"]["risk"]["max_risk_pct"] == 3.0 and not by_sym["US500"]["risk"]["override"])
 eng = DE.DailyEngine.__new__(DE.DailyEngine)
 eng.cfg = clean
 infos = {"DE40": DE40, "US500": US500}
