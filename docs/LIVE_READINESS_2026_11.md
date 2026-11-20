@@ -162,3 +162,31 @@ Limitări rămase (documentate, nu blochează):
 **Status final:** Daily Engine — **Conditionally Ready** (tehnic gata; DE40 prea mare pentru 300 $ fără Protecția
 Capitalului) · Special Engine — **Conditionally Ready** (JP225 Live după restart cu fix-ul NR4; USTEC Shadow Only) ·
 Noisy Engine — **Shadow Only** · Custom / AI — neschimbate, regresie verde.
+
+---
+
+## 10. Decizii aplicate după raport (20.11.2026, decizia ta)
+
+| Setare | Înainte | Acum |
+|---|---|---|
+| DE40 — sesiuni | Londra + Frankfurt + NY, max 3 / zi, re-intrări | **Frankfurt + New York, max 2 / zi, fără re-intrări** |
+| DE40 — risc | setările globale (limita 5%) | **Market Risk Override: țintă 1%, maxim 6%** din equity la lotul minim |
+| DE40 — mod | SHADOW | **SHADOW** (neschimbat) |
+| Plafon absolut (override) | 5% | **6%** (altfel maximul DE40 era tăiat la 5%) |
+| Limita globală de risc / trade | 5% | **3%** — Custom, AI, Noisy, US500, JP225, USTEC |
+| Protecția Capitalului | oprită | oprită (recomandarea rămâne: pornită înainte de DE40 Live) |
+
+Efectul verificat cu dimensionarea reală (MT5, equity 296 $): DE40 SL 50 pct → 0,1 lot, 5,5 $; SL 120 pct → 0,1 lot,
+13,2 $ (4,5% — trece, override); SL 170 pct → respins (6,3% > 6%). US500 SL 30 pct → 0,1 lot, 3 $; SL 100 pct → respins
+(3,4% > 3% global). La 6%: 99,3% din trade-urile DE40 istorice încap. Custom / AI: risc real maxim ~1,2% / trade → 3% nu
+blochează nimic din ce trecea înainte.
+
+**Reluare LIVE prin engine-ul real** (`scripts/research_daily/daily_live_replay.py` — execuție pornită, barele MT5 reale,
+`order_send` interceptat, fișierele reale neatinse): 17.11 / 18.11 / 19.11 DE40 → BUY_STOP + SELL_STOP pe marginile
+intervalului Frankfurt (0,1 lot, SL atașat, ~5,5 $ risc), OCO (cealaltă margine anulată la umplere), SL atins (−1R),
+apoi ordin la piață la 17:00 RO pe direcția intervalului NY cu SL, închis la 23:00 (+5,5R / +3,7R / +8,1R); limita de 2 / zi
+respectată, nicio re-intrare — identic cu backtestul.
+
+**UI:** sesiunile se aleg doar din „Sesiuni” („Bursa” scoasă din „Schimbă piața”); Londra și Frankfurt se exclud
+reciproc (se deschid în același minut).
+

@@ -31,7 +31,7 @@
   },
   "risk_cap": {
     "enabled": true,
-    "max_risk_pct": 5.0,
+    "max_risk_pct": 3.0,
     "override_max_pct": 6.0
   },
   "special_tp": {
