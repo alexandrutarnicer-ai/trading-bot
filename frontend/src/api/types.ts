@@ -1250,3 +1250,13 @@ export interface DailySessionRow {
 }
 export interface DailyMarketConfig { sessions?: DailySessionId[]; max_trades_per_day?: number }
 export interface DailyMarketStatus { session?: DailySessionId; sessions?: DailySessionRow[]; max_trades_per_day?: number }
+
+// ── Market Risk Override (20.11.2026): risc PER PIATA cu prioritate fata de cel global (comun Daily + Special) ──
+export interface MarketRisk { override: boolean; risk_pct: number; max_risk_pct: number }
+export interface RiskPolicy {
+  source: "market" | "global"; risk_pct: number; cap_pct: number | null; hard_pct: number;
+  market_max_pct: number | null; clamped: boolean; risk?: MarketRisk | null;
+}
+export interface DailyMarketConfig { risk?: MarketRisk }
+export interface DailyExcludedTrade { day: string; symbol: string; session?: string | null; k?: number; R: number; excluded: string }
+export interface DailyStatus { risk_policies?: Record<string, RiskPolicy>; excluded_trades?: DailyExcludedTrade[] }
