@@ -195,5 +195,23 @@ d = M.build(base(custom={"running": False, "sessions": []}, trades=[tr("AUDUSD",
 check("piata complet nefolosita (doar istoric) → nu e card, doar in history_only",
       not d["markets"] and d["history_only"][0]["symbol"] == "AUDUSD")
 
+print("9. Daily — modul PER PIATA (Live / Shadow / Pauza), nu modul global (audit Live Readiness 20.11)")
+dd = {"running": True, "mode": "execute", "status_markets": [
+    {"symbol": "DE40", "phase": "waiting_entry"}, {"symbol": "US500", "phase": "waiting_entry"}],
+    "markets": [{"symbol": "DE40", "enabled": True, "label": "ORB", "exec_mode": "live", "paused": False},
+                {"symbol": "US500", "enabled": True, "label": "ORB", "exec_mode": "shadow", "paused": False}]}
+d = M.build(base(daily=dd), MON)
+e_de = mk(d, "DE40")["engines"][0]
+e_us = mk(d, "US500")["engines"][0]
+check("DE40 pe Live → executie", e_de["mode"] == "execute" and e_de["status"] != "observe", e_de)
+check("US500 pe Shadow langa o piata Live → shadow (inainte: executie, din modul global)",
+      e_us["mode"] == "shadow" and e_us["status"] == "observe", e_us)
+dd["markets"][1]["paused"] = True
+d = M.build(base(daily=dd), MON)
+check("US500 pe Pauza (manual) → blocat, pauza manuala", mk(d, "US500")["engines"][0].get("manual_pause") is True)
+dd2 = {**dd, "mode": "shadow", "markets": [{"symbol": "DE40", "enabled": True, "label": "ORB"}]}
+d = M.build(base(daily=dd2), MON)
+check("config vechi fara exec_mode → modul global (shadow)", mk(d, "DE40")["engines"][0]["mode"] == "shadow")
+
 print(f"\n{'TOATE TESTELE AU TRECUT' if not FAIL else f'{FAIL} TESTE ESUATE'}")
 sys.exit(1 if FAIL else 0)

@@ -162,7 +162,9 @@ def engine_entries(inp: dict, now: datetime) -> list[dict]:
     phases = {m.get("symbol"): m for m in d.get("status_markets", [])}
     for m in d.get("markets", []):
         sym = m["symbol"]
-        shadow = d.get("mode") != "execute"
+        # modul PER PIATA (Live / Shadow; pauza mai jos) — modul global e doar un rezumat („execute” daca macar o piata
+        # e Live), deci o piata Shadow langa una Live aparea gresit ca executie (audit Live Readiness 20.11.2026)
+        shadow = (m.get("exec_mode") or ("live" if d.get("mode") == "execute" else "shadow")) != "live"
         e = {"symbol": sym, "engine": "daily", "ref": m.get("label") or "ORB",
              "direction": "BOTH", "tf": "M5", "mode": "shadow" if shadow else "execute",
              "window": m.get("window_ro"), "positions": has_pos(sym, "daily")}
@@ -391,7 +393,8 @@ def _collect_daily(today: str) -> dict:
             sig[k] = sig.get(k, 0) + 1
     return {"running": bool(st.get("running")), "mode": cfg.get("mode", "shadow"),
             "markets": [{"symbol": m.get("symbol"), "enabled": m.get("enabled", True), "label": m.get("label"),
-                         "window_ro": None} for m in cfg.get("markets", []) if m.get("symbol")],
+                         "window_ro": None, "exec_mode": m.get("exec_mode"), "paused": bool(m.get("paused"))}
+                        for m in cfg.get("markets", []) if m.get("symbol")],
             "status_markets": (st.get("markets") or []) if st.get("running") else [],
             "virtual": virt, "signals": sig}
 
