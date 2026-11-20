@@ -65,30 +65,24 @@ function ChangeMarket({ slot, current }: { slot: number; current: DailyMarketCon
   const save = useDailySaveSlot();
   const [open, setOpen] = useState(false);
   const [symbol, setSymbol] = useState(current.symbol);
-  const [preset, setPreset] = useState(current.preset ?? "london");
   const [mode, setMode] = useState<"auto" | "manual">("auto");
   const [slip, setSlip] = useState<number>(current.slip);
   const [comm, setComm] = useState<number>(current.comm);
   const pv = preview.data;
-  const body = { slot, symbol: symbol.trim().toUpperCase(), preset, costs_mode: mode,
+  // sesiunile (ora / interval / mod) se aleg DOAR din „Sesiuni” mai jos — aici se schimba simbolul + costurile
+  const body = { slot, symbol: symbol.trim().toUpperCase(), costs_mode: mode,
                  ...(mode === "manual" ? { slip, comm } : {}) };
-  const sameAsNow = body.symbol === current.symbol && preset === current.preset;
+  const sameAsNow = body.symbol === current.symbol;
+  const sesTxt = ((current.sessions ?? [current.preset ?? "london"]) as string[]).map(s => SESSION_NAME[s] ?? s).join(" + ");
   const btn = (on: boolean) => `px-2 py-0.5 rounded border ${on ? "border-cyan-500/50 text-cyan-200" : "border-surface-border text-slate-500"}`;
   return (
     <div className="space-y-1.5">
       <button onClick={() => setOpen(!open)} className="text-slate-400 hover:text-white">
-        {open ? "▾" : "▸"} Schimbă piața slotului {slot + 1} · acum {current.symbol} ({pre?.presets?.[current.preset ?? ""]?.label ?? current.tz})
+        {open ? "▾" : "▸"} Schimbă piața slotului {slot + 1} · acum {current.symbol} ({sesTxt})
         · costuri {current.costs_mode === "auto" ? "auto" : "fixe"}: slip {current.slip} · comision {current.comm}
       </button>
       {open && (
         <div className="space-y-2 pl-2 border-l-2 border-surface-border">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-slate-300 w-16">Bursa</span>
-            {Object.entries(pre?.presets ?? {}).map(([k, p]) => (
-              <button key={k} className={btn(preset === k)} onClick={() => setPreset(k)}
-                title={`${p.open}–${p.last_bar} ${p.tz} · interval ${p.or_minutes} min · ${p.entry}`}>{p.label}</button>
-            ))}
-          </div>
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-slate-300 w-16">Piața</span>
             <input list={`daily-syms-${slot}`} value={symbol} onChange={e => setSymbol(e.target.value)}
@@ -109,8 +103,8 @@ function ChangeMarket({ slot, current }: { slot: number; current: DailyMarketCon
           </div>
           <div className="text-[10px] text-slate-500">
             Auto: slippage = 25% din spread-ul live; „comision” = diferența dintre spread-ul live și cel din istoricul barelor
-            (markup-ul contului — pe FX Standard ~0,8–0,9 pip, pe indici ~0). Ora, intervalul și modul vin din bursa aleasă
-            (varianta testată). Re-intrările / R:R ale slotului se păstrează.
+            (markup-ul contului — pe FX Standard ~0,8–0,9 pip, pe indici ~0). Piața nouă păstrează sesiunile slotului
+            ({sesTxt}) — le schimbi din „Sesiuni” mai jos; re-intrările / R:R se păstrează, modul pornește în SHADOW.
           </div>
           <div className="flex items-center gap-2">
             <button onClick={() => preview.mutate(body)} disabled={preview.isPending || !body.symbol}
@@ -118,7 +112,7 @@ function ChangeMarket({ slot, current }: { slot: number; current: DailyMarketCon
               {preview.isPending ? "Calculez (~3 ani M5)…" : "Previzualizează (costuri + backtest)"}
             </button>
             <button disabled={!pv || save.isPending || sameAsNow && mode === (current.costs_mode ?? "manual")}
-              onClick={() => window.confirm(`Schimbi slotul ${slot + 1}: ${current.symbol} → ${body.symbol} (${pre?.presets?.[preset]?.label})?`)
+              onClick={() => window.confirm(`Schimbi slotul ${slot + 1}: ${current.symbol} → ${body.symbol} (sesiuni: ${sesTxt})?`)
                 && save.mutate(body, { onSuccess: () => { setOpen(false); preview.reset(); } })}
               className="px-3 py-1 rounded bg-cyan-500/20 text-cyan-200 border border-cyan-500/40 font-semibold disabled:opacity-40">
               {save.isPending ? "Salvez…" : "Salvează piața"}</button>
@@ -237,7 +231,10 @@ function SessionsSettings({ symbol, cfg }: { symbol: string; cfg: DailyMarketCon
   const dirty = v != null && JSON.stringify(v) !== JSON.stringify(cur);
   const toggle = (sid: string) => {
     const has = val.sessions.includes(sid);
-    const next = has ? val.sessions.filter(x => x !== sid) : SESSION_ORDER.filter(x => x === sid || val.sessions.includes(x));
+    // Londra (08:00 UK) si Frankfurt (09:00 Berlin) se deschid in ACELASI minut → se exclud reciproc
+    const rival = sid === "london" ? "frankfurt" : sid === "frankfurt" ? "london" : null;
+    const next = has ? val.sessions.filter(x => x !== sid)
+      : SESSION_ORDER.filter(x => x === sid || (val.sessions.includes(x) && x !== rival));
     setV({ ...val, sessions: next });
   };
   const roTime = (sid: string) => {
@@ -270,6 +267,12 @@ function SessionsSettings({ symbol, cfg }: { symbol: string; cfg: DailyMarketCon
         se recalculează automat pe configurația nouă. Backtest (tot istoricul M5): DE40 Frankfurt + New York → max 1: +0,082R
         (5,0 / săpt) · max 2: +0,082R (7,9 / săpt) · max 3: +0,074R; US500 cu Londra sau Frankfurt adăugată = negativ (−0,03…−0,10R).
       </div>
+      <div className="text-[10px] text-slate-500 pl-1">Londra și Frankfurt se deschid în același minut (08:00 UK = 09:00 Berlin) —
+        se poate alege doar una dintre ele.</div>
+      {val.sessions.includes("london") && val.sessions.includes("frankfurt") && (
+        <div className="text-amber-300 pl-1">⚠ Configurația salvată are și Londra, și Frankfurt — tranzacționează doar Londra (prima
+          admisă). Debifează una și salvează.</div>
+      )}
       {val.sessions.length === 0 && <div className="text-loss pl-1">alege cel puțin o sesiune</div>}
       {dirty && (
         <div className="flex items-center gap-2 pl-1">

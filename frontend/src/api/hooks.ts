@@ -987,14 +987,14 @@ export const useDailyPresets = () =>
 /** Previzualizarea unei piete noi pentru slot: costuri auto, marja, backtest rapid ~3 ani (nu salveaza nimic) */
 export const useDailyMarketPreview = () =>
   useMutation({
-    mutationFn: (b: { slot: number; symbol: string; preset: string; costs_mode?: "auto" | "manual"; slip?: number; comm?: number }) =>
+    mutationFn: (b: { slot: number; symbol: string; preset?: string; costs_mode?: "auto" | "manual"; slip?: number; comm?: number }) =>
       apiFetch<DailyMarketPreview>("/daily/market-preview", { method: "POST", body: b }),
   });
 
 export const useDailySaveSlot = () => {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (b: { slot: number; symbol: string; preset: string; costs_mode: "auto" | "manual"; slip?: number; comm?: number }) =>
+    mutationFn: (b: { slot: number; symbol: string; preset?: string; costs_mode: "auto" | "manual"; slip?: number; comm?: number }) =>
       apiFetch("/daily/config", { method: "PUT", body: { markets: [b] } }),
     onSuccess: () => {
       for (const k of ["daily-config", "daily-status"]) qc.invalidateQueries({ queryKey: [k] });
