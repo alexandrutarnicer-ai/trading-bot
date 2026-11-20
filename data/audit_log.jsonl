@@ -2,3 +2,5 @@
 {"time": "2026-11-13T12:01:48+00:00", "engine": "daily", "action": "config", "market": null, "before": null, "after": null, "detail": "DE40: sesiuni Frankfurt → Londra + Frankfurt + New York", "source": "ui"}
 {"time": "2026-11-13T12:01:58+00:00", "engine": "daily", "action": "start", "market": null, "before": null, "after": null, "detail": "pornit (PID 20692)", "source": "ui"}
 {"time": "2026-11-13T18:36:33+00:00", "engine": "daily", "action": "start", "market": null, "before": null, "after": null, "detail": "pornit (PID 17824)", "source": "ui"}
+{"time": "2026-11-15T21:08:03+00:00", "engine": "daily", "action": "start", "market": null, "before": null, "after": null, "detail": "pornit (PID 3600)", "source": "ui"}
+{"time": "2026-11-15T21:08:46+00:00", "engine": "special", "action": "start", "market": null, "before": null, "after": null, "detail": "pornit (PID 18248)", "source": "ui"}

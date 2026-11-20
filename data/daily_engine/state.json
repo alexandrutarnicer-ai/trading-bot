@@ -65,6 +65,306 @@
     },
     "2026-11-13|DE40": [
       "blocked"
-    ]
+    ],
+    "2026-11-16|DE40@london": [
+      "entry",
+      "closed"
+    ],
+    "2026-11-16|DE40": [
+      "blocked"
+    ],
+    "2026-11-16|DE40@london|size": {
+      "lots": 0.1,
+      "risk_money": 7.917,
+      "target_money": 1.9553,
+      "raw_lots": 0.024698,
+      "at_min_lot": true,
+      "capped_max": false,
+      "ratio": 4.049,
+      "reason": null,
+      "currency": "USD",
+      "capital": 195.53
+    },
+    "2026-11-16|US500": [
+      "entry",
+      "closed"
+    ],
+    "2026-11-16|DE40@new_york": [
+      "entry",
+      "closed"
+    ],
+    "2026-11-16|US500|size": {
+      "lots": 0.1,
+      "risk_money": 3.405,
+      "target_money": 1.9623,
+      "raw_lots": 0.05763,
+      "at_min_lot": true,
+      "capped_max": false,
+      "ratio": 1.735,
+      "reason": null,
+      "currency": "USD",
+      "capital": 196.23
+    },
+    "2026-11-16|DE40@new_york|size": {
+      "lots": 0.1,
+      "risk_money": 8.174,
+      "target_money": 1.9623,
+      "raw_lots": 0.024007,
+      "at_min_lot": true,
+      "capped_max": false,
+      "ratio": 4.166,
+      "reason": null,
+      "currency": "USD",
+      "capital": 196.23
+    },
+    "2026-11-17|DE40@london": [
+      "entry",
+      "closed",
+      "entry1",
+      "closed1",
+      "reentry_stop"
+    ],
+    "2026-11-17|DE40": [
+      "blocked"
+    ],
+    "2026-11-17|DE40@london|size": {
+      "lots": 0.1,
+      "risk_money": 6.3647,
+      "target_money": 1.9633,
+      "raw_lots": 0.030847,
+      "at_min_lot": true,
+      "capped_max": false,
+      "ratio": 3.242,
+      "reason": null,
+      "currency": "USD",
+      "capital": 196.33
+    },
+    "2026-11-17|US500": [
+      "entry",
+      "closed",
+      "entry1",
+      "closed1",
+      "reentry_stop"
+    ],
+    "2026-11-17|DE40@new_york": [
+      "entry",
+      "closed"
+    ],
+    "2026-11-17|US500|size": {
+      "lots": 0.1,
+      "risk_money": 1.915,
+      "target_money": 1.9633,
+      "raw_lots": 0.102522,
+      "at_min_lot": false,
+      "capped_max": false,
+      "ratio": 0.975,
+      "reason": null,
+      "currency": "USD",
+      "capital": 196.33
+    },
+    "2026-11-17|DE40@new_york|size": {
+      "lots": 0.1,
+      "risk_money": 3.9838,
+      "target_money": 1.9633,
+      "raw_lots": 0.049283,
+      "at_min_lot": true,
+      "capped_max": false,
+      "ratio": 2.029,
+      "reason": null,
+      "currency": "USD",
+      "capital": 196.33
+    },
+    "2026-11-17|US500|size1": {
+      "lots": 0.1,
+      "risk_money": 3.0375,
+      "target_money": 1.9633,
+      "raw_lots": 0.064635,
+      "at_min_lot": true,
+      "capped_max": false,
+      "ratio": 1.547,
+      "reason": null,
+      "currency": "USD",
+      "capital": 196.33
+    },
+    "2026-11-17|DE40@new_york|alert0": true,
+    "2026-11-17|DE40@london|size1": {
+      "lots": 0.1,
+      "risk_money": 3.1756,
+      "target_money": 1.9633,
+      "raw_lots": 0.061825,
+      "at_min_lot": true,
+      "capped_max": false,
+      "ratio": 1.617,
+      "reason": null,
+      "currency": "USD",
+      "capital": 196.33
+    },
+    "2026-11-18|DE40@london": [
+      "entry",
+      "closed",
+      "entry1",
+      "closed1",
+      "reentry_stop"
+    ],
+    "2026-11-18|DE40": [
+      "blocked"
+    ],
+    "2026-11-18|DE40@london|size": {
+      "lots": 0.1,
+      "risk_money": 7.009,
+      "target_money": 1.9633,
+      "raw_lots": 0.028011,
+      "at_min_lot": true,
+      "capped_max": false,
+      "ratio": 3.57,
+      "reason": null,
+      "currency": "USD",
+      "capital": 196.33
+    },
+    "2026-11-18|DE40@london|size1": {
+      "lots": 0.1,
+      "risk_money": 7.2772,
+      "target_money": 1.9633,
+      "raw_lots": 0.026979,
+      "at_min_lot": true,
+      "capped_max": false,
+      "ratio": 3.707,
+      "reason": null,
+      "currency": "USD",
+      "capital": 196.33
+    },
+    "2026-11-18|US500": [
+      "entry",
+      "closed",
+      "entry1",
+      "closed1",
+      "reentry_stop"
+    ],
+    "2026-11-18|DE40@new_york": [
+      "entry",
+      "closed",
+      "entry1",
+      "closed1",
+      "reentry_stop"
+    ],
+    "2026-11-18|US500|size": {
+      "lots": 0.1,
+      "risk_money": 5.095,
+      "target_money": 1.9633,
+      "raw_lots": 0.038534,
+      "at_min_lot": true,
+      "capped_max": false,
+      "ratio": 2.595,
+      "reason": null,
+      "currency": "USD",
+      "capital": 196.33
+    },
+    "2026-11-18|DE40@new_york|size": {
+      "lots": 0.1,
+      "risk_money": 4.5823,
+      "target_money": 1.9633,
+      "raw_lots": 0.042846,
+      "at_min_lot": true,
+      "capped_max": false,
+      "ratio": 2.334,
+      "reason": null,
+      "currency": "USD",
+      "capital": 196.33
+    },
+    "2026-11-18|US500|size1": {
+      "lots": 0.1,
+      "risk_money": 1.5875,
+      "target_money": 1.9633,
+      "raw_lots": 0.123672,
+      "at_min_lot": false,
+      "capped_max": false,
+      "ratio": 0.809,
+      "reason": null,
+      "currency": "USD",
+      "capital": 196.33
+    },
+    "2026-11-18|DE40@new_york|size1": {
+      "lots": 0.1,
+      "risk_money": 4.5947,
+      "target_money": 1.9633,
+      "raw_lots": 0.042729,
+      "at_min_lot": true,
+      "capped_max": false,
+      "ratio": 2.34,
+      "reason": null,
+      "currency": "USD",
+      "capital": 196.33
+    },
+    "2026-11-19|DE40@london": [
+      "entry",
+      "closed"
+    ],
+    "2026-11-19|DE40": [
+      "blocked"
+    ],
+    "2026-11-19|DE40@london|size": {
+      "lots": 0.1,
+      "risk_money": 5.5329,
+      "target_money": 1.9633,
+      "raw_lots": 0.035484,
+      "at_min_lot": true,
+      "capped_max": false,
+      "ratio": 2.818,
+      "reason": null,
+      "currency": "USD",
+      "capital": 196.33
+    },
+    "2026-11-19|US500": [
+      "entry",
+      "closed"
+    ],
+    "2026-11-19|DE40@new_york": [
+      "entry",
+      "closed"
+    ],
+    "2026-11-19|US500|size": {
+      "lots": 0.1,
+      "risk_money": 3.765,
+      "target_money": 1.957,
+      "raw_lots": 0.051979,
+      "at_min_lot": true,
+      "capped_max": false,
+      "ratio": 1.924,
+      "reason": null,
+      "currency": "USD",
+      "capital": 195.7
+    },
+    "2026-11-19|DE40@new_york|size": {
+      "lots": 0.1,
+      "risk_money": 5.7428,
+      "target_money": 1.957,
+      "raw_lots": 0.034077,
+      "at_min_lot": true,
+      "capped_max": false,
+      "ratio": 2.934,
+      "reason": null,
+      "currency": "USD",
+      "capital": 195.7
+    },
+    "2026-11-19|DE40@new_york|alert0": true,
+    "2026-11-19|US500|alert0": true,
+    "2026-11-20|DE40@london": [
+      "entry"
+    ],
+    "2026-11-20|DE40": [
+      "blocked"
+    ],
+    "2026-11-20|DE40@london|size": {
+      "lots": 0.1,
+      "risk_money": 7.5055,
+      "target_money": 2.957,
+      "raw_lots": 0.039398,
+      "at_min_lot": true,
+      "capped_max": false,
+      "ratio": 2.538,
+      "reason": null,
+      "currency": "USD",
+      "capital": 295.7
+    }
   }
 }
