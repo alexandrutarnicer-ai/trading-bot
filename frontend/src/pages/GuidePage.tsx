@@ -1047,7 +1047,8 @@ export function GuidePage() {
               <KV k="Protecție știri" v="Impact = minimul, minute înainte/după = maximul dintre global și sesiune" />
               <KV k="Max poziții / piață" v="Poziții + pending pe un simbol, pe tot contul, toate engine-urile" />
               <KV k="Special Take Profit" v="OPRIT implicit; doar Custom Engine (Daily / Noisy / AI excluse pe baza backtestului). La atingerea RR-ului (ex. 2R) SL-ul se blochează la 1,9R și urcă în trepte de 0,5R cât timp piața continuă; SL-ul nu coboară niciodată. Pornit în Setări Globale = câștigă; altfel setarea din tab-ul Custom Engine" />
-              <KV k="Risc maxim pe trade" v="ACTIV la 2% din equity (Custom + AI + Daily): volumul peste limită e redus; dacă nici lotul minim nu încape, ordinul nu se plasează" />
+              <KV k="Risc maxim pe trade" v="% din equity setat aici (Custom + AI + Daily + Noisy): volumul peste limită e redus; dacă nici lotul minim nu încape, ordinul nu se plasează. E valoarea IMPLICITĂ pentru piețele Daily / Special fără Market Risk Override" />
+              <KV k="Plafon absolut (override)" v="nicio piață cu Market Risk Override nu poate risca peste acest % din equity (implicit 5%), indiferent de setarea ei" />
               <KV k="Filtru AI" v="Doar Custom Engine: nivelul cel mai strict, Strict = SAU" />
             </div>
             <Note>Fișier: data/global_settings.json (sincronizat prin git, fără date). Eroare la citirea MT5 → ordinul e permis
@@ -1484,6 +1485,9 @@ export function GuidePage() {
               <KV k="Vineri" v="închiderea de vineri din Setări Globale se aplică și pe Daily (poziții închise, nimic nou de la ora globală)" />
               <KV k="Alertă +5R" v="când un trade deschis trece de +5R primești o singură notificare (Notificări + Telegram) — nu se închide nimic automat, decizia e a ta. Pragul se schimbă din tab-ul Daily (0 = oprită)" />
               <KV k="Sesiuni (per piață)" v="„Opțiuni” pe card: bifezi Londra / Frankfurt / New York (oricâte, minim una). Fiecare sesiune folosește ora, intervalul și modul testate pe acea deschidere" />
+              <KV k="Market Risk Override (per piață)" v="„Opțiuni” pe card: riscul pieței are prioritate față de setările globale — risc / trade + risc maxim la lotul minim (peste maxim trade-ul e RESPINS, nu rotunjit în sus), niciodată peste plafonul absolut din Setări Globale (implicit 5%). Override oprit = riscul engine-ului + limita globală, ca înainte. Protecția capitalului, circuit breaker, vineri, știri, marja și pauza rămân mereu active" />
+              <KV k="Exemplu 300 $" v="DE40 lotul minim 0,1 = 0,11 $ / punct: SL 50 puncte = 5,5 $ (1,8%), SL 100 = 11 $ (3,7%). Cu override 1% / maxim 3%: primul se tranzacționează la 0,1, al doilea e respins. JP225 (1 lot = 0,0063 $ / punct) se dimensionează exact la 1%" />
+              <KV k="Rânduri excluse din jurnal" v="dublurile (același trade scris de două procese) și trade-urile fantomă (alt interval de deschidere decât primul trade al zilei — ora serverului detectată greșit, reparat 20.11) nu intră în statistici; lista e sub „Trade-uri virtuale”. Fișierul nu se rescrie (e sincronizat între PC și laptop)" />
               <KV k="Trade-uri maxime / zi" v="limită pe piață peste toate sesiunile și re-intrările (implicit 1; config vechi păstrează limita re-intrărilor). Trade-urile se admit în ordinea apariției; o piață nu are niciodată două poziții simultan; cealaltă piață are propria limită" />
               <KV k="Audit" v="schimbările de mod / pauză / configurare apar în Rapoarte → Modificări („Audit engine-uri”)" />
             </div>
