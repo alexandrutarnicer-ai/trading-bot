@@ -73,8 +73,13 @@ def daily_status():
         pass
     st["running"] = running
     st["pid"] = pid if running else None
-    if not running:
-        st["scorecard"] = scorecard(load_trades())   # disponibil si cu motorul oprit
+    # scorecard-ul MEREU din jurnal (dubluri / fantome excluse — engine.split_valid), si cu un engine pe cod vechi
+    st["scorecard"] = scorecard(load_trades())
+    try:
+        from daily_engine.engine import excluded_trades
+        st["excluded_trades"] = excluded_trades()
+    except Exception:
+        st["excluded_trades"] = []
     st["backtest_ref"] = BACKTEST_REF            # referinta istorica din cercetare (doc) — doar pentru pietele ei
     _cfg = load_config()
     try:                                          # backtest legat de configuratia EXACTA (porneste singur daca lipseste)

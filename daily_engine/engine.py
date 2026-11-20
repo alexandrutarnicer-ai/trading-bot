@@ -121,7 +121,7 @@ def _notify(cfg: dict, text: str) -> None:
     threading.Thread(target=_send, daemon=True).start()
 
 
-def load_trades() -> list[dict]:
+def _read_trades() -> list[dict]:
     out = []
     try:
         with open(TRADES_FILE, encoding="utf-8") as f:
@@ -131,6 +131,44 @@ def load_trades() -> list[dict]:
                     out.append(json.loads(line))
     except FileNotFoundError:
         pass
+    return out
+
+
+def split_valid(trades: list[dict]) -> tuple[list[dict], list[dict]]:
+    """(valide, excluse) — PUR, fara a rescrie jurnalul (append-only, unit intre PC si laptop: un rand modificat ar
+    aparea de doua ori). Reguli (analiza Live Readiness 20.11.2026):
+      • DUBLURA: acelasi (zi, piata, sesiune, k) inregistrat de doua ori (doua procese / sync) → ramane primul;
+      • FANTOMA: in aceeasi zi + sesiune toate trade-urile rup ACELASI interval de deschidere; un trade cu alt
+        interval decat primul inregistrat vine dintr-un set GRESIT de bare (ora serverului detectata gresit dintr-un
+        tick inghetat — server_clock) → exclus. Ordinea fisierului pastreaza ordinea inregistrarii."""
+    seen: set = set()
+    ref: dict = {}
+    ok, bad = [], []
+    for t in trades:
+        g = (t.get("day"), t.get("symbol"), t.get("session") or "")
+        key = (*g, int(t.get("k") or 0))
+        rng = (t.get("or_hi"), t.get("or_lo"))
+        if key in seen:
+            bad.append({**t, "excluded": "dublură (aceeași zi / piață / sesiune / k înregistrată de două ori)"})
+            continue
+        if None not in rng and g in ref and (abs(rng[0] - ref[g][0]) > 1e-9 or abs(rng[1] - ref[g][1]) > 1e-9):
+            bad.append({**t, "excluded": (f"fantomă: interval {rng[1]:g}–{rng[0]:g} ≠ intervalul zilei "
+                                          f"{ref[g][1]:g}–{ref[g][0]:g} (ora serverului detectată greșit)")})
+            continue
+        seen.add(key)
+        if None not in rng:
+            ref.setdefault(g, rng)
+        ok.append(t)
+    return ok, bad
+
+
+def excluded_trades() -> list[dict]:
+    """Randurile din jurnal ignorate de statistici (dubluri / fantome) — vizibile pentru audit."""
+    return split_valid(_read_trades())[1]
+
+
+def load_trades() -> list[dict]:
+    out = split_valid(_read_trades())[0]
     _enrich_blocked(out)
     return out
 
