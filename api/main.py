@@ -38,6 +38,20 @@ def _startup():
     migrate_to_jsonl()   # converstie JSON array legacy → JSONL (one-time, idempotent)
     start_watchdog()
     start_reports_scheduler()
+    try:                 # monitorizarea centrala (incidente, oprire necurata, sleep) — nu blocheaza pornirea API-ului
+        from api import health_monitor
+        health_monitor.start()
+    except Exception:    # noqa: BLE001
+        pass
+
+
+@app.on_event("shutdown")
+def _shutdown():
+    try:                 # oprire CURATA → la urmatoarea pornire nu se raporteaza „oprire necurata”
+        from api import health_monitor
+        health_monitor.mark_clean_shutdown()
+    except Exception:    # noqa: BLE001
+        pass
 
 app.add_middleware(
     CORSMiddleware,
@@ -75,6 +89,21 @@ except Exception:  # noqa: BLE001
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/api/health/full")
+def health_full():
+    """Starea fiecarei componente (internet, MT5, Ollama, Gemini, engine-uri, disc, baza de date, Telegram, alimentare)
+    + incidentele active / recente — din monitorizarea centrala (api/health_monitor.py)."""
+    from api import health_monitor
+    return health_monitor.status()
+
+
+@app.post("/api/health/check")
+def health_check_now():
+    """Ruleaza imediat toate verificarile (butonul „Verifică acum” din Settings)."""
+    from api import health_monitor
+    return health_monitor.run_once()
 
 
 if __name__ == "__main__":
