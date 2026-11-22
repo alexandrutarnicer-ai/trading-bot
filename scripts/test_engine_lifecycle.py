@@ -129,5 +129,22 @@ check(r["mode"] == "shadow", "revenire la shadow")
 import live_guard as LG  # noqa: E402
 check("daily_engine" in LG.COMPONENTS, "Trading LIVE are componenta daily_engine (deblocare separata)")
 
+print("5. Pornire automata: cine e eligibil, implicit OPRIT, Noisy refuzat, aplicatia separata")
+from fastapi import HTTPException as _HE  # noqa: E402
+L._autostart_all = lambda force=False: {k: False for k in list(L.ENGINES) + ["app"]}
+rows = {r["id"]: r for r in L.autostart_all()}
+check(all(r["enabled"] is False for r in rows.values()), "toate pornirile automate OPRITE implicit (nimic activat de cod)")
+check(rows["noisy"]["eligible"] is False, "Noisy NU e eligibil pentru autostart")
+check(rows["app"]["eligible"] and L.APP["task"] == "TradingBot-API", "aplicatia (API) are autostart propriu")
+check("app" not in [e["id"] for e in [{"id": k} for k in L.ENGINES]], "aplicatia NU apare ca engine (fara Start / Stop)")
+check(L.ENGINES["ai"]["setup"] == ["setup_autostart_engine.ps1", "-Engine", "ai"],
+      "AI foloseste pornirea conditionata (startup_gate), nu .bat-ul cu ping")
+try:
+    L._auto_target("noisy")
+    check(False, "noisy autostart → 400")
+except _HE as ex:
+    check(ex.status_code == 400, "noisy autostart → 400")
+check(L._auto_target("app") is L.APP, "app → tinta APP")
+
 print(f"\nREZULTAT: {PASS} PASS / {FAIL} FAIL")
 sys.exit(1 if FAIL else 0)

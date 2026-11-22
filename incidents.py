@@ -248,8 +248,8 @@ def event(key: str, text: str, severity: str = "info", dedup_min: float | None =
     win = (dedup_min if dedup_min is not None else _cfg()["event_dedup_min"]) * 60
     with _Lock(LOCK_FILE):
         s = _load()
-        last = s["events"].get(key, 0)
-        if now - last < win:
+        last = s["events"].get(key)
+        if last is not None and now - last < win:
             return False
         s["events"][key] = now
         for k in [k for k, t in s["events"].items() if now - t > 7 * 86400]:

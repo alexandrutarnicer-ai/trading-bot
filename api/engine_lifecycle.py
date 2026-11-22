@@ -31,8 +31,10 @@ ENGINES: dict[str, dict] = {
     "custom": {"label": "Custom Engine", "task": "TradingBot-RunAll",
                "setup": ["setup_autostart.ps1"], "remove": ["remove_autostart.ps1"],
                "log": os.path.join(ROOT, "data", "live_signals", "session1", "generator.log")},
+    # AI: pornire CONDITIONATA (startup_gate: MT5 conectat + Ollama raspunde) — fara .bat-ul cu ping care ingheta la boot
     "ai":     {"label": "AI Engine", "task": "TradingBot-AIEngine",
-               "setup": ["setup_autostart_ai.ps1"], "remove": ["remove_autostart_ai.ps1"],
+               "setup": ["setup_autostart_engine.ps1", "-Engine", "ai"],
+               "remove": ["remove_autostart_engine.ps1", "-Engine", "ai"],
                "log": os.path.join(ROOT, "data", "ai", "engine.log")},
     "daily":  {"label": "Daily Engine", "task": "TradingBot-DailyEngine",
                "setup": ["setup_autostart_engine.ps1", "-Engine", "daily"],
@@ -42,6 +44,11 @@ ENGINES: dict[str, dict] = {
     "noisy":  {"label": "Noisy Engine", "task": None, "setup": None, "remove": None,
                "log": os.path.join(ROOT, "data", "noisy_engine", "engine.log")},
 }
+
+# Aplicatia (API + monitorizare + watchdog-uri): NU e un engine (nu apare in /engines), dar are autostart propriu —
+# fara ea, dupa un restart Windows nu exista watchdog / incidente / rapoarte programate.
+APP = {"label": "Aplicația (API + monitorizare)", "task": "TradingBot-API",
+       "setup": ["setup_autostart_engine.ps1", "-Engine", "app"], "remove": ["remove_autostart_engine.ps1", "-Engine", "app"]}
 
 router = APIRouter(prefix="/engines", tags=["engines"])
 
@@ -145,7 +152,7 @@ def _wait_for(eid: str, running: bool, timeout_s: float) -> dict:
 def _autostart_all(force: bool = False) -> dict[str, bool]:
     if not force and time.time() - _autostart_cache["ts"] < _AUTOSTART_TTL:
         return _autostart_cache["data"]
-    names = ",".join(f"'{e['task']}'" for e in ENGINES.values() if e.get("task"))
+    names = ",".join(f"'{e['task']}'" for e in list(ENGINES.values()) + [APP] if e.get("task"))
     cmd = (f"@({names}) | ForEach-Object {{ if (Get-ScheduledTask -TaskName $_ -ErrorAction "
            f"SilentlyContinue) {{ \"$_=1\" }} else {{ \"$_=0\" }} }}")
     data = {}
@@ -154,8 +161,9 @@ def _autostart_all(force: bool = False) -> dict[str, bool]:
                            capture_output=True, text=True, timeout=15)
         found = dict(line.strip().split("=", 1) for line in r.stdout.splitlines() if "=" in line)
         data = {eid: (found.get(e["task"]) == "1" if e.get("task") else None) for eid, e in ENGINES.items()}
+        data["app"] = found.get(APP["task"]) == "1"
     except Exception:
-        data = {eid: None for eid in ENGINES}
+        data = {eid: None for eid in list(ENGINES) + ["app"]}
     _autostart_cache.update(ts=time.time(), data=data)
     return data
 
@@ -219,23 +227,38 @@ def engine_stop(eid: str):
     return {"ok": True, **st}
 
 
+def _auto_target(eid: str) -> dict:
+    if eid == "app":
+        return APP
+    e = _engine(eid)
+    _no_autostart(eid)
+    return e
+
+
+@router.get("/autostart/all")
+def autostart_all():
+    """Starea pornirii automate pentru toate engine-urile + aplicatie (Settings → Pornire automată). Implicit: oprit."""
+    auto = _autostart_all(force=True)
+    rows = [{"id": eid, "label": e["label"], "eligible": bool(e.get("task")), "enabled": auto.get(eid)}
+            for eid, e in ENGINES.items()]
+    rows.append({"id": "app", "label": APP["label"], "eligible": True, "enabled": auto.get("app")})
+    return rows
+
+
 @router.get("/{eid}/autostart")
 def engine_autostart_status(eid: str):
-    _engine(eid)
+    if eid != "app":
+        _engine(eid)
     return {"enabled": _autostart_all(force=True).get(eid)}
 
 
 @router.post("/{eid}/autostart/enable")
 def engine_autostart_enable(eid: str):
-    _engine(eid)
-    _no_autostart(eid)
-    _run_elevated(_engine(eid)["setup"])
+    _run_elevated(_auto_target(eid)["setup"])
     return {"started": True, "note": "Confirmă fereastra UAC; statusul se actualizează în ~30s"}
 
 
 @router.post("/{eid}/autostart/disable")
 def engine_autostart_disable(eid: str):
-    _engine(eid)
-    _no_autostart(eid)
-    _run_elevated(_engine(eid)["remove"])
+    _run_elevated(_auto_target(eid)["remove"])
     return {"started": True, "note": "Confirmă fereastra UAC; statusul se actualizează în ~30s"}
