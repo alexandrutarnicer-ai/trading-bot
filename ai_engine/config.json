@@ -1,7 +1,9 @@
 {
   "markets": [
     "CHFJPY",
-    "GBPUSD"
+    "AUDUSD",
+    "US500",
+    "CADJPY"
   ],
   "provider": "ollama",
   "ollama_url": "http://localhost:11434",
