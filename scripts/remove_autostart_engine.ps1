@@ -10,8 +10,10 @@
 #>
 param([Parameter(Mandatory = $true)][string]$Engine)
 
-$TASKS = @{ "daily" = "TradingBot-DailyEngine"; "ai" = "TradingBot-AIEngine"; "app" = "TradingBot-API" }
-$BATS  = @{ "daily" = "daily_engine\start_daily_engine_auto.bat"; "ai" = "ai_engine\start_ai_engine_auto.bat"; "app" = "" }
+$TASKS = @{ "daily" = "TradingBot-DailyEngine"; "ai" = "TradingBot-AIEngine"; "app" = "TradingBot-API";
+           "special" = "TradingBot-SpecialEngine" }
+$BATS  = @{ "daily" = "daily_engine\start_daily_engine_auto.bat"; "ai" = "ai_engine\start_ai_engine_auto.bat"; "app" = "";
+           "special" = "" }
 if (-not $TASKS.ContainsKey($Engine)) {
     Write-Host "[EROARE] Engine necunoscut: $Engine" -ForegroundColor Red
     Read-Host "Apasa Enter pentru iesire"

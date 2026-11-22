@@ -25,6 +25,7 @@ $ENGINES = @{
     "ai"    = @{ Task = "TradingBot-AIEngine"; Label = "AI Engine"; NeedsMt5 = $true;
                  OldBat = "ai_engine\start_ai_engine_auto.bat" }
     "app"   = @{ Task = "TradingBot-API"; Label = "Aplicatia (API + monitorizare)"; NeedsMt5 = $false; OldBat = "" }
+    "special" = @{ Task = "TradingBot-SpecialEngine"; Label = "Special Engine"; NeedsMt5 = $true; OldBat = "" }
 }
 
 if ($Engine -eq "noisy") {

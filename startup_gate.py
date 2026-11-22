@@ -39,6 +39,12 @@ ENGINES: dict[str, dict] = {
     "app":   {"label": "Aplicația (API + monitorizare)", "mt5": False, "ollama": False,
               "log": os.path.join(DATA, "app_autostart.log"), "min_delay_s": 20, "max_wait_s": 600},
 }
+try:                                   # Special Engine (DOAR alex-live) — acelasi mecanism
+    import special_engine  # noqa: F401
+    ENGINES["special"] = {"label": "Special Engine", "mt5": True, "ollama": False,
+                          "log": os.path.join(DATA, "special_engine", "autostart.log"), "min_delay_s": 60, "max_wait_s": 1200}
+except Exception:
+    pass
 REFUSED = {"noisy": "Noisy Engine NU are autostart (pornire doar manuală, cu confirmare)"}
 _sleep = time.sleep          # teste: inlocuit
 

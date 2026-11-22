@@ -44,9 +44,11 @@ ENGINES: dict[str, dict] = {
     "noisy":  {"label": "Noisy Engine", "task": None, "setup": None, "remove": None,
                "log": os.path.join(ROOT, "data", "noisy_engine", "engine.log")},
 }
-try:                      # Special Engine (doar alex-live): fara autostart propriu — il reporneste watchdog-ul API
+try:                      # Special Engine (doar alex-live): autostart conditionat (startup_gate) + watchdog-ul API
     import special_engine  # noqa: F401
-    ENGINES["special"] = {"label": "Special Engine", "task": None, "setup": None, "remove": None,
+    ENGINES["special"] = {"label": "Special Engine", "task": "TradingBot-SpecialEngine",
+                          "setup": ["setup_autostart_engine.ps1", "-Engine", "special"],
+                          "remove": ["remove_autostart_engine.ps1", "-Engine", "special"],
                           "log": os.path.join(ROOT, "data", "special_engine", "engine.log")}
 except Exception:
     pass
