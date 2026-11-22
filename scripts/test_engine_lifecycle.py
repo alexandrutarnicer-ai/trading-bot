@@ -88,6 +88,8 @@ tmp = tempfile.mkdtemp()
 DE.DESIRED_FILE = os.path.join(tmp, "desired_running.json")
 sent, restarts = [], []
 W.tg.send_message = lambda text: sent.append(text)
+import incidents  # noqa: E402  — watchdog-ul trimite prin incidentele centrale: izolate (fara fisier / Telegram real)
+incidents.isolate_for_tests(sent)
 DE._read_pid = lambda: 999
 W._pid_alive = lambda pid: False
 DE.daily_start = lambda: restarts.append(1)

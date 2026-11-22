@@ -63,10 +63,13 @@ _sent: list[str] = []
 _alert_file = tempfile.mktemp(suffix=".json")
 sg._MT5_HEALTH_ALERT_FILE = _alert_file
 sg._send_telegram = lambda text: _sent.append(text)
+import incidents  # noqa: E402  — alertele trec prin incidentele CENTRALE: izolate (fara fisierul real / Telegram real)
+incidents.isolate_for_tests(_sent)
 
 
 def _reset():
     _sent.clear()
+    incidents.isolate_for_tests(_sent)
     try: os.remove(_alert_file)
     except OSError: pass
 
@@ -108,18 +111,20 @@ check("sustinut: alerta mentioneaza durata (min)", "min" in _sent[0])
 
 # 3. Reconectare dupa alerta → mesaj de confirmare
 _check(connected=True)
-check("recuperare dupa alerta → 'Reconectat'",
-      any("Reconectat" in s for s in _sent))
+check("recuperare dupa alerta → mesaj de recuperare (incident rezolvat, cu durata)",
+      any("Rezolvat" in s and "Deconectat" in s for s in _sent))
 
 # 4. Reminder: daca persista, a 2-a alerta dupa _MT5_HEALTH_REPEAT_S, apoi STOP
 _reset()
 _check(connected=False); _age_first_seen("disconnected", 900); _check(connected=False)  # alerta #1
 _age_first_seen("disconnected", 700)          # +>10 min de la ultima
 _check(connected=False)                        # reminder #2
-check("reminder: a 2-a alerta dupa persistenta (#2)", len(_sent) == 2)
+# reamintirile sunt acum guvernate de incidentele centrale (10 / 30 / 60 min pe ceasul real — test_incidents.py):
+# aici timpul real nu trece, deci un singur mesaj pe incident, oricate verificari
+check("reminder: incident deja notificat → fara mesaj dublu (reamintirile = incidents.py)", len(_sent) == 1)
 _age_first_seen("disconnected", 700)
-_check(connected=False)                        # peste MAX → nimic
-check("anti-spam: dupa 2 alerte, gata (max/incident)", len(_sent) == 2)
+_check(connected=False)
+check("anti-spam: tot un singur mesaj pe incident", len(_sent) == 1)
 
 # 5. Doar session1 notifica (celelalte sesiuni NU trimit)
 _reset()
