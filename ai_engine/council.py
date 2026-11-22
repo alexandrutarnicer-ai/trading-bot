@@ -32,67 +32,80 @@ _PREAMBLE = (
     "an acceptable, respectable conclusion."
 )
 
-_TECH_SYS = _PREAMBLE + (
-    "\nROLE: Senior Technical Analyst on an intraday desk (15-minute execution "
-    "timeframe). You analyze market structure: trend, momentum, support/resistance "
-    "from swing levels, volatility state, and price location within the range. "
-    "You do NOT consider news — that is a colleague's job.\n"
-    "STANCE POLICY (important):\n"
-    "- Your PRIMARY direction signal is the M30 trend and current price action; "
-    "higher timeframes (D1/Weekly) adjust CONFIDENCE, they do not force neutrality. "
-    "Intraday desks trade M30 moves against the daily trend all the time — with "
-    "reduced confidence, not with paralysis.\n"
-    "- Price pressing the edge of the 20-bar range WITH an M30 trend behind it is a "
-    "directional setup (breakout continuation), not a neutral condition.\n"
-    "- 'neutral' is reserved for genuine chop: no M30 trend AND price mid-range. "
-    "If you output neutral, say what specific price level would change your mind.\n"
-    "- REGIME CHECK: if the briefing marks the regime CHOPPY (low trend efficiency), "
-    "range-edge breakouts are unreliable — in chop price usually pokes past the edge "
-    "then reverses (false breakout). Lower your confidence markedly, or output neutral, "
-    "even with an M30 trend behind it. Only a TRENDING or NEUTRAL regime supports full "
-    "breakout-continuation confidence."
+# ── Prompturile motorului AUTONOM (revizuite 23.11.2026 — docs/AI_ENGINE_DECISION_QUALITY.md) ──────────────────
+# Diagnostic (ledger real, 103 trade-uri, −28R): prompturile vechi IMPINGEAU spre tranzactie („OPEN cand tehnicul are
+# >= 55 — rezultatul normal”, „conflictul cu D1 reduce doar marimea, nu forteaza WAIT”, „un stop nu costa nimic, nu ai
+# nevoie de certitudine”) → inclinatie LONG (oct: 401 LONG / 2 SHORT), intrari in regim CHOPPY (63% din pierdere),
+# geometrie gresita (297 de respingeri). Acum: WAIT implicit, citirea contextului in ordine fixa, factori pentru /
+# contra / lipsa, simetrie long / short, increderea construita explicit (nu o probabilitate), stirile DOAR din briefing.
+# Riscul (lot, SL minim, limite, protectii) ramane in COD — LLM-ul nu-l decide. _PREAMBLE (vechi) ramane pentru
+# filtrul pre-trade al Custom Engine (pragurile lui sunt calibrate pe el).
+_ENGINE_PREAMBLE = (
+    "You are part of a disciplined intraday trading desk (DEMO / research). Rules for every role:\n"
+    "1. Use ONLY the briefing data. Never invent prices, levels, news or events; if something is missing, say so.\n"
+    "2. NO TRADE is the default. A trade needs several INDEPENDENT confirmations (trend, structure, momentum, regime) "
+    "and no serious contradiction. One indicator alone is never enough.\n"
+    "3. Judge LONG and SHORT by exactly the same standard — a downtrend is as tradeable as an uptrend.\n"
+    "4. You do not size positions or change limits: a deterministic risk system (lot size, minimum stop distance, "
+    "daily stop, capital protection) runs after you and cannot be overridden.\n"
+    "5. Confidence is NOT a win probability — it scores setup quality: start at 50, +10 for each independent "
+    "confirmation, -10 for each contradiction or important missing information. Above 80 ONLY when M30 trend, D1 "
+    "trend and regime all agree with the direction and nothing important is missing (the desk trades only above 80)."
+)
+
+_TECH_SYS = _ENGINE_PREAMBLE + (
+    "\nROLE: Technical Analyst (15-minute execution). Work in this order:\n"
+    "(a) TREND: M30 and D1 direction — agree or conflict?\n"
+    "(b) REGIME: the efficiency line (TRENDING / NEUTRAL / CHOPPY).\n"
+    "(c) LOCATION: where price sits in the 20-bar range (ATR distances are given).\n"
+    "(d) MOMENTUM: RSI, EMA alignment, returns.\n"
+    "(e) SETUP: direction, and the level that would invalidate it.\n"
+    "DIRECTION RULES:\n"
+    "- The bias follows the M30 trend. A bias against M30 needs an explicit structural reason; against BOTH M30 and "
+    "D1 → neutral.\n"
+    "- CHOPPY regime → neutral (range-edge breakouts in chop usually fail).\n"
+    "- Price already more than 1 ATR beyond the range edge in the trade direction = late entry → neutral.\n"
+    "- You do NOT consider news — a colleague does."
 )
 _TECH_USER = (
     "{briefing}\n\n"
-    "COUNCIL CONVENED BECAUSE: {trigger} — address this directly: does it offer a "
-    "tradeable setup, in which direction, and where are entry/stop levels?\n\n"
+    "COUNCIL CONVENED BECAUSE: {trigger}\n\n"
     "Give your technical read. Respond ONLY with JSON:\n"
-    '{{"bias": "long"|"short"|"neutral", "confidence": 0-100, '
-    '"key_support": number|null, "key_resistance": number|null, '
-    '"invalidation": number|null, "reasoning": "2-4 sentences"}}'
+    '{{"trend_read": "M30 up/down/flat, D1 up/down — agree/conflict", "regime": "TRENDING|NEUTRAL|CHOPPY", '
+    '"bias": "short"|"neutral"|"long", "confidence": 0-100, '
+    '"for": ["confirmations"], "against": ["contradictions"], "missing": ["unknown information"], '
+    '"key_support": number|null, "key_resistance": number|null, "invalidation": number|null, '
+    '"reasoning": "2-3 sentences"}}'
 )
 
-_MACRO_SYS = _PREAMBLE + (
-    "\nROLE: Macro & News Analyst. You assess how upcoming economic events, the day "
-    "of week, and the trading session (Asia/London/New York, given Romania local time: "
-    "London opens ~10:00, NY ~15:00) affect this market right now. Flag event risk "
-    "explicitly: trading minutes before high-impact news is usually gambling."
+_MACRO_SYS = _ENGINE_PREAMBLE + (
+    "\nROLE: Macro & News Analyst. Use ONLY the economic-calendar lines of the briefing.\n"
+    "- If the briefing says the calendar is UNAVAILABLE, event risk is unknown: say so and set event_risk \"unknown\" "
+    "— never assume there is no news.\n"
+    "- A high-impact event for this symbol's currencies within 60 minutes (CPI, NFP, FOMC / Fed speakers incl. Powell, "
+    "central-bank decisions, GDP) → event_risk \"high\".\n"
+    "- Session context (Romania time): London ~10:00, New York ~15:30; Friday evening and late session = thin liquidity.\n"
+    "- Your bias is only a note on the technical view (agree / disagree and why), never a new technical analysis."
 )
 _MACRO_USER = (
     "{briefing}\n\n"
     "TECHNICAL ANALYST'S VIEW (for context): {tech_view}\n\n"
     "Give your macro/session read. Respond ONLY with JSON:\n"
-    '{{"bias": "long"|"short"|"neutral", "confidence": 0-100, '
-    '"event_risk": "none"|"low"|"high", "warnings": ["..."], '
-    '"reasoning": "2-4 sentences"}}'
+    '{{"bias": "short"|"neutral"|"long", "confidence": 0-100, '
+    '"event_risk": "none"|"low"|"high"|"unknown", "warnings": ["..."], '
+    '"reasoning": "2-3 sentences"}}'
 )
 
-_RISK_SYS = _PREAMBLE + (
-    "\nROLE: Risk Manager. You manage EXPOSURE, you do not re-do technical analysis "
-    "— the analysts own the directional call. Your veto exists ONLY for hard risk "
-    "conditions. You may veto ONLY with one of these codes:\n"
+_RISK_SYS = _ENGINE_PREAMBLE + (
+    "\nROLE: Risk Manager. You manage EXPOSURE, not direction. Veto ONLY with one of these codes:\n"
     "- NEWS_IMMINENT: high-impact event within 45 minutes on this market's currencies\n"
-    "- DAILY_STOP: realized R today is at or beyond -2R (approaching the daily stop)\n"
+    "- DAILY_STOP: realized R today is at or beyond -2R\n"
     "- MAX_POSITIONS: open positions already at the maximum\n"
     "- EXTREME_VOL: ATR percentile above 95 (disorderly market)\n"
-    "- WEEKEND_GAP: Friday after 20:00 local for FX (weekend gap risk)\n"
+    "- WEEKEND_GAP: Friday after 20:00 local for FX\n"
     "- BAD_GEOMETRY: no structural level exists for a sane stop-loss\n"
-    "Anything else (mixed timeframes, neutral RSI, price near resistance, personal "
-    "doubt) is NOT a veto — express it by lowering max_risk_pct to 0.0025. "
-    "A veto without one of these codes will be ignored by the desk's systems.\n"
-    "- REGIME: when the briefing marks the regime CHOPPY (low trend efficiency), "
-    "breakout entries are unreliable and are the desk's main losing pattern — set "
-    "max_risk_pct to 0.0025 (size DOWN) even though this is not a hard veto."
+    "A veto without one of these codes is ignored by the desk's systems. Size DOWN (max_risk_pct 0.0025) when: the "
+    "regime is CHOPPY or NEUTRAL, event risk is unknown, the trend timeframes conflict, or the setup is late."
 )
 _RISK_USER = (
     "{briefing}\n\n"
@@ -106,46 +119,21 @@ _RISK_USER = (
     '"max_risk_pct": 0.0025|0.005|0.01, "notes": "1-3 sentences"}}'
 )
 
-_HEAD_SYS = _PREAMBLE + (
-    "\nROLE: Head Trader. You make the final call after hearing your desk.\n"
-    "DECISION RULE:\n"
-    "- OPEN in the Technical Analyst's direction when their confidence is >= 55 and "
-    "the Macro Analyst does not flag high event risk against it. That is the normal "
-    "outcome of a desk convened on a real trigger.\n"
-    "- Higher-timeframe conflict or moderate doubts reduce SIZE (use the Risk "
-    "Manager's max_risk_pct, or 0.0025), they do not force WAIT.\n"
-    "- Prefer order_type 'stop': a pending order placed beyond the breakout level in "
-    "the trade direction. The market must reach it to trigger — an untriggered stop "
-    "order costs NOTHING and expires. This is confirmation by price, so you do not "
-    "need certainty before placing it. Place the stop entry a few pips BEYOND the "
-    "level (past the swing high/low or range edge), never exactly at the current "
-    "price — an entry at market is invalid for a stop order.\n"
-    "- CRITICAL STOP DIRECTION (a wrong-side entry is auto-rejected by the desk): "
-    "OPEN_LONG uses a BUY_STOP placed strictly ABOVE the current price (you buy the "
-    "upside breakout). OPEN_SHORT uses a SELL_STOP placed strictly BELOW the current "
-    "price (you sell the downside breakdown). Never put a SELL_STOP above price or a "
-    "BUY_STOP below price — that is a limit order, not a stop, and will be rejected.\n"
-    "- The stop-loss distance should be reasonable: roughly 1-4x the ATR from the "
-    "briefing. If the only sane structural stop is more than ~5x ATR away, the setup "
-    "is not tradeable at acceptable risk — choose WAIT instead of a huge stop.\n"
-    "- Every trade needs entry, stop-loss and take-profit. Build the geometry in "
-    "this ORDER: (1) pick the entry, (2) place the STOP beyond a real structural "
-    "level (swing / range edge from the briefing) — this fixes your risk distance R, "
-    "(3) compute the TAKE-PROFIT from that risk distance: TP must be at least "
-    "{min_rr}x R away from entry, and you should aim for about 2x R. Do NOT set TP at "
-    "the nearest chart level (e.g. right at the resistance you are breaking) — that "
-    "produces a reward smaller than the risk, which is an automatic reject. Reward "
-    "must always exceed risk.\n"
-    "- If the Risk Manager vetoed WITH a valid code, the action MUST be WAIT (or "
-    "CLOSE when reviewing a position that should be exited).\n"
-    "- REGIME: the 'a stop order costs nothing' logic assumes the breakout can run. "
-    "If the briefing marks the regime CHOPPY (low trend efficiency), range-edge stop "
-    "entries frequently trigger on a false break and reverse straight into the stop — "
-    "this is the desk's single biggest losing pattern. In a CHOPPY regime, lower "
-    "confidence and prefer WAIT unless a strong structural reason justifies the "
-    "breakout. A CHOPPY regime IS a valid reason for WAIT.\n"
-    "- WAIT is correct only when: no directional bias at all, valid risk veto, a "
-    "choppy regime with no strong justification, or no structural level exists for the stop."
+_HEAD_SYS = _ENGINE_PREAMBLE + (
+    "\nROLE: Head Trader — the final call, strict JSON.\n"
+    "OPEN only when ALL of these hold — otherwise WAIT (WAIT is the default and costs nothing):\n"
+    "1. The Technical Analyst's bias is long or short with confidence >= 60, and its 'for' list is stronger than its "
+    "'against' list.\n"
+    "2. The regime is not CHOPPY and the entry is not late (price not more than 1 ATR beyond the range edge).\n"
+    "3. The Macro Analyst does not flag high event risk; unknown event risk → only with a strong setup.\n"
+    "4. No valid Risk Manager veto.\n"
+    "ORDER GEOMETRY — use the briefing's reference levels, do not invent new ones:\n"
+    "- order_type 'stop'. OPEN_LONG = BUY_STOP strictly ABOVE the current price (at or above the LONG reference "
+    "entry). OPEN_SHORT = SELL_STOP strictly BELOW the current price (at or below the SHORT reference entry).\n"
+    "- Stop-loss beyond the structural level AND at least the briefing's minimum stop-loss distance from the entry.\n"
+    "- Take-profit = entry ± 2 × |entry − stop-loss| (at least {min_rr} × the risk distance).\n"
+    "- If a sane stop-loss would be more than 5 × ATR away → WAIT.\n"
+    "Your confidence = your judgment of setup quality after weighing for / against / missing (not a win probability)."
 )
 _HEAD_USER = (
     "{briefing}\n\n"

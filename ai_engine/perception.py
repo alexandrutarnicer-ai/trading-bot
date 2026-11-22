@@ -36,8 +36,11 @@ _cal_cache: list = []
 _cal_time:  datetime | None = None
 
 
+_cal_ok_time = None          # ultima descarcare REUSITA (lista ne-goala) — starea calendarului pentru briefing
+
+
 def _calendar() -> list[dict]:
-    global _cal_cache, _cal_time
+    global _cal_cache, _cal_time, _cal_ok_time
     now = datetime.utcnow()
     if _cal_time is None or (now - _cal_time).total_seconds() > _CAL_TTL_S:
         try:
@@ -48,11 +51,21 @@ def _calendar() -> list[dict]:
             # si intoarce [], deci verificam explicit continutul, nu doar exceptia.
             if fresh:
                 _cal_cache = fresh
+                _cal_ok_time = now
             _cal_time = now
         except Exception:
             # pastram cache-ul vechi (chiar expirat) — mai bun decat nimic
             _cal_time = now
     return _cal_cache
+
+
+def calendar_status() -> tuple[str, int | None]:
+    """("ok" | "stale" | "unavailable", varsta in minute a ultimei descarcari reusite). Briefing-ul o spune EXPLICIT:
+    un calendar cazut NU inseamna „nicio stire” (inainte lista goala aparea ca „none relevant” — fals sigur)."""
+    if _cal_ok_time is None or not _cal_cache:
+        return "unavailable", None
+    age = int((datetime.utcnow() - _cal_ok_time).total_seconds() // 60)
+    return ("ok" if age <= 6 * 60 else "stale"), age
 
 
 def build_snapshot(src, symbol: str, n_news_hours: int = 24) -> dict:
@@ -119,6 +132,7 @@ def build_snapshot(src, symbol: str, n_news_hours: int = 24) -> dict:
         events = events[:8]
     except Exception:
         events = []   # calendarul e best-effort; snapshot-ul ramane valid
+    news_status, news_age = calendar_status()
 
     bar_time = pd.Timestamp(row["time"])
     return {
@@ -146,6 +160,8 @@ def build_snapshot(src, symbol: str, n_news_hours: int = 24) -> dict:
         "weekday":      int(bar_time.weekday()),     # 0=Luni
         "hour":         int(bar_time.hour),          # ora RO
         "news":         events,
+        "news_status":  news_status,                 # ok / stale / unavailable (briefing-ul o spune explicit)
+        "news_age_min": news_age,
     }
 
 
@@ -224,11 +240,43 @@ def render_text(s: dict, regime_aware: bool = True) -> str:
         f"20-bar range: {s['low_20']} .. {s['high_20']}",
         f"Returns: 1h {s['ret_1h_pct']}% | 4h {s['ret_4h_pct']}% | 1d {s['ret_1d_pct']}%",
     ]
-    if s["news"]:
-        lines.append("Upcoming economic events (minutes from now):")
+    if regime_aware:
+        lines += _reference_lines(s)
+    st = s.get("news_status", "ok")
+    if st == "unavailable":
+        lines.append("Economic calendar: UNAVAILABLE (feed down) — event risk is UNKNOWN; do NOT assume there is no news.")
+    elif s["news"]:
+        lines.append("Upcoming economic events (minutes from now)"
+                     + (f" [calendar last updated {s.get('news_age_min')} min ago]" if st == "stale" else "") + ":")
         for ev in s["news"]:
             extra = f" forecast={ev['forecast']}" if ev.get("forecast") else ""
             lines.append(f"  - in {ev['in_min']}min [{ev['impact']}] {ev['currency']}: {ev['title']}{extra}")
     else:
-        lines.append("Upcoming economic events: none relevant in the next 24h.")
+        lines.append("Upcoming economic events: none relevant in the next 24h"
+                     + (f" (calendar last updated {s.get('news_age_min')} min ago)." if st == "stale" else "."))
     return "\n".join(lines)
+
+
+MIN_SL_ATR = 2.5             # = regula din cod (executor.apply_decision_gates); briefing-ul o arata ca referinta
+
+
+def _reference_lines(s: dict) -> list[str]:
+    """Nivelurile de REFERINTA calculate in cod (nu de LLM): pozitia in range in unitati ATR, intrarile stop valide pe
+    partea corecta a pretului si distanta minima a SL-ului. 297 de decizii (din 486 respinse) aveau geometrie gresita —
+    modelul mic gresea aritmetica / partea pretului; acum o primeste gata facuta."""
+    atr, px = float(s.get("atr") or 0), float(s["price"])
+    if atr <= 0:
+        return []
+    hi, lo = float(s["high_20"]), float(s["low_20"])
+    vals = [s["price"], s["high_20"], s["low_20"], *(s.get("swing_highs") or []), *(s.get("swing_lows") or [])]
+    dec = max([len(repr(float(v)).split(".")[1]) for v in vals if "." in repr(float(v))] + [2])
+    dec = min(dec, 6)
+    long_ref = round(max(hi, px) + 0.1 * atr, dec)
+    short_ref = round(min(lo, px) - 0.1 * atr, dec)
+    return [
+        f"Location: price is {(hi - px) / atr:+.1f} ATR from the 20-bar high and {(px - lo) / atr:+.1f} ATR from the 20-bar "
+        f"low (negative = already beyond that edge; more than 1 ATR beyond = late entry).",
+        f"Reference stop entries (computed by the desk): LONG buy-stop at or above {long_ref} (above price) | SHORT "
+        f"sell-stop at or below {short_ref} (below price). Minimum stop-loss distance: {round(MIN_SL_ATR * atr, dec)} "
+        f"({MIN_SL_ATR} x ATR) — tighter stops are widened by the desk.",
+    ]

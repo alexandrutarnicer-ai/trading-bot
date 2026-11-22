@@ -78,3 +78,40 @@ o săptămână câte trade-uri a oprit fiecare și cum s-ar fi încheiat.
 
 Recomandarea echipei: **Nivelul 1 (1 + 2) + Nivelul 2 + Nivelul 3**, apoi 1–2 săptămâni de observație a efectului;
 Nivelul 1.3 (geometrie în cod) după, fiind cea mai mare schimbare a modului de lucru al consiliului.
+
+## 5. IMPLEMENTAT (23.11.2026) — Ollama sursa principală, decizii disciplinate
+
+**Prompturi noi (doar motorul autonom; filtrul pre-trade al Custom Engine păstrează prompturile vechi — praguri calibrate):**
+- eliminate instrucțiunile care împingeau spre trade („OPEN la >= 55 = rezultatul normal”, „conflictul cu D1 nu forțează
+  WAIT”, „un stop nu costă nimic, nu ai nevoie de certitudine”) — contraziceau „No trade e respectabil”;
+- WAIT implicit; minim câteva confirmări INDEPENDENTE; niciodată un singur indicator; LONG și SHORT pe același standard;
+- analistul tehnic lucrează în ordine fixă (trend M30 / D1 → regim → poziția în range → momentum → setup + invalidare)
+  și raportează listele `for` / `against` / `missing`; ordinea opțiunilor din schema JSON nu mai începe cu „long”;
+- încrederea = scorul calității setup-ului (50 ± 10 / confirmare / contradicție), peste 80 DOAR cu M30 + D1 + regim
+  de acord — aliniată cu pragul de 80 al motorului (nu o probabilitate);
+- știrile DOAR din briefing; calendarul indisponibil e scris explicit („UNAVAILABLE — event risk UNKNOWN”), nu mai apare
+  ca „nicio știre”; analistul macro poate răspunde `event_risk: unknown`;
+- briefing-ul primește nivelurile de REFERINȚĂ calculate în cod: poziția în range în ATR (intrare târzie vizibilă),
+  intrarea BUY_STOP validă (deasupra prețului), SELL_STOP (dedesubt), distanța minimă a SL-ului.
+
+**Reguli deterministe în cod** (`executor.apply_decision_gates`, config `gate_choppy` / `gate_counter_trend` /
+`min_sl_atr` / `max_data_age_min`, toate comutabile): regim CHOPPY → nicio intrare; direcție contra AMBELOR trenduri
+(M30 + D1) → respinsă; SL sub 2,5 × ATR → lărgit (TP la același RR); ultima bară mai veche de 45 min → fără consiliu.
+Riscul (lot, limite, protecții) rămâne exclusiv în cod.
+
+**Comparația A/B pe aceleași 40 de situații reale (doar Ollama, `scripts/research_ai/ai_prompt_ab.py`):**
+
+| | Vechi | Nou (prompt + reguli) |
+|---|---|---|
+| Bias analist tehnic | 25 LONG / 15 SHORT | 18 LONG / 22 SHORT |
+| Intrări propuse | 10 (toate LONG) | 3 |
+| Contra trendului D1 | 8 din 10 | 1 din 3 |
+| Oprite de reguli în cod | — | 12 CHOPPY, 8 contra ambelor trenduri |
+| Rezultat simulat | +0,60R (5 executate, 2 câștiguri) | 0 executate (3 expirate) |
+
+Concluzie: disciplina e clar mai bună (înclinația LONG dispărută, fără intrări în chop sau contra ambelor trenduri), dar
+eșantionul e prea mic pentru o concluzie de profitabilitate (cele 4 trade-uri evitate care s-ar fi executat: +1,6R net).
+Dovada principală pentru reguli rămâne re-simularea celor 103 trade-uri reale (−32,4R → −6,6R). Modelul local (qwen3:8b)
+încă propune uneori LONG în trend descendent și calculează greșit TP-ul — regulile din cod și `_repair_tp` le prind.
+Prima variantă (încredere plafonată la 70) a dat 0 intrări din 40 (conflict cu pragul de 80) — corectată înainte de commit.
+Recomandare: 1–2 săptămâni de observare a efectului (motivele respingerilor sunt în ledger), apoi revizuire.

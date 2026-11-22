@@ -126,6 +126,41 @@ def is_market_weekend_closed(symbol: str, now, friday_close_hour: int = 22) -> b
 
 # ── Validare decizie (rails) ─────────────────────────────────────────────────
 
+def apply_decision_gates(d: dict, snapshot: dict, cfg: dict) -> tuple[bool, str, dict]:
+    """Reguli DETERMINISTE peste o decizie OPEN a consiliului, inaintea rails-urilor (validate_decision) — LLM-ul nu le
+    poate ocoli. Intoarce (permis, motiv, decizia eventual ajustata). Pure: fara MT5.
+      1. regim CHOPPY → respins (gate_choppy); directia contra AMBELOR trenduri M30 + D1 → respins (gate_counter_trend);
+      2. SL mai aproape de min_sl_atr × ATR → SL largit la minim, TP mutat la acelasi RR (riscul in bani ramane 1% —
+         lotul scade; daca lotul minim depaseste riscul, rails-urile / sizing-ul resping);
+      3. geometrie stop pe partea gresita a pretului ramane responsabilitatea validate_decision (mesaj existent)."""
+    act = str(d.get("action", ""))
+    if not act.startswith("OPEN"):
+        return True, "", d
+    if cfg.get("gate_choppy", True) and snapshot.get("regime") == "CHOPPY":
+        er = snapshot.get("efficiency")
+        return False, f"regim CHOPPY (ER {er}) — fara intrari noi (regula deterministă gate_choppy)", d
+    side0 = 1 if act == "OPEN_LONG" else -1
+    tm, td = snapshot.get("trend_m30"), snapshot.get("trend_d1")
+    if cfg.get("gate_counter_trend", True) and tm in (1, -1) and td in (1, -1) and side0 == -tm and side0 == -td:
+        return False, (f"contra AMBELOR trenduri (M30 {'sus' if tm == 1 else 'jos'}, D1 {'sus' if td == 1 else 'jos'}) — "
+                       "regula determinista gate_counter_trend"), d
+    msl = float(cfg.get("min_sl_atr", 2.5) or 0)
+    atr = float(snapshot.get("atr") or 0)
+    try:
+        entry, sl, tp = float(d.get("entry")), float(d.get("sl")), float(d.get("tp"))
+    except (TypeError, ValueError):
+        return True, "", d
+    side = 1 if act == "OPEN_LONG" else -1
+    risk = abs(entry - sl)
+    if msl > 0 and atr > 0 and 0 < risk < msl * atr * (1 - 1e-6) and (entry - sl) * side > 0:
+        rr = max(abs(tp - entry) / risk, float(cfg.get("min_rr", 1.0)))
+        new_risk = msl * atr
+        d2 = {**d, "sl": entry - side * new_risk, "tp": entry + side * rr * new_risk,
+              "gate_note": f"SL largit {risk / atr:.1f} → {msl:g} × ATR (TP la acelasi RR {rr:.2f})"}
+        return True, d2["gate_note"], d2
+    return True, "", d
+
+
 def validate_decision(d: dict, snapshot: dict, cfg: dict,
                       n_committed: int, daily_r: float,
                       symbol_committed: bool = False,
