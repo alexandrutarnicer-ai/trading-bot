@@ -18,6 +18,14 @@ import tempfile
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# TESTE: niciun mesaj / fisier real — incidentele (sursele AI cazute simulate) intr-un director temporar, iar
+# notificarile legacy ale registrului de surse dezactivate (incident 22.11: mesaj fals „groq: cota epuizata”).
+import incidents as _incidents  # noqa: E402
+_incidents.isolate_for_tests()
+from ai_engine.providers import ProviderRegistry as _PR  # noqa: E402
+_PR._notify = staticmethod(lambda text: None)
+
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 from ai_engine import trade_filter as tf

@@ -256,14 +256,10 @@ def check_ai_sources(eng: dict) -> None:
         _set("ollama", "recovering" if started else "unavailable", info)
     prov = (_read_json(os.path.join(DATA, "ai", "status.json")).get("providers") or {})
     g = prov.get("gemini")
-    if g:
-        if g.get("status") in ("paused", "disabled", "down"):
-            incidents.report("gemini", "Gemini indisponibil — rolurile lui rulează pe Ollama",
-                             f"Motiv: {g.get('reason') or g.get('status')}. Failover automat pe Ollama (aceleași reguli de "
-                             "risc); revine singur.", "info", "gemini", confirm_s=60, reminders=False)
-            _set("gemini", "degraded", g.get("reason") or g.get("status"))
+    if g:                                  # notificarea o face registrul surselor (incident ai_source:gemini) — aici doar starea
+        if g.get("status") in ("paused", "disabled", "disabled_auth", "down"):
+            _set("gemini", "degraded", (g.get("reason") or g.get("status"))[:120] + " — rolurile lui rulează pe Ollama")
         else:
-            incidents.resolve("gemini", checks=["Gemini răspunde"])
             _set("gemini", "healthy")
 
 
