@@ -101,8 +101,9 @@ check("magic 660001 → sursa „special”", mt5_pool.classify_trade(660001, "X
 check("celelalte magic-uri neschimbate", mt5_pool.classify_trade(880001, "D-DE40-1112")["source"] == "daily"
       and mt5_pool.classify_trade(770015, "AI-1")["source"] == "ai")
 from api import engine_lifecycle as EL  # noqa: E402
-check("Special Engine în Engine Lifecycle (fără autostart propriu — watchdog-ul API)",
-      "special" in EL.ENGINES and EL.ENGINES["special"]["task"] is None)
+check("Special Engine în Engine Lifecycle, cu autostart CONDIȚIONAT (startup_gate, oprit implicit) + watchdog-ul API",
+      "special" in EL.ENGINES and EL.ENGINES["special"]["task"] == "TradingBot-SpecialEngine"
+      and EL.ENGINES["special"]["setup"] == ["setup_autostart_engine.ps1", "-Engine", "special"])
 import live_guard  # noqa: E402
 check("„special_engine” în componentele Trading LIVE (implicit BLOCAT pe cont real)",
       "special_engine" in live_guard.COMPONENTS)

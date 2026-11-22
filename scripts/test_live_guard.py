@@ -23,6 +23,11 @@ from types import SimpleNamespace
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
+# TESTE: fara Telegram / jurnal de notificari REALE (inainte testul scria „CONT LIVE 123456” fals in Notificari)
+import api.telegram as _tg  # noqa: E402
+_tg.send_message = lambda *a, **k: True
+import api.notifications as _nt  # noqa: E402
+_nt.log_notification = lambda *a, **k: None
 import live_guard
 
 PASS, FAIL = [], []
