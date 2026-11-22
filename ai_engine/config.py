@@ -100,6 +100,12 @@ DEFAULTS: dict = {
     "min_rr":             1.0,     # TP/SL minim acceptat (rail hard)
     "target_rr":          2.0,     # tinta cand reparam un TP prea aproape (>= min_rr)
     "max_sl_atr_mult":    5.0,     # SL nu poate fi mai departe de 5*ATR
+    # ── Reguli DETERMINISTE peste decizia consiliului (23.11.2026, docs/AI_ENGINE_DECISION_QUALITY.md) ──
+    # Re-simulare pe cele 103 trade-uri reale: fara CHOPPY + SL minim 2,5 ATR → −32,4R → −6,6R (+3,3R pe cele cu regim).
+    "gate_choppy":        True,    # regim CHOPPY (Kaufman ER < 0,15) → NICIO intrare noua (era doar o rugaminte in prompt)
+    "gate_counter_trend": True,    # OPEN contra AMBELOR trenduri (M30 + D1) → respins (A/B 22.11: 8/10 intrari vechi contra D1)
+    "min_sl_atr":         2.5,     # SL mai strans de 2,5 × ATR(M15) e LARGIT (TP la acelasi RR); 0 = oprit
+    "max_data_age_min":   45,      # ultima bara inchisa mai veche → fara consiliu (date vechi / piata inchisa / feed oprit)
     "decision_valid_bars": 8,      # ordinele stop neactivate expira dupa N bare
 
     # Inchidere weekend (piete FX/indici) — cripto (XRP/BTC...) e exceptat, ruleaza non-stop.

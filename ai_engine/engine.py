@@ -446,11 +446,26 @@ def _market_limits_text(symbol: str, m: dict, cfg: dict,
     return "\n".join(lines)
 
 
+def _bar_age_min(snap: dict) -> int | None:
+    """Varsta (minute) a ultimei bare INCHISE din snapshot, fata de ceasul aplicatiei (bar_time e in fusul aplicatiei)."""
+    try:
+        bt = datetime.fromisoformat(str(snap.get("bar_time")))
+        return int((now_local().replace(tzinfo=None) - bt).total_seconds() // 60) - 15
+    except Exception:
+        return None
+
+
 def _process_market(symbol: str, src: Mt5DataSource, registry: ProviderRegistry,
                     ledger: Ledger, cfg: dict, prev_snapshots: dict) -> None:
     snap = perception.build_snapshot(src, symbol)
     prev = prev_snapshots.get(symbol)
     prev_snapshots[symbol] = snap
+    # Validarea DATELOR (pasul 1): ultima bara inchisa prea veche (piata inchisa / feed oprit / MT5 blocat) → fara consiliu
+    # pe date vechi. Pozitiile existente raman pe SL / TP la broker + garda de weekend (mai jos, in run()).
+    age = _bar_age_min(snap)
+    if age is not None and age > float(cfg.get("max_data_age_min", 45) or 1e9):
+        log.debug("%s: date vechi (ultima bara acum %d min) — fara consiliu", symbol, age)
+        return
 
     # O SINGURA citire de pozitii, refolosita pentru trigger SI pentru expunere
     # (aceeasi stare, la microsecunde distanta, inainte de consiliu) — evita al
@@ -556,6 +571,13 @@ def _process_market(symbol: str, src: Mt5DataSource, registry: ProviderRegistry,
     # se atinge plafonul GLOBAL — altfel "expunere maxima pe USDCAD" pare per piata).
     committed_symbols = sorted({p.symbol for p in positions}
                                | {o.symbol for o in pending_orders})
+    ok_g, gate_why, decision = executor.apply_decision_gates(decision, snap, cfg)   # reguli deterministe (in cod)
+    if not ok_g:
+        ledger.add_decision(symbol, council_id, decision, "rejected", gate_why)
+        log.info("RESPINS (regula) %s: %s", symbol, gate_why)
+        return
+    if gate_why:
+        log.info("AJUSTAT %s: %s", symbol, gate_why)
     reason = executor.validate_decision(decision, snap, cfg, n_committed,
                                         desk_state["daily_r"],
                                         symbol_committed=symbol_committed,

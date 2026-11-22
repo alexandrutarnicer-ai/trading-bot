@@ -58,8 +58,11 @@ def test_render_gating():
     check("CHOPPY" in on, "eticheta CHOPPY prezenta in briefing")
     check("Trend efficiency" not in off, "regime_aware=False -> fara linie de regim")
     # restul liniilor: OFF trebuie sa fie ON fara linia de regim (byte-identic)
-    on_wo = "\n".join(l for l in on.split("\n") if "Trend efficiency" not in l)
-    check(off == on_wo, "OFF == ON minus linia de regim (restul briefing-ului neschimbat)")
+    # (23.11.2026) cu regime_aware=True briefing-ul primeste si liniile de REFERINTA calculate in cod (Location /
+    # Reference stop entries) — tot sub acelasi comutator; restul trebuie sa ramana identic
+    on_wo = "\n".join(l for l in on.split("\n")
+                      if "Trend efficiency" not in l and not l.startswith(("Location:", "Reference stop entries")))
+    check(off == on_wo, "OFF == ON minus liniile de regim / referinta (restul briefing-ului neschimbat)")
 
 
 def test_missing_efficiency_graceful():
