@@ -256,7 +256,16 @@ def _check_mt5_health(log, session_key: str, expected_login: int) -> None:
         changed = True
         suffix = "\n<i>(reminder — problema persista)</i>" if count > 1 else ""
         log.warning(f"[MT5-HEALTH] {key} (#{count})")
-        _send_telegram(text + suffix)
+        # Incident CENTRAL (incidents.py, cheie comuna cu monitorul din API) → un singur mesaj chiar daca si API-ul
+        # detecteaza aceeasi problema; fara modulul de incidente → mesajul direct, ca inainte.
+        try:
+            import incidents, re as _re
+            m = _re.search(r"<b>(.*?)</b>", text)
+            title = m.group(1) if m else key
+            body = text.split("</b>", 1)[-1].strip() if m else text
+            incidents.report(f"mt5:{key}", title, body, "critical", "mt5", confirm_s=0)
+        except Exception:
+            _send_telegram(text + suffix)
 
     def _resolve(key: str, text: str):
         """Trimite notificare de rezolvare si reseteaza contorul."""
@@ -265,7 +274,11 @@ def _check_mt5_health(log, session_key: str, expected_login: int) -> None:
             return
         log.info(f"[MT5-HEALTH] {key} rezolvat")
         if _can_notify and _entry(key).get("count", 0) > 0:
-            _send_telegram(text)
+            try:
+                import incidents
+                incidents.resolve(f"mt5:{key}", checks=["sesiunea 1 (Custom Engine)"])
+            except Exception:
+                _send_telegram(text)
         del alerts[key]
         changed = True
 

@@ -206,8 +206,9 @@ def _check_daily_engine() -> None:
     now = time.time()
     _daily_restarts[:] = [t for t in _daily_restarts if now - t < 3600]
     if len(_daily_restarts) >= 3:
-        tg.send_message("<b>Daily Engine nu rămâne pornit</b> — 3 reporniri automate în ultima oră.\n"
-                        "<i>Oprit din watchdog. Verifică data/daily_engine/stdout.log și crash.log.</i>")
+        _incident("engine:daily", "Daily Engine nu rămâne pornit",
+                  "3 reporniri automate în ultima oră — oprit din watchdog (nu mai repornesc). Verifică "
+                  "data/daily_engine/stdout.log și crash.log, apoi pornește-l din Dashboard.")
         try:
             os.remove(de.DESIRED_FILE)
         except OSError:
@@ -216,9 +217,9 @@ def _check_daily_engine() -> None:
     _daily_restarts.append(now)
     try:
         de.daily_start()
-        tg.send_message("<b>Daily Engine oprit neașteptat</b> — repornit automat de watchdog (mod SHADOW).")
+        _event("restart:daily", "🔁 <b>Daily Engine oprit neașteptat</b> — repornit automat de watchdog (modurile pieței păstrate).")
     except Exception as e:
-        tg.send_message(f"<b>Daily Engine oprit neașteptat</b> — repornirea a eșuat: {e}")
+        _incident("engine:daily", "Daily Engine oprit neașteptat — repornirea a eșuat", str(e))
 
 
 _special_restarts: list[float] = []
@@ -239,8 +240,9 @@ def _check_special_engine() -> None:
     now = time.time()
     _special_restarts[:] = [t for t in _special_restarts if now - t < 3600]
     if len(_special_restarts) >= 3:
-        tg.send_message("<b>Special Engine nu rămâne pornit</b> — 3 reporniri automate în ultima oră.\n"
-                        "<i>Oprit din watchdog. Verifică data/special_engine/stdout.log și crash.log.</i>")
+        _incident("engine:special", "Special Engine nu rămâne pornit",
+                  "3 reporniri automate în ultima oră — oprit din watchdog (nu mai repornesc). Verifică "
+                  "data/special_engine/stdout.log și crash.log, apoi pornește-l din Dashboard.")
         try:
             os.remove(se.DESIRED_FILE)
         except OSError:
@@ -249,9 +251,26 @@ def _check_special_engine() -> None:
     _special_restarts.append(now)
     try:
         se.special_start()
-        tg.send_message("<b>Special Engine oprit neașteptat</b> — repornit automat de watchdog (modurile pieței păstrate).")
+        _event("restart:special", "🔁 <b>Special Engine oprit neașteptat</b> — repornit automat de watchdog (modurile pieței păstrate).")
     except Exception as e:
-        tg.send_message(f"<b>Special Engine oprit neașteptat</b> — repornirea a eșuat: {e}")
+        _incident("engine:special", "Special Engine oprit neașteptat — repornirea a eșuat", str(e))
+
+
+def _incident(key: str, title: str, detail: str) -> None:
+    """Incident CENTRAL (incidents.py): un singur mesaj + reamintiri rare + recuperare confirmata de health monitor."""
+    try:
+        import incidents
+        incidents.report(key, title, detail, "critical", "engine", confirm_s=0)
+    except Exception:
+        tg.send_message(f"<b>{title}</b>\n{detail}")
+
+
+def _event(key: str, text: str) -> None:
+    try:
+        import incidents
+        incidents.event(key, text, "warning", dedup_min=5)
+    except Exception:
+        tg.send_message(text)
 
 
 def _watchdog_loop() -> None:
@@ -276,12 +295,10 @@ def _watchdog_loop() -> None:
                 profile_name = ap.get("name") or "necunoscut"
                 started_at   = ap.get("started_at", "")
                 now_str      = datetime.now().strftime("%Y-%m-%d %H:%M")
-                tg.send_message(
-                    f"<b>Bot Trading oprit neasteptat!</b>  {now_str}\n"
-                    f"Profil: {profile_name}\n"
-                    f"Pornit la: {started_at[:16] if started_at else '?'}\n"
-                    f"<i>Botul a cazut fara oprire manuala. Verifica logurile si reporneste.</i>"
-                )
+                _incident("engine:custom", "Custom Engine (Bot) oprit neașteptat",
+                          f"{now_str} · profil {profile_name} · pornit la {started_at[:16] if started_at else '?'}.\n"
+                          "Fără repornire automată (poziții reale): pozițiile rămân pe SL / TP la broker. Verifică "
+                          "jurnalele și pornește-l din Dashboard.")
                 _cleanup_and_log()
                 continue  # nu mai verifica protectia daca botul e oprit
 

@@ -270,3 +270,17 @@ def snapshot() -> dict:
 
 def is_active(key: str) -> bool:
     return key in _load()["active"]
+
+
+def isolate_for_tests(sink: list | None = None) -> str:
+    """TESTE: stare intr-un director temporar + Telegram simulat (mesajele in `sink`). Fara asta un test care atinge
+    watchdog-ul / alertele MT5 ar scrie in data/incidents.json si ar trimite mesaje REALE (incident 22.11 10:55)."""
+    import tempfile
+    global STATE_FILE, LOCK_FILE, CONFIG_FILE, _send_override, _log_ui
+    tmp = tempfile.mkdtemp(prefix="incidents_iso_")
+    STATE_FILE = os.path.join(tmp, "incidents.json")
+    LOCK_FILE = STATE_FILE + ".lock"
+    CONFIG_FILE = os.path.join(tmp, "incidents_config.json")
+    _send_override = (lambda text: (sink.append(text) if sink is not None else None) or True)
+    _log_ui = lambda text: None  # noqa: E731
+    return tmp
