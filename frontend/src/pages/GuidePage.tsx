@@ -1394,7 +1394,7 @@ export function GuidePage() {
               un trade JSON; regulile hard din cod (rails) îl validează sau îl resping.
             </p>
             <div className="space-y-1 text-xs">
-              <KV k="Piețe" v="CHFJPY, GBPUSD (cele mai puțin slabe pe ledger-ul real; niciuna cu edge dovedit)" />
+              <KV k="Piețe" v="CHFJPY, AUDUSD, US500, CADJPY (toate active; niciuna cu edge dovedit)" />
               <KV k="Trigger-e active" v="regime_flip, news_window, position_review (breakout_tension, heartbeat, vol_spike oprite)" />
               <KV k="Limite" v="Max 2 poziții + pending, fără pyramiding, risc ≤ 1%, stop zilnic −3R, marjă ≤ 40%" />
               <KV k="Izolare" v="Magic 770015 + comment „AI-”: nu vede și nu atinge pozițiile Custom Engine" />
@@ -1405,8 +1405,8 @@ export function GuidePage() {
 
           <SubSection title="Surse AI: Ollama + Gemini">
             <div className="space-y-1 text-xs">
-              <KV k="Ollama (local)" v="Analist Tehnic, Analist Macro, Risk Manager — model qwen3:8b, gratuit, safety-net (nu se șterge)" />
-              <KV k="Gemini" v="Head Trader (free tier)" />
+              <KV k="Ollama (local)" v="Sursa principală: Analist Tehnic, Analist Macro, Risk Manager — model qwen3:8b, gratuit, safety-net (nu se șterge)" />
+              <KV k="Gemini" v="Opțional, Head Trader (free tier); cotă epuizată / indisponibil → Ollama, cu aceleași reguli" />
               <KV k="Failover" v="Sursă căzută / fără quota → rolul trece automat pe altă sursă sănătoasă, apoi Ollama" />
               <KV k="Buget de timp" v="240 s per consiliu, respectat și LA APEL (timeout = timpul rămas); depășit → WAIT" />
               <KV k="Ollama instabil" v="Reîncercare la conexiune închisă, pauză 30 s dacă e oprit, recuperare singur fără restart" />
@@ -1414,6 +1414,21 @@ export function GuidePage() {
             <Note>Celelalte surse (Claude, ChatGPT, Groq, Mistral etc.) au fost scoase; cheile lor sunt păstrate local în
               data/ai/providers.removed-2026-10-31.json. O sursă nouă se poate adăuga oricând din cardul Surse AI.
               Butonul 🩺 testează toate sursele în paralel; <code>python -m ai_engine.doctor</code> verifică inferența reală Ollama.</Note>
+          </SubSection>
+
+          <SubSection title="Reguli de decizie (22.11.2026)">
+            <div className="space-y-1 text-xs">
+              <KV k="Implicit" v="WAIT — un trade cere mai multe confirmări independente; LONG și SHORT judecate la fel" />
+              <KV k="Încredere" v="Scor de calitate a setup-ului, nu probabilitate; peste 80 doar cu trend M30 + D1 + regim de acord" />
+              <KV k="Știri" v="Doar din briefing; calendar căzut = scris explicit „indisponibil”, riscul de eveniment = necunoscut" />
+              <KV k="Piață CHOPPY" v="Nicio intrare (regulă în cod)" />
+              <KV k="Contra ambelor trenduri" v="Respins în cod (M30 și D1 în sens opus)" />
+              <KV k="SL prea strâns" v="Lărgit la minim 2,5 × ATR, TP mutat la același R:R" />
+              <KV k="Date vechi" v="Ultima bară mai veche de 45 min → consiliul nu e convocat" />
+              <KV k="Risc" v="Lotul, limitele și protecțiile rămân exclusiv în cod (AI-ul nu le poate schimba)" />
+            </div>
+            <Note>Regulile se pot opri din config (gate_choppy, gate_counter_trend, min_sl_atr, max_data_age_min). Respingerile
+              apar în lista de decizii cu motivul. Comparația vechi / nou: docs/AI_ENGINE_DECISION_QUALITY.md §5.</Note>
           </SubSection>
 
           <SubSection title="Consiliul — 4 roluri">
