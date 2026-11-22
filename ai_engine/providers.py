@@ -599,7 +599,7 @@ class ProviderRegistry:
             h.update({"status": "healthy", "reason": "", "retry_at": 0.0, "fails": 0,
                       "last_ok": time.time()})
             if recovered:
-                self._notify(f"✅ Sursa AI «{name}» si-a revenit — rutare normala.")
+                self._source_recovered(name)
 
     def report_failure(self, name: str, err: ProviderError) -> None:
         h = self.health.get(name)
@@ -611,8 +611,9 @@ class ProviderRegistry:
         if err.kind == "auth":
             h.update({"status": "disabled_auth", "reason": str(err)[:200],
                       "retry_at": 0.0})
-            self._notify(f"🔑 Sursa AI «{name}» dezactivata: cheie invalida. "
-                         "Repar-o din tab-ul AI Engine si apasa Testeaza.")
+            self._source_incident(name, f"Sursa AI «{name}» dezactivată: cheie invalidă",
+                                  "Repar-o din tab-ul AI Engine și apasă Testează. Rolurile ei rulează pe alte surse "
+                                  "(failover), cu aceleași reguli de risc.", "warning", confirm_s=0)
         else:
             wait = err.retry_after_s or _COOLDOWNS.get(err.kind, 120)
             if name == self.DEFAULT and err.kind == "network":
@@ -620,19 +621,49 @@ class ProviderRegistry:
             first_pause = h["status"] == "healthy"
             h.update({"status": "paused", "reason": str(err)[:200],
                       "retry_at": time.time() + wait})
-            if first_pause:
-                if err.kind == "server_error" and name == self.DEFAULT:
-                    # Ollama e safety-net-ul failover-ului: daca backend-ul lui e
-                    # defect, e o problema de infrastructura (nu se auto-repara).
-                    self._notify(
-                        f"🛑 SAFETY-NET «{name}» DEFECT — {str(err)[:190]} "
-                        "Motorul ramane fara plasa de failover pana repari Ollama.")
-                elif err.kind == "server_error":
-                    self._notify(f"🛑 Sursa AI «{name}» defecta (server) — {str(err)[:170]}")
-                else:
-                    mins = int(wait / 60)
-                    self._notify(f"⚠ Sursa AI «{name}» in pauza ({err.kind}, ~{mins} min) — "
-                                 f"rolurile ei trec temporar pe alta sursa.")
+            # Incident CENTRAL (incidents.py): blipurile scurte (retea / 429) nu mai trimit nimic — doar o pauza
+            # confirmata 2 min; cota / server defect = imediat; un singur mesaj chiar daca mai multe procese (motorul AI,
+            # filtrul Custom) vad aceeasi sursa cazuta; recuperarea se anunta doar daca problema fusese notificata.
+            if err.kind == "server_error" and name == self.DEFAULT:
+                # Ollama e safety-net-ul failover-ului: backend defect = problema de infrastructura (nu se auto-repara).
+                self._source_incident(name, f"Ollama (sursa principală / safety-net) DEFECT",
+                                      f"{str(err)[:190]}\nAI Engine nu deschide trade-uri noi cât timp nu există nicio sursă "
+                                      "(decizia la erori = WAIT); pozițiile rămân pe SL / TP. Remediere: reinstalează "
+                                      "Ollama / verifică antivirusul (python -m ai_engine.doctor).", "critical", confirm_s=0)
+            elif err.kind == "server_error":
+                self._source_incident(name, f"Sursa AI «{name}» defectă (server)", str(err)[:170], "warning", confirm_s=0)
+            elif err.kind == "quota":
+                self._source_incident(name, f"Sursa AI «{name}»: cota epuizată",
+                                      f"Rolurile ei rulează pe Ollama până la reset (~{int(wait / 60)} min), cu aceleași reguli "
+                                      "de risc. Fără acțiune necesară.", "info", confirm_s=0, reminders=False)
+            elif first_pause:
+                self._source_incident(name, f"Sursa AI «{name}» indisponibilă ({err.kind})",
+                                      f"{str(err)[:150]}\nRolurile ei trec temporar pe altă sursă (failover).", "warning",
+                                      confirm_s=120)
+
+    @staticmethod
+    def _source_incident(name: str, title: str, detail: str, severity: str, confirm_s: float = 0,
+                         reminders: bool = True) -> None:
+        if ProviderRegistry.__dict__.get("_notify") is not _REAL_NOTIFY:     # test care a inlocuit _notify → doar el
+            ProviderRegistry._notify(f"{title} — {detail}")
+            return
+        try:
+            import incidents
+            incidents.report(f"ai_source:{name}", title, detail, severity, "ai", confirm_s=confirm_s,
+                             reminders=reminders and severity != "info")
+        except Exception:
+            ProviderRegistry._notify(f"{title} — {detail}")
+
+    @staticmethod
+    def _source_recovered(name: str) -> None:
+        if ProviderRegistry.__dict__.get("_notify") is not _REAL_NOTIFY:
+            ProviderRegistry._notify(f"Sursa AI «{name}» și-a revenit")
+            return
+        try:
+            import incidents
+            incidents.resolve(f"ai_source:{name}", checks=[f"«{name}» răspunde din nou — rutare normală"])
+        except Exception:
+            pass
 
     @staticmethod
     def _notify(text: str) -> None:
@@ -767,3 +798,6 @@ def make_provider(cfg: dict):
         "url": cfg.get("ollama_url", "http://localhost:11434"),
     }
     return build_provider("ollama", spec)
+
+# referinta la _notify-ul REAL (testele il inlocuiesc → notificarile surselor raman in mock, nu in incidente)
+_REAL_NOTIFY = ProviderRegistry.__dict__["_notify"]

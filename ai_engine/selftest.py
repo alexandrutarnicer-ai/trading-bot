@@ -23,6 +23,13 @@ from ai_engine.executor import validate_decision
 from ai_engine.providers import (ProviderError, ProviderRegistry, BaseProvider,
                                  make_provider)
 
+# TESTE: niciun mesaj / fisier real — incidentele (sursele AI cazute simulate) intr-un director temporar, iar
+# notificarile legacy ale registrului de surse dezactivate (incident 22.11: mesaj fals „groq: cota epuizata”).
+import incidents as _incidents  # noqa: E402
+_incidents.isolate_for_tests()
+from ai_engine.providers import ProviderRegistry as _PR  # noqa: E402
+_PR._notify = staticmethod(lambda text: None)
+
 
 def _assert(cond, msg):
     print(f"  {'OK ' if cond else 'FAIL'} — {msg}")

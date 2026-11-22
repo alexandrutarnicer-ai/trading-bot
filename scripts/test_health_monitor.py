@@ -134,8 +134,8 @@ H.check_ai_sources(eng(ai={"expected": True, "running": True}))
 age("gemini", 100)
 H.check_ai_sources(eng(ai={"expected": True, "running": True}))
 H.check_ai_sources(eng(ai={"expected": True, "running": True}))
-check("Gemini cota epuizata → UN mesaj informativ (fara reamintiri), failover pe Ollama",
-      len([s for s in SENT if "Gemini indisponibil" in s]) == 1)
+check("Gemini cota epuizata → componenta „degradat” (mesajul il trimite registrul surselor, nu monitorul — fara dublura)",
+      H._state["components"]["gemini"]["status"] == "degraded" and not any("Gemini" in s for s in SENT))
 
 print("6. MT5 (pool simulat)")
 SENT.clear()
