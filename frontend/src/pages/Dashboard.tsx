@@ -12,6 +12,7 @@ import { EnginePerformanceCards, EnginePerformanceSection } from "../components/
 import { EngineControlCards } from "../components/EngineControlCards";
 import { TradingPace } from "../components/TradingPace";
 import { ActiveOrdersTable } from "../components/ActiveOrdersTable";
+import { HealthBanner } from "../components/HealthCard";
 
 // Vedere pentru randare — R e recalculat din SL-ul original al ordinelor
 // (vezi api/mt5_pool.py), null doar daca nicio pozitie din perioada nu are SL rezolvabil.
@@ -341,6 +342,9 @@ export function Dashboard() {
           </span>
         )}
       </div>
+
+      {/* Incidente active (monitorizarea centrala) — apare doar cand exista */}
+      <HealthBanner />
 
       {/* Banner AutoTrading dezactivat */}
       {mt5?.connected && mt5.algo_trading_enabled === false && (

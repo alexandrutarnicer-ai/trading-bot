@@ -6,6 +6,7 @@ import { LiveTradingCard } from "../components/LiveTradingCard";
 import { GlobalSettingsCard } from "../components/GlobalSettingsCard";
 import { TimezoneSelector } from "./ProfilePage";
 import { ReportsSettingsCard } from "../components/ReportsSettingsCard";
+import { HealthCard, AutostartCard } from "../components/HealthCard";
 
 /**
  * Settings — setarile GLOBALE ale aplicatiei, comune pentru Custom Engine + AI Engine:
@@ -17,6 +18,8 @@ export function SettingsPage() {
   return (
     <div className="max-w-4xl mx-auto px-4 py-6 space-y-5">
       <Mt5Status />
+      <HealthCard />
+      <AutostartCard />
       <LiveTradingCard />
       <GlobalSettingsCard />
       <TelegramSettings />
