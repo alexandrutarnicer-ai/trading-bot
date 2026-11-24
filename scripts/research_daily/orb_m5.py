@@ -18,6 +18,7 @@ import numpy as np, pandas as pd
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from m0.robustness import evaluate_trades  # noqa: E402
 
 SPEC = {  # point, slippage (pret) per ordin stop, comision round-trip (pret), lot minim -> $/unitate pret
@@ -34,7 +35,8 @@ SPLIT = pd.Timestamp("2022-01-01")
 def load(sym, tz="America/New_York", open_min=570, close_min=955):
     """Bare M5 in ora locala a bursei `tz`, intre open_min si close_min (minute de la miezul noptii).
     Implicit: New York 09:30 .. 15:55."""
-    d = pd.read_csv(ROOT / f"data/research_daily/{sym}_M5_server.csv", parse_dates=["time"])
+    from m5_data import read_m5                       # doar zilele cu bare M5 reale (vezi m5_data.py)
+    d = read_m5(ROOT / f"data/research_daily/{sym}_M5_server.csv")
     ny = d.time - pd.Timedelta(hours=7)                # server = NY + 7h
     if tz != "America/New_York":
         ny = (ny.dt.tz_localize("America/New_York", ambiguous="NaT", nonexistent="NaT")

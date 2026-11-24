@@ -359,3 +359,34 @@ configurația curentă (re-intrări pornite, max 3 / sesiune):
 
 Pe DE40 a doua sesiune (NY) adaugă frecvență (+1,3 trade-uri / săpt la max 2) cu același R/trade și drawdown mai mare;
 pe US500 sesiunile europene sunt negative (deschiderea europeană nu se potrivește indicelui american).
+
+
+## 16. DE40 dimineața — ora de închidere a trade-ului Frankfurt (2026-11-24) — PĂSTRAT 18:30 RO
+
+Întrebare: ar fi mai bine să închidem trade-ul de la deschiderea Frankfurt înainte de New York (15:00 / 15:30 / 16:00 RO)
+în loc de 17:30 Berlin (18:30 RO)? Script: `scripts/research_daily/de40_exit_time.py` (aceeași funcție ca engine-ul,
+configurația curentă DE40, istoric M5 28.03.2017 → 03.11.2026).
+
+| Închidere (RO) | doar Frankfurt: R / trade | R total | test | 12 luni | Frankfurt + NY (max 2): R total | DD |
+|---|---|---|---|---|---|---|
+| 15:00 | +0,055 | +126 | +0,070 | −0,002 | +229 | −120R |
+| 15:30 | +0,057 | +131 | +0,089 | +0,019 | +234 | −120R |
+| 16:00 | +0,068 | +158 | +0,106 | +0,029 | +260 | −110R |
+| 16:30 (deschide NY) | +0,063 | +145 | +0,110 | +0,044 | +260 | −101R |
+| **18:30 (actual)** | **+0,099** | **+228** | **+0,144** | **+0,087** | **+279** | **−66R** |
+
+- Win rate-ul crește la închiderea devreme (32% vs 27%), dar câștigul scade: fără TP, edge-ul vine din puținele zile de
+  trend lung. Pereche pe aceleași trade-uri: −0,03…−0,04R / trade, mai bine doar în 2–4 ani din 10.
+- Prima oră după deschiderea NY e slabă (16:30 → 17:30 RO, R / trade +0,063 → +0,058), dar ultima oră (17:30 → 18:30 RO)
+  aduce +0,04R / trade, mai bună în 10 ani din 10 (t ≈ 3,2).
+- În configurația reală, închiderea devreme lasă trade-ul NY să intre mai des (~2400 vs ~1700), dar NY pe DE40 e slab
+  (+0,04R) → mai mult drawdown, nu mai mult profit. Decizie: închiderea rămâne 18:30 RO.
+
+**Date de cercetare curățate (2026-11-24):** `DE40_M5_server.csv` și `US500_M5_server.csv` conțin la început bare
+ZILNICE (2012/2013–2015) și ORARE (2016) — M5 abia din martie 2017. Zilele orare treceau filtrul de zi al backtestului
+(bara de 09:00 = un „interval de 5 min” de fapt de o oră) → ~290 de trade-uri DE40 Frankfurt false. Toate scripturile
+care citesc aceste CSV-uri trec acum prin `scripts/research_daily/m5_data.read_m5` (doar barele M5 reale). Efect:
+DE40 Frankfurt +0,085 → +0,099R / trade (test +0,115 → +0,144); US500 / GBPUSD / EURUSD / USDJPY / GBPAUD identice
+(selftest-ul Daily: tot 3974 / 2464 trade-uri). Concluziile Profit Lock (§13) și R:R / re-intrări (§10) neschimbate.
+Engine-urile live și backtestul din UI citesc direct din MT5 — neafectate. Cercetarea Special (`intraday_orb.py`,
+referința din `special_engine.selftest`) nu a fost regenerată: începe deja din martie 2017 (cel mult ziua de tranziție).
