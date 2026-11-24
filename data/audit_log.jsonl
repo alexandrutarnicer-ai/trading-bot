@@ -11,3 +11,9 @@
 {"time": "2026-11-20T13:57:34+00:00", "engine": "daily", "action": "config", "market": null, "before": null, "after": null, "detail": "DE40: sesiuni Londra + Frankfurt + New York → Frankfurt + New York", "source": "ui"}
 {"time": "2026-11-20T13:57:34+00:00", "engine": "daily", "action": "config", "market": null, "before": null, "after": null, "detail": "DE40: maxim 3 → 2 trade-uri / zi (toate sesiunile)", "source": "ui"}
 {"time": "2026-11-20T13:57:34+00:00", "engine": "daily", "action": "config", "market": null, "before": null, "after": null, "detail": "DE40: risc — setări GLOBALE (override oprit) → override PORNIT — risc 1% / trade, maxim 6% la lotul minim", "source": "ui"}
+{"time": "2026-11-22T21:22:16+00:00", "engine": "daily", "action": "start", "market": null, "before": null, "after": null, "detail": "pornit (PID 5692)", "source": "ui"}
+{"time": "2026-11-22T21:23:07+00:00", "engine": "daily", "action": "stop", "market": null, "before": null, "after": null, "detail": "oprit din UI", "source": "ui"}
+{"time": "2026-11-22T21:23:18+00:00", "engine": "daily", "action": "mode", "market": "DE40", "before": "shadow", "after": "live", "detail": "DE40: shadow → live", "source": "ui"}
+{"time": "2026-11-22T21:23:36+00:00", "engine": "daily", "action": "start", "market": null, "before": null, "after": null, "detail": "pornit (PID 18120)", "source": "ui"}
+{"time": "2026-11-22T21:24:16+00:00", "engine": "special", "action": "mode", "market": "JP225", "before": "shadow", "after": "live", "detail": "JP225: shadow → live", "source": "ui"}
+{"time": "2026-11-22T21:24:21+00:00", "engine": "special", "action": "start", "market": null, "before": null, "after": null, "detail": "pornit (PID 9980)", "source": "ui"}

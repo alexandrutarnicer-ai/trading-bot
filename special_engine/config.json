@@ -1,0 +1,35 @@
+{
+  "mode": "execute",
+  "poll_seconds": 30,
+  "notify_telegram": true,
+  "notify_trades": false,
+  "capital": {
+    "capital_sync_mt5": true,
+    "capital_usd": null,
+    "fraction": 1.0
+  },
+  "risk_pct": 0.01,
+  "max_open_risk_pct": 0.02,
+  "max_positions": 2,
+  "max_margin_pct": 80.0,
+  "noise_stop_mult": 2.0,
+  "markets": {
+    "JP225": {
+      "mode": "live",
+      "paused_at": null
+    }
+  },
+  "strategy_a": {
+    "enabled": true,
+    "lookback_months": 36,
+    "t_min": 1.5,
+    "min_mean_R": 0.05,
+    "min_trades": 60,
+    "max_components": 6,
+    "nr_filter": 4
+  },
+  "strategy_b": {
+    "enabled": true,
+    "symbol": "USTEC"
+  }
+}

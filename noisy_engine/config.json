@@ -1,6 +1,6 @@
 {
   "mode": "shadow",
-  "symbol": "XRPUSD",
+  "symbol": "USDJPY",
   "timeframe": "M5",
   "poll_seconds": 5,
   "notify_telegram": true,
