@@ -20,6 +20,8 @@ sys.path.insert(0, ROOT)
 from daily_engine.config import ENTRY_MODES, hm_to_min, load_config  # noqa: E402
 from daily_engine.market_tools import server_to_exchange  # noqa: E402
 from daily_engine.strategy import evaluate_day_multi  # noqa: E402
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from m5_data import read_m5  # noqa: E402
 
 DATA = os.path.join(ROOT, "data", "research_daily")
 VARIANTS = [("actual (fara)", None), ("3.5 -> 3", (3.5, 3)), ("4.5 -> 4", (4.5, 4)), ("5 -> 4", (5, 4)),
@@ -28,7 +30,7 @@ POINT = {"DE40": 0.01, "US500": 0.01, "GBPUSD": 0.00001, "US30": 0.01, "XAUUSD":
 
 
 def days_of(m: dict):
-    d = pd.read_csv(os.path.join(DATA, f"{m['symbol']}_M5_server.csv"), parse_dates=["time"])
+    d = read_m5(os.path.join(DATA, f"{m['symbol']}_M5_server.csv"))   # doar zilele cu bare M5 reale
     d["loc"] = server_to_exchange(d["time"], m["tz"])
     d = d.dropna(subset=["loc"])
     d = d[d["loc"].dt.weekday < 5]
