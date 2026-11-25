@@ -17,3 +17,5 @@
 {"time": "2026-11-22T21:23:36+00:00", "engine": "daily", "action": "start", "market": null, "before": null, "after": null, "detail": "pornit (PID 18120)", "source": "ui"}
 {"time": "2026-11-22T21:24:16+00:00", "engine": "special", "action": "mode", "market": "JP225", "before": "shadow", "after": "live", "detail": "JP225: shadow → live", "source": "ui"}
 {"time": "2026-11-22T21:24:21+00:00", "engine": "special", "action": "start", "market": null, "before": null, "after": null, "detail": "pornit (PID 9980)", "source": "ui"}
+{"time": "2026-11-25T00:05:17+00:00", "engine": "special", "action": "order", "market": "JP225", "before": null, "after": null, "detail": "ORDINE REALE (cont REAL — deblocat în Trading LIVE) — ORB:JP225:5/direction · ✅ SHORT · 2.0 loturi · SL atașat · risc 2.85 USD", "source": "engine"}
+{"time": "2026-11-25T00:05:47+00:00", "engine": "special", "action": "close", "market": "JP225", "before": null, "after": null, "detail": "închis după ieșirea strategiei (ok)", "source": "engine"}

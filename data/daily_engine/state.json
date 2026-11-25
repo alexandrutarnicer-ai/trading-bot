@@ -502,7 +502,8 @@
     "2026-11-24|DE40|armed": true,
     "2026-11-24|DE40@new_york|armed": true,
     "2026-11-24|DE40": [
-      "entry"
+      "entry",
+      "closed"
     ],
     "2026-11-24|DE40|placed": "yes",
     "2026-11-24|DE40|size": {
@@ -519,10 +520,13 @@
       "capital": 304.58
     },
     "2026-11-24|US500": [
-      "entry"
+      "entry",
+      "closed"
     ],
     "2026-11-24|DE40@new_york": [
-      "blocked"
+      "blocked",
+      "entry",
+      "closed"
     ],
     "2026-11-24|US500|size": {
       "lots": 0.1,
@@ -536,6 +540,41 @@
       "policy_source": "global",
       "currency": "USD",
       "capital": 309.35
-    }
+    },
+    "2026-11-25|DE40|armed": true,
+    "2026-11-24|DE40@new_york|size": {
+      "lots": 0.1,
+      "risk_money": 11.4837,
+      "target_money": 3.0935,
+      "raw_lots": 0.026938,
+      "at_min_lot": true,
+      "capped_max": false,
+      "ratio": 3.712,
+      "reason": null,
+      "policy_source": "market",
+      "currency": "USD",
+      "capital": 309.35
+    },
+    "2026-11-25|DE40@new_york|armed": true,
+    "2026-11-25|DE40": [
+      "entry",
+      "closed"
+    ],
+    "2026-11-25|DE40|placed": "yes",
+    "2026-11-25|DE40|size": {
+      "lots": 0.1,
+      "risk_money": 8.9533,
+      "target_money": 3.0466,
+      "raw_lots": 0.034028,
+      "at_min_lot": true,
+      "capped_max": false,
+      "ratio": 2.939,
+      "reason": null,
+      "policy_source": "market",
+      "currency": "USD",
+      "capital": 304.66
+    },
+    "2026-11-25|US500": [],
+    "2026-11-25|DE40@new_york": []
   }
 }

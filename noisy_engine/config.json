@@ -89,11 +89,11 @@
     }
   },
   "spread": {
-    "mode": "auto",
-    "manual_points": 30.0,
-    "max_mode": "auto",
+    "mode": "manual",
+    "manual_points": 300.0,
+    "max_mode": "manual",
     "max_mult": 20,
-    "max_points": 60.0,
+    "max_points": 600.0,
     "legacy_floor_price": 0.01
   },
   "news": {
