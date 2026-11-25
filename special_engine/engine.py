@@ -527,8 +527,17 @@ class SpecialEngine:
                                 f"({'ok' if ok else 'EȘUAT ' + str(getattr(res, 'retcode', res))})", audit="close")
             return
         virtual_open = st.get("phase") == "in_position"
-        # 2) iesirea VIRTUALA s-a produs (banda / VWAP, SL, EOD) → pozitia reala se inchide si ea
-        if pos_t and not virtual_open and st.get("phase") != "paused":
+        # 2) iesirea VIRTUALA s-a produs (banda / VWAP, SL, EOD) → pozitia reala se inchide si ea.
+        #    ORB: ordinul real se plaseaza la DESCHIDEREA lumanarii de intrare (directie: la piata; breakout: stop
+        #    umplut in timpul lumanarii), dar trade-ul virtual devine „in_position” abia la INCHIDEREA ei (doar bare
+        #    inchise) → intre timp faza e tot „waiting_entry”. Pozitia reala se inchide doar cand iesirea virtuala chiar
+        #    s-a produs (closed / skipped). Bug 25.11.2026: JP225 deschis 09:05 Tokyo si inchis in aceeasi minuta.
+        #    NOISE: ordinul se plaseaza doar cand trade-ul virtual e deja deschis → „nu mai e deschis” = iesire.
+        if ctx.get("kind") == "ORB":
+            virtual_exited = st.get("phase") in ("closed", "skipped")
+        else:
+            virtual_exited = not virtual_open
+        if pos_t and virtual_exited and st.get("phase") != "paused":
             for p in pos_t:
                 ok, res = X.close(self.mt5, p)
                 self._note(sym, f"închis după ieșirea strategiei ({'ok' if ok else 'EȘUAT ' + str(getattr(res, 'retcode', res))})",

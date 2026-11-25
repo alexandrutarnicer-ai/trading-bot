@@ -376,17 +376,27 @@ def t_execution():
         ej = E.SpecialEngine(mt5_module=fj)
         ej.selection = {"quarter": "x", "components": ["ORB:JP225:5/direction"]}
         ej.ensure_selection = lambda now: None
-        for mins in range(-10, 6 * 60 + 15, 5):
-            now_t = dayj + pd.Timedelta(hours=9, minutes=mins + 1)          # Tokyo; server = NY + 7h
+        open_at = []                                                         # minutele cu pozitia reala deschisa
+        # DOUA iteratii pe lumanare (+1 si +3 min): engine-ul real ruleaza la 30 s, deci a doua iteratie cade tot in
+        # lumanarea de intrare inca deschisa (scenariul bug-ului din 25.11.2026)
+        for mins in [m + o for m in range(-10, 6 * 60 + 15, 5) for o in (1, 3)]:
+            now_t = dayj + pd.Timedelta(hours=9, minutes=mins)              # Tokyo; server = NY + 7h
             now_u = now_t.tz_localize("Asia/Tokyo").tz_convert("UTC")
             fj.now_server = now_u.tz_convert("America/New_York").tz_localize(None) + pd.Timedelta(hours=7)
             ej.iteration(now_u.to_pydatetime())
+            if fj.positions:
+                open_at.append(now_t)
         ent = [r for r in fj.sent if r["action"] == fj.TRADE_ACTION_DEAL and "position" not in r]
         rj = refj[pd.to_datetime(refj.entry_t).dt.normalize() == dayj].iloc[0]
         check("JP225 ORB direcție (LIVE, DEMO): un ordin la piață cu SL atașat, închis la final de sesiune",
               len(ent) == 1 and not fj.positions and ent[0]["comment"].startswith(f"X-JP225-{dayj:%m%d}0")
               and ent[0]["sl"] and ((ent[0]["type"] == 0 and ent[0]["sl"] < ent[0]["price"]) or
                                     (ent[0]["type"] == 1 and ent[0]["sl"] > ent[0]["price"])), (ent, fj.positions))
+        # bug 25.11.2026: pozitia reala era inchisa in iteratia urmatoare deschiderii (trade-ul virtual devine
+        # „in_position” abia la inchiderea lumanarii de intrare). Acum ramane deschisa pana la iesirea virtuala.
+        x_t = pd.Timestamp(rj.exit_t)
+        check("... poziția reală rămâne deschisă până la ieșirea strategiei (nu se închide imediat după intrare)",
+              len(open_at) >= 2 and open_at[-1] >= x_t, (len(open_at), open_at[:1], open_at[-1:], x_t))
         trj = E.load_trades()
         check("... trade-ul virtual = backtestul (același R) și marcat execute",
               len(trj) == 1 and abs(trj[0]["R"] - rj.R) < 1e-9 and trj[0]["mode"] == "execute", (trj, rj.R))
