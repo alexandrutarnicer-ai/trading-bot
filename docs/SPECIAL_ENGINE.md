@@ -152,7 +152,7 @@ cazul în care selecția trimestrială alege o piață din aceeași sesiune.
   - **NOISE:** ordin la piață la închiderea lumânării care dă semnalul, cu SL de protecție la `noise_stop_mult` ×
     unitatea R (strategia iese la bandă / VWAP; dimensionarea e pe distanța până la acest SL).
 - Ieșiri:
-  - când strategia iese (virtual), poziția reală se închide;
+  - când strategia iese (virtual), poziția reală se închide. La ORB „a ieșit” = faza `closed` / `skipped`, NU orice fază în afară de `in_position`: ordinul real intră la deschiderea lumânării de intrare, iar trade-ul virtual devine `in_position` abia la închiderea ei (bug 25.11.2026, reparat — JP225 deschis și închis în aceeași minută, +0,14 $, în timp ce strategia a mers la SL: −1,01R);
   - la finalul sesiunii bursei și la închiderea de vineri globală, totul se închide;
   - o poziție din altă zi se închide imediat (`sweep_stale`). Nimic peste noapte.
 - Siguranță:
@@ -160,6 +160,7 @@ cazul în care selecția trimestrială alege o piață din aceeași sesiune.
   - acelasi semnal nu se plasează niciodată de două ori (`state.json::events`);
   - PAUZĂ = fără intrări noi, pozițiile rămân gestionate;
   - o piață nouă din selecția trimestrială intră în SHADOW.
+- **Istoricul din tab-ul Special** arată rezultatul STRATEGIEI (R și $ estimat la lotul calculat); eticheta „REAL” înseamnă doar că s-a plasat un ordin real pe acel trade. Banii reali (slippage, închideri manuale, execuție) sunt în MT5 (Dashboard → Tranzacții, sursa Special).
 - Notificări pentru orice ordin, închidere sau blocare (trimise și când rezumatul Telegram e oprit), audit în
   `data/audit_log.jsonl`.
 - Supraveghere: watchdog-ul API îl repornește dacă moare fără Stop din UI (max 3/oră). Incidentul din 06.11: oprit odată
