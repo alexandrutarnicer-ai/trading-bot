@@ -104,5 +104,29 @@ E.now_local = lambda: datetime(2026, 11, 24, 13, 0)
 check("acum 13:00 → 105 min > 45 → consiliul NU e convocat", E._bar_age_min(SNAP) > CFG["max_data_age_min"])
 E.now_local = real
 
+print("6. Model Ollama per masina (data/ai/machine.json, local, nesincronizat)")
+import json as _json, shutil as _sh, tempfile as _tf  # noqa: E402
+import ai_engine.config as AC  # noqa: E402
+_orig, _tmp = AC.MACHINE_PATH, _tf.mkdtemp()
+try:
+    AC.MACHINE_PATH = os.path.join(_tmp, "machine.json")
+    _base = AC.load_config()
+    check("fără fișier local → modelul comun din config.json, fără machine_overrides",
+          "machine_overrides" not in _base and _base["providers"]["ollama"]["model"] == _base["model"])
+    with open(AC.MACHINE_PATH, "w", encoding="utf-8") as _f:
+        _json.dump({"ollama_model": "model-local:test"}, _f)
+    _loc = AC.load_config()
+    check("cu fișier local → Ollama folosește modelul mașinii", _loc["providers"]["ollama"]["model"] == "model-local:test"
+          and _loc["machine_overrides"]["ollama_model"] == "model-local:test")
+    with open(AC.CFG_PATH, encoding="utf-8") as _f:
+        check("config.json comun rămâne neatins", _json.load(_f).get("providers", {}).get("ollama", {}).get("model")
+              != "model-local:test")
+    with open(AC.MACHINE_PATH, "w", encoding="utf-8") as _f:
+        _f.write("{corupt")
+    check("fișier local corupt → ignorat (modelul comun)", AC.load_config()["providers"]["ollama"]["model"] == _base["model"])
+finally:
+    AC.MACHINE_PATH = _orig
+    _sh.rmtree(_tmp, ignore_errors=True)
+
 print(f"\n{OK} OK, {FAIL} FAIL")
 sys.exit(1 if FAIL else 0)

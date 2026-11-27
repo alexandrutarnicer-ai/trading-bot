@@ -200,6 +200,19 @@ def isolated_markets(cfg: dict) -> list[str]:
                   if isinstance(ov, dict) and (ov.get("mode") == "observe" or ov.get("isolated")))
 
 
+MACHINE_PATH = os.path.join(AI_DATA, "machine.json")
+
+
+def load_machine_overrides() -> dict:
+    """Setarile LOCALE ale acestei masini (data/ai/machine.json, gitignored). Ex.: {"ollama_model": "qwen3:8b"}."""
+    try:
+        with open(MACHINE_PATH, encoding="utf-8") as f:
+            d = json.load(f)
+        return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+
 def load_config() -> dict:
     """DEFAULTS + override din config.json, cu clamp pe rails."""
     cfg = dict(DEFAULTS)
@@ -240,6 +253,15 @@ def load_config() -> dict:
     ol["enabled"] = True
     ol.setdefault("model", cfg.get("model", "qwen3:8b"))
     ol.setdefault("url",   cfg.get("ollama_url", "http://localhost:11434"))
+    # Model Ollama PER MASINA (2026-11-27): config.json e sincronizat prin git intre PC si laptop, dar fiecare are alt
+    # hardware (PC cu GPU vs laptop pe CPU). data/ai/machine.json (local, gitignored) poate fixa modelul acestei masini;
+    # lipsa / corupt → modelul comun (identic cu inainte). API-ul salveaza din fisierul BRUT → valoarea locala nu ajunge
+    # niciodata in config.json.
+    local = load_machine_overrides()
+    if local.get("ollama_model"):
+        ol["model"] = str(local["ollama_model"])
+        cfg["model"] = ol["model"]
+        cfg["machine_overrides"] = {"ollama_model": ol["model"], "file": MACHINE_PATH}
     provs["ollama"] = ol
     cfg["providers"] = provs
 
