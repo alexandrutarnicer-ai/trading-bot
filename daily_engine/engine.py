@@ -35,6 +35,7 @@ if ROOT not in sys.path:
 from daily_engine.config import DATA_DIR, ENTRY_MODES, load_config, market_mode, sanitize_sessions, save_default_config, hm_to_min  # noqa: E402
 from daily_engine.pause import apply_pause, pause_cut_min  # noqa: E402
 from daily_engine.strategy import admit_session_trades, evaluate_day_multi  # noqa: E402
+import market_calendar  # noqa: E402
 import position_sizing as ps  # noqa: E402
 from daily_engine import executor as X  # noqa: E402
 
@@ -366,6 +367,13 @@ class DailyEngine:
         tz = ZoneInfo(m["tz"])
         now_loc = now_utc.astimezone(tz)
         day = now_loc.date()
+        # calendarul bursei (27.11.2026): inchidere DEVREME → fereastra se termina cu 15 min inainte (trade-ul virtual
+        # si cel real ies impreuna); bursa INCHISA → sesiunea nu deschide nimic. Incident 26.11 (Thanksgiving): DE40 s-a
+        # inchis la broker la 22:55 RO, fereastra NY era pana la 23:00 → pozitia a ramas peste noapte.
+        cal = market_calendar.session_status(m["tz"], day)
+        lb_cap, cap_why = market_calendar.capped_last_bar(m["last_bar"], m["tz"], day)
+        if cap_why:
+            m = {**m, "last_bar": lb_cap, "_calendar_note": cap_why}
         w_open, w_end = window_times(m, day)
         base_day = datetime(day.year, day.month, day.day, tzinfo=tz)
         to_utc = (lambda mins, _b=base_day: (_b + timedelta(minutes=int(mins))).astimezone(timezone.utc))
@@ -383,6 +391,10 @@ class DailyEngine:
             return {**e, "row": {**info, "phase": "disabled"}}
         if now_loc.weekday() >= 5:
             return {**e, "row": {**info, "phase": "weekend"}}
+        if cal["closed"]:
+            return {**e, "row": {**info, "phase": "skipped", "reason": f"bursa închisă azi ({cal['name']})"}}
+        if cap_why:
+            info["calendar_note"] = f"fereastră scurtată — {cap_why}"
         info["paused"] = bool(m.get("paused"))
         info["exec_mode"] = self._xmode(m)
         info["mode"] = "pause" if m.get("paused") else info["exec_mode"]
