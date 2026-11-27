@@ -398,6 +398,14 @@ eng3b = E.NoisyEngine(fm3, news_fetch=lambda: [], guard=lambda s: (True, ""))   
 s3b = eng3b.iteration(now)
 check("restart / spread largit in timpul zilei → tipicul de azi ramane 9 (recalcularea zilei identica)",
       s3b["spread"]["typical_points"] == 9.0, s3b["spread"])
+# 27.11.2026: fereastra SCHIMBATA azi → spread-ul tipic se re-masoara (altfel ramanea cel luat noaptea, la 02:00)
+_c3 = raw(CFG)
+_c3["window"] = {**_c3.get("window", {}), "intervals": [{"start": "00:00", "end": "23:55"}]}
+C.save_config(_c3)
+eng3c = E.NoisyEngine(fm3, news_fetch=lambda: [], guard=lambda s: (True, ""))
+s3c = eng3c.iteration(now)
+check("fereastra schimbata azi → spread tipic re-masurat pe noua fereastra (30 points), nu cel vechi (9)",
+      s3c["spread"]["typical_points"] == 30.0 and eng3c.state["spread_ref"].get("win"), s3c["spread"])
 shutil.rmtree(tmp, ignore_errors=True)
 
 print("6. Siguranta codului")

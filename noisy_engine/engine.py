@@ -399,18 +399,26 @@ class NoisyEngine:
         self._spread_samples = [x for x in self._spread_samples if now - x[0] <= self.SPREAD_WINDOW_S] + [(now, pts)]
         return pts
 
+    def _window_key(self) -> str:
+        w = self.cfg.get("window") or {}
+        return json.dumps([w.get("intervals"), w.get("days")], sort_keys=True)
+
     def _auto_spread_points(self, sym: str, day, in_window: bool) -> tuple[float | None, str]:
         """Spread-ul TIPIC in mod auto: mediana tick-urilor live din ultimele 30 min, INGHETATA pe zi la prima
-        iteratie din fereastra (o valoare pe zi → recalcularea zilei e identica la fiecare iteratie / restart)."""
+        iteratie din fereastra (o valoare pe zi → recalcularea zilei e identica la fiecare iteratie / restart).
+        27.11.2026: valoarea e legata si de FEREASTRA (`win`) — o fereastra schimbata azi (ex. 02:00 → 16:30, ca spread-ul sa
+        se ia in sesiunea lichida, nu noaptea) re-masoara spread-ul la prima iteratie din noua fereastra; o valoare veche
+        fara `win` (salvata inainte de fix) se re-masoara o singura data."""
         ref = self.state.get("spread_ref") or {}
-        if ref.get("day") == str(day) and ref.get("symbol") == sym:
+        win = self._window_key()
+        if ref.get("day") == str(day) and ref.get("symbol") == sym and ref.get("win") == win:
             return ref["points"], f"înghețat azi la {ref['at'][11:16]} (mediana a {ref['n']} tick-uri live)"
         vals = sorted(v for _, v in self._spread_samples)
         if not vals:
             return None, "fără tick-uri încă"
         med = round(vals[len(vals) // 2], 3)
         if in_window:
-            self.state["spread_ref"] = {"day": str(day), "symbol": sym, "points": med, "n": len(vals),
+            self.state["spread_ref"] = {"day": str(day), "symbol": sym, "points": med, "n": len(vals), "win": win,
                                         "at": datetime.now(RO).isoformat(timespec="seconds")}
             log.info(f"Noisy {sym}: spread tipic AUTO pentru azi = {med:.1f} points (mediana a {len(vals)} tick-uri live)")
             return med, f"înghețat azi (mediana a {len(vals)} tick-uri live)"
