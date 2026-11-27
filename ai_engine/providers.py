@@ -259,11 +259,13 @@ class OllamaProvider(BaseProvider):
     needs_key = False
 
     def __init__(self, name: str, model: str, url: str = "http://localhost:11434",
-                 opts: dict | None = None, timeout: int = 180, **_):
+                 opts: dict | None = None, timeout: int = 180, keep_alive: str | None = None, **_):
         self.name, self.model = name, model
         self.url = url.rstrip("/")
         self.opts = opts or {"temperature": 0.3, "num_ctx": 8192}
         self.timeout = timeout
+        # cat ramane modelul incarcat dupa un apel; „Mod gaming” = "0" (descarcat imediat, RAM / VRAM eliberate)
+        self.keep_alive = keep_alive or "30m"
 
     def available(self) -> bool:
         """Reachability ieftina: serverul raspunde SI modelul e instalat.
@@ -297,7 +299,7 @@ class OllamaProvider(BaseProvider):
             "think": False, "options": self.opts,
             # modelul ramane in RAM 30 min (default Ollama: 5 min) — pe CPU fiecare
             # reincarcare costa secunde-zeci de secunde si manca bugetul consiliului
-            "keep_alive": "30m",
+            "keep_alive": self.keep_alive,
             "messages": [{"role": "system", "content": system},
                          {"role": "user", "content": user}],
         }
@@ -540,7 +542,7 @@ def build_provider(name: str, spec: dict, api_key: str = "") -> BaseProvider:
     return cls(name=name, model=spec.get("model", ""), api_key=api_key,
                url=spec.get("url", "http://localhost:11434"),
                base_url=spec.get("base_url", "https://api.openai.com/v1"),
-               opts=spec.get("model_opts"))
+               opts=spec.get("model_opts"), keep_alive=spec.get("keep_alive"))
 
 
 # ── Registru + sanatate + failover ───────────────────────────────────────────
@@ -569,7 +571,8 @@ class ProviderRegistry:
                 continue
             key = keys.get(name, "")
             sig = (spec.get("type"), spec.get("model"), spec.get("url"),
-                   spec.get("base_url"), bool(key))
+                   spec.get("base_url"), bool(key),
+                   json.dumps(spec.get("model_opts"), sort_keys=True), spec.get("keep_alive"))
             new_specs[name] = sig
             if self._specs.get(name) != sig:
                 self._instances[name] = build_provider(name, spec, key)

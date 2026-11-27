@@ -124,6 +124,34 @@ try:
     with open(AC.MACHINE_PATH, "w", encoding="utf-8") as _f:
         _f.write("{corupt")
     check("fișier local corupt → ignorat (modelul comun)", AC.load_config()["providers"]["ollama"]["model"] == _base["model"])
+    print("7. Mod gaming (per mașină): placa video liberă, fără restart")
+    with open(AC.MACHINE_PATH, "w", encoding="utf-8") as _f:
+        _json.dump({}, _f)
+    _off = AC.load_config()
+    with open(AC.MACHINE_PATH, "w", encoding="utf-8") as _f:
+        _json.dump({"gaming_mode": True}, _f)
+    _on = AC.load_config()
+    _ol = _on["providers"]["ollama"]
+    check("gaming: Ollama pe procesor (num_gpu 0) și descărcat după fiecare apel (keep_alive 0)",
+          _ol["model_opts"].get("num_gpu") == 0 and _ol["keep_alive"] == "0", _ol)
+    _cloud = _on.get("gaming_cloud_source")
+    check("gaming: rolurile locale trec pe sursa cloud activă (dacă există)",
+          (_cloud is None) or all(_on["role_assignments"][r] == _cloud for r in ("technical", "macro", "risk", "head_trader")),
+          _on["role_assignments"])
+    check("gaming: Ollama rămâne activ (plasa de siguranță a failover-ului)", _ol["enabled"] is True)
+    check("oprit: configurația e cea de dinainte (fără num_gpu / keep_alive, rolurile neschimbate)",
+          not _off["gaming_mode"] and "keep_alive" not in _off["providers"]["ollama"]
+          and (_off["providers"]["ollama"].get("model_opts") or {}).get("num_gpu") is None)
+    from ai_engine.providers import ProviderRegistry  # noqa: E402
+    _reg = ProviderRegistry(_off["providers"], {})
+    _i0 = _reg._instances["ollama"]
+    _reg.refresh(_on["providers"], {})
+    _i1 = _reg._instances["ollama"]
+    check("comutare fără restart: registrul reconstruiește Ollama cu opțiunile noi (CPU, keep_alive 0)",
+          _i1 is not _i0 and _i1.keep_alive == "0" and _i1.opts.get("num_gpu") == 0 and _i0.keep_alive == "30m")
+    _reg.refresh(_off["providers"], {})
+    check("... și revine pe placa video la oprire", _reg._instances["ollama"].keep_alive == "30m"
+          and "num_gpu" not in _reg._instances["ollama"].opts)
 finally:
     AC.MACHINE_PATH = _orig
     _sh.rmtree(_tmp, ignore_errors=True)

@@ -7,6 +7,7 @@ import {
 } from "../api/hooks";
 import type { AiDecision, MarketOverride, AiMarketStatus } from "../api/types";
 import { AiProvidersCard } from "../components/AiProvidersCard";
+import { GamingModeToggle } from "../components/GamingModeToggle";
 import { InfoTooltip } from "../components/InfoTooltip";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -891,6 +892,7 @@ export function AiEnginePage() {
           </div>
         </div>
         <div className="ml-auto flex items-center gap-2">
+          <GamingModeToggle />
           {running ? (
             <button
               onClick={() => stop.mutate()}

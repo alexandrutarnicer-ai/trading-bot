@@ -14,6 +14,7 @@ nu ruleaza un model si nu blocheaza bucla de poll.
 
 from __future__ import annotations
 
+import json
 import urllib.request
 
 from . import status as st
@@ -167,6 +168,29 @@ def cmd_pause(cfg: dict, arg: str, resume: bool = False) -> str:
     return f"⚠️ Nu am putut {verb} {sid}: {err}"
 
 
+def cmd_gaming(cfg: dict, arg: str) -> str:
+    """/gaming on|off|status — Modul gaming al AI Engine (placa video libera) prin API-ul local (PUT /ai/gaming-mode)."""
+    a = (arg or "").strip().lower()
+    base = cfg["api_base"].rstrip("/") + "/ai/gaming-mode"
+    try:
+        if a in ("on", "pornit", "da", "off", "oprit", "nu"):
+            on = a in ("on", "pornit", "da")
+            req = urllib.request.Request(base, data=json.dumps({"enabled": on}).encode(),
+                                         headers={"Content-Type": "application/json"}, method="PUT")
+        elif a in ("", "status", "stare"):
+            req = urllib.request.Request(base)
+        else:
+            return "Foloseste: /gaming on · /gaming off · /gaming status"
+        with urllib.request.urlopen(req, timeout=max(20, cfg.get("api_timeout_s", 6))) as r:
+            st = json.loads(r.read())
+    except Exception as e:
+        return f"⚠️ Mod gaming: API indisponibil ({str(e)[:120]})"
+    if st.get("enabled"):
+        return (f"🎮 Mod gaming PORNIT — placa video liberă; analizele AI pe {st.get('cloud_source') or 'Ollama'}, "
+                "Ollama doar rezervă, pe procesor.")
+    return "🖥 Mod gaming OPRIT — Ollama pe placa video, rolurile pe sursele obișnuite."
+
+
 def cmd_help(cfg: dict) -> str:
     kw = lambda k: cfg.get(k)
     aw = "ACTIVAT" if cfg.get("allow_writes") else "dezactivat"
@@ -178,6 +202,7 @@ def cmd_help(cfg: dict) -> str:
         "  /raport — scorecardul motorului AI",
         "  /piete  — clasament per piata",
         "  /pauza S7 · /reia S7 — pauza/reia o sesiune",
+        "  /gaming on · off · status — Mod gaming AI (placa video liberă)",
         "  /ajutor — acest mesaj",
         "",
         "AI rapid (~5-30s):",

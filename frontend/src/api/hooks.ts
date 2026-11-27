@@ -684,6 +684,30 @@ export const useAiStop = () => {
   });
 };
 
+// ── Mod gaming AI (per masina): placa video libera, analizele pe sursa cloud, Ollama pe procesor ──
+export interface AiGamingMode {
+  enabled: boolean; cloud_source: string | null; model: string; ollama_on_cpu: boolean;
+  role_assignments: Record<string, string>; unloaded?: string[];
+}
+export const useAiGamingMode = () =>
+  useQuery<AiGamingMode>({
+    queryKey: ["ai-gaming"],
+    queryFn:  () => apiFetch("/ai/gaming-mode"),
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
+  });
+
+export const useSetAiGamingMode = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (enabled: boolean) => apiFetch<AiGamingMode>("/ai/gaming-mode", { method: "PUT", body: { enabled } }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["ai-gaming"] });
+      qc.invalidateQueries({ queryKey: ["ai-status"] });
+    },
+  });
+};
+
 export const useAiSaveConfig = () => {
   const qc = useQueryClient();
   return useMutation({

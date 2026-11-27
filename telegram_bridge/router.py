@@ -147,6 +147,8 @@ class Router:
                 self._reply(commands.cmd_pause(self.cfg, arg, resume=False))
             elif cmd == "reia":
                 self._reply(commands.cmd_pause(self.cfg, arg, resume=True))
+            elif cmd == "gaming":
+                self._reply(commands.cmd_gaming(self.cfg, arg))
             elif cmd == "reset":
                 self.state.last_claude_session = None
                 self.state.save()

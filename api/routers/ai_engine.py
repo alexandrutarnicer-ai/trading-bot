@@ -254,6 +254,67 @@ def ai_outcomes(limit: int = 50, symbol: str | None = None):
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
+# ── Mod GAMING (per masina): placa video libera pentru jocuri, fara restart ─────────────────────────────────
+
+def _ollama_unload_all(url: str) -> list[str]:
+    """Descarca IMEDIAT din RAM / VRAM toate modelele incarcate in Ollama (keep_alive 0). Erorile sunt ignorate."""
+    import urllib.request
+    done = []
+    try:
+        with urllib.request.urlopen(f"{url}/api/ps", timeout=5) as r:
+            models = [m.get("name") for m in json.loads(r.read()).get("models", []) if m.get("name")]
+    except Exception:
+        return done
+    for m in models:
+        try:
+            req = urllib.request.Request(f"{url}/api/generate", json.dumps({"model": m, "keep_alive": 0}).encode(),
+                                         {"Content-Type": "application/json"})
+            urllib.request.urlopen(req, timeout=20).read()
+            done.append(m)
+        except Exception:
+            pass
+    return done
+
+
+def _gaming_state() -> dict:
+    cfg = load_config()
+    ol = cfg["providers"]["ollama"]
+    return {"enabled": bool(cfg.get("gaming_mode")), "cloud_source": cfg.get("gaming_cloud_source"),
+            "model": ol.get("model"), "ollama_on_cpu": (ol.get("model_opts") or {}).get("num_gpu") == 0,
+            "role_assignments": cfg["role_assignments"], "machine_file": "data/ai/machine.json"}
+
+
+@router.get("/gaming-mode")
+def ai_gaming_mode():
+    return _gaming_state()
+
+
+@router.put("/gaming-mode")
+def ai_set_gaming_mode(body: dict):
+    """{enabled: bool} — LOCAL acestei masini (data/ai/machine.json). Se aplica de la urmatorul apel AI (motorul si
+    filtrul Custom recitesc configuratia la fiecare iteratie). La pornire modelele Ollama sunt descarcate imediat."""
+    from ai_engine.config import save_machine_overrides
+    if "enabled" not in body:
+        raise HTTPException(400, "enabled: true / false")
+    on = bool(body["enabled"])
+    save_machine_overrides({"gaming_mode": on})
+    unloaded = _ollama_unload_all(load_config()["providers"]["ollama"].get("url", "http://localhost:11434")) if on else []
+    st = _gaming_state()
+    try:
+        from api import audit_log
+        audit_log.record("ai", "gaming_mode", "pornit" if on else "oprit", after={"enabled": on}, source="ui")
+    except Exception:
+        pass
+    try:
+        from api.telegram import send_message
+        send_message(("🎮 AI Engine — Mod gaming PORNIT: placa video eliberată; analizele pe "
+                      f"{st['cloud_source'] or 'Ollama (procesor)'}, Ollama doar rezervă, pe procesor.") if on else
+                     "🖥 AI Engine — Mod gaming OPRIT: Ollama revine pe placa video, rolurile pe sursele obișnuite.")
+    except Exception:
+        pass
+    return {**st, "unloaded": unloaded}
+
+
 @router.get("/config")
 def ai_get_config():
     return load_config()

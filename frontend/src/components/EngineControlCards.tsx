@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { GamingModeToggle } from "./GamingModeToggle";
 import { Activity, Brain, CalendarClock, Loader2, Play, Square, Power, Zap, Sparkles } from "lucide-react";
 import { useEngines, useEngineAction } from "../api/hooks";
 import type { LifecycleEngineId, EngineState } from "../api/types";
@@ -83,6 +84,7 @@ function EngineCard({ e }: { e: EngineState }) {
             {busy ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />} Start
           </button>
         )}
+        {e.id === "ai" && <GamingModeToggle compact />}
         {e.id === "noisy" ? (
           <span className="ml-auto text-[10px] px-2 py-0.5 rounded border border-surface-border text-slate-500"
                 title="Noisy Engine nu pornește automat — doar manual, cu confirmare">

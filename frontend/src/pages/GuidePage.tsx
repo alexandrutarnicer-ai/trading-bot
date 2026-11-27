@@ -1410,6 +1410,8 @@ export function GuidePage() {
               <KV k="Failover" v="Sursă căzută / fără quota → rolul trece automat pe altă sursă sănătoasă, apoi Ollama" />
               <KV k="Buget de timp" v="240 s per consiliu, respectat și LA APEL (timeout = timpul rămas); depășit → WAIT" />
               <KV k="Ollama instabil" v="Reîncercare la conexiune închisă, pauză 30 s dacă e oprit, recuperare singur fără restart" />
+              <KV k="Mod gaming" v="Butonul 🎮 din AI Engine / Dashboard sau /gaming on|off pe Telegram: placa video se eliberează imediat, analizele trec pe Gemini, Ollama rămâne doar rezervă, pe procesor. Doar pe calculatorul curent, fără restart; riscul nu se schimbă" />
+              <KV k="Model per calculator" v="data/ai/machine.json (local, nesincronizat) poate fixa alt model Ollama pe PC față de laptop" />
             </div>
             <Note>Celelalte surse (Claude, ChatGPT, Groq, Mistral etc.) au fost scoase; cheile lor sunt păstrate local în
               data/ai/providers.removed-2026-10-31.json. O sursă nouă se poate adăuga oricând din cardul Surse AI.

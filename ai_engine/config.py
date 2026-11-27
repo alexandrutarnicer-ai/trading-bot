@@ -213,6 +213,18 @@ def load_machine_overrides() -> dict:
         return {}
 
 
+def save_machine_overrides(updates: dict) -> dict:
+    """Actualizeaza (merge) setarile LOCALE ale masinii; scriere atomica. Intoarce continutul nou."""
+    cur = load_machine_overrides()
+    cur.update(updates)
+    os.makedirs(AI_DATA, exist_ok=True)
+    tmp = MACHINE_PATH + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(cur, f, indent=2, ensure_ascii=False)
+    os.replace(tmp, MACHINE_PATH)
+    return cur
+
+
 def load_config() -> dict:
     """DEFAULTS + override din config.json, cu clamp pe rails."""
     cfg = dict(DEFAULTS)
@@ -271,6 +283,23 @@ def load_config() -> dict:
         if ra.get(role) not in provs:
             ra[role] = "ollama"
     cfg["role_assignments"] = ra
+
+    # MOD GAMING (2026-11-27, per masina, din data/ai/machine.json — comutat din UI, fara restart): placa video ramane
+    # libera pentru jocuri. Ollama pe procesor (num_gpu 0) si descarcat dupa fiecare apel (keep_alive 0); rolurile
+    # locale trec pe sursa cloud activa (Gemini), Ollama ramane doar plasa de siguranta (failover). Riscul / regulile
+    # din cod nu se schimba; orice eroare = WAIT ca de obicei.
+    cfg["gaming_mode"] = bool(local.get("gaming_mode"))
+    if cfg["gaming_mode"]:
+        olg = dict(provs["ollama"])
+        olg["model_opts"] = {**(olg.get("model_opts") or {"temperature": 0.3, "num_ctx": 8192}), "num_gpu": 0}
+        olg["keep_alive"] = "0"
+        provs["ollama"] = olg
+        cloud = next((n for n, s in provs.items() if n != "ollama" and isinstance(s, dict) and s.get("enabled")), None)
+        if cloud:
+            for role in ("technical", "macro", "risk", "head_trader"):
+                if ra.get(role) == "ollama":
+                    ra[role] = cloud
+        cfg["gaming_cloud_source"] = cloud
 
     # Consilii multiple ELIMINATE (2026-10-31; rolurile Quant/Devil la fel): un singur
     # consiliu (sursa primara → failover → Ollama). Fortat indiferent de config.json.
