@@ -32,6 +32,11 @@ const CONFIRM: Partial<Record<string, string>> = {
   "ai:start":     "Pornești AI Engine? Pe piețele în mod Activ poate plasa ordine în contul MT5 conectat.",
   "ai:stop":      "Oprești AI Engine? Pozițiile AI deschise rămân în MT5 cu SL/TP.",
   "noisy:start":  NOISY_START_CONFIRM,
+  "noisy:stop":   "Oprești Noisy Engine? În EXECUȚIE pozițiile Noisy deschise se închid (setarea „la oprire”).",
+  "daily:start":  "Pornești Daily Engine? Piețele pe LIVE pot plasa ordine REALE în MT5 (cele pe SHADOW doar virtual).",
+  "daily:stop":   "Oprești Daily Engine? Pozițiile Daily deschise rămân cu SL-ul lor; la repornire se închid la finalul " +
+                  "ferestrei sau dacă sunt din altă zi.",
+  "special:start": "Pornești Special Engine? Piețele pe LIVE pot plasa ordine REALE în MT5 (cele pe SHADOW doar virtual).",
   "special:stop": "Oprești Special Engine? Pozițiile reale deschise (dacă există) rămân cu SL-ul lor; la repornire " +
                   "se închid la finalul sesiunii sau dacă sunt din altă zi.",
 };
