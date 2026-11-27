@@ -31,6 +31,7 @@ from daily_engine.config import hm_to_min  # noqa: E402
 from special_engine import data as D  # noqa: E402
 from special_engine.config import COSTS, DATA_DIR, NOISE_MARKETS, ORB_MARKETS, load_config, market_mode  # noqa: E402
 from special_engine import executor as X  # noqa: E402
+import market_calendar  # noqa: E402
 import position_sizing as ps  # noqa: E402
 from special_engine.strategies import NOISE_LOOKBACK, noise_day, noise_moves, nr_flag, orb_day  # noqa: E402
 
@@ -305,6 +306,16 @@ class SpecialEngine:
         z = ZoneInfo(tz)
         now_loc = now_utc.astimezone(z)
         today = pd.Timestamp(now_loc.date())
+        # calendarul bursei (27.11.2026, ca la Daily): inchidere DEVREME → sesiunea se termina cu 15 min inainte;
+        # bursa INCHISA → nimic nou in ziua respectiva (vezi market_calendar.py)
+        cal = market_calendar.session_status(tz, now_loc.date())
+        if kind == "ORB":
+            end, cap_why = market_calendar.capped_last_bar(end, tz, now_loc.date())
+        else:
+            lb0 = (datetime.strptime(end, "%H:%M") - timedelta(minutes=5)).strftime("%H:%M")
+            lb1, cap_why = market_calendar.capped_last_bar(lb0, tz, now_loc.date())
+            if cap_why:
+                end = (datetime.strptime(lb1, "%H:%M") + timedelta(minutes=5)).strftime("%H:%M")
         base = {"comp": comp, "strategy": strategy, "symbol": sym, "kind": kind, "variant": var,
                 "window": f"{op}–{end} ({tz.split('/')[-1].replace('_', ' ')})", "day": str(today.date())}
         w_open = datetime.combine(now_loc.date(), datetime.strptime(op, "%H:%M").time(), z)
@@ -313,6 +324,10 @@ class SpecialEngine:
         base["window_ro"] = f"{w_open.astimezone(RO):%H:%M}–{w_end.astimezone(RO):%H:%M}"
         if now_loc.weekday() >= 5:
             return {**base, "phase": "weekend"}
+        if cal["closed"]:
+            return {**base, "phase": "skipped", "reason": f"bursa închisă azi ({cal['name']})"}
+        if cap_why:
+            base["calendar_note"] = f"sesiune scurtată — {cap_why}"
         if strategy == "A" and self.cfg["strategy_a"]["nr_filter"]:
             n = self.cfg["strategy_a"]["nr_filter"]
             d1c = self._d1_for(sym, today.date(), now_utc)

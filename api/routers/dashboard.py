@@ -173,6 +173,23 @@ def _compute() -> dict:
                         "virtual": True, "markets": mk}
     except Exception as e:
         out["daily"] = {"confidence": "insufficient", "per_week": None, "error": str(e), "virtual": True}
+
+    # Special Engine (27.11.2026) — trade-urile strategiei din jurnalul propriu (shadow + cele cu ordin real);
+    # „virtuale” ca la Daily: piata pe SHADOW nu ajunge in MT5. Regimul = primul trade inregistrat.
+    try:
+        from special_engine.engine import load_trades as sp_load_trades
+        stt = []
+        for t in sp_load_trades():
+            ts = t.get("logged_at")
+            if ts:
+                d = datetime.fromisoformat(ts)
+                stt.append(d.astimezone().replace(tzinfo=None) if d.tzinfo else d)
+        first = min(stt, default=None) or now
+        out["special"] = {**pace(stt, now, first), "regime_since": first.date().isoformat(),
+                          "regime_reason": "primul trade Special (shadow + live)",
+                          "reference": None, "reference_kind": None, "virtual": True}
+    except Exception as e:
+        out["special"] = {"confidence": "insufficient", "per_week": None, "error": str(e), "virtual": True}
     return out
 
 

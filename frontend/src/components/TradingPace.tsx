@@ -1,4 +1,4 @@
-import { Activity, Brain, CalendarClock, Gauge } from "lucide-react";
+import { Activity, Brain, CalendarClock, Gauge, Sparkles } from "lucide-react";
 import { useTradingPace } from "../api/hooks";
 import type { EngineId, EnginePace, PaceConfidence } from "../api/types";
 import { InfoTooltip } from "./InfoTooltip";
@@ -10,10 +10,13 @@ import { InfoTooltip } from "./InfoTooltip";
  * curent (dupa ultima schimbare de configuratie), ponderare exponentiala, cache 15 min.
  */
 
-const ENGINE: Record<EngineId, { label: string; text: string; border: string; icon: typeof Activity }> = {
+type PaceId = EngineId | "special";
+
+const ENGINE: Record<PaceId, { label: string; text: string; border: string; icon: typeof Activity }> = {
   custom: { label: "Custom Engine", text: "text-emerald-300", border: "border-emerald-500/30", icon: Activity },
   ai:     { label: "AI Engine",     text: "text-purple-300",  border: "border-purple-500/30",  icon: Brain },
   daily:  { label: "Daily Engine",  text: "text-cyan-300",    border: "border-cyan-500/30",    icon: CalendarClock },
+  special: { label: "Special Engine", text: "text-pink-300",   border: "border-pink-500/30",    icon: Sparkles },
 };
 
 const CONF: Record<PaceConfidence, { label: string; cls: string }> = {
@@ -25,7 +28,7 @@ const CONF: Record<PaceConfidence, { label: string; cls: string }> = {
 
 const fmtDate = (iso?: string | null) => (iso ? iso.split("-").reverse().join(".") : "—");
 
-function PaceCard({ id, p }: { id: EngineId; p?: EnginePace }) {
+function PaceCard({ id, p }: { id: PaceId; p?: EnginePace }) {
   const th = ENGINE[id];
   const Icon = th.icon;
   const conf = CONF[p?.confidence ?? "insufficient"];
@@ -82,10 +85,10 @@ export function TradingPace() {
           "Sub 2 săptămâni complete sau 5 trade-uri: „Date insuficiente” în loc de o cifră fals de precisă. Recalculat la 15 minute."} />
         {data?.computed_at && <span className="ml-auto text-[10px] text-slate-600">calculat {data.computed_at.slice(11, 16)}</span>}
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
         {isLoading
-          ? [0, 1, 2].map(i => <div key={i} className="h-28 rounded-xl bg-surface-card animate-pulse" />)
-          : (["custom", "ai", "daily"] as EngineId[]).map(id => <PaceCard key={id} id={id} p={data?.[id]} />)}
+          ? [0, 1, 2, 3].map(i => <div key={i} className="h-28 rounded-xl bg-surface-card animate-pulse" />)
+          : (["custom", "ai", "daily", "special"] as PaceId[]).map(id => <PaceCard key={id} id={id} p={data?.[id]} />)}
       </div>
     </div>
   );

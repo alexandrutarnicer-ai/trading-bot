@@ -1055,6 +1055,7 @@ export interface TradingPaceResponse {
   custom: EnginePace;
   ai: EnginePace;
   daily: EnginePace;
+  special?: EnginePace;
 }
 
 // ── Dimensionarea pozitiei (/sizing/preview) — aceeasi logica pe toate engine-urile ──
