@@ -45,7 +45,7 @@
     "risk": "ollama",
     "head_trader": "gemini"
   },
-  "consensus_threshold": 80,
+  "consensus_threshold": 75,
   "market_overrides": {},
   "capital_sync_mt5": true,
   "capital_usd": 197.14,
