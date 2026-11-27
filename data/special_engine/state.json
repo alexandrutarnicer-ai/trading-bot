@@ -14,7 +14,12 @@
     "2026-11-18|ORB:JP225:5/direction|0": true,
     "2026-11-19|NOISE:USTEC|0": true,
     "2026-11-25|ORB:JP225:5/direction|placed0": "yes",
-    "2026-11-25|ORB:JP225:5/direction|0": true
+    "2026-11-25|ORB:JP225:5/direction|0": true,
+    "2026-11-25|NOISE:USTEC|0": true,
+    "2026-11-26|ORB:JP225:5/direction|placed0": "yes",
+    "2026-11-26|ORB:JP225:5/direction|0": true,
+    "2026-11-27|ORB:JP225:5/direction|placed0": "yes",
+    "2026-11-27|ORB:JP225:5/direction|0": true
   },
-  "summary_day": "2026-11-24"
+  "summary_day": "2026-11-26"
 }

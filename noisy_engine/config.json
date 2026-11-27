@@ -1,6 +1,6 @@
 {
   "mode": "shadow",
-  "symbol": "USDJPY",
+  "symbol": "US500",
   "timeframe": "M5",
   "poll_seconds": 5,
   "notify_telegram": true,
@@ -89,9 +89,9 @@
     }
   },
   "spread": {
-    "mode": "manual",
+    "mode": "auto",
     "manual_points": 300.0,
-    "max_mode": "manual",
+    "max_mode": "auto",
     "max_mult": 20,
     "max_points": 600.0,
     "legacy_floor_price": 0.01

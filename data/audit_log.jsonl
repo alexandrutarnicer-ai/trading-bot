@@ -19,3 +19,10 @@
 {"time": "2026-11-22T21:24:21+00:00", "engine": "special", "action": "start", "market": null, "before": null, "after": null, "detail": "pornit (PID 9980)", "source": "ui"}
 {"time": "2026-11-25T00:05:17+00:00", "engine": "special", "action": "order", "market": "JP225", "before": null, "after": null, "detail": "ORDINE REALE (cont REAL — deblocat în Trading LIVE) — ORB:JP225:5/direction · ✅ SHORT · 2.0 loturi · SL atașat · risc 2.85 USD", "source": "engine"}
 {"time": "2026-11-25T00:05:47+00:00", "engine": "special", "action": "close", "market": "JP225", "before": null, "after": null, "detail": "închis după ieșirea strategiei (ok)", "source": "engine"}
+{"time": "2026-11-25T15:56:29+00:00", "engine": "special", "action": "stop", "market": null, "before": null, "after": null, "detail": "oprit din UI", "source": "ui"}
+{"time": "2026-11-25T15:56:33+00:00", "engine": "special", "action": "start", "market": null, "before": null, "after": null, "detail": "pornit (PID 13408)", "source": "ui"}
+{"time": "2026-11-26T00:05:29+00:00", "engine": "special", "action": "order", "market": "JP225", "before": null, "after": null, "detail": "ORDINE REALE (cont REAL — deblocat în Trading LIVE) — ORB:JP225:5/direction · ✅ LONG · 2.0 loturi · SL atașat · risc 2.73 USD", "source": "engine"}
+{"time": "2026-11-26T06:00:18+00:00", "engine": "special", "action": "close", "market": "JP225", "before": null, "after": null, "detail": "închis — final de sesiune (ok)", "source": "engine"}
+{"time": "2026-11-27T00:05:29+00:00", "engine": "special", "action": "order", "market": "JP225", "before": null, "after": null, "detail": "ORDINE REALE (cont REAL — deblocat în Trading LIVE) — ORB:JP225:5/direction · ✅ LONG · 1.0 loturi · SL atașat · risc 1.46 USD", "source": "engine"}
+{"time": "2026-11-27T08:52:22+00:00", "engine": "daily", "action": "stop", "market": null, "before": null, "after": null, "detail": "oprit din UI", "source": "ui"}
+{"time": "2026-11-27T08:52:28+00:00", "engine": "special", "action": "stop", "market": null, "before": null, "after": null, "detail": "oprit din UI", "source": "ui"}

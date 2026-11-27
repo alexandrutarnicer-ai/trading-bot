@@ -575,7 +575,8 @@
       "capital": 304.66
     },
     "2026-11-25|US500": [
-      "entry"
+      "entry",
+      "closed"
     ],
     "2026-11-25|DE40@new_york": [
       "entry",
@@ -607,6 +608,79 @@
       "policy_source": "market",
       "currency": "USD",
       "capital": 299.41
+    },
+    "2026-11-26|DE40|armed": true,
+    "2026-11-26|DE40@new_york|armed": true,
+    "2026-11-26|DE40": [
+      "entry",
+      "closed"
+    ],
+    "2026-11-26|DE40|placed": "yes",
+    "2026-11-26|DE40|size": {
+      "lots": 0.1,
+      "risk_money": 7.614,
+      "target_money": 2.8159,
+      "raw_lots": 0.036983,
+      "at_min_lot": true,
+      "capped_max": false,
+      "ratio": 2.704,
+      "reason": null,
+      "policy_source": "market",
+      "currency": "USD",
+      "capital": 281.59
+    },
+    "2026-11-26|US500": [
+      "entry",
+      "closed"
+    ],
+    "2026-11-26|DE40@new_york": [
+      "entry",
+      "closed"
+    ],
+    "2026-11-26|DE40@new_york|placed": "yes",
+    "2026-11-26|US500|size": {
+      "lots": 0.1,
+      "risk_money": 1.525,
+      "target_money": 2.732,
+      "raw_lots": 0.179148,
+      "at_min_lot": false,
+      "capped_max": false,
+      "ratio": 0.558,
+      "reason": null,
+      "policy_source": "global",
+      "currency": "USD",
+      "capital": 273.2
+    },
+    "2026-11-26|DE40@new_york|size": {
+      "lots": 0.1,
+      "risk_money": 5.0235,
+      "target_money": 2.732,
+      "raw_lots": 0.054384,
+      "at_min_lot": true,
+      "capped_max": false,
+      "ratio": 1.839,
+      "reason": null,
+      "policy_source": "market",
+      "currency": "USD",
+      "capital": 273.2
+    },
+    "2026-11-27|DE40|armed": true,
+    "2026-11-27|DE40@new_york|armed": true,
+    "2026-11-27|DE40": [
+      "entry"
+    ],
+    "2026-11-27|DE40|size": {
+      "lots": 0.1,
+      "risk_money": 10.0735,
+      "target_money": 2.7105,
+      "raw_lots": 0.026907,
+      "at_min_lot": true,
+      "capped_max": false,
+      "ratio": 3.716,
+      "reason": null,
+      "policy_source": "market",
+      "currency": "USD",
+      "capital": 271.05
     }
   }
 }
